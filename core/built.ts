@@ -1,0 +1,76 @@
+import "server-only";
+// Runs an agent on the shared engine outside the builder: on a schedule, in a chain, or by hand
+// through /api/agents/<id> (agents/registry.ts). Every agent runs this way since builder flow
+// slice 6 retired the agents' own code.
+//
+// - Only an approved playbook runs this way. Explore runs stay by hand, from the builder screen.
+// - A real run delivers: its reports go out and its proposals become approval cards.
+// - A dry run makes the playbook's tool calls in code and stops there: no model, nothing written.
+import { loadSpec } from "@/core/agent-spec";
+import { activePlaybook, afterRun, listPlaybooks } from "@/core/playbook";
+import { runExplore } from "@/core/runner";
+import { TOOLS } from "@/core/tools/catalog";
+import { callTool } from "@/core/tools/call";
+import { checkInput, paramsOf, type ToolCtx } from "@/core/tools/types";
+import type { MemoryLoad } from "@/core/memory";
+import type { RunResult } from "@/core/runs";
+import type { Handoff } from "@/core/chain";
+
+/** The active spec and approved playbook, or why the agent can't run on the runner. */
+async function ready(agentId: string) {
+  const spec = await loadSpec(agentId);
+  if (!spec) return { problem: "it has no saved spec" } as const;
+  if (spec.problems.length) return { problem: `its spec asks for something code doesn't offer: ${spec.problems.join("; ")}` } as const;
+  const pb = activePlaybook(await listPlaybooks(agentId));
+  if (!pb) return { problem: "it has no approved playbook yet (explore runs are by hand, from the builder screen)" } as const;
+  return { spec: spec.spec, version: spec.version, playbook: pb } as const;
+}
+
+/** A free dry run: the playbook's tool calls, made in code. No model, nothing written. */
+/**
+ * Runs each playbook step's read for real and writes nothing. `failed` counts the steps that
+ * didn't work: going live needs it to be 0 (the status stays "ok" because the dry run itself ran).
+ */
+export async function dryRunPlaybook(agentId: string): Promise<RunResult & { lines: string[]; failed: number; steps: number }> {
+  const r = await ready(agentId);
+  if ("problem" in r) return { status: "skipped", summary: `Not ready for the runner: ${r.problem}.`, lines: [], failed: 0, steps: 0 };
+  const ctx: ToolCtx = { agentId, notionPages: r.spec.notionPages, outputSources: r.spec.readsFrom, reportPage: r.spec.reportPage };
+  const lines: string[] = [];
+  const numbers: Record<string, number> = {};
+  for (const s of r.playbook.steps) {
+    const t = TOOLS[s.tool];
+    if (!t?.run || !r.spec.tools.includes(s.tool)) { lines.push(`FAILED ${s.tool}: not a tool this spec grants`); continue; }
+    const checked = checkInput(paramsOf(t, ctx), s.input);
+    if ("problem" in checked) { lines.push(`FAILED ${t.label}: ${checked.problem}`); continue; }
+    try {
+      const out = await callTool(t.id, checked.input, ctx);
+      Object.assign(numbers, out.numbers ?? {});
+      const nums = Object.entries(out.numbers ?? {}).slice(0, 6).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ");
+      lines.push(`OK ${t.label}${nums ? `: ${nums}` : ""}`);
+    } catch (e) { lines.push(`FAILED ${t.label}: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`); }
+  }
+  const reports = r.spec.tools.map((id) => TOOLS[id]).filter((t) => t?.kind === "report").map((t) => t!.label);
+  const bad = lines.filter((l) => l.startsWith("FAILED")).length;
+  return {
+    status: "ok",
+    summary: `[dry run, nothing sent] Spec v${r.version}, playbook v${r.playbook.version}: ${r.playbook.steps.length - bad} of ${r.playbook.steps.length} steps worked. A real run then has ${r.spec.model} write the result${reports.length ? ` and delivers: ${reports.join("; ")}` : ""}.`,
+    metrics: numbers, lines, failed: bad, steps: r.playbook.steps.length,
+  };
+}
+
+/** One run on the runner, following the approved playbook, delivering what it produces. Call inside withRun. */
+export async function runBuilt(agentId: string, opts: { runId?: string; dryRun?: boolean; memory?: MemoryLoad | null; handoff?: Handoff | null }): Promise<RunResult> {
+  if (opts.dryRun) { const d = await dryRunPlaybook(agentId); return { status: d.status, summary: `${d.summary} ${d.lines.join(" · ")}`, metrics: d.metrics }; }
+  const r = await ready(agentId);
+  if ("problem" in r) return { status: "skipped", summary: `Not run on the runner: ${r.problem}.` };
+  const h = opts.handoff ? { from: opts.handoff.from, summary: opts.handoff.summary ?? "", metrics: opts.handoff.metrics ?? {} } : null;
+  const res = await runExplore(r.spec, { agentId, runId: opts.runId, memoryBlock: opts.memory?.block ?? "", playbook: { version: r.playbook.version, steps: r.playbook.steps }, deliver: true, handoff: h });
+  let note = "";
+  try { note = ` ${await afterRun(agentId, opts.runId ?? null, res)}`; } catch (e) { note = ` (Playbook not updated: ${e instanceof Error ? e.message : String(e)})`; }
+  return {
+    status: res.status, summary: `[runner, spec v${r.version}] ${res.summary}${note}`.trim(),
+    tokensIn: res.tokensIn, tokensOut: res.tokensOut, costUsd: res.costUsd, metrics: res.metrics,
+    // the model read the memory block, so next-run notes count down
+    readMemory: !!opts.memory && res.finished,
+  };
+}
