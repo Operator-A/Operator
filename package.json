@@ -37,6 +37,8 @@
     "check:product-facts": "npx --yes tsx scripts/check-product-facts.ts",
     "check:goal-numbers": "npx --yes tsx scripts/check-goal-numbers.ts",
     "check:baseline": "npx --yes tsx scripts/check-baseline.ts",
+    "check:daily-numbers": "npx --yes tsx scripts/check-daily-numbers.ts",
+    "check:brief": "npx --yes tsx scripts/check-brief.ts",
     "check:all": "node scripts/check-all.mjs",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
