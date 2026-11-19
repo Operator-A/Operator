@@ -28,9 +28,9 @@ const KIND_LOOK: Record<string, { bg: string; fg: string }> = {
 };
 
 export default async function Desk() {
+  const f = await getFloor(); // checks the login first, so the page is never built ahead of a request
   // a new business starts with setup (card 151, docs/setup.md), not an empty Desk
   if (await inSetup()) redirect("/start");
-  const f = await getFloor();
   const now = f.now;
   const open = needs(f, now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value));
   const org = await loadOrg().catch(() => null);

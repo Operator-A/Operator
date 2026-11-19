@@ -7,18 +7,21 @@ import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 import { FACTS_MISSING, departmentTemplates, inSetup, listFacts, setupState } from "@/core/setup";
 import { TEMPLATE_FIT } from "@/dashboard/setup";
-import { SetupChat, FactsPanel } from "@/dashboard/components/setup";
+import { SetupChat, FactsPanel, StoreForm, UnlistedTool } from "@/dashboard/components/setup";
+import { Icon } from "@/dashboard/components/Icon";
+import { toolsStep, waitingByTemplate, type TileView } from "@/dashboard/toolsStep";
 import { KeyForm, TemplatePicker, ActionButton } from "@/dashboard/components/client";
-import { claudeSaveKey } from "@/dashboard/connectionActions";
-import { sendSetup, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupStartEmpty } from "@/dashboard/setupActions";
+import { claudeSaveKey, mcpSaveKey } from "@/dashboard/connectionActions";
+import { sendSetup, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupStartEmpty, setupToolAsk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
 
 // First-run setup (card 151, docs/setup.md): a new business lands here instead of the Desk. Step 1 is
-// the conversation with Avery; steps 2 to 4 are cards 152 to 154 (until then, Connections and the
-// department picker).
+// the conversation with Avery; step 2 connects the tools (card 152); steps 3 and 4 are cards 153 and
+// 154 (until then, the department picker).
 export const maxDuration = 120;
 
-export default async function Setup() {
+export default async function Setup({ searchParams }: { searchParams: Promise<{ c?: string; connected?: string; problem?: string }> }) {
+  const sp = await searchParams;
   const me = await requireSession();
   if (!(await inSetup())) redirect("/");
   const [floor, facts, state, history, biz] = await Promise.all([getFloor(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
@@ -28,6 +31,10 @@ export default async function Setup() {
   const leaning = state.leaning.map((l) => ({ ...l, name: templates.find((t) => t.id === l.id)?.name ?? l.id }));
   const blocked = controlsOn() ? null : "Controls are off, so Avery can’t answer yet: each message is a real model call. Set DASHBOARD_CONTROLS=on.";
   const steps = ["Your business", "Tools", "Your company", "First job"];
+  const { tiles, shopifyDomain, connected } = await toolsStep(state.leaning.map((l) => l.id), floor.health);
+  const open = tiles.find((t) => t.tile.id === sp.c) ?? null;
+  const waits = waitingByTemplate(connected);
+  const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected && open ? { ok: true, text: `${open.tile.name} is connected.` } : null;
 
   return (
     <div className="page">
@@ -71,11 +78,21 @@ export default async function Setup() {
             </aside>
           </div>
 
-          <section id="step-2" className="card stack" style={{ gap: 10 }} aria-labelledby="tools-h">
+          <section id="step-2" className="card stack" style={{ gap: 14 }} aria-labelledby="tools-h">
             <span id="tools" />
             <h2 id="tools-h" className="card-t">2. Connect your tools</h2>
-            <span className="sub">Connect the tools you already use, so Avery can see the business for herself. Every connection asks only for what its agents read.</span>
-            <div><Link href="/connections" className="btn outline sm">Open Connections</Link></div>
+            <span className="sub">Connect the tools you already use, so your agents can see the business for themselves. Each one asks only for what its agents read, and you can skip any of them for now.</span>
+            {note && <span className="soft-box" role="status" style={{ fontSize: 13, background: note.ok ? "var(--mint-soft)" : "var(--red-soft)", color: note.ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{note.text}</span>}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
+              {tiles.map((t) => <ToolTileCard key={t.tile.id} t={t} on={open?.tile.id === t.tile.id} />)}
+            </div>
+            {open && <ToolPanel t={open} owner={owner} shopifyDomain={shopifyDomain} />}
+            <div className="stack rule" style={{ gap: 8, paddingTop: 12 }}>
+              <b style={{ fontSize: 14 }}>A tool that isn’t listed?</b>
+              <span className="sub">Tell Avery its name. If it has its own server you can add it by address; if not, it goes on the list of connections to build.</span>
+              {owner ? <UnlistedTool ask={setupToolAsk} /> : <span className="sub">An owner of this business connects tools.</span>}
+            </div>
+            <div className="row" style={{ justifyContent: "flex-end" }}><a href="#step-3" className="btn outline sm">{connected.size ? "Next: your company" : "Skip for now"}</a></div>
           </section>
 
           <section id="step-3" className="card stack" style={{ gap: 12 }} aria-labelledby="company-h">
@@ -84,6 +101,11 @@ export default async function Setup() {
             {owner ? (
               <>
                 <TemplatePicker templates={templates} install={setupInstall} initial={leaning.length ? leaning.map((l) => l.id) : undefined} />
+                {templates.some((t) => waits[t.id]?.length) && (
+                  <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 4 }} aria-label="Tools each department waits on">
+                    {templates.filter((t) => waits[t.id]?.length).map((t) => <li key={t.id} className="sub">{t.name} waits on {waits[t.id].join(" and ")}: it installs now and starts working once that’s connected.</li>)}
+                  </ul>
+                )}
                 <div className="row wrap rule" style={{ gap: 12, justifyContent: "space-between", paddingTop: 12 }}>
                   <span style={{ display: "flex", flexDirection: "column", gap: 2 }}><b style={{ fontSize: 14 }}>Start empty</b><span className="sub">Keep Avery alone, add departments on Crew &gt; Org chart and build each agent yourself.</span></span>
                   <ActionButton className="btn outline sm" action={setupStartEmpty} follow>Start empty</ActionButton>
@@ -98,6 +120,72 @@ export default async function Setup() {
           </section>
         </main>
       </div>
+    </div>
+  );
+}
+
+const STATE_WORD: Record<TileView["state"], { text: string; bg: string; fg: string }> = {
+  connected: { text: "Connected", bg: "var(--mint-soft)", fg: "var(--mint-ink)" },
+  paused: { text: "Paused", bg: "var(--red-soft)", fg: "var(--red-ink)" },
+  not: { text: "Not connected", bg: "var(--soft)", fg: "var(--ink2)" },
+  coming: { text: "Coming next", bg: "var(--soft)", fg: "var(--mut)" },
+};
+
+function ToolTileCard({ t, on }: { t: TileView; on: boolean }) {
+  const w = STATE_WORD[t.state];
+  return (
+    <Link href={on ? "/start#step-2" : `/start?c=${t.tile.id}#step-2`} scroll={false} className="card" aria-current={on ? "true" : undefined} style={{ gap: 10, padding: 14, textDecoration: "none", color: "var(--ink)", outline: on ? "2px solid var(--ink)" : undefined }}>
+      <span className="row" style={{ gap: 10 }}>
+        <span style={{ width: 36, height: 36, borderRadius: 11, background: "var(--soft)", display: "grid", placeItems: "center", flex: "none" }}><Icon name={t.tile.icon} size={16} /></span>
+        <span style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}><span style={{ fontSize: 15, fontWeight: 600 }}>{t.tile.name}</span><span className="muted" style={{ fontSize: 12 }}>{t.tile.gives}</span></span>
+      </span>
+      <span className="row wrap" style={{ gap: 6 }}>
+        <span className="pill sm" style={{ background: w.bg, color: w.fg }}>{w.text}</span>
+        {t.neededBy.length > 0 && t.state !== "connected" && <span className="pill sm" style={{ background: "var(--yel-soft)", color: "var(--yel-ink)" }}>Needed for {t.neededBy.join(", ")}</span>}
+      </span>
+    </Link>
+  );
+}
+
+function ToolPanel({ t, owner, shopifyDomain }: { t: TileView; owner: boolean; shopifyDomain: string }) {
+  const { tile } = t;
+  if (t.state === "coming") {
+    return <div className="card stack" style={{ gap: 8, background: "var(--soft)" }}><b style={{ fontSize: 15 }}>{tile.name}</b><span className="sub">Coming next: a read-only connection that asks Google only to read your Analytics. Skip it for now; it shows up here when it’s ready.</span></div>;
+  }
+  const token = tile.id === "shopify";
+  return (
+    <div className="card stack" style={{ gap: 12, background: "var(--soft)" }} aria-label={`Connect ${tile.name}, step by step`}>
+      <span className="row" style={{ gap: 8, justifyContent: "space-between" }}><b style={{ fontSize: 16 }}>Connect {tile.name}</b><span className="pill sm" style={{ background: STATE_WORD[t.state].bg, color: STATE_WORD[t.state].fg }}>{STATE_WORD[t.state].text}</span></span>
+      {t.state === "connected" && <span style={{ fontSize: 13.5 }}>Connected{t.who ? <> as <b>{t.who}</b></> : ""}. {tile.id === "mercury" ? "If that isn’t your business, disconnect it on Connections and connect again. " : ""}You can change it any time on <Link href={`/connections?c=${tile.id}`}>Connections</Link>.</span>}
+      {t.state === "paused" && <span className="soft-box" style={{ fontSize: 13 }}>Paused: {t.problem ?? "the sign-in stopped working"}. Follow the steps again to reconnect.</span>}
+      {t.state !== "connected" && (
+        <ol className="stack" style={{ margin: 0, paddingLeft: 20, gap: 6, fontSize: 14, lineHeight: 1.5 }}>
+          {tile.steps.map((s, i) => <li key={i}>{s}</li>)}
+        </ol>
+      )}
+      {t.permissions.length > 0 && (
+        <div className="stack" style={{ gap: 4 }}>
+          <span className="muted" style={{ fontSize: 12.5, fontWeight: 600 }}>What it asks for, and why</span>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }} className="ink2">
+            {t.permissions.map((p) => <li key={p.scope}>{p.words}.</li>)}
+          </ul>
+        </div>
+      )}
+      {t.state === "connected" && tile.also && t.also && !t.also.connected && (
+        <div className="stack rule" style={{ gap: 6, paddingTop: 10 }}>
+          <b style={{ fontSize: 14 }}>{tile.also.label}{t.neededBy.length ? ` (needed for ${t.neededBy.join(", ")})` : ""}</b>
+          <span className="sub">{tile.also.why} Sign in to the same mailbox.</span>
+          {owner && <div><a className="btn outline sm" href={`/connections/${tile.also.mcp}/connect?from=start`}>Connect {tile.also.label}</a></div>}
+        </div>
+      )}
+      {t.state !== "connected" && (owner ? (token ? (
+        <div className="stack" style={{ gap: 8 }}>
+          <StoreForm initial={shopifyDomain} save={setupShopifyStore} />
+          {shopifyDomain ? <KeyForm label="Shopify key" save={mcpSaveKey.bind(null, "shopify")} placeholder="shpat_…" /> : <span className="sub">Save the store’s address first; the key is checked against it.</span>}
+        </div>
+      ) : (
+        <div><a className="btn dark sm" href={`/connections/${tile.mcp}/connect?from=start`}>Connect {tile.name}</a></div>
+      )) : <span className="sub">An owner of this business connects tools.</span>)}
     </div>
   );
 }

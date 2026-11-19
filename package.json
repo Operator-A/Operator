@@ -40,6 +40,7 @@
     "check:daily-numbers": "npx --yes tsx scripts/check-daily-numbers.ts",
     "check:brief": "npx --yes tsx scripts/check-brief.ts",
     "check:setup": "npx --yes tsx --conditions=react-server scripts/check-setup.ts",
+    "check:tools-step": "npx --yes tsx --conditions=react-server scripts/check-tools-step.ts",
     "check:ee": "npx --yes tsx ee/check.ts",
     "check:all": "node scripts/check-all.mjs",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",

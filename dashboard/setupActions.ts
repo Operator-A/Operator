@@ -7,6 +7,9 @@ import { cleanMessage } from "@/core/chat-rules";
 import { withActor } from "@/core/actor";
 import { audit } from "@/core/audit";
 import { installTemplates } from "@/core/install";
+import { saveSettingsFields } from "@/core/settings";
+import { askFor } from "@/core/connector-requests";
+import { routeUnlisted } from "@/core/tools-step-rules";
 import { asRole } from "./data";
 import { controlsOn } from "./session";
 import type { ActionResult } from "./actions";
@@ -76,5 +79,35 @@ export async function setupStartEmpty(): Promise<ActionResult & { href?: string 
     await audit(me, "finish_setup", "empty");
     revalidatePath("/", "layout");
     return { ok: true, href: "/", text: "Setup finished. Add departments on Crew > Org chart, or ask Avery to hire." };
+  } catch (e) { return fail(e); }
+}
+
+/** Step 2 (card 152): the Shopify store's address, saved with the business's other settings before its key is pasted. */
+export async function setupShopifyStore(domain: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const d = String(domain ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(d)) return { ok: false, text: "Use the store’s .myshopify.com address, like your-store.myshopify.com." };
+  try {
+    const r = await saveSettingsFields({ shopifyDomain: d }, ["shopifyDomain"], () => 120);
+    if ("problem" in r) return { ok: false, text: r.problem };
+    await audit(me, "save_settings", null, { shopify: d });
+    return done("Saved. Now paste the read-only key.");
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * Step 2: a tool the founder uses that isn't a tile. Code routes it (core/tools-step-rules.ts): a tile, a
+ * built-in, a known server to add by address, or a connection request. No model call; nothing is connected.
+ */
+export async function setupToolAsk(name: string): Promise<ActionResult & { href?: string }> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const r = routeUnlisted(String(name ?? ""));
+  if ("problem" in r) return { ok: false, text: r.problem };
+  if (r.kind === "tile") return { ok: true, text: `${r.name} is on the list above: open its card and follow the steps.`, href: `/start?c=${r.id}#step-2` };
+  if (r.kind === "builtIn") return { ok: true, text: `${r.name} connects on Connections.`, href: r.href };
+  if (r.kind === "known") return { ok: true, text: `${r.name} has its own server. Add it on Connections with its address filled in: you turn on each read-only tool yourself.`, href: r.href };
+  try {
+    await askFor({ name: r.name, what: "A tool the business already uses, named in setup", by: me.email });
+    return { ok: true, text: `Noted: ${r.name} isn’t built in yet, so it’s on the list of connections to build. Until then, a file export from ${r.name} will do (coming soon).` };
   } catch (e) { return fail(e); }
 }

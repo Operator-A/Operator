@@ -3,7 +3,8 @@ import "server-only";
 // owner saved on Settings. No business takes values from the app's settings in Vercel (card 135).
 import { db } from "@/core/db";
 import { orgId } from "@/core/tenancy";
-import { NO_SETTINGS, SETTINGS_KEY, readSettings, type BusinessSettings } from "@/core/settings-rules";
+import { NO_SETTINGS, SETTINGS_KEY, checkSettingsEdit, editOf, readSettings, type BusinessSettings, type SettingsEdit } from "@/core/settings-rules";
+import { listMembers } from "@/core/members";
 
 const cache = new Map<string, { s: BusinessSettings; at: number }>();
 const TTL_MS = 60_000;
@@ -25,4 +26,16 @@ export async function saveSettings(s: BusinessSettings): Promise<void> {
   const { error } = await db().from("policies").upsert({ key: SETTINGS_KEY, value_json: s, updated_at: new Date().toISOString() });
   if (error) throw new Error(error.message);
   cache.delete(await orgId());
+}
+
+/**
+ * Some of the settings' fields over what the org already saved, so the rest stay; checked, then saved.
+ * The caller has checked the member is an owner (Settings cards, first-run setup).
+ */
+export async function saveSettingsFields(f: Partial<SettingsEdit>, keys: readonly (keyof SettingsEdit)[], max: (k: keyof SettingsEdit) => number): Promise<{ problem: string } | { settings: BusinessSettings }> {
+  const e = { ...editOf(await settings()), ...Object.fromEntries(keys.map((k) => [k, String(f?.[k] ?? "").slice(0, max(k))])) } as SettingsEdit;
+  const owners = (await listMembers()).filter((m) => m.role === "owner").map((m) => m.email);
+  const checked = checkSettingsEdit(e, owners);
+  if ("settings" in checked) await saveSettings(checked.settings);
+  return checked;
 }

@@ -9,6 +9,7 @@ import { isMcpId } from "@/core/mcp-rules";
 import { isCustomId } from "@/core/custom-mcp-rules";
 import { PENDING_COOKIE, finishConnect } from "@/integrations/mcp";
 import { audit } from "@/core/audit";
+import { BACK_COOKIE, backTarget } from "@/core/tools-step-rules";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -16,7 +17,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!me) return NextResponse.redirect(new URL("/login", req.url));
   if (!atLeast(me.role, "owner")) return NextResponse.redirect(new URL("/connections", req.url));
   if (!isMcpId(id) && !isCustomId(id)) return NextResponse.redirect(new URL("/connections", req.url));
-  const back = new URL(`/connections?${isCustomId(id) ? "s" : "c"}=${encodeURIComponent(id)}`, req.url);
+  const fromStart = req.cookies.get(BACK_COOKIE)?.value === "start" && !isCustomId(id);
+  const back = new URL(fromStart ? backTarget("start", id) : `/connections?${isCustomId(id) ? "s" : "c"}=${encodeURIComponent(id)}`, req.url);
+  if (fromStart) back.searchParams.set("c", id);
   const q = req.nextUrl.searchParams;
   try {
     await finishConnect(id, req.cookies.get(PENDING_COOKIE)?.value, { code: q.get("code"), state: q.get("state"), error: q.get("error") });
@@ -28,5 +31,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   const res = NextResponse.redirect(back);
   res.cookies.set(PENDING_COOKIE, "", { httpOnly: true, secure: true, sameSite: "lax", path: `/connections/${id}`, maxAge: 0 });
+  res.cookies.set(BACK_COOKIE, "", { httpOnly: true, secure: true, sameSite: "lax", path: `/connections/${id}`, maxAge: 0 });
   return res;
 }
