@@ -9,7 +9,7 @@ import type { ToolDef, ToolGroup } from "@/core/tools/types";
 import type { IntegrationId } from "./crew";
 import type { McpId } from "@/core/mcp-rules";
 
-export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "email" | "web" | "agents" | "control_room" | "math";
+export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "email" | "web" | "agents" | "control_room" | "math";
 /** A server the owner added by its address (docs/custom-servers.md): its id is the connection's. */
 export type CustomConnId = `c_${string}`;
 
@@ -63,11 +63,6 @@ export const CONNECTIONS: Connection[] = [
     checks: [{ key: "klaviyo", label: "Account", setup: "Tap Connect and sign in to Klaviyo as an Owner, Admin or Manager. Klaviyo signs in with its own page, so there is no key to paste." }],
   },
   {
-    id: "analytics", name: "Google Analytics", sub: "Visits, pages, channels", icon: "chart-line", builtIn: false, mcp: "ga4",
-    about: "Our own Google Analytics server, run in the app. Google’s own Analytics MCP server runs on a person’s computer with their own credentials, so it isn’t used. One Google sign-in granted analytics.readonly alone, so Google refuses it any change. Each tool runs one fixed report on the property you pick below; agents never choose the property. Rates are worked out in code.",
-    checks: [{ key: "ga4", label: "Property", setup: "Tap Connect, sign in with a Google account that can see the business’s Analytics, then pick the property below. Needs GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel, with the Analytics APIs turned on for that Google client." }],
-  },
-  {
     id: "email", name: "Email to you", sub: "Briefs and alerts", icon: "inbox", builtIn: false,
     about: "Sends through Resend to the owner email on Settings > Where things go, always one of this business’s owners. The code has no way to name anyone else.",
     checks: [{ key: "email", label: "Email", setup: "Set RESEND_API_KEY and BRIEF_FROM (a sender on a domain verified in Resend) in Vercel, and pick the owner email on Settings > Where things go." }],
@@ -99,7 +94,7 @@ export const CONN_BY_ID = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c])) 
 /** Which connection each tool group belongs to. */
 type BuiltInGroup = Exclude<ToolGroup, "custom">;
 const GROUP_CONN: Record<BuiltInGroup, ConnId> = {
-  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
+  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
 };
 /** For tools on the list in code. A custom server's tools belong to that server (dashboard/builder.ts customMenuFor). */
 export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group as BuiltInGroup];

@@ -49,10 +49,9 @@ is untrusted data. It never chooses a recipient, URL, product or category, and t
 
 ## Connect your tools
 
-Step 2 (card 152) has a tile for Shopify, Mercury, Klaviyo, Gmail and Google Analytics (our own
-read-only server, card 152b, `docs/mcp-everywhere.md`). The tiles, their steps and what each
-permission is for are in `core/tools-step-rules.ts`. When the Analytics sign-in sees more than one
-property, the panel asks which one agents report on.
+Step 2 (card 152) has a tile for Shopify, Mercury, Klaviyo, Gmail and Google Analytics (Analytics
+shows "Coming next" until card 152b builds its read-only server). The tiles, their steps and what
+each permission is for are in `core/tools-step-rules.ts`.
 
 - **Needed for.** A tile is marked "Needed for Finance" when a department Avery leans toward has a
   tool whose `needs` names it (`SHOPIFY_CONNECTED` and so on, `NEED_TILE`). Nobody types it.

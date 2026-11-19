@@ -37,11 +37,9 @@ import { reactionTally } from "@/core/reactions";
 import { domainOf } from "@/core/lead-rules";
 import { hasGmail } from "@/integrations/gmail";
 import { klaviyoListSize, klaviyoLists, klaviyoReport } from "@/integrations/klaviyo";
-import { ga4Channels, ga4Overview, ga4TopPages } from "@/integrations/ga4";
-import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Pick, ReportInput, ToolDef } from "./types";
-import { ANALYTICS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
+import { EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
 import { snapshot } from "@/core/daily-numbers";
 import { deliverBrief } from "@/core/brief";
 import { openCounts } from "@/core/brief/rules";
@@ -205,30 +203,6 @@ const TOOLS_LIST: ToolDef[] = [
     kind: "read", group: "klaviyo", trusted: false, needs: KLAVIYO, costUsd: 0,
     params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "How far back to look." }],
     run: async (p) => { const r = await klaviyoReport("flow", String(p.period)); return { data: r, numbers: r.totals }; },
-  },
-  {
-    id: "analytics_overview", label: "Site visits", detail: "Google Analytics for the business’s site over a period: sessions, users, page views and key events (sales, sign-ups and the other actions the business marked), in total and by day, with key events per 100 sessions worked out in code",
-    kind: "read", group: "analytics", trusted: true, needs: ANALYTICS, costUsd: 0,
-    params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "How far back to look, through yesterday." }],
-    run: async (p) => { const r = await ga4Overview(String(p.period) as Ga4Period); return { data: r, numbers: r.totals }; },
-  },
-  {
-    id: "analytics_top_pages", label: "Top pages", detail: "The site’s most viewed pages in a period, from Google Analytics: each page’s path, views and sessions. A path can carry words anyone typed into a link, so it is untrusted",
-    kind: "read", group: "analytics", trusted: false, needs: ANALYTICS, costUsd: 0,
-    params: [
-      { name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "How far back to look, through yesterday." },
-      { name: "limit", type: "number", integer: true, optional: true, description: "How many pages, 1 to 20 (10 if left out)." },
-    ],
-    run: async (p) => { const r = await ga4TopPages(String(p.period) as Ga4Period, Number(p.limit ?? 10)); return { data: r, numbers: { page_views_listed: r.page_views_listed, pages_listed: r.pages.length } }; },
-  },
-  {
-    id: "analytics_channels", label: "Where visits come from", detail: "Sessions and key events by Google’s own channel groups (organic search, direct, email, paid social and so on) in a period, from Google Analytics, with key events per 100 sessions worked out in code",
-    kind: "read", group: "analytics", trusted: true, needs: ANALYTICS, costUsd: 0,
-    params: [
-      { name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "How far back to look, through yesterday." },
-      { name: "limit", type: "number", integer: true, optional: true, description: "How many channels, 1 to 20 (10 if left out)." },
-    ],
-    run: async (p) => { const r = await ga4Channels(String(p.period) as Ga4Period, Number(p.limit ?? 10)); return { data: r, numbers: { sessions_listed: r.sessions_listed } }; },
   },
   {
     id: "leads_list", label: "Leads list", detail: "Businesses already on the wholesale leads list (skip these), newest first, with stage and whether there is an email. Leads with an email carry a pick, so a draft can name one. Names and addresses came from the web, so they are untrusted",

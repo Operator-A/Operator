@@ -27,7 +27,6 @@ import { checkMercuryFilesKey, mercuryFilesServer } from "./mercury-files-server
 import { looksLikeMercuryToken } from "@/core/mercury-rules";
 import { shopifyKeyKind } from "@/core/shopify-queries";
 import { gmailMailbox, gmailServer } from "./gmail-server";
-import { ga4Properties, ga4Server } from "./ga4-server";
 import {
   CUSTOM_ID, MAX_CUSTOM_SERVERS, acceptTools, cantTurnOn, customArgs, customReply, checkAddress, checkCustomTools, checkLabel, checkLine, checkPins, checkScopes, checkServerName, customCheckNote, isCustomId, isPublicIp, looksLikeKey, readToolList,
   type CustomAuth, type CustomServer, type CustomTool, type ToolOn,
@@ -438,18 +437,17 @@ export async function finishConnect(id: string, sealedPending: string | undefine
     // exactly the profile's scope, or the sign-in is cancelled at Google and not kept
     const secrets = [tokens.accessToken, tokens.refreshToken, secret];
     const problem = scopeProblem(grantedScopes(r.json), prof.scopes) ?? (tokens.refreshToken ? null : "Google didn't hand over a refresh token");
-    const g = GOOGLE[id as McpId];
-    let who: GoogleWho | null = null;
-    if (!problem && g) { try { who = await g.who(tokens.accessToken); } catch (e) { who = null; await logEvent(id, "refused", `couldn't read whose sign-in this is: ${e instanceof Error ? e.message : String(e)}`, secrets); } }
-    if (problem || !who || "problem" in who) {
+    let box = "";
+    if (!problem) { try { box = await gmailMailbox(tokens.accessToken); } catch (e) { box = ""; await logEvent(id, "refused", `couldn't read the mailbox: ${e instanceof Error ? e.message : String(e)}`, secrets); } }
+    if (problem || !box) {
       await fetchJson(GOOGLE_AUTH.revocation_endpoint!, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: tokens.refreshToken ?? tokens.accessToken }) }).catch(() => undefined);
-      const why = problem ?? (who && "problem" in who ? who.problem : `${prof.name} didn't say whose sign-in this is`);
+      const why = problem ?? "Gmail didn't say which mailbox this is";
       await logEvent(id, "refused", why, secrets);
       throw new Error(`${why}, so it was cancelled. Tap Connect again.`);
     }
     await store(id, { clientId: p.clientId, clientSecret: null, tokenEndpoint: p.tokenEndpoint, revocationEndpoint: p.revocationEndpoint, tokens });
-    await db().from("mcp_connections").update({ settings: who.settings }).eq("id", id);
-    await logEvent(id, "connected", who.label, secrets);
+    await db().from("mcp_connections").update({ settings: { mailbox: box } }).eq("id", id);
+    await logEvent(id, "connected", `as ${box}`, secrets);
     return;
   }
   await store(id, { clientId: p.clientId, clientSecret: p.clientSecret, tokenEndpoint: p.tokenEndpoint, revocationEndpoint: p.revocationEndpoint, tokens });
@@ -617,43 +615,22 @@ export async function callWriteTool(id: McpId, tool: string, args: Record<string
   });
 }
 
-/** Who a Google sign-in belongs to, checked right after Connect, with the settings kept on its row; or why it can't be kept. */
-type GoogleWho = { label: string; settings: Record<string, string> } | { problem: string };
-const gmailWho = async (token: string): Promise<GoogleWho> => { const box = await gmailMailbox(token); return box ? { label: `as ${box}`, settings: { mailbox: box } } : { problem: "Gmail didn't say which mailbox this is" }; };
-/** Our own servers signed in with Google: Gmail (slice 6) and Google Analytics (card 152b). */
-const GOOGLE: Partial<Record<McpId, { server: (profile: McpId, token: string, settings: Record<string, string>) => Handler; who: (token: string) => Promise<GoogleWho> }>> = {
-  gmail_read: { server: (p, t) => gmailServer(p, t), who: gmailWho },
-  gmail: { server: (p, t) => gmailServer(p, t), who: gmailWho },
-  ga4: {
-    server: (p, t, s) => ga4Server(p, t, s.propertyId ?? null),
-    // a sign-in that sees no property is no use; one property is picked at once, more are picked on Connections
-    who: async (token) => {
-      const props = await ga4Properties(token);
-      if (!props.length) return { problem: "this Google account can't see any Google Analytics property" };
-      const one: Record<string, string> = props.length === 1 ? { propertyId: props[0].id, propertyName: props[0].name } : {};
-      return { label: `${props.length} propert${props.length === 1 ? "y" : "ies"}`, settings: { properties: String(props.length), ...one } };
-    },
-  },
-};
-
 /**
- * One tools/call to our own Gmail or Google Analytics server (slice 6, card 152b), with an access token the vault opens and renews
+ * One tools/call to our own Gmail server (slice 6), with an access token the vault opens and renews
  * for this profile's sign-in. The server serves only this profile's tools. Errors are scrubbed; a
  * token Google no longer accepts pauses the sign-in.
  */
 async function callGoogleTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   const name = MCP_SERVERS[id].name;
-  const { token, secrets, row } = await accessToken(builtIn(id));
+  const { token, secrets } = await accessToken(builtIn(id));
   const n = ++localSeq;
   const request = JSON.stringify({ jsonrpc: "2.0", id: n, method: "tools/call", params: { name: tool, arguments: args } });
-  const g = GOOGLE[id];
-  if (!g) throw new Error(`${name} has no server here.`);
-  const body = JSON.stringify(await g.server(id, token, row.settings ?? {})(JSON.parse(request)));
+  const body = JSON.stringify(await gmailServer(id, token)(JSON.parse(request)));
   const rep = parseRpc("application/json", body, n);
   const out = "error" in rep ? { error: rep.error } : toolPayload(rep.result);
   if ("error" in out) {
     const msg = scrubSecrets(out.error, secrets);
-    if (/^(Gmail|Analytics) 401\b/.test(msg)) { await pause(id, `Google refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: Google refused the sign-in. Tap Sign in again on Connections.`); }
+    if (/^Gmail 401\b/.test(msg)) { await pause(id, `Google refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: Google refused the sign-in. Tap Sign in again on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;

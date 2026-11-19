@@ -69,8 +69,7 @@ built, so no agent can send, pay or publish.
   and are never promoted. A custom tool's reply is untrusted data and never chooses a recipient,
   URL, product or category. Hosted servers (Klaviyo, Mercury) are used where they fit;
   where one reaches more than the profile needs or doesn't fit, we run our own in the app
-  (Notion, Gmail with no send tool, Google Analytics read only, Shopify with one fixed query per tool,
-  Mercury receipt files).
+  (Notion, Gmail with no send tool, Shopify with one fixed query per tool, Mercury receipt files).
   Each of our own servers is the only file that calls its service's API, and only
   `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).
 - One tool path: agents read only through `callMcpTool` (read tools), or a turned-on custom tool

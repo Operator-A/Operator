@@ -5,7 +5,6 @@ import { TEMPLATES } from "@/core/templates";
 import { TOOLS } from "@/core/tools/catalog";
 import { mcpStatus } from "@/integrations/mcp";
 import { mercuryOrgName } from "@/integrations/mercury";
-import { ga4PropertyList } from "@/integrations/ga4";
 import { settings } from "@/core/settings";
 import type { IntegrationId } from "./crew";
 import { TOOL_TILES, neededBy, permissionsOf, waitingOn, type TemplateTools, type ToolTile, type ToolTileId } from "@/core/tools-step-rules";
@@ -20,8 +19,6 @@ export interface TileView {
   permissions: { scope: string; words: string }[];
   /** Who it is signed in as, when code can tell (Mercury's org). */
   who: string | null;
-  /** Google Analytics signed in but no property picked yet: the properties to pick from. */
-  pick: { id: string; name: string; account: string }[] | null;
   /** The second sign-in (Gmail drafts): null when the tile has none. */
   also: { connected: boolean } | null;
 }
@@ -38,14 +35,13 @@ export async function toolsStep(picked: readonly string[], health: Record<Integr
   const s = await settings();
   const tiles = await Promise.all(TOOL_TILES.map(async (tile): Promise<TileView> => {
     const alsoSt = tile.also ? await mcpStatus(tile.also.mcp) : null;
-    const base = { tile, neededBy: need[tile.id] ?? [], permissions: permissionsOf(tile), problem: null, who: null, pick: null, also: tile.also ? { connected: !!alsoSt?.connected && !alsoSt.paused } : null };
+    const base = { tile, neededBy: need[tile.id] ?? [], permissions: permissionsOf(tile), problem: null, who: null, also: tile.also ? { connected: !!alsoSt?.connected && !alsoSt.paused } : null };
     if (!tile.mcp) return { ...base, state: "coming" };
     const st = await mcpStatus(tile.mcp);
-    if (st?.paused) return { ...base, state: "paused", problem: st.lastError };
-    if (tile.id === "analytics" && st?.connected && !st.settings.propertyId) return { ...base, state: "not", pick: await ga4PropertyList().catch(() => []) };
     const on = !!st?.connected && health[tile.mcp as IntegrationId] !== false;
+    if (st?.paused) return { ...base, state: "paused", problem: st.lastError };
     if (!on) return { ...base, state: "not" };
-    const who = tile.id === "mercury" ? await mercuryOrgName().catch(() => null) : tile.id === "gmail" ? st?.settings.mailbox ?? null : tile.id === "shopify" ? s.shopifyDomain : tile.id === "analytics" ? st?.settings.propertyName ?? null : null;
+    const who = tile.id === "mercury" ? await mercuryOrgName().catch(() => null) : tile.id === "gmail" ? st?.settings.mailbox ?? null : tile.id === "shopify" ? s.shopifyDomain : null;
     return { ...base, state: "connected", who };
   }));
   return { tiles, shopifyDomain: s.shopifyDomain ?? "", connected: new Set(tiles.filter((t) => t.state === "connected").map((t) => t.tile.id)) };
