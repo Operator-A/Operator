@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 // OPERATOR_EDITION=cloud builds the paid layer in: "operator-extensions" becomes ee/index.ts instead of
 // core/extensions/none.ts (tsconfig.json), the only switch between editions (docs/extensions.md).
 const cloud = process.env.OPERATOR_EDITION === "cloud";
-if (cloud && !existsSync("ee/index.ts")) throw new Error("OPERATOR_EDITION=cloud needs ee/index.ts, which the open-source repo leaves out. Unset it to build the open edition.");
+if (cloud && !existsSync("ee/index.ts")) throw new Error("OPERATOR_EDITION=cloud needs ee/index.ts (the paid layer in ee/). Unset it to build the open edition.");
 const nextConfig: NextConfig = {
   ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   ...(cloud ? { turbopack: { resolveAlias: { "operator-extensions": "./ee/index.ts" } } } : {}),

@@ -23,12 +23,12 @@ assert.equal(initials("Blue Door Coffee"), "BD");
 assert.equal(initials("acme"), "AC");
 assert.equal(initials("  "), "OP");
 
-// no business named anywhere in the repo but the word list itself (.brand.json, private/) and the migration
+// no business named anywhere in the repo but the word list itself (.brand.json) and the migration
 // history (the public repo replaces it with the starting migration)
 const BRAND = brandWords();
 if (process.env.GITHUB_ACTIONS === "true" && !BRAND.length) console.warn("check:business: no BRAND_WORDS here (a fork's pull request), so the names check is skipped");
 // the old history is skipped; migrations written after the baseline (the public repo's) are checked
-const SKIP = new Set(["node_modules", ".git", ".next", ".schemas", ".brand.json", "private", ...(hasHistory ? ["supabase/migrations"] : [])]);
+const SKIP = new Set(["node_modules", ".git", ".next", ".schemas", ".brand.json", ...(hasHistory ? ["supabase/migrations"] : [])]);
 const walk = (d: string): string[] => readdirSync(d).flatMap((n) => {
   const p = d === "." ? n : join(d, n);
   if (SKIP.has(p)) return [];
