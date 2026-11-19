@@ -357,6 +357,10 @@ The skill lives in the owner's Claude account, so they delete it there.
 
 **What the founder sees.**
 
+- **One agent or a department?** When the founder describes new work, Avery first weighs it against the
+  chart: one job, or work an existing department already covers, gets a suggested hire into that
+  department; a separate area with its own goals and more than one job gets a suggested department.
+  She says which and why, and if one agent would do, she offers both.
 - **Add a department** in Avery's starters (or just saying so). Avery interviews: what the department
   is for, what it should track, the goals (with a number from the goal picker where one exists), the
   tools and sources it needs, and the head plus at most two narrow agents.

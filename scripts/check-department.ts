@@ -145,6 +145,7 @@ assert.match(migration, /add constraint proposals_kind_check check \(kind in \('
 const chat = readFileSync("core/avery-chat.ts", "utf8");
 assert.match(chat, /id: "department_menu"/);
 assert.match(chat, /id: "update_department_draft"/);
+assert.match(chat, /first decide whether it needs one new agent or a new department/, "Avery weighs one agent against a department before suggesting either");
 const actions = readFileSync("dashboard/proposalActions.ts", "utf8");
 for (const a of ["proposeDepartment", "discardDepartmentDraft"]) {
   assert.match(actions, new RegExp(`export async function ${a}\\(\\)[^\\n]*\\n\\s*const \\{ me, no \\} = await asRole\\("owner"\\)`), `${a} is the owner's`);
