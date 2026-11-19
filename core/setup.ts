@@ -47,9 +47,14 @@ export async function inSetup(): Promise<boolean> {
   return needsSetup({ done: s.done, departments: depts.count ?? 0, agentIds: (agents.data ?? []).map((a) => String(a.id)) });
 }
 
-/** Setup is over: the founder installed departments or chose to start empty. */
-export async function finishSetup(): Promise<void> {
-  await saveSetupState({ ...(await setupState()), done: true });
+/** Setup is over: the founder installed departments (`offer`: the Desk offers a first job, card 154) or chose to start empty. */
+export async function finishSetup(offer = false): Promise<void> {
+  await saveSetupState({ ...(await setupState()), done: true, offer });
+}
+
+/** The first job started (card 154): which agent, and when. */
+export async function markFirstJob(agentId: string): Promise<void> {
+  await saveSetupState({ ...(await setupState()), firstJob: { agentId, at: new Date().toISOString() } });
 }
 
 /** Avery, off duty in the company seat, so the conversation has someone to talk to. Only into an empty business. */

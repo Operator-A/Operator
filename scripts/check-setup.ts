@@ -38,8 +38,8 @@ assert.match((readLeaning([{ id: SETUP_TEMPLATE, fit: "strong" }], deptIds) as {
 assert.match((readLeaning([{ id: deptIds[0], fit: "perfect" }], deptIds) as { problem: string }).problem, /strong or likely/);
 assert.match((readLeaning([{ id: deptIds[0], fit: "strong" }, { id: deptIds[0], fit: "likely" }], deptIds) as { problem: string }).problem, /twice/);
 assert.match((readLeaning(Array.from({ length: MAX_LEANING + 1 }, () => ({ id: deptIds[0], fit: "strong" })), deptIds) as { problem: string }).problem, /at most/);
-assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, leaning: [] }, "a stored list with a bad id is dropped, not trusted");
-assert.deepEqual(readSetupState(null, deptIds), { done: false, leaning: [] });
+assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, leaning: [], offer: false, firstJob: null }, "a stored list with a bad id is dropped, not trusted");
+assert.deepEqual(readSetupState(null, deptIds), { done: false, leaning: [], offer: false, firstJob: null });
 
 // who goes to setup: a new business, never one with a crew
 assert.equal(needsSetup({ done: false, departments: 0, agentIds: [] }), true, "a brand-new business");

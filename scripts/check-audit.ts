@@ -9,7 +9,7 @@ const AUDITED = [
   // approvals and the gateway
   "approve", "reject", "approveAll", "retryAction",
   // the org switch, duty, schedules and real runs (they spend money)
-  "turnOnOrg", "turnOffOrg", "setEnabled", "setAgentTime", "realRun", "runChainNow", "tryBuilt",
+  "turnOnOrg", "startFirstJob", "turnOffOrg", "setEnabled", "setAgentTime", "realRun", "runChainNow", "tryBuilt",
   // caps, vendors, suppressions
   "setCap", "addVendor", "suppressEmail",
   // the builder and the flow
