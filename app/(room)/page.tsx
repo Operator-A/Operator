@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import { getFloor } from "@/dashboard/data";
 import { goalsByDept } from "@/dashboard/goals";
@@ -13,9 +14,7 @@ import { listProposals } from "@/core/proposals";
 import { KIND_WORDS } from "@/core/proposal-rules";
 import { agentNames } from "@/core/org";
 import { Icon } from "@/dashboard/components/Icon";
-import { TemplatePicker } from "@/dashboard/components/client";
-import { templateList } from "@/core/templates";
-import { installTemplate } from "@/dashboard/orgActions";
+import { inSetup } from "@/core/setup";
 
 // The Desk (docs/company-mode.md, slice 5): home. Goals with where each stands and its head's latest
 // word, then what needs the owner, proposals first. Avery's chat sits beside it (the layout draws it).
@@ -29,6 +28,8 @@ const KIND_LOOK: Record<string, { bg: string; fg: string }> = {
 };
 
 export default async function Desk() {
+  // a new business starts with setup (card 151, docs/setup.md), not an empty Desk
+  if (await inSetup()) redirect("/start");
   const f = await getFloor();
   const now = f.now;
   const open = needs(f, now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value));
@@ -50,8 +51,6 @@ export default async function Desk() {
   const rest = open.filter((x) => x.href !== "/proposals");
   const groups = groupByDepartment(rest, (id) => (org ? deptOf(org, id) : null));
   const props = pending ?? [];
-  // a fresh org (no departments, no agents): start from department templates, or build from nothing
-  const fresh = f.ok && !!org && org.departments.length === 0 && f.crew.length === 0;
 
   return (
     <>
@@ -63,17 +62,6 @@ export default async function Desk() {
 
       {!f.ok && <div className="card" style={{ background: "var(--red-soft)", color: "var(--red-ink)", borderColor: "transparent" }}>{f.problem}</div>}
 
-      {fresh && (
-        <section className="card" style={{ gap: 12 }} aria-labelledby="start-h">
-          <h2 id="start-h" className="card-t">Start your crew</h2>
-          <span className="sub">Pick the departments to start from: each brings its seats on the org chart, agents, routines and a goal, every agent off duty until you approve its playbook. Or start empty and build each agent yourself. First, name the business on Settings: every agent is told who it works for.</span>
-          <TemplatePicker templates={templateList()} install={installTemplate} />
-          <div className="row wrap rule" style={{ gap: 12, justifyContent: "space-between", paddingTop: 12 }}>
-            <span style={{ display: "flex", flexDirection: "column", gap: 2 }}><b style={{ fontSize: 14 }}>Start empty</b><span className="sub">Add departments on Crew &gt; Org chart and build each agent in the builder.</span></span>
-            <Link href="/build" className="btn outline sm">Build an agent</Link>
-          </div>
-        </section>
-      )}
 
       <section className="card" style={{ gap: 12 }} aria-labelledby="goals-h">
         <div className="row wrap" style={{ gap: 12 }}>

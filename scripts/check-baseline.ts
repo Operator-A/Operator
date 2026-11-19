@@ -1,20 +1,25 @@
 // The clean starting migration (card 127): `npm run check:baseline`. Pure: reads files, no database.
 // supabase/baseline/operator_baseline.sql is what a fresh install starts from (scripts/baseline.mjs
 // makes it from a schema-only dump). It must hold every tenant table with org_id, row level security
-// and the org_rows policy, and no rows but the receipts bucket and an empty home org. A migration
-// that adds a table fails here until the baseline is made again.
+// and the org_rows policy, and no rows but the receipts bucket and an empty home org. Since the
+// public repo became the only repo (card 136), the starting migrations never change: a later migration
+// adds a table, held to the same rules (org_id, row level security, org_rows).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { HOME_ORG_ID, ORGS_TABLE, TENANT_TABLES } from "../core/tenancy";
 import { JOB_KINDS } from "../core/job-rules";
 import { MCP_EVENTS } from "../core/mcp-rules";
-import { BASELINE, EE_TABLES, isEeTable } from "./lib/schema";
+import { BASELINE, EE_TABLES, isEeTable, laterMigrations } from "./lib/schema";
 import { brandWords } from "./lib/brand.mjs";
 
 const sql = readFileSync(BASELINE, "utf8");
 // ee_* tables are the paid layer's: the baseline has core's, ee_tables.sql the rest (card 136)
 const eeOnly = TENANT_TABLES.filter(isEeTable);
-const coreTables = TENANT_TABLES.filter((t) => !isEeTable(t));
+// tables made by a migration after the starting two (card 151 on): held to the same rules below
+const later = laterMigrations();
+const laterMade = later.flatMap(({ file, sql: s }) => [...s.replace(/--.*$/gm, "").matchAll(/^create table ([a-z_]+) \(([\s\S]*?)\n\);/gm)].map((m) => ({ file, sql: s, name: m[1], body: m[2] })));
+const laterNames = new Set(laterMade.map((t) => t.name));
+const coreTables = TENANT_TABLES.filter((t) => !isEeTable(t) && !laterNames.has(t));
 const tables = [...sql.matchAll(/^CREATE TABLE public\.([a-z_]+) \(([\s\S]*?)\n\);/gm)].map((m) => ({ name: m[1], body: m[2] }));
 const names = tables.map((t) => t.name).sort();
 assert.deepEqual(names, [...coreTables, ORGS_TABLE].sort(), "the baseline has exactly core's tenant tables and orgs: run scripts/baseline.mjs again after a migration adds or drops a table");
@@ -56,4 +61,16 @@ for (const [, t, body] of eeMade) {
 assert.doesNotMatch(ee, /^\s*(insert|update|delete) /im, "ee_tables.sql holds no rows");
 for (const re of brandWords()) assert.doesNotMatch(ee, re, "ee_tables.sql names no business");
 
-console.log(`check:baseline ok (${tables.length} tables, ${eeOnly.length} in ee_tables.sql)`);
+// later migrations: every table they make is a tenant table held to its org, and they never drop one
+for (const t of laterMade) {
+  assert.ok((TENANT_TABLES as readonly string[]).includes(t.name), `${t.file}: ${t.name} must be in TENANT_TABLES`);
+  assert.match(t.body, /^\s+org_id uuid not null references orgs\(id\)/m, `${t.file}: ${t.name}.org_id uuid not null references orgs(id)`);
+  assert.match(t.sql, new RegExp(`^alter table ${t.name} enable row level security;`, "m"), `${t.file}: ${t.name} row level security`);
+  assert.match(t.sql, new RegExp(`^create policy org_rows on ${t.name} for all to authenticated using \\(org_id = \\(select public\\.jwt_org_id\\(\\)\\)\\)`, "m"), `${t.file}: ${t.name} the org_rows policy`);
+}
+for (const { file, sql: s } of later) {
+  assert.doesNotMatch(s, /^\s*drop table /im, `${file}: a later migration doesn't drop a table`);
+  for (const re of brandWords()) assert.doesNotMatch(s, re, `${file} names no business`);
+}
+
+console.log(`check:baseline ok (${tables.length} tables, ${eeOnly.length} in ee_tables.sql, ${laterMade.length} in ${later.length} later migration${later.length === 1 ? "" : "s"})`);

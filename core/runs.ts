@@ -1,6 +1,7 @@
 import "server-only";
 // Run plumbing shared by every agent: the run log, the enabled flag, the daily budget and
 // department budget checks, and the cron bearer check.
+import { SETUP_AGENT } from "@/core/setup-rules";
 import { traced } from "@/core/trace";
 import { db } from "@/core/db";
 import { agentSpend } from "@/core/usage";
@@ -39,12 +40,17 @@ export interface RunChain { chainId: string; key: string; step: number; parent?:
 /**
  * Why the agent may not run now (disabled, over today's budget, its department over this
  * month's budget, or the business's plan, core/extensions.ts), or null. A Preview (Setup tab) writes and sends nothing, so it may run while
- * the agent is off duty; it still needs budget.
+ * the agent is off duty; it still needs budget. So may a setup message (card 151, docs/setup.md), and
+ * only for the Chief of Staff while the business has no departments yet.
  */
 async function blockedReason(agentId: string, trigger: string) {
   const { data: agent } = await db().from("agents").select("enabled, daily_budget_usd").eq("id", agentId).single();
   if (!agent) return "Agent is not in the agents table.";
-  if (!agent.enabled && trigger !== "preview") return "Agent is disabled.";
+  if (trigger === "setup") {
+    const { count, error } = await db().from("departments").select("id", { count: "exact", head: true });
+    if (error) return `Couldn’t check setup: ${error.message.slice(0, 100)}`;
+    if (agentId !== SETUP_AGENT || count) return "Setup messages are only for the Chief of Staff, before the business has departments.";
+  } else if (!agent.enabled && trigger !== "preview") return "Agent is disabled.";
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
   const spent = await agentSpend(agentId, since.toISOString());
   if (spent >= Number(agent.daily_budget_usd)) return `Daily budget of $${agent.daily_budget_usd} reached ($${spent.toFixed(2)} spent).`;

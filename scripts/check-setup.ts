@@ -1,0 +1,94 @@
+// First-run setup, step 1 (card 151, docs/setup.md): `npm run check:setup`. Pure: reads files, no database.
+import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import {
+  FACT_MAX, FACT_TOPICS, MAX_FACTS, MAX_LEANING, SETUP_AGENT, SETUP_TEMPLATE,
+  cleanFact, factProblem, factsLine, needsSetup, readLeaning, readSetupState, setupDirective, setupPrompt, stateFor,
+} from "../core/setup-rules";
+import { businessLines } from "../core/business-rules";
+import { installRows, ontoSetup } from "../core/install-rules";
+import { mergeTemplates, templateProblems, type Template } from "../core/template-rules";
+
+const read = (f: string) => readFileSync(f, "utf8");
+const tpl = (id: string) => JSON.parse(read(`templates/${id}.json`)) as Template;
+const deptIds = readdirSync("templates").filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).filter((id) => id !== SETUP_TEMPLATE);
+
+// facts: a topic from the list, one short line, at most MAX_FACTS
+assert.equal(factProblem("sells", "Coffee blends", 0), null);
+assert.match(factProblem("price", "x", 0)!, /topic/);
+assert.match(factProblem("sells", "   ", 0)!, /needs words/);
+assert.match(factProblem("sells", "x".repeat(FACT_MAX + 5), 0)!, /at most/);
+assert.match(factProblem("sells", "ok", MAX_FACTS)!, /at most 40 facts/);
+assert.equal(cleanFact("  Sells   coffee.\n "), "Sells coffee");
+assert.equal(cleanFact("a\u0000b"), "a b", "control characters go");
+assert.equal(cleanFact(""), null);
+
+// a run that read a web page saves only suggestions (in code, never the model's say)
+assert.equal(stateFor(true), "suggested");
+assert.equal(stateFor(false), "known");
+
+// leaning: only department template ids, at most MAX_LEANING, each once, strong or likely
+assert.ok(deptIds.length >= 2, "there are department templates to lean toward");
+assert.deepEqual(readLeaning([{ id: deptIds[0], fit: "strong" }], deptIds), { leaning: [{ id: deptIds[0], fit: "strong" }] });
+assert.match((readLeaning([{ id: "astrology", fit: "strong" }], deptIds) as { problem: string }).problem, /isn't a department/);
+assert.match((readLeaning([{ id: SETUP_TEMPLATE, fit: "strong" }], deptIds) as { problem: string }).problem, /isn't a department/, "the Chief of Staff isn't a department to lean toward");
+assert.match((readLeaning([{ id: deptIds[0], fit: "perfect" }], deptIds) as { problem: string }).problem, /strong or likely/);
+assert.match((readLeaning([{ id: deptIds[0], fit: "strong" }, { id: deptIds[0], fit: "likely" }], deptIds) as { problem: string }).problem, /twice/);
+assert.match((readLeaning(Array.from({ length: MAX_LEANING + 1 }, () => ({ id: deptIds[0], fit: "strong" })), deptIds) as { problem: string }).problem, /at most/);
+assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, leaning: [] }, "a stored list with a bad id is dropped, not trusted");
+assert.deepEqual(readSetupState(null, deptIds), { done: false, leaning: [] });
+
+// who goes to setup: a new business, never one with a crew
+assert.equal(needsSetup({ done: false, departments: 0, agentIds: [] }), true, "a brand-new business");
+assert.equal(needsSetup({ done: false, departments: 0, agentIds: [SETUP_AGENT] }), true, "only Avery, from setup");
+assert.equal(needsSetup({ done: false, departments: 2, agentIds: [SETUP_AGENT, "cfo"] }), false, "a business with a crew never");
+assert.equal(needsSetup({ done: false, departments: 0, agentIds: ["scratch"] }), false, "an agent the owner built: not new");
+assert.equal(needsSetup({ done: true, departments: 0, agentIds: [SETUP_AGENT] }), false, "started empty: done");
+
+// agents read known facts only, as background
+const facts = [{ topic: "sells" as const, text: "Coffee blends", state: "known" as const }, { topic: "channels" as const, text: "From a page", state: "suggested" as const }];
+const line = factsLine(facts)!;
+assert.match(line, /Sells: Coffee blends/);
+assert.doesNotMatch(line, /From a page/, "a suggestion counts only after Confirm");
+assert.match(line, /never a claim about a product/);
+assert.equal(factsLine([facts[1]]), null);
+assert.match(businessLines({ name: "Acme", about: null, ownerName: null, facts: line }), /You work for Acme\. What the business has told us/);
+assert.doesNotMatch(businessLines({ name: "Acme", about: null, ownerName: null }), /told us/);
+
+// Avery's setup instructions: the list comes from code, pages are untrusted, she changes nothing
+const dir = setupDirective("Avery", facts, deptIds.map((id) => ({ id, name: id, about: "x" })));
+for (const id of deptIds) assert.ok(dir.includes(`- ${id}:`), `${id} is on her list`);
+assert.match(dir, /untrusted data/);
+assert.match(dir, /don't hire, connect, change or send anything/);
+assert.match(dir, /channels: From a page \(suggested, not confirmed\)/);
+assert.match(setupPrompt([{ role: "owner", text: "hi" }], "We sell tea", "https://tea.example.com/"), /The founder's site: https:\/\/tea\.example\.com\/\n\nThe founder says:\nWe sell tea$/);
+
+// installing departments beside the Avery setup installed: her rows stay, the flow gets a new version
+for (const id of [SETUP_TEMPLATE, ...deptIds]) assert.deepEqual(templateProblems(tpl(id)), [], `${id} is a valid template`);
+let n = 0;
+const all = installRows("x", mergeTemplates([tpl(SETUP_TEMPLATE), tpl(deptIds[0])]), () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`);
+const onto = ontoSetup(all, { agent: SETUP_AGENT, flowVersion: 3 });
+assert.ok(all.agents.some((a) => a.id === SETUP_AGENT));
+assert.ok(!onto.agents.some((a) => a.id === SETUP_AGENT), "her agent isn't inserted again");
+assert.ok(!onto.agent_defs.some((d) => d.agent_id === SETUP_AGENT) && !onto.agent_playbooks.some((p) => p.agent_id === SETUP_AGENT) && !onto.seats.some((s) => s.agent_id === SETUP_AGENT));
+assert.equal(onto.agents.length, all.agents.length - 1);
+assert.equal(onto.crew_flow[0].version, 4, "the merged chains go in as the next version");
+assert.ok(onto.seats.every((s) => s.parent_id === null || onto.seats.some((p) => p.id === s.parent_id)), "no seat hangs from one that isn't inserted");
+
+// the code paths the rules depend on
+const runs = read("core/runs.ts");
+assert.match(runs, /if \(trigger === "setup"\) \{[\s\S]*?if \(agentId !== SETUP_AGENT \|\| count\) return/, "a setup run: only the Chief of Staff, only before departments");
+const setup = read("core/setup.ts");
+assert.match(setup, /allowedDomains: \[host\]/, "Read a web page is held to the founder's own host");
+assert.match(setup, /const state = stateFor\(readAPage\);/, "facts are saved in the state code decides");
+assert.match(setup, /if \(res\.status === "ok" && finished\)/, "facts are saved only after a run that finished");
+assert.match(setup, /checkAddress\(/, "the site address is checked before it is used");
+assert.match(read("app/(room)/page.tsx"), /if \(await inSetup\(\)\) redirect\("\/start"\);/, "the Desk sends a new business to setup");
+assert.doesNotMatch(read("app/(room)/page.tsx"), /TemplatePicker|Start your crew/, "the picker moved to setup");
+
+// the table: its topics are the code's
+const mig = readdirSync("supabase/migrations").find((f) => f.endsWith("_business_facts.sql"))!;
+const topics = [...(/topic in \(([^)]*)\)/.exec(read(`supabase/migrations/${mig}`))?.[1] ?? "").matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+assert.deepEqual(topics, [...FACT_TOPICS], "business_facts.topic allows exactly FACT_TOPICS");
+
+console.log("check:setup ok");

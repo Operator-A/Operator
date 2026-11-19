@@ -19,14 +19,15 @@ measures, planned agents and a whole business's crew); that mechanism is gone.
 | `email-marketing.json` | Email marketing | Head of email marketing (Klaviyo reads), with open seats under it | | Email list size |
 
 These follow the first-version departments in the product definition (finance, prospecting, email
-marketing; store analytics comes with card 159). Onboarding (card 153) will propose them instead of
-the Desk's picker.
+marketing; store analytics comes with card 159). First-run setup (`docs/setup.md`) offers them on
+step 3, ticked where Avery leans toward them; card 153 will propose them from her interview.
 
 ## Installing
 
-The Desk's **Start your crew** card lists the templates with a checkbox each; the owner ticks some
-and installs. `core/install.ts` (`installTemplates`) installs only into an org with no agents,
-departments or seats yet. The picked templates merge (`core/template-rules.ts`, `mergeTemplates`):
+Step 3 of first-run setup (`/start`) lists the department templates with a checkbox each; the owner
+ticks some and installs. `core/install.ts` (`installTemplates`) installs only into an org with no
+agents, departments or seats yet, or one holding only the Chief of Staff that setup installed: then
+her rows stay (`ontoSetup`) and the merged chains go in as the next crew flow version. The picked templates merge (`core/template-rules.ts`, `mergeTemplates`):
 
 - lists are joined in the order `core/templates.ts` lists the files;
 - a chain whose key another picked template used gets that template's steps added, so the morning
