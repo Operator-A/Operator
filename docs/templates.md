@@ -20,12 +20,12 @@ measures, planned agents and a whole business's crew); that mechanism is gone.
 
 These follow the first-version departments in the product definition (finance, prospecting, email
 marketing; store analytics comes with card 159). First-run setup (`docs/setup.md`) offers them on
-step 3, ticked where Avery leans toward them; card 153 will propose them from her interview.
+step 3 as the company Avery proposes from her interview (card 153): the departments she leans toward are on the chart, the rest under Also available.
 
 ## Installing
 
-Step 3 of first-run setup (`/start`) lists the department templates with a checkbox each; the owner
-ticks some and installs. `core/install.ts` (`installTemplates`) installs only into an org with no
+Step 3 of first-run setup (`/start`) shows the departments on the company chart; the owner leaves
+some out or adds others and taps Start this company. `core/install.ts` (`installTemplates`) installs only into an org with no
 agents, departments or seats yet, or one holding only the Chief of Staff that setup installed: then
 her rows stay (`ontoSetup`) and the merged chains go in as the next crew flow version. The picked templates merge (`core/template-rules.ts`, `mergeTemplates`):
 

@@ -7,17 +7,19 @@ import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 import { FACTS_MISSING, departmentTemplates, inSetup, listFacts, setupState } from "@/core/setup";
 import { TEMPLATE_FIT } from "@/dashboard/setup";
-import { SetupChat, FactsPanel, StoreForm, UnlistedTool } from "@/dashboard/components/setup";
+import { SetupChat, FactsPanel, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
 import { Icon } from "@/dashboard/components/Icon";
-import { toolsStep, waitingByTemplate, type TileView } from "@/dashboard/toolsStep";
-import { KeyForm, TemplatePicker, ActionButton } from "@/dashboard/components/client";
+import { toolsStep, type TileView } from "@/dashboard/toolsStep";
+import { KeyForm, ActionButton } from "@/dashboard/components/client";
+import { companyChart } from "@/dashboard/company";
+import { initialPick } from "@/core/company-rules";
 import { claudeSaveKey, ga4PickProperty, mcpSaveKey } from "@/dashboard/connectionActions";
 import { sendSetup, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupStartEmpty, setupToolAsk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
 
 // First-run setup (card 151, docs/setup.md): a new business lands here instead of the Desk. Step 1 is
-// the conversation with Avery; step 2 connects the tools (card 152); steps 3 and 4 are cards 153 and
-// 154 (until then, the department picker).
+// the conversation with Avery; step 2 connects the tools (card 152); step 3 is the company Avery
+// proposes (card 153); step 4 is card 154.
 export const maxDuration = 120;
 
 export default async function Setup({ searchParams }: { searchParams: Promise<{ c?: string; connected?: string; problem?: string }> }) {
@@ -33,7 +35,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const steps = ["Your business", "Tools", "Your company", "First job"];
   const { tiles, shopifyDomain, connected } = await toolsStep(state.leaning.map((l) => l.id), floor.health);
   const open = tiles.find((t) => t.tile.id === sp.c) ?? null;
-  const waits = waitingByTemplate(connected);
+  const chart = companyChart(state.leaning, connected);
   const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected && open ? { ok: true, text: `${open.tile.name} is connected.` } : null;
 
   return (
@@ -97,15 +99,10 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
 
           <section id="step-3" className="card stack" style={{ gap: 12 }} aria-labelledby="company-h">
             <h2 id="company-h" className="card-t">3. Your company</h2>
-            <span className="sub">Pick the departments to start from: each brings its seats on the org chart, agents, routines and a goal, every agent off duty until you approve its playbook. Avery stays in the company seat above them.</span>
+            <span className="sub">{state.leaning.length ? "Avery’s proposal, from what you told her and the tools you connected. Each agent shows its job, the tools it uses and what it adds to the month." : "Avery hasn’t proposed departments yet. Tell her about your business in step 1, or add departments below."}</span>
             {owner ? (
               <>
-                <TemplatePicker templates={templates} install={setupInstall} initial={leaning.length ? leaning.map((l) => l.id) : undefined} />
-                {templates.some((t) => waits[t.id]?.length) && (
-                  <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 4 }} aria-label="Tools each department waits on">
-                    {templates.filter((t) => waits[t.id]?.length).map((t) => <li key={t.id} className="sub">{t.name} waits on {waits[t.id].join(" and ")}: it installs now and starts working once that’s connected.</li>)}
-                  </ul>
-                )}
+                <CompanyChart owner={biz.ownerName || "You"} company={chart.company} depts={chart.depts} initial={initialPick(chart.depts)} install={setupInstall} back="#step-1" />
                 <div className="row wrap rule" style={{ gap: 12, justifyContent: "space-between", paddingTop: 12 }}>
                   <span style={{ display: "flex", flexDirection: "column", gap: 2 }}><b style={{ fontSize: 14 }}>Start empty</b><span className="sub">Keep Avery alone, add departments on Crew &gt; Org chart and build each agent yourself.</span></span>
                   <ActionButton className="btn outline sm" action={setupStartEmpty} follow>Start empty</ActionButton>

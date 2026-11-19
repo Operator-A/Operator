@@ -8,6 +8,9 @@ import {
 import { businessLines } from "../core/business-rules";
 import { installRows, ontoSetup } from "../core/install-rules";
 import { mergeTemplates, templateProblems, type Template } from "../core/template-rules";
+import { agentsOf, companyDepts, companyTotals, initialPick, readPick, runsFor } from "../core/company-rules";
+import { monthCost, runCost } from "../core/cost-rules";
+import { TEMPLATES } from "../core/templates";
 
 const read = (f: string) => readFileSync(f, "utf8");
 const tpl = (id: string) => JSON.parse(read(`templates/${id}.json`)) as Template;
@@ -85,6 +88,36 @@ assert.match(setup, /if \(res\.status === "ok" && finished\)/, "facts are saved 
 assert.match(setup, /checkAddress\(/, "the site address is checked before it is used");
 assert.match(read("app/(room)/page.tsx"), /if \(await inSetup\(\)\) redirect\("\/start"\);/, "the Desk sends a new business to setup");
 assert.doesNotMatch(read("app/(room)/page.tsx"), /TemplatePicker|Start your crew/, "the picker moved to setup");
+
+// ---- Your company (card 153): the chart is drawn in code from Avery's leaning, never by the model
+const fake = (t: Template, id: string, runs: number) => monthCost({ run: runCost(null, id.length / 100), cap: 0.5, runsPerMonth: runs, billing: "own_key" });
+const label = (id: string) => `[${id}]`;
+const depts = companyDepts(TEMPLATES, { leaning: [{ id: "finance", fit: "strong" }, { id: "email-marketing", fit: "likely" }], setupTemplate: "chief-of-staff", toolLabel: label, costOf: fake, waitsOn: { finance: ["Mercury"] } });
+assert.deepEqual(depts.map((d) => d.id), ["finance", "prospecting", "email-marketing"], "every department template, in order, without the company seat");
+assert.deepEqual(depts.map((d) => d.fit), ["strong", null, "likely"]);
+assert.deepEqual(initialPick(depts), ["finance", "email-marketing"], "the chart starts with what Avery leaned toward, strong or likely");
+const fin = depts[0];
+assert.deepEqual(fin.agents.map((a) => [a.id, a.head, a.runsPerMonth]), [["cfo", true, 30], ["bookkeeper", false, 22]], "heads first; runs from the template's routines");
+assert.match(fin.agents[0].job, /numbers/i, "the job is the template's mandate");
+assert.ok(fin.agents[0].tools.every((t) => /^\[[a-z_]+\]$/.test(t)), "tools are labels from the tool list");
+assert.deepEqual(fin.waitsOn, ["Mercury"]);
+assert.deepEqual(depts[2].openSeats, ["Acquisition lead", "Retention lead", "Brand lead", "Growth ops lead"]);
+assert.equal(depts[1].agents.every((a) => a.runsPerMonth === 0), true, "by hand only: $0 a month");
+assert.equal(runsFor("chief_of_staff", TEMPLATES.find((t) => t.id === "chief-of-staff")!.chains, false), 22, "a step's own days win over the chain's");
+assert.equal(runsFor("cfo", [], false), 0);
+const avery = agentsOf(TEMPLATES.find((t) => t.id === "chief-of-staff")!, { toolLabel: label, costOf: fake });
+const tot = companyTotals(depts, ["finance"], avery);
+assert.equal(tot.agents, 3, "the company seat plus the picked departments' agents");
+assert.ok(Math.abs(tot.month - [...avery, ...fin.agents].reduce((s, a) => s + a.cost.month, 0)) < 1e-6, "the total is the sum of its agents");
+assert.ok(Math.abs(tot.atMost - (0.5 * 22 + 0.5 * 30 + 0.5 * 22)) < 1e-6, "at most: caps × runs");
+assert.deepEqual(readPick(["email-marketing", "finance", "finance"], depts), { ids: ["finance", "email-marketing"] }, "picks in template order, each once");
+assert.match((readPick(["chief-of-staff"], depts) as { problem: string }).problem, /isn't a department on the chart/, "the company seat isn't a department to pick");
+assert.match((readPick(["made-up"], depts) as { problem: string }).problem, /isn't a department/);
+assert.match((readPick([], depts) as { problem: string }).problem, /at least one/);
+const actions = read("dashboard/setupActions.ts");
+assert.match(actions, /export async function setupInstall[\s\S]*?readPick\([\s\S]*?installTemplates\(ids\)/, "install receives exactly the checked picks");
+assert.match(read("app/start/page.tsx"), /<CompanyChart /, "step 3 is the company chart");
+assert.doesNotMatch(read("dashboard/components/client.tsx"), /TemplatePicker/, "the old picker is gone");
 
 // the table: its topics are the code's
 const mig = readdirSync("supabase/migrations").find((f) => f.endsWith("_business_facts.sql"))!;

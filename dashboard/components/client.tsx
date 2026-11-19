@@ -148,26 +148,6 @@ export function ActionButton({ action, confirm, className, children, disabled, t
 }
 
 /** Dry run: free, reads real data, writes nothing. Shows the result in place. */
-/** First-run setup, step 3: tick department templates, then install them (core/install.ts). */
-export function TemplatePicker({ templates, install, initial }: { templates: { id: string; name: string; about: string }[]; install: (ids: string[]) => Promise<ActionResult>; initial?: string[] }) {
-  const [picked, setPicked] = useState<string[]>(initial ?? templates.map((t) => t.id));
-  const flip = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
-  const names = templates.filter((t) => picked.includes(t.id)).map((t) => t.name).join(", ");
-  return (
-    <div className="stack" style={{ gap: 0 }}>
-      {templates.map((t) => (
-        <label key={t.id} className="row rule" style={{ gap: 12, paddingTop: 12, paddingBottom: 12, alignItems: "flex-start", cursor: "pointer" }}>
-          <input type="checkbox" checked={picked.includes(t.id)} onChange={() => flip(t.id)} style={{ marginTop: 3 }} />
-          <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}><b style={{ fontSize: 14 }}>{t.name}</b><span className="sub">{t.about}</span></span>
-        </label>
-      ))}
-      <div className="row" style={{ paddingTop: 12 }}>
-        <ActionButton className="btn dark sm" disabled={!picked.length} action={() => install(picked)} confirm={{ title: `Install ${names}?`, body: "Installs these departments, their seats on the org chart, agents, routines and goals into this business. Nothing runs: every agent is off duty, every routine off, and each playbook waits for your approval.", confirmLabel: "Install", kind: "dark" }}>Install {picked.length === templates.length ? "all" : picked.length || ""}</ActionButton>
-      </div>
-    </div>
-  );
-}
-
 export function DryRun({ action, compact }: { action: Act; compact?: boolean }) {
   const [res, setRes] = useState<(ActionResult & { at: string }) | null>(null);
   const [busy, start] = useTransition();

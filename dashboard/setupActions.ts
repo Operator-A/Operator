@@ -2,7 +2,9 @@
 // First-run setup actions (card 151, docs/setup.md). Each checks the login and role again. A message to
 // Avery makes real model calls, so it also needs DASHBOARD_CONTROLS=on, like her chat.
 import { revalidatePath } from "next/cache";
-import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, removeFact, type SetupAnswer } from "@/core/setup";
+import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, removeFact, setupState, type SetupAnswer } from "@/core/setup";
+import { readPick } from "@/core/company-rules";
+import { companyChart } from "./company";
 import { cleanMessage } from "@/core/chat-rules";
 import { withActor } from "@/core/actor";
 import { audit } from "@/core/audit";
@@ -61,7 +63,10 @@ export async function setupRemoveFact(id: string): Promise<ActionResult> {
 export async function setupInstall(picked: string[]): Promise<ActionResult & { href?: string }> {
   const { me, no } = await asRole("owner"); if (no) return no;
   try {
-    const ids = (Array.isArray(picked) ? picked : []).map(String).slice(0, 20);
+    const st = await setupState();
+    const pick = readPick((Array.isArray(picked) ? picked : []).slice(0, 20), companyChart(st.leaning, new Set()).depts);
+    if ("problem" in pick) return { ok: false, text: pick.problem };
+    const ids = pick.ids;
     await ensureAvery();
     const { counts } = await installTemplates(ids);
     await finishSetup();
