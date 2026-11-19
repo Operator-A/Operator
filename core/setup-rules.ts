@@ -62,13 +62,19 @@ export function readLeaning(raw: unknown, templateIds: readonly string[]): { lea
   return { leaning: out };
 }
 
-/** The setup state kept in policies (key "setup"). */
-export interface SetupState { done: boolean; leaning: Leaning[] }
-export const NO_SETUP: SetupState = { done: false, leaning: [] };
+/**
+ * The setup state kept in policies (key "setup"). `offer`: setup installed departments, so the Desk offers
+ * a first job (card 154); `firstJob`: which agent started it and when.
+ */
+export interface SetupState { done: boolean; leaning: Leaning[]; offer: boolean; firstJob: { agentId: string; at: string } | null }
+export const NO_SETUP: SetupState = { done: false, leaning: [], offer: false, firstJob: null };
+const AGENT_ID = /^[a-z][a-z0-9_]{1,39}$/;
 export function readSetupState(raw: unknown, templateIds: readonly string[]): SetupState {
-  const r = (raw && typeof raw === "object" ? raw : {}) as { done?: unknown; leaning?: unknown };
+  const r = (raw && typeof raw === "object" ? raw : {}) as { done?: unknown; leaning?: unknown; offer?: unknown; firstJob?: unknown };
   const l = readLeaning(r.leaning ?? [], templateIds);
-  return { done: r.done === true, leaning: "leaning" in l ? l.leaning : [] };
+  const fj = (r.firstJob && typeof r.firstJob === "object" ? r.firstJob : {}) as { agentId?: unknown; at?: unknown };
+  const firstJob = typeof fj.agentId === "string" && AGENT_ID.test(fj.agentId) && typeof fj.at === "string" && !Number.isNaN(Date.parse(fj.at)) ? { agentId: fj.agentId, at: fj.at } : null;
+  return { done: r.done === true, leaning: "leaning" in l ? l.leaning : [], offer: r.offer === true, firstJob };
 }
 
 /**

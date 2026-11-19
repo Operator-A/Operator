@@ -11,10 +11,10 @@ import type { ToolTileId } from "@/core/tools-step-rules";
 import { monthCostOf } from "./cost";
 import { waitingByTemplate } from "./toolsStep";
 
-const toolLabel = (id: string) => (TOOLS as Record<string, { label?: string }>)[id]?.label ?? id;
+export const toolLabel = (id: string) => (TOOLS as Record<string, { label?: string }>)[id]?.label ?? id;
 
 /** An agent's month on the template's schedule, from its estimate: none of them has run yet. */
-function costOf(t: Template, agentId: string, runsPerMonth: number): MonthCost {
+export function costOf(t: Template, agentId: string, runsPerMonth: number): MonthCost {
   const s = (t.specs as Record<string, { model?: string; effort?: string; tools?: string[]; limits?: { maxSteps?: number; maxCostUsd?: number } }>)[agentId] ?? {};
   return monthCostOf({ model: s.model ?? "", effort: s.effort, tools: s.tools ?? [], maxSteps: s.limits?.maxSteps, maxCostUsd: s.limits?.maxCostUsd }, null, runsPerMonth);
 }

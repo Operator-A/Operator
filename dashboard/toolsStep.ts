@@ -58,3 +58,15 @@ export function waitingByTemplate(connected: ReadonlySet<ToolTileId>): Record<st
     return [t.id, waitingOn(tt, needsOf, connected).map((id) => TOOL_TILES.find((x) => x.id === id)!.name)];
   }));
 }
+
+/** The tiles connected now, without the who and the property list (the Desk's first job, card 154). */
+export async function connectedTiles(health: Record<IntegrationId, boolean>): Promise<Set<ToolTileId>> {
+  const on = await Promise.all(TOOL_TILES.map(async (tile) => {
+    if (!tile.mcp) return null;
+    const st = await mcpStatus(tile.mcp);
+    if (!st?.connected || st.paused || health[tile.mcp as IntegrationId] === false) return null;
+    if (tile.id === "analytics" && !st.settings.propertyId) return null;
+    return tile.id;
+  }));
+  return new Set(on.filter((x): x is ToolTileId => !!x));
+}

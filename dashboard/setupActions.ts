@@ -69,10 +69,10 @@ export async function setupInstall(picked: string[]): Promise<ActionResult & { h
     const ids = pick.ids;
     await ensureAvery();
     const { counts } = await installTemplates(ids);
-    await finishSetup();
+    await finishSetup(true);
     await audit(me, "install_template", ids.join(","), counts);
     revalidatePath("/", "layout");
-    return { ok: true, href: "/", text: `Installed: ${counts.agents ?? 0} agents in ${counts.departments ?? 0} departments, all off duty. Approve each playbook on Crew before it runs.` };
+    return { ok: true, href: "/", text: `Installed: ${counts.agents ?? 0} agents in ${counts.departments ?? 0} departments, all off duty. The Desk shows the first job: one tap approves it and starts it.` };
   } catch (e) { return fail(e); }
 }
 

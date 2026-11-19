@@ -28,6 +28,10 @@ import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlay
 import { loadMemory } from "@/core/memory";
 import { loadOrg, seatPath, setHolder } from "@/core/org";
 import { getFloor, asRole } from "./data";
+import { currentPick } from "./firstJob";
+import { markFirstJob, setupState } from "@/core/setup";
+import { SETUP_AGENT } from "@/core/setup-rules";
+import { firstJobChains, readFirstJobTap } from "@/core/first-job-rules";
 import { planOrgOn } from "./orgPlan";
 import { when } from "./format";
 import { schedWords } from "./schedule";
@@ -64,7 +68,13 @@ export async function realRun(agentId: string): Promise<ActionResult> {
   if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
-  const name = who.name;
+  const res = await startRun(agentId, who.name);
+  await audit(me, "run_now", agentId);
+  return res;
+}
+
+/** Starts a real run in the background (Run now, and the first job's tap). The caller checked the role and Controls. */
+async function startRun(agentId: string, name: string): Promise<ActionResult> {
   // one at a time: a row still "running" inside the 6 minute window means a run is going
   const { data: going } = await db().from("agent_runs").select("id").eq("agent_id", agentId).eq("status", "running").gte("started_at", new Date(Date.now() - 6 * 6e4).toISOString()).limit(1);
   if (going?.length) return { ok: false, text: `${name} is already working. Wait for that run to finish.` };
@@ -77,7 +87,6 @@ export async function realRun(agentId: string): Promise<ActionResult> {
     .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} run failed`, err); return { err }; });
   after(run);
   const first = await Promise.race([started, run]);
-  await audit(me, "run_now", agentId);
   revalidatePath("/", "layout");
   if (first === null) return { ok: true, text: `${name} is working. Keep using the app; ${name} pulses until the run is done.` };
   if ("err" in first) return fail(first.err);
@@ -137,6 +146,50 @@ export async function setAgentTime(agentId: string, t: AgentTime | null, confirm
 
 // ---- The org switch (docs/org-schedule.md). Turning on is launch: Controls on and a confirm.
 // Turning off always works, since it only stops things.
+
+/**
+ * The first job (card 154, docs/setup.md): one tap approves the picked agent's first playbook and
+ * Avery's, puts those two on duty, turns on only their chains and the org switch (every other agent stays
+ * off duty with its playbook waiting), and starts the first run now. The pick is checked in code again.
+ */
+export async function startFirstJob(agentId: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} The first job puts an agent on duty.` };
+  try {
+    const f = await getFloor();
+    const [st, pick] = await Promise.all([setupState(), currentPick(f)]);
+    const tap = readFirstJobTap(agentId, st, pick.job);
+    if ("problem" in tap) return { ok: false, text: tap.problem };
+    const who = f.byId[tap.agentId];
+    if (!who) return { ok: false, text: "Unknown agent." };
+    const ids = [tap.agentId, ...(f.agents[SETUP_AGENT] ? [SETUP_AGENT] : [])];
+    const block = await planBlock({ kind: "agent_on", agentIds: ids }); if (block) return { ok: false, text: block };
+    // each first playbook, as the founder, every step: the card showed them
+    for (const id of ids) {
+      const p = pendingPlaybook(await listPlaybooks(id));
+      if (p) await withActor(me.email, () => approvePlaybook(id, p.id, p.steps.map((_, i) => i)));
+    }
+    const { error } = await db().from("agents").update({ enabled: true }).in("id", ids);
+    if (error) return fail(error.message);
+    // only these two wake: their chains come on, every other agent's stay off
+    const flow = await loadFlow(f.palette);
+    const turned = firstJobChains(flow.flow.chains, ids);
+    if (turned.on.length) await saveFlowVersion({ chains: turned.chains }, `First job: ${turned.on.join(", ")} on`, me.email, flow.version);
+    const plan = firstJobPlan(f, ids, turned.chains);
+    await setOrg(true, me.email);
+    await markFirstJob(tap.agentId);
+    await audit(me, "start_first_job", tap.agentId, { onDuty: ids });
+    const run = await startRun(tap.agentId, who.name);
+    revalidatePath("/", "layout");
+    const avery = plan.wake.find((w) => w.id === SETUP_AGENT);
+    return { ...run, text: `${run.text}${avery?.firstRun ? ` Avery’s first summary comes at ${when(avery.firstRun)} CT.` : ""}` };
+  } catch (e) { return fail(e); }
+}
+
+/** Who wakes and when, for the first job's reply: only `ids` count as in the org. */
+function firstJobPlan(f: Awaited<ReturnType<typeof getFloor>>, ids: readonly string[], chains: Parameters<typeof planOrgOn>[1]) {
+  return planOrgOn(f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: ids.includes(a.id), perRun: a.perRun ?? null })), chains, Date.now());
+}
 
 /** What turning on the org would do now: who wakes, first runs, chains, cost a month. */
 async function orgPlanNow() {

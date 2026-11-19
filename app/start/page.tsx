@@ -19,7 +19,7 @@ import { controlsOn } from "@/dashboard/session";
 
 // First-run setup (card 151, docs/setup.md): a new business lands here instead of the Desk. Step 1 is
 // the conversation with Avery; step 2 connects the tools (card 152); step 3 is the company Avery
-// proposes (card 153); step 4 is card 154.
+// proposes (card 153); step 4 explains the first job, which the Desk offers (card 154).
 export const maxDuration = 120;
 
 export default async function Setup({ searchParams }: { searchParams: Promise<{ c?: string; connected?: string; problem?: string }> }) {
@@ -113,7 +113,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
 
           <section id="step-4" className="card stack" style={{ gap: 8 }} aria-labelledby="job-h">
             <h2 id="job-h" className="card-t">4. First job</h2>
-            <span className="sub">Once your company is in place, the Desk shows what each department can do first. Nothing runs until you approve it.</span>
+            <span className="sub">After Start this company, the Desk picks the first job in code: the agent whose tools are connected and whose work ends in something you approve (the Bookkeeper when your bank is connected). One tap approves its playbook and starts it; every other agent waits for your approval.</span>
           </section>
         </main>
       </div>

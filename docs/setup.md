@@ -91,6 +91,29 @@ Step 3 (card 153) is an org chart drawn in code (`core/company-rules.ts`, `dashb
 
 Every agent still installs off duty with its playbook proposed, and every action stays at Draft.
 
+## First job
+
+After **Start this company** (card 154; `core/first-job-rules.ts`, `dashboard/firstJob.ts`), the
+Desk shows one **First job** card. The founder's call (Nov 19): agents start only after the founder
+approves each first playbook, and this card makes that one tap for the first one.
+
+- **The pick, in code** (`pickFirstJob`): an installed department agent, never the Chief of Staff, with
+  a first playbook waiting and every tool it needs connected. Ranked: a job that ends in an approval
+  card (an `action` tool) first, then templates in order, workers before heads, then seat order. With a
+  bank connected that is the Bookkeeper. With nothing ready, the card says so and links to Connections.
+- **The offer** shows the agent, its job, the playbook steps, the cost (`docs/usage.md`) and what comes
+  back. **Approve and start** (`startFirstJob`, owner only, Controls on) checks the pick again, then
+  approves that agent's first playbook and Avery's, puts those two on duty, turns on only their chains
+  and the org switch, and starts the first run now through `withRun` (the daily budget applies). Every
+  other agent stays off duty with its playbook waiting.
+- **Running, then done**: the steps and a pulse while the run goes, then its summary, its cost and the
+  approvals waiting, for a day. Avery's summary of the day comes at 7:00 CT.
+- **Your other departments**: each says what it waits on, or that it's ready once its playbook is
+  approved on Crew.
+
+Only a business that installed departments in setup is offered a first job (`offer` in the `setup`
+policies row); one that started empty, or never went through setup, doesn't see the card.
+
 Connecting is the same as on Connections: the same profiles, the vault, the owner check, and the
 same refusals of a sign-in or key that carries more than the profile asks for.
 
@@ -108,9 +131,10 @@ from Shopify data (`docs/product-facts.md`).
 - `dashboard/setupActions.ts` (the actions, each checking the role again)
 - `core/tools-step-rules.ts` (pure, tested by `npm run check:tools-step`), `dashboard/toolsStep.ts`
 - `core/company-rules.ts` (pure, tested by `npm run check:setup`), `dashboard/company.ts`
+- `core/first-job-rules.ts` (pure, tested by `npm run check:first-job`), `dashboard/firstJob.ts`, `dashboard/components/firstJob.tsx`, `startFirstJob` in `dashboard/actions.ts`
 - `dashboard/components/setup.tsx` (the conversation, the panel, the store and unlisted-tool forms, the company chart), `app/start/page.tsx`
 - `supabase/migrations/20261220090000_business_facts.sql`
 
 **What it replaces.** The Desk's **Start your crew** card and its `installTemplate` action (card 151),
-step 2's plain link to Connections (card 152), and step 3's department checkboxes (`TemplatePicker`,
-card 153).
+step 2's plain link to Connections (card 152), step 3's department checkboxes (`TemplatePicker`,
+card 153), and "approve each playbook on Crew" as the only way to start the first agent (card 154).
