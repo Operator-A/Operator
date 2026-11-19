@@ -30,6 +30,7 @@ async function check() {
     email: await hasEmail(),
     gmail: await hasGmail(),
     gmail_read: await hasGmailRead(),
+    ga4: await localReady("ga4"),
   };
   let agents: { id: string; enabled: boolean }[] | string = "not checked";
   if (set.supabase) {

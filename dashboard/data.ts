@@ -145,6 +145,8 @@ export function health(): Record<IntegrationId, boolean> {
     // the gateway's receipt-file key, pasted on Connections into the vault
     mercury_files: false,
     vault: vaultReady(),
+    // signed in on Connections, and a property picked: getFloor reads mcp_connections
+    ga4: false,
   };
 }
 
@@ -182,7 +184,8 @@ export const getFloor = cache(async (): Promise<Floor> => {
   // Claude (and web search through it): the business's own key (integrations/anthropic.ts)
   const ck = await mcpStatus(CLAUDE_KEY_ID);
   h.claude = h.web = !!ck?.connected && !ck.paused;
-  const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0 };
+  const ga4 = mcp.find(([id]) => id === "ga4")?.[1];
+  const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0, ga4: !!ga4?.settings.propertyId };
   for (const [id, st] of mcp) if (st?.connected && !st.paused && extra[id] !== false) h[id] = true;
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];

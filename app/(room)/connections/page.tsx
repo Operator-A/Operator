@@ -15,11 +15,12 @@ import { knownServer } from "@/core/connector-rules";
 import { controlsOn } from "@/dashboard/session";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import { mercuryOrgName } from "@/integrations/mercury";
-import { klaviyoPickList, mcpDisconnect, mcpSaveKey, vaultReseal } from "@/dashboard/connectionActions";
+import { ga4PickProperty, klaviyoPickList, mcpDisconnect, mcpSaveKey, vaultReseal } from "@/dashboard/connectionActions";
+import { ga4PropertyList } from "@/integrations/ga4";
 import { when } from "@/dashboard/format";
 
 /** An MCP connection's state for its panel: signed in or not, and Klaviyo's lists to pick the counted one from. */
-interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null }
+interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; properties?: { id: string; name: string; account: string }[] | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null }
 
 
 /** The vault's state: is MCP_SECRET_KEY set, and is every sign-in locked with it. */
@@ -56,7 +57,7 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
       {!srv.readTools.length
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Only the gateway uses this {oauth ? "sign-in" : "key"}, after you approve: {writes.join(", ")}. {oauth ? `Sign-in asks only for: ${srv.scopes.join(", ")}.` : `It should be ${srv.scopes.join(", ")}, and is locked in the vault, never shown again.`}</span>
         : google
-        ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Our own server, run in the app. Agents may read with: {srv.readTools.join(", ")}; it has no tool that drafts, sends, labels or deletes. Sign-in asks Google only for: {srv.scopes.join(", ")}, and is refused if Google grants anything else.</span>
+        ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Our own server, run in the app. Agents may read with: {srv.readTools.join(", ")}; nothing here can change {srv.name}. Sign-in asks Google only for: {srv.scopes.join(", ")}, and is refused if Google grants anything else.</span>
         : oauth
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Code may call only these {srv.name} tools: {srv.readTools.join(", ")}. A tool the server adds later does nothing until it is named in code. Sign-in asks only for: {srv.scopes.join(", ")}.</span>
         : <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Agents may read with: {srv.readTools.join(", ")}.{srv.reportTools.length ? ` Code writes reports with: ${srv.reportTools.join(", ")}; a model never calls those.` : " Nothing here can write."} The key reaches {srv.scopes.join(", ")}, and is locked in the vault, never shown again.</span>}
@@ -73,9 +74,9 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
           {!oauth && <KeyForm label={`New ${c.name} key`} save={mcpSaveKey.bind(null, id)} placeholder={KEY_HINT[id]} replace />}
           <span className="row wrap" style={{ gap: 8 }}>
             {oauth && <a className="btn outline sm" href={`/connections/${id}/connect`}>Sign in again</a>}
-            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: google ? `Google is asked to cancel the sign-in, and it is forgotten here. Google may cancel the other Gmail sign-in too (both use the same app); if it shows Paused, tap Sign in again there.` : oauth ? `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.` : `The key is forgotten here. Agents and reports that use ${c.name} get an error until you paste a key again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
+            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: google ? `Google is asked to cancel the sign-in, and it is forgotten here. Google may cancel the business’s other Google sign-ins too (they use the same app); if one shows Paused, tap Sign in again there.` : oauth ? `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.` : `The key is forgotten here. Agents and reports that use ${c.name} get an error until you paste a key again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
           </span>
-          {google && !s.paused && (
+          {google && id !== "ga4" && !s.paused && (
             <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
               {s.settings.mailbox ? <>Signed in as <b>{s.settings.mailbox}</b>. If that isn’t the business’s mailbox, tap Disconnect, then Connect again with the right Google account.</> : "Couldn’t read which mailbox this is."}
             </span>
@@ -84,6 +85,20 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
             <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
               {v.org ? <>Signed in to <b>{v.org}</b>. If that isn’t the business’s Mercury org, tap Disconnect, then Connect again and pick the business on Mercury’s page.</> : `Couldn’t read which organization this is${v.orgProblem ? `: ${v.orgProblem}` : ""}.`}
             </span>
+          )}
+          {id === "ga4" && !s.paused && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 15, fontWeight: 700 }}>The property agents report on</span><span className="muted" style={{ fontSize: 12.5 }}>Every Analytics tool reads this one property. Agents can’t pick another.</span></span>
+              {v.listsProblem && <span className="soft-box" style={{ fontSize: 12.5 }}>Couldn’t read the properties: {v.listsProblem}</span>}
+              {(v.properties ?? []).map((p) => (
+                <span key={p.id} className="row" style={{ gap: 10, padding: "8px 12px", borderRadius: 12, background: "var(--soft)" }}>
+                  <span style={{ flex: 1, display: "flex", flexDirection: "column" }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{p.name || p.id}</span><span className="muted" style={{ fontSize: 12 }}>{p.account} · {p.id}</span></span>
+                  {s.settings.propertyId === p.id
+                    ? <span className="pill sm" style={{ background: "var(--mint-soft)", color: "var(--mint-ink)" }}>Reporting</span>
+                    : <ActionButton className="btn outline sm" action={ga4PickProperty.bind(null, p.id)}>Use this one</ActionButton>}
+                </span>
+              ))}
+            </div>
           )}
           {id === "klaviyo" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -227,7 +242,11 @@ export default async function Connections({ searchParams }: { searchParams: Prom
     if (status?.connected && !status.paused && sel.mcp === "mercury") {
       try { org = await mercuryOrgName(); } catch (e) { orgProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
     }
-    mcp = { status, lists, listsProblem, log, vault, org, orgProblem };
+    let properties: McpView["properties"] = null;
+    if (status?.connected && !status.paused && sel.mcp === "ga4") {
+      try { properties = await ga4PropertyList(); } catch (e) { listsProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
+    }
+    mcp = { status, lists, listsProblem, properties, log, vault, org, orgProblem };
   }
   const more = await Promise.all((sel?.mcpMore ?? []).map(async (id) => {
     const [status, log] = await Promise.all([mcpStatus(id), mcpLog(id)]);
