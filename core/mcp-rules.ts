@@ -161,6 +161,21 @@ export const MCP_SERVERS = {
     writeTools: [{ tool: "gmail_create_draft", actionType: "gmail.create_draft" }],
     signInHint: "Sign in as the same business mailbox. Only the gateway uses this sign-in, to put an email you approved in Drafts; you send it from Gmail.",
   },
+  ga4: {
+    id: "ga4",
+    name: "Google Analytics",
+    // Our own server (integrations/ga4-server.ts) over Google Analytics' Data and Admin APIs (card 152b).
+    // Google's own Analytics MCP server runs on a person's machine with their own credentials, so it
+    // can't be a business's connection. This sign-in is granted analytics.readonly alone: Google refuses
+    // it any change to the account. Each tool runs one fixed report on the property the owner picked.
+    auth: "google",
+    url: "https://analyticsdata.googleapis.com/v1beta",
+    readTools: ["ga4_properties", "ga4_overview", "ga4_top_pages", "ga4_channels"],
+    reportTools: [],
+    scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
+    writeTools: [],
+    signInHint: "Sign in with a Google account that can see the business’s Google Analytics, and leave the one box Google shows ticked.",
+  },
 } as const satisfies Record<string, McpServer>;
 export type McpId = keyof typeof MCP_SERVERS;
 export const MCP_IDS = Object.keys(MCP_SERVERS) as McpId[];

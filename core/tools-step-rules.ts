@@ -13,7 +13,7 @@ export interface ToolTile {
   /** What agents get from it, in a few words. */
   gives: string;
   icon: string;
-  /** The sign-in or key on Connections it stands for. Null while it isn't built (Google Analytics until card 152b). */
+  /** The sign-in or key on Connections it stands for. Null for a tool that isn't built yet. */
   mcp: McpId | null;
   /** Click-by-click, in the order the founder does them. */
   steps: readonly string[];
@@ -60,8 +60,13 @@ export const TOOL_TILES: readonly ToolTile[] = [
     also: { mcp: "gmail", label: "Gmail drafts", why: "Prospecting puts each email you approve in Drafts with a second sign-in that can only make drafts. Only the gateway uses it, and you send every email from Gmail." },
   },
   {
-    id: "analytics", name: "Google Analytics", gives: "Visits, pages and conversions", icon: "chart-line", mcp: null,
-    steps: [],
+    id: "analytics", name: "Google Analytics", gives: "Visits, pages and conversions", icon: "chart-line", mcp: "ga4",
+    steps: [
+      "Tap Connect Google Analytics below. Google’s own sign-in page opens.",
+      "Pick a Google account that can see the business’s Analytics (any role, even Viewer, is enough).",
+      "Google shows one box, to see your Analytics data. Leave it ticked and tap Continue.",
+      "Back here, if the account sees more than one property, tap Use this one next to the business’s site.",
+    ],
   },
 ];
 
@@ -77,6 +82,7 @@ export const SCOPE_WORDS: Record<string, string> = {
   read: "see accounts, balances, charges and categories. It can’t move money or change anything",
   offline_access: "stay signed in, so morning runs work while you sleep",
   "https://www.googleapis.com/auth/gmail.readonly": "search and read email. Google refuses it anything that drafts, sends, labels or deletes",
+  "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
   "the read-only app’s read scopes (a key with any write scope is refused)": "read orders, products and stock. A key that can change anything is refused",
 };
@@ -90,7 +96,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics",
 };
 
 /** A template's tools, from every agent's spec in it. */
