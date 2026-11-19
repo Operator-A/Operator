@@ -8,6 +8,7 @@ import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
 import { SHOPIFY_DOCS, SHOPIFY_QUERIES, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, writeScopes } from "../core/shopify-queries";
 import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
+import { GA4_TOOLS, checkGa4Args, dateRange, rate, readChannels, readOverview, readProperties, readTopPages, reportBodies } from "../core/ga4-rules";
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { envWrapper, isBound, keyIdOf, newDataKey, open, seal, vaultKey } from "../core/vault";
@@ -298,6 +299,47 @@ assert.equal(scopeProblem([RO], [RO]), null);
 assert.match(scopeProblem([RO, COMPOSE], [RO]) ?? "", /more than it needs/, "an older grant riding along is refused");
 assert.match(scopeProblem([], [RO]) ?? "", /wasn't granted/, "an unticked box is refused");
 assert.match(scopeProblem(null, [RO]) ?? "", /didn't say/);
+// ---- Google Analytics on our own server, signed in with Google (card 152b)
+const GA = "https://www.googleapis.com/auth/analytics.readonly";
+assert.ok(isGoogle("ga4") && usesConnect("ga4") && !isHosted("ga4"));
+assert.deepEqual([...MCP_SERVERS.ga4.scopes], [GA], "the Analytics sign-in is granted analytics.readonly alone");
+assert.deepEqual(MCP_SERVERS.ga4.writeTools, [], "the Analytics sign-in has no write tools");
+assert.deepEqual(checkedTools("ga4"), [...GA4_TOOLS], "what our server serves to the Analytics sign-in");
+assert.match(scopeProblem([GA, "https://www.googleapis.com/auth/analytics.edit"], [GA]) ?? "", /more than it needs/, "an edit grant riding along is refused");
+for (const srv of Object.values(MCP_SERVERS) as McpServer[]) for (const sc of srv.scopes) assert.ok(!/analytics\.(edit|manage)|auth\/analytics$/.test(sc), `${srv.id} never asks for ${sc}`);
+// inputs: a period and a row limit only; the property never comes from a tool's input
+assert.deepEqual(checkGa4Args("ga4_overview", {}), { tool: "ga4_overview", period: "last_30_days" });
+assert.deepEqual(checkGa4Args("ga4_top_pages", { period: "last_7_days", limit: 5 }), { tool: "ga4_top_pages", period: "last_7_days", limit: 5 });
+assert.deepEqual(checkGa4Args("ga4_properties", {}), { tool: "ga4_properties" });
+for (const [tool, args, why] of [
+  ["ga4_overview", { property: "123456" }, /unknown input: property/],
+  ["ga4_overview", { period: "yesterday" }, /period is one of/],
+  ["ga4_top_pages", { limit: 500 }, /1 to 20/],
+  ["ga4_channels", { limit: 2.5 }, /1 to 20/],
+  ["ga4_run_report", {}, /isn't a Google Analytics tool/],
+  ["ga4_properties", { account: "x" }, /unknown input/],
+] as const) { const r = checkGa4Args(tool, args); assert.ok("problem" in r && why.test(r.problem), `${tool} ${JSON.stringify(args)}`); }
+// the reports are fixed in code
+assert.deepEqual(dateRange("last_7_days"), { startDate: "7daysAgo", endDate: "yesterday" });
+const ov = reportBodies({ tool: "ga4_overview", period: "last_30_days" });
+assert.equal(ov.length, 2);
+assert.deepEqual((ov[0].metrics as { name: string }[]).map((x) => x.name), ["sessions", "totalUsers", "screenPageViews", "keyEvents"]);
+assert.equal(reportBodies({ tool: "ga4_top_pages", period: "last_7_days", limit: 3 })[0].limit, 3);
+assert.equal((reportBodies({ tool: "ga4_channels", period: "last_7_days", limit: 3 })[0].dimensions as { name: string }[])[0].name, "sessionDefaultChannelGroup");
+// reading replies: numbers parsed in code, rates worked out in code
+assert.deepEqual(readProperties({ accountSummaries: [{ displayName: "Acme", propertySummaries: [{ property: "properties/123456", displayName: "acme.com" }, { property: "properties/x", displayName: "bad" }] }] }), [{ id: "123456", name: "acme.com", account: "Acme" }]);
+assert.deepEqual(readProperties({}), []);
+const ovr = readOverview({ rows: [{ metricValues: [{ value: "200" }, { value: "150" }, { value: "600" }, { value: "7" }] }] }, { rows: [{ dimensionValues: [{ value: "20261118" }], metricValues: [{ value: "90" }, { value: "80" }, { value: "300" }, { value: "3" }] }] });
+assert.deepEqual(ovr.totals, { sessions: 200, users: 150, page_views: 600, key_events: 7, key_events_per_100_sessions: 3.5 });
+assert.deepEqual(ovr.days, [{ date: "2026-11-18", sessions: 90, users: 80, page_views: 300, key_events: 3 }]);
+assert.equal(rate(1, 0), 0);
+assert.deepEqual(readTopPages({ rows: [{ dimensionValues: [{ value: "/shop" }], metricValues: [{ value: "40" }, { value: "30" }] }, { dimensionValues: [{ value: "/" }], metricValues: [{ value: "60" }, { value: "x" }] }] }), { pages: [{ path: "/shop", page_views: 40, sessions: 30 }, { path: "/", page_views: 60, sessions: 0 }], page_views_listed: 100 });
+assert.deepEqual(readChannels({ rows: [{ dimensionValues: [{ value: "Organic Search" }], metricValues: [{ value: "50" }, { value: "2" }] }] }), { channels: [{ channel: "Organic Search", sessions: 50, key_events: 2, key_events_per_100_sessions: 4 }], sessions_listed: 50 });
+// Analytics' APIs: only reads, and only our server calls them
+const g4api = readFileSync("integrations/ga4-api.ts", "utf8");
+assert.deepEqual([...g4api.matchAll(/https:\/\/[a-z.]+googleapis\.com\/v1beta/g)].map((x) => x[0]).sort(), ["https://analyticsadmin.googleapis.com/v1beta", "https://analyticsdata.googleapis.com/v1beta"]);
+assert.ok(!/"DELETE"|"PUT"|"PATCH"|:batchUpdate|:create|\/userLinks|\/dataStreams|:archive/.test(g4api), "ga4-api.ts only lists properties and runs reports");
+assert.match(readFileSync("integrations/ga4-server.ts", "utf8"), /ga4Server\(profile: McpId, token: string, propertyId: string \| null\)/, "the property comes from the connection's settings");
 // every Gmail tool input is checked before it reaches a URL or a draft
 assert.deepEqual(checkGmailArgs("gmail_search", { q: "$12.50 after:2026/11/01" }), { tool: "gmail_search", q: "$12.50 after:2026/11/01", max: 3 });
 assert.deepEqual(checkGmailArgs("gmail_message", { id: "18c2a9f0e1b2c3d4" }), { tool: "gmail_message", id: "18c2a9f0e1b2c3d4", maxChars: 6000 });
@@ -367,6 +409,8 @@ assert.deepEqual(writers, [], "callWriteTool is for core/gateway only");
 const importers = (mod: string) => ["core", "agents", "templates", "dashboard", "app", "integrations"].flatMap(files).filter((f) => new RegExp(`from "[^"]*/${mod}"`).test(readFileSync(f, "utf8")));
 assert.deepEqual(importers("gmail-api"), ["integrations/gmail-server.ts"]);
 assert.deepEqual(importers("gmail-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("ga4-api"), ["integrations/ga4-server.ts"]);
+assert.deepEqual(importers("ga4-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("shopify-api"), ["integrations/shopify-server.ts"]);
 assert.deepEqual(importers("shopify-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mercury-files-server"), ["integrations/mcp.ts"]);

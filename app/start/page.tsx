@@ -11,7 +11,7 @@ import { SetupChat, FactsPanel, StoreForm, UnlistedTool } from "@/dashboard/comp
 import { Icon } from "@/dashboard/components/Icon";
 import { toolsStep, waitingByTemplate, type TileView } from "@/dashboard/toolsStep";
 import { KeyForm, TemplatePicker, ActionButton } from "@/dashboard/components/client";
-import { claudeSaveKey, mcpSaveKey } from "@/dashboard/connectionActions";
+import { claudeSaveKey, ga4PickProperty, mcpSaveKey } from "@/dashboard/connectionActions";
 import { sendSetup, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupStartEmpty, setupToolAsk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
 
@@ -150,7 +150,22 @@ function ToolTileCard({ t, on }: { t: TileView; on: boolean }) {
 function ToolPanel({ t, owner, shopifyDomain }: { t: TileView; owner: boolean; shopifyDomain: string }) {
   const { tile } = t;
   if (t.state === "coming") {
-    return <div className="card stack" style={{ gap: 8, background: "var(--soft)" }}><b style={{ fontSize: 15 }}>{tile.name}</b><span className="sub">Coming next: a read-only connection that asks Google only to read your Analytics. Skip it for now; it shows up here when it’s ready.</span></div>;
+    return <div className="card stack" style={{ gap: 8, background: "var(--soft)" }}><b style={{ fontSize: 15 }}>{tile.name}</b><span className="sub">Coming soon. Skip it for now; it shows up here when it’s ready.</span></div>;
+  }
+  if (t.pick) {
+    return (
+      <div className="card stack" style={{ gap: 10, background: "var(--soft)" }} aria-label="Pick the Analytics property">
+        <b style={{ fontSize: 16 }}>Which site should agents report on?</b>
+        <span className="sub">Google signed in. Every Analytics tool reads the one property you pick; agents can’t pick another.</span>
+        {!t.pick.length && <span className="soft-box" style={{ fontSize: 13 }}>Couldn’t read the properties. Try again on <Link href="/connections?c=analytics">Connections</Link>.</span>}
+        {t.pick.map((p) => (
+          <span key={p.id} className="row" style={{ gap: 10, padding: "8px 12px", borderRadius: 12, background: "var(--card)" }}>
+            <span style={{ flex: 1, display: "flex", flexDirection: "column" }}><span style={{ fontSize: 14, fontWeight: 600 }}>{p.name || p.id}</span><span className="muted" style={{ fontSize: 12 }}>{p.account}</span></span>
+            {owner && <ActionButton className="btn outline sm" action={ga4PickProperty.bind(null, p.id)}>Use this one</ActionButton>}
+          </span>
+        ))}
+      </div>
+    );
   }
   const token = tile.id === "shopify";
   return (

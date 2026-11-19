@@ -12,6 +12,7 @@ import { knownByAddress } from "@/core/connector-rules";
 import { askFor, closeRequest } from "@/core/connector-requests";
 import { controlsOn } from "./session";
 import { klaviyoLists } from "@/integrations/klaviyo";
+import { ga4PropertyList } from "@/integrations/ga4";
 import type { ActionResult } from "./actions";
 import { asRole } from "./data";
 
@@ -68,6 +69,20 @@ export async function vaultReseal(): Promise<ActionResult> {
     const bad = r.unreadable.length ? ` ${r.unreadable.join(", ")} couldn’t be unlocked with either key: sign in to ${r.unreadable.length === 1 ? "it" : "them"} again.` : "";
     await audit(me, "vault_reseal", null, { moved: r.moved, unreadable: r.unreadable.length });
     return done(`${r.moved} sign-in${r.moved === 1 ? "" : "s"} moved onto the current key.${bad}${r.unreadable.length ? "" : " You can remove MCP_SECRET_KEY_OLD now."}`);
+  } catch (e) { return fail(e); }
+}
+
+/** The Google Analytics property every Analytics tool reports on (card 152b): one the sign-in can see, picked by an owner. */
+export async function ga4PickProperty(propertyId: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    const p = (await ga4PropertyList()).find((x) => x.id === String(propertyId));
+    if (!p) return { ok: false, text: "That property isn’t one this Google sign-in can see." };
+    await saveMcpSetting("ga4", "propertyId", p.id);
+    await saveMcpSetting("ga4", "propertyName", p.name);
+    await audit(me, "pick_ga4_property", p.id);
+    revalidatePath("/start");
+    return done(`Analytics now reports on “${p.name}”.`);
   } catch (e) { return fail(e); }
 }
 

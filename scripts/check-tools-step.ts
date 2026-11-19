@@ -22,12 +22,13 @@ for (const t of TOOL_TILES) {
   for (const p of permissionsOf(t)) assert.notEqual(p.words, p.scope, `${t.id}: "${p.scope}" has words in SCOPE_WORDS`);
   if (t.also) assert.ok(MCP_SERVERS[t.also.mcp], `${t.id}: its second sign-in is a profile`);
 }
-assert.ok(TOOL_TILES.some((t) => t.id === "analytics"), "Google Analytics has a tile (card 152b builds it)");
+assert.equal(TOOL_TILES.find((t) => t.id === "analytics")?.mcp, "ga4", "Google Analytics connects our own read-only server (card 152b)");
 assert.ok(Object.keys(SCOPE_WORDS).length >= 9);
 
 // every *_CONNECTED a tool needs is a tile, so no department's need is missed
 const needs = new Set(Object.values(TOOLS as Record<string, { needs?: readonly string[] }>).flatMap((t) => t.needs ?? []).filter((n) => n.endsWith("_CONNECTED")));
 for (const n of needs) if (n !== "NOTION_CONNECTED") assert.ok(NEED_TILE[n], `${n} maps to a tile`);
+assert.ok(needs.has("ANALYTICS_CONNECTED"), "the Analytics tools need the Analytics sign-in");
 
 // which tiles each department needs comes from its tools
 assert.deepEqual(tilesFor(tpl("finance"), needsOf), ["shopify", "mercury"]);
@@ -52,7 +53,7 @@ assert.deepEqual(routeUnlisted("gmail"), { kind: "tile", id: "gmail", name: "Gma
 assert.equal((routeUnlisted("Notion") as { kind: string }).kind, "builtIn");
 assert.deepEqual(routeUnlisted("Post Hog"), { kind: "known", name: "PostHog", href: "/connections?s=new&known=posthog" });
 assert.deepEqual(routeUnlisted("Square"), { kind: "ask", name: "Square" });
-assert.equal((routeUnlisted("Google Analytics") as { kind: string }).kind, "ask", "until 152b, Analytics is a request");
+assert.deepEqual(routeUnlisted("Google Analytics"), { kind: "tile", id: "analytics", name: "Google Analytics" });
 assert.match((routeUnlisted("https://evil.example") as { problem: string }).problem, /no link/);
 assert.match((routeUnlisted("  ") as { problem: string }).problem, /Name the service/);
 const actions = read("dashboard/setupActions.ts");
