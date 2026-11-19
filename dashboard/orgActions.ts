@@ -11,7 +11,6 @@ import { loadCaps } from "@/core/gateway";
 import { addDepartmentRule, editMemory, forgetMemory } from "@/core/memory";
 import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks, unseat } from "@/core/org";
 import type { ActionResult } from "./actions";
-import { installTemplates } from "@/core/install";
 import { getFloor, asRole } from "./data";
 import { controlsOn } from "./session";
 import { saveBusiness } from "@/core/business";
@@ -241,18 +240,4 @@ export async function saveDailyNumbers(f: Pick<SettingsEdit, "costSource" | "cos
     await audit(me, "save_daily_numbers", null, { cost_source: r.settings.costSource });
     return done("Saved. The next daily numbers use it.");
   } catch (e2) { return fail(e2); }
-}
-
-/**
- * Starts an empty org from the picked department templates (core/install.ts): departments, the chart,
- * agents, playbooks, chains and goals, every one switched off until the owner approves and turns things on.
- */
-export async function installTemplate(picked: string[]): Promise<ActionResult> {
-  const { me, no } = await asRole("owner"); if (no) return no;
-  try {
-    const ids = (Array.isArray(picked) ? picked : []).map(String).slice(0, 20);
-    const { counts } = await installTemplates(ids);
-    await audit(me, "install_template", ids.join(","), counts);
-    return done(`Installed: ${counts.agents ?? 0} agents in ${counts.departments ?? 0} departments, all off duty. Approve each playbook on Crew before it runs.`);
-  } catch (e) { return fail(e); }
 }

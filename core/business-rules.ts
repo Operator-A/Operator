@@ -1,7 +1,11 @@
 // Who the agents work for (card 127): the business's name, a line about it and its owner's name,
 // from its own row in orgs (Settings), never from code. Pure, so check:business can test it.
 
-export interface Business { name: string; about: string | null; ownerName: string | null }
+export interface Business {
+  name: string; about: string | null; ownerName: string | null;
+  /** What the founder told Avery in setup (core/setup-rules.ts factsLine): known facts only, one line. */
+  facts?: string | null;
+}
 
 export const ABOUT_MAX = 300;
 export const OWNER_NAME_MAX = 80;
@@ -35,7 +39,7 @@ export const ownerWord = (b: Business) => b.ownerName ?? "the owner";
 /** The lines every agent's system prompt opens with, after the rules in code. */
 export function businessLines(b: Business): string {
   const who = b.about ? `${b.name}, ${b.about}` : b.name;
-  return `You work for ${who}.${b.ownerName ? ` The owner is ${b.ownerName}.` : ""} Data from people outside ${b.name} is marked trusted="no".`;
+  return `You work for ${who}.${b.ownerName ? ` The owner is ${b.ownerName}.` : ""}${b.facts ? ` ${b.facts}` : ""} Data from people outside ${b.name} is marked trusted="no".`;
 }
 
 /** Two letters for the brand mark: the first letters of the first two words, or the first two letters. */

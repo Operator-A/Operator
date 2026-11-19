@@ -102,3 +102,20 @@ export function installRows(from: string, crew: Crew, makeId: () => string = ran
     goals: crew.goals.map((g) => ({ department_id: g.department, title: g.title, measure: g.measure, target: g.target, start_value: null, due_on: null, state: "active" })),
   };
 }
+
+/**
+ * The rows for installing departments onto a business that setup started (card 151): it already holds
+ * the Chief of Staff template, so her agent, spec, playbook and seat are left as they are, and the
+ * chains (merged with hers) go in as the next version of the org's flow.
+ */
+export function ontoSetup(rows: InstallRows, keep: { agent: string; flowVersion: number }): InstallRows {
+  const mine = (r: Record<string, unknown>) => r.agent_id === keep.agent || r.id === keep.agent;
+  return {
+    ...rows,
+    agents: rows.agents.filter((r) => !mine(r)),
+    agent_defs: rows.agent_defs.filter((r) => !mine(r)),
+    agent_playbooks: rows.agent_playbooks.filter((r) => !mine(r)),
+    seats: rows.seats.filter((r) => r.agent_id !== keep.agent),
+    crew_flow: rows.crew_flow.map((f) => ({ ...f, version: keep.flowVersion + 1 })),
+  };
+}

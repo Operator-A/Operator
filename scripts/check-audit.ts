@@ -19,7 +19,9 @@ const AUDITED = [
   // people and roles
   "peopleAdd", "peopleSetRole", "peopleRemove",
   // the business's own words, which every agent is told
-  "saveBusinessProfile", "saveWhereThingsGo", "saveProductFacts", "saveDailyNumbers", "installTemplate",
+  "saveBusinessProfile", "saveWhereThingsGo", "saveProductFacts", "saveDailyNumbers",
+  // first-run setup: facts every agent is told, and installing departments
+  "setupAddFact", "setupEditFact", "setupConfirmFact", "setupRemoveFact", "setupInstall", "setupStartEmpty",
   // the org chart: budgets, email caps, who holds a seat, drafts routing
   "orgSetDeptBudget", "orgSetDeptEmails", "placeAgent", "orgSetHolder", "orgSetLeadChecks",
   // proposals change an agent's spec or routine
@@ -57,9 +59,10 @@ const NOT_AUDITED: Record<string, string> = {
   planJobDone: "a to-do ticked",
   proposalCreate: "only a suggestion; accepting it is audited",
   sendToAvery: "a chat message, kept in the chat",
+  sendSetup: "a setup message, kept in the chat; withRun logs the run",
 };
 
-const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts"];
+const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupActions.ts"];
 const seen = new Set<string>();
 for (const f of files) {
   const src = readFileSync(f, "utf8");

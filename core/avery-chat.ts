@@ -45,7 +45,8 @@ export async function askedIn(runId: string): Promise<string | null> {
   return (data?.text as string | undefined) ?? null;
 }
 
-async function keep(row: { role: "owner" | "avery"; text: string; run_id?: string | null; notes?: string[] }): Promise<boolean> {
+/** Saves one side of the conversation (also used by setup, core/setup.ts). */
+export async function keepChat(row: { role: "owner" | "avery"; text: string; run_id?: string | null; notes?: string[] }): Promise<boolean> {
   const { error } = await db().from("avery_chat").insert({ role: row.role, text: row.text.slice(0, 4000), run_id: row.run_id ?? null, notes: row.notes ?? [] });
   return !error;
 }
@@ -185,7 +186,7 @@ export async function askAvery(message: string): Promise<ChatAnswer> {
   if ("problem" in door) return { ok: false, reply: door.problem, notes: [], runId: null, costUsd: 0, kept: false };
   const { org, agentId, spec: base } = door;
   const history = (await chatHistory(12)) ?? [];
-  const kept = await keep({ role: "owner", text: message });
+  const kept = await keepChat({ role: "owner", text: message });
   const live = await liveAgentIds();
   const names = await agentNames([...live]);
   const reach: ChatReach = { agents: [...live].map((id) => ({ id, name: names[id] ?? id })), departments: org.departments.map((d) => ({ id: d.id, name: d.name })) };
@@ -216,6 +217,6 @@ export async function askAvery(message: string): Promise<ChatAnswer> {
   }).catch((e: unknown) => ({ status: "failed" as const, summary: `I couldn't answer that: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`, costUsd: 0, runId: null }));
   const notes = savedLines(reports);
   const reply = res.status === "skipped" ? `I can't answer right now: ${res.summary}` : (finished && said ? said : res.summary).slice(0, MAX_REPLY);
-  const keptReply = kept && await keep({ role: "avery", text: reply, run_id: res.runId, notes });
+  const keptReply = kept && await keepChat({ role: "avery", text: reply, run_id: res.runId, notes });
   return { ok: res.status === "ok", reply, notes, runId: res.runId, costUsd: res.costUsd ?? 0, kept: !!keptReply };
 }

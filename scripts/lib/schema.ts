@@ -20,6 +20,18 @@ export const BASELINE = existsSync("supabase/baseline/operator_baseline.sql")
 export const isEeTable = (t: string) => t.startsWith("ee_");
 
 /** The paid layer's tables: supabase/baseline here, the second migration in the public repo (card 136). */
+/**
+ * The migrations after the two starting ones (card 151 on): each later file in supabase/migrations,
+ * by name. Empty in a repo that keeps its history from the start (hasHistory), where check:tenancy
+ * reads every file instead.
+ */
+export const laterMigrations = (): { file: string; sql: string }[] => {
+  if (hasHistory || !existsSync(MIGRATIONS)) return [];
+  const all = readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort();
+  const ee = all.findIndex((f) => f.endsWith("_ee_tables.sql"));
+  return (ee < 0 ? [] : all.slice(ee + 1)).map((file) => ({ file, sql: readFileSync(join(MIGRATIONS, file), "utf8") }));
+};
+
 export const EE_TABLES = existsSync("supabase/baseline/ee_tables.sql")
   ? "supabase/baseline/ee_tables.sql"
   : join(MIGRATIONS, readdirSync(MIGRATIONS).filter((f) => f.endsWith("_ee_tables.sql")).sort()[0] ?? "missing_ee_tables.sql");

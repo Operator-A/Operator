@@ -124,7 +124,7 @@ export interface ToolDef {
    * them to the API as server tools, so code never calls them and a playbook can't hold them.
    * What they return is the web, so they are never trusted.
    */
-  server?: { type: "web_search_20260209" | "web_fetch_20260209"; maxUses: number };
+  server?: { type: "web_search_20260209" | "web_fetch_20260209"; maxUses: number; allowedDomains?: string[] };
   /**
    * Report tools that save numbers code works out again itself and never use the model's words
    * (Morgan's snapshot). In a playbook run they are delivered as soon as every playbook step has
