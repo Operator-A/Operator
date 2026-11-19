@@ -24,6 +24,9 @@ import { goalProgress } from "@/core/goals";
 import { planProposal, proposalTitle, toolInfoOf } from "@/core/proposal-rules";
 import { MAX_PLAN_LINES, checkLine } from "@/core/plan-rules";
 import { saveReview, savePlan, weekView } from "@/core/plans";
+import { syncBooks } from "@/core/books/sync";
+import { collectionFacts, type CollectionFacts, type ShopifyCollectionResult } from "@/core/product-facts-rules";
+import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
@@ -36,7 +39,7 @@ import { hasGmail } from "@/integrations/gmail";
 import { klaviyoListSize, klaviyoLists, klaviyoReport } from "@/integrations/klaviyo";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Pick, ReportInput, ToolDef } from "./types";
-import { EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SUPABASE, daysParam, usd } from "./shared";
+import { EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
 import { packTools } from "@/templates";
 
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
@@ -95,7 +98,28 @@ const TOOLS_LIST: ToolDef[] = [
     },
   },
 
-  // ---- Wholesale (slice 7): what Rowan may claim, and who is already on the leads list
+  // ---- What agents may say about the products (docs/product-facts.md): the only facts about
+  // products, lots, origins or certifications an outside message may claim. From Shopify and the
+  // owner's own offer terms on Settings; the model picks nothing, so nothing here takes a param.
+  {
+    id: "product_facts", label: "Product facts", detail: "What the business offers, from its own Shopify store and Settings: the active products in the collections chosen on Settings (name, description, type, tags, price range and only the product fields chosen there), plus the owner's offer terms. The only facts an outside message may claim about products",
+    kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async () => {
+      const s = await settings();
+      const collections: CollectionFacts[] = [];
+      for (const collection of s.productCollections) {
+        const c = collectionFacts((await callMcpTool("shopify", "shopify_product_facts", { collection })) as ShopifyCollectionResult, s.productFields);
+        if (c) collections.push(c);
+      }
+      const products = collections.reduce((n, c) => n + c.products.length, 0);
+      return {
+        data: { site: s.siteUrl, offerTerms: s.offerTerms, collections, ...(s.productCollections.length ? {} : { note: "No collections are chosen on Settings, so there are no product facts to claim." }) },
+        numbers: { collections: collections.length, products },
+      };
+    },
+  },
+
+  // ---- Wholesale (slice 7): who is already on the leads list
   // Klaviyo over its MCP server (company mode slice 6): read tools only, each one a named server
   // tool in core/mcp-rules.ts. Counts and rates are added up in code from the raw reply. Names in
   // Klaviyo are the business's own, but the reply comes from outside, so it is shown as untrusted data.
@@ -446,6 +470,15 @@ const TOOLS_LIST: ToolDef[] = [
     },
   },
 
+  {
+    id: "report_books_sync", label: "Sync the books and match receipts", detail: "The books sync, in code: one row per Mercury charge, receipts found in Gmail and matched in code (exact amount, date window, merchant), photo reminders, receipt approval cards, and the Notion books page. A small model only reads receipts; it never decides a match",
+    kind: "report", group: "mercury", params: [], trusted: true, needs: [...MERCURY, ...SUPABASE], costUsd: 0, codeOnly: true,
+    deliver: async (_o, ctx) => {
+      // the Notion page picked in the hands-you step, else the books page on Settings
+      const r = await syncBooks(ctx.runId ?? undefined, { notionParent: ctx.reportPage?.id ?? (await settings()).notionBooksParent ?? undefined });
+      return { note: r.summary.slice(0, 600), costUsd: r.costUsd, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
+    },
+  },
   {
     id: "report_leads", label: "Add leads to the leads list", detail: "The model hands one checked lead per call (business, website, a public email if there is one, fit, and a first email); after a run that finishes, code saves the new ones to the leads list and a Notion page, and, when this agent also has Draft an email to a lead and Gmail is connected, puts each first email in front of the owner as a draft card",
     kind: "report", group: "supabase", trusted: false, needs: SUPABASE, costUsd: 0,

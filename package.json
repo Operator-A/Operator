@@ -33,6 +33,8 @@
     "check:open-core": "npx --yes tsx scripts/check-open-core.ts",
     "check:business": "npx --yes tsx scripts/check-business.ts",
     "check:settings": "npx --yes tsx scripts/check-settings.ts",
+    "check:books": "npx --yes tsx scripts/check-books.ts",
+    "check:product-facts": "npx --yes tsx scripts/check-product-facts.ts",
     "check:baseline": "npx --yes tsx scripts/check-baseline.ts",
     "check:all": "node scripts/check-all.mjs",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",
