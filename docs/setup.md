@@ -6,15 +6,14 @@ definition). The Desk sends it to `/start` until setup is done. `/start` has fou
 1. **Tell Avery about your business.** A conversation with the Chief of Staff, plus a panel of what
    she has learned so far.
 2. **Connect your tools.** A tile per tool, each with click-by-click steps (card 152, below).
-3. **Pick departments.** The department templates (`docs/templates.md`), ticked where Avery leans
-   toward them, or **Start empty**.
+3. **Your company.** The org chart Avery proposes (card 153, below), or **Start empty**.
 4. **Meet your crew.** A placeholder until card 153.
 
 ## Who goes to setup
 
 `needsSetup` (`core/setup-rules.ts`) says yes only for a business that has not finished setup and
 has no departments and no agents but the Chief of Staff that setup installed. A business with a crew,
-or with an agent the owner built, never goes. Setup ends when the owner installs departments
+or with an agent the owner built, never goes. Setup ends when the owner starts the company
 (`setupInstall`) or taps Start empty (`setupStartEmpty`); both set `done` in the `setup` row of
 `policies`.
 
@@ -67,8 +66,30 @@ property, the panel asks which one agents report on.
   tile opens, a built-in opens on Connections, a known server opens Add a server with its address
   filled in, and anything else becomes a connection request (`askFor`). No model call, and nothing is
   connected.
-- **Skip for now.** Step 3 lists the tools each department still waits on. It installs anyway and
+- **Skip for now.** Step 3 shows the tools each department still waits on. It installs anyway and
   starts working once they're connected.
+
+## Your company
+
+Step 3 (card 153) is an org chart drawn in code (`core/company-rules.ts`, `dashboard/company.ts`):
+
+- **The founder** at the top, then the Chief of Staff in the company seat, then a branch per
+  department template Avery leans toward, strong or likely. The model only named template ids in the
+  conversation (`readLeaning`); it never writes the chart, a job, a tool or a number.
+- **Each agent** shows its name and role, its job (the template's mandate), the tools it uses (labels
+  from the tool list) and what it adds to the month (`docs/usage.md`, "What an agent costs"): an
+  estimate on the template's schedule, with "at most" from its cap. Open seats show by title, with no
+  cost. A department that waits on a tool says so.
+- **The total** under the chart: agents, about how much a month once on duty, at most how much, and
+  who pays.
+- **Leave out** takes a department off the chart; **Also available** lists the rest, each with
+  **Add**.
+- **Start this company** installs exactly what's on the chart: `setupInstall` checks the picks
+  against the chart (`readPick`: known department ids only, in template order) before
+  `installTemplates`. **Change something** goes back to the conversation, where her new leaning
+  redraws the chart.
+
+Every agent still installs off duty with its playbook proposed, and every action stays at Draft.
 
 Connecting is the same as on Connections: the same profiles, the vault, the owner check, and the
 same refusals of a sign-in or key that carries more than the profile asks for.
@@ -86,8 +107,10 @@ from Shopify data (`docs/product-facts.md`).
 - `core/setup.ts` (state, facts, `askSetup`)
 - `dashboard/setupActions.ts` (the actions, each checking the role again)
 - `core/tools-step-rules.ts` (pure, tested by `npm run check:tools-step`), `dashboard/toolsStep.ts`
-- `dashboard/components/setup.tsx` (the conversation, the panel, the store and unlisted-tool forms), `app/start/page.tsx`
+- `core/company-rules.ts` (pure, tested by `npm run check:setup`), `dashboard/company.ts`
+- `dashboard/components/setup.tsx` (the conversation, the panel, the store and unlisted-tool forms, the company chart), `app/start/page.tsx`
 - `supabase/migrations/20261220090000_business_facts.sql`
 
 **What it replaces.** The Desk's **Start your crew** card and its `installTemplate` action (card 151),
-and step 2's plain link to Connections (card 152).
+step 2's plain link to Connections (card 152), and step 3's department checkboxes (`TemplatePicker`,
+card 153).

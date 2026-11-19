@@ -1,13 +1,15 @@
 "use client";
-// First-run setup, step 1 (card 151, docs/setup.md): the conversation with Avery and the "What I've
-// learned so far" panel. Each message is one logged run (dashboard/setupActions.ts); the lines under a
-// reply come from code: what it actually saved.
+// First-run setup (docs/setup.md): the conversation with Avery and the "What I've learned so far" panel
+// (card 151), the tools step's forms (card 152) and the company chart (card 153). Each message is one
+// logged run (dashboard/setupActions.ts); the lines under a reply come from code: what it actually saved.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { SetupAnswer } from "@/core/setup";
 import type { ActionResult } from "@/dashboard/actions";
 import { FACT_TOPICS, TOPIC_WORDS, type Fact, type FactTopic } from "@/core/setup-rules";
+import { BILLING_WORDS, costDetail, monthWords, usd } from "@/core/cost-rules";
+import { companyTotals, type CompanyAgent, type CompanyDept } from "@/core/company-rules";
 import { Toast } from "./client";
 import { Icon } from "./Icon";
 
@@ -185,6 +187,85 @@ export function UnlistedTool({ ask }: { ask: (name: string) => Promise<ActionRes
           {r.text}{r.href && <> <Link href={r.href}>Open it</Link></>}
         </span>
       )}
+    </div>
+  );
+}
+
+/**
+ * Step 3, "Your company" (card 153): the org chart Avery proposes, drawn in code. The founder can leave
+ * a department out or add one; Start this company installs exactly what's on the chart.
+ */
+export function CompanyChart({ owner, company, depts, initial, install, back }: {
+  owner: string; company: CompanyAgent[]; depts: CompanyDept[]; initial: string[];
+  install: (ids: string[]) => Promise<ActionResult & { href?: string }>; back: string;
+}) {
+  const router = useRouter();
+  const [picked, setPicked] = useState<string[]>(initial);
+  const [r, setR] = useState<ActionResult | null>(null);
+  const [busy, start] = useTransition();
+  const on = depts.filter((d) => picked.includes(d.id));
+  const also = depts.filter((d) => !picked.includes(d.id));
+  const tot = companyTotals(depts, picked, company);
+  const billing = company[0]?.cost.billing ?? on[0]?.agents[0]?.cost.billing;
+  const go = () => start(async () => { const a = await install(picked); setR(a); if (a.ok && a.href) router.push(a.href); });
+  const agentCard = (a: CompanyAgent) => (
+    <div key={a.id} className="soft-box stack" style={{ gap: 4, background: "var(--panel, var(--soft))", border: "1px solid var(--line)" }}>
+      <span className="row" style={{ justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+        <b style={{ fontSize: 14 }}>{a.name} · {a.role}</b>
+        <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{a.cost.perRun == null ? "Cost unknown" : a.runsPerMonth ? `${usd(a.cost.month)}/mo` : "$0/mo"}</span>
+      </span>
+      <span style={{ fontSize: 13, lineHeight: 1.45 }}>{a.job}</span>
+      {a.tools.length > 0 && <span className="muted" style={{ fontSize: 12 }}>Uses: {a.tools.join(", ")}</span>}
+      <span className="muted" style={{ fontSize: 12 }}>{monthWords(a.cost)} · {costDetail(a.cost)}</span>
+    </div>
+  );
+  return (
+    <div className="stack" style={{ gap: 14 }}>
+      <div className="stack" style={{ gap: 8 }} role="tree" aria-label="Your company">
+        <div className="soft-box" style={{ fontSize: 14 }}><b>{owner}</b> · Founder</div>
+        <div style={{ paddingLeft: 16, borderLeft: "2px solid var(--line)" }} className="stack">
+          {company.map(agentCard)}
+          <div className="stack" style={{ gap: 12, paddingLeft: 16, borderLeft: "2px solid var(--line)" }}>
+            {on.length === 0 && <span className="sub">No departments yet. Tell Avery about your business in step 1 and she’ll propose some, or add one below.</span>}
+            {on.map((d) => (
+              <div key={d.id} className="stack" style={{ gap: 6 }}>
+                <span className="row wrap" style={{ gap: 8, alignItems: "baseline" }}>
+                  <b style={{ fontSize: 15 }}>{d.name}</b>
+                  {d.fit && <span className="pill sm">{d.fit === "strong" ? "Avery: strong fit" : "Avery: likely"}</span>}
+                  <button className="btn ghost sm" type="button" onClick={() => setPicked((p) => p.filter((x) => x !== d.id))}>Leave out</button>
+                </span>
+                {d.waitsOn.length > 0 && <span className="sub">Waits on {d.waitsOn.join(" and ")}: it starts working once that’s connected.</span>}
+                {d.agents.map(agentCard)}
+                {d.openSeats.length > 0 && <span className="muted" style={{ fontSize: 12.5 }}>Open seats: {d.openSeats.join(", ")}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="soft-box stack" style={{ gap: 2 }} aria-live="polite">
+        <b style={{ fontSize: 14 }}>{tot.agents} agents · about {usd(tot.month)} a month once on duty</b>
+        <span className="muted" style={{ fontSize: 12.5 }}>At most {usd(tot.atMost)} a month on these schedules{tot.unknown.length ? `, plus ${tot.unknown.join(", ")} (cost unknown)` : ""} · estimates until each has run{billing ? ` · ${BILLING_WORDS[billing]}` : ""}</span>
+      </div>
+
+      {also.length > 0 && (
+        <div className="stack" style={{ gap: 6 }}>
+          <span className="ted-k">Also available</span>
+          {also.map((d) => (
+            <div key={d.id} className="row rule" style={{ gap: 12, paddingTop: 10, alignItems: "flex-start" }}>
+              <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}><b style={{ fontSize: 14 }}>{d.name}</b><span className="sub">{d.about}</span></span>
+              <button className="btn outline sm" type="button" onClick={() => setPicked((p) => [...p, d.id])}>Add</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <span className="sub">Every agent starts off duty, every action is an approval card, and nothing runs until you approve each first playbook.</span>
+      <div className="row wrap" style={{ gap: 8 }}>
+        <button className="btn dark sm" type="button" disabled={busy || !picked.length} onClick={go}>{busy ? "Starting…" : "Start this company"}</button>
+        <a className="btn outline sm" href={back}>Change something</a>
+      </div>
+      {r && !r.ok && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{r.text}</span>}
     </div>
   );
 }
