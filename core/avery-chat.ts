@@ -25,6 +25,7 @@ import { chicagoDate, dayTitle } from "@/core/time";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
 import { weekOf } from "@/core/plan-rules";
+import { DRAFT_PARTS, MAX_DRAFT_PARTS } from "@/core/department-rules";
 import { MAX_FILED, MAX_REPLY, MAX_RULES, chatPrompt, deptNamed, inOwnWords, resolveRuleWho, savedLines, type ChatLine, type ChatReach } from "@/core/chat-rules";
 
 export const CHAT_MISSING = "The chat table isn’t in Supabase yet: apply the migration 20261124090000_avery_chat.sql. Until then Avery answers but the conversation isn’t kept.";
@@ -64,9 +65,11 @@ async function frontDoor(): Promise<{ org: Org; agentId: string; spec: AgentSpec
 
 const directive = (name: string, biz: Business) => `You are ${name}, chief of staff at ${biz.name}, talking in the Control Room with a person from the business. Answer their questions about the company from your tools: goals, department reports, this week's plans, proposals, the crew and the numbers. Short plain sentences, at most about 120 words. No flattery, no exclamation marks.
 
-Besides answering you can do only two things:
+Besides answering you can do only three things:
 - When they tell you a rule for an agent, a department or everyone ("Rowan: skip chains", "Quinn keeps putting Costco in supplies, it's groceries"), save it with Save a rule. The words must be their own, copied from their message; who is the agent, the department or everyone they mean. If it isn't clear who should follow it, ask them instead of saving.
 - When they want to hire, give an agent a read tool, get a new tool built, or retire an agent or close a seat, file it with File a proposal. Nothing happens until an owner says yes on Proposals. Ask first if you don't know enough to fill it in.
+- When they describe new work, first decide whether it needs one new agent or a new department, using The crew now. Suggest one agent (a hire into the department it fits) when it is one job, or when an existing department's purpose already covers it. Suggest a new department only when it is its own area: its own goals to measure, more than one job, and no department that fits. Say which you suggest and why in a sentence. If they ask for a department and one agent would do, say so and offer both; it's their call.
+- When they want a new department, interview them, a question or two at a time: what it is for and what to track; what "going well" means (up to 3 goals, each with a measure from Department menu when one fits, otherwise in words); where the information lives (a tool they connected, a server they added, or a service to ask for, by name, never an address); and who does the work (a head and up to 2 narrow agents, each with one job and read tools from Department menu). Put each answer in the draft with Update the department draft as you go, and say what is still missing. They propose the draft themselves from the card above the chat; you never create a department.
 
 You never run, start, stop or change an agent, and you never send, buy or post. If they ask for that, tell them where in the Control Room they can do it. Code saves rules and proposals only after you finish and adds a line under your reply saying what it saved, so don't say you saved anything yourself.`;
 
@@ -178,6 +181,66 @@ function fileProposalTool(reach: ChatReach): ToolDef {
   };
 }
 
+/** Card 156: what a department can use, and the draft so far, for the interview. */
+function departmentMenuTool(): ToolDef {
+  return {
+    id: "department_menu", label: "Department menu", detail: "For designing a new department with the person: the measures a goal can use (key, label, unit; the business's own goal numbers included), the read tools an agent may have (id, label, what it reads), the tools connected and the servers they added, and the department draft so far with what it still needs",
+    kind: "read", group: "agents", params: [], trusted: true, needs: [], costUsd: 0,
+    run: async () => {
+      const [{ loadDraft, draftCtx, sourcesNow }, { draftGaps }, { MEASURES }, { ownMeasureDefs }, { listCustomServers }] = await Promise.all([
+        import("@/core/departments"), import("@/core/department-rules"), import("@/core/goal-rules"), import("@/core/goals"), import("@/integrations/mcp"),
+      ]);
+      const [d, own, servers, ctx] = await Promise.all([loadDraft(), ownMeasureDefs().catch(() => []), listCustomServers().catch(() => []), draftCtx()]);
+      const measures = [...MEASURES, ...own].filter((m) => m.available).map((m) => ({ key: m.key, label: m.label, unit: m.unit, kind: m.shape }));
+      const tools = Object.values(TOOLS).filter((t) => (t.kind === "read" || t.kind === "calculate") && !t.server && !t.codeOnly).map((t) => ({ id: t.id, label: t.label, reads: t.detail.slice(0, 140) }));
+      return {
+        data: {
+          measures, readTools: tools,
+          serversYouAdded: servers.map((c) => c.name),
+          departmentsNow: ctx.departments,
+          draft: d ? { ...d, sources: await sourcesNow(d).catch(() => d.sources), stillNeeds: draftGaps(d) } : null,
+        },
+        numbers: { measures: measures.length, read_tools: tools.length },
+      };
+    },
+  };
+}
+
+/** Card 156: Update the department draft, one part per call. Code checks and saves each part after the run. */
+function departmentDraftTool(): ToolDef {
+  return {
+    id: "update_department_draft", label: "Update the department draft", detail: "Fills in the draft of a new department as the person describes it, one part per call: about (name, purpose, tracks), a goal, a source, the head, a narrow agent, or remove one. Saved after you finish; code checks every part and says what it saved. It never creates anything: the person proposes the draft, then approves it",
+    kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
+    params: [
+      { name: "part", type: "enum", options: ["about", "goal", "source", "head", "agent", "remove"], description: "Which part this call changes." },
+      { name: "name", type: "text", maxLength: 40, optional: true, description: "about: the department's name. head or agent: a short first name, starting with a capital. remove: the agent's name." },
+      { name: "purpose", type: "text", maxLength: 200, optional: true, description: "about: what the department is for, in one sentence." },
+      { name: "tracks", type: "text", maxLength: 500, optional: true, description: "about: what it keeps track of, separated by semicolons (at most 6)." },
+      { name: "title", type: "text", maxLength: 120, optional: true, description: "goal: the goal in words. remove: the goal's title." },
+      { name: "measure", type: "text", maxLength: 40, optional: true, description: "goal: a measure key from Department menu, or none when no number exists yet." },
+      { name: "target", type: "text", maxLength: 20, optional: true, description: "goal: the number the person said, only with a measure." },
+      { name: "service", type: "text", maxLength: 60, optional: true, description: "source: the service's name (Shopify, Cropster, their own server's name). Never an address. remove: the service." },
+      { name: "what", type: "text", maxLength: 200, optional: true, description: "source: what the department reads there." },
+      { name: "seat", type: "text", maxLength: 60, optional: true, description: "head or agent: the seat's title, like Head of roasting or Cover watcher." },
+      { name: "job", type: "text", maxLength: 200, optional: true, description: "head or agent: what it does, in one sentence." },
+      { name: "each_run", type: "text", maxLength: 1500, optional: true, multiline: true, description: "head or agent: what it does on each run, step by step." },
+      { name: "good_result", type: "text", maxLength: 400, optional: true, description: "head or agent: what a good result looks like." },
+      { name: "tools", type: "text", maxLength: 300, optional: true, description: "head or agent: read tool ids from Department menu, comma separated (at most 8)." },
+      { name: "brain", type: "enum", options: ["quick", "thinking"], default: "quick", description: "head or agent: quick for most jobs; thinking only when the job needs judgment." },
+    ],
+    collect: (input, held) => {
+      if (held.length >= MAX_DRAFT_PARTS) return { problem: `at most ${MAX_DRAFT_PARTS} draft updates from one message` };
+      if (!DRAFT_PARTS.includes(String(input.part) as (typeof DRAFT_PARTS)[number])) return { problem: "part must be about, goal, source, head, agent or remove" };
+      return { row: input };
+    },
+    deliver: async (o) => {
+      if (!o.rows.length) return "nothing to save";
+      const { updateDraft } = await import("@/core/departments");
+      return (await updateDraft(o.rows)).join(" | ") || "nothing to save";
+    },
+  };
+}
+
 export interface ChatAnswer { ok: boolean; reply: string; notes: string[]; runId: string | null; costUsd: number; kept: boolean }
 
 /** One message to Avery: a logged run (trigger "chat") inside her budget. Saves both sides of the conversation. */
@@ -190,7 +253,7 @@ export async function askAvery(message: string): Promise<ChatAnswer> {
   const live = await liveAgentIds();
   const names = await agentNames([...live]);
   const reach: ChatReach = { agents: [...live].map((id) => ({ id, name: names[id] ?? id })), departments: org.departments.map((d) => ({ id: d.id, name: d.name })) };
-  const chatTools = [crewNowTool(org), saveRuleTool(message, reach, agentId), fileProposalTool(reach)];
+  const chatTools = [crewNowTool(org), saveRuleTool(message, reach, agentId), fileProposalTool(reach), departmentMenuTool(), departmentDraftTool()];
   const reads = base.tools.filter((id) => (TOOLS[id]?.kind === "read" || TOOLS[id]?.kind === "calculate") && !TOOLS[id]?.server);
   const spec: AgentSpec = {
     ...base,

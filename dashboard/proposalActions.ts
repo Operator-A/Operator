@@ -54,3 +54,25 @@ export async function proposalCreate(id: string, draft: unknown, seatId?: string
   revalidatePath("/", "layout");
   return { ...made, text: `${made.text}${extra}` };
 }
+
+/** Card 156: the owner proposes the department Avery drafted with them. It lands in Needs you. */
+export async function proposeDepartment(): Promise<ActionResult & { href?: string }> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    const { proposeDraft } = await import("@/core/departments");
+    const r = await proposeDraft();
+    await audit(me, "propose_department", r.id);
+    return { ...done(`${r.title} waits in Needs you. Open it to approve.`), href: `/proposals/${r.id}` };
+  } catch (e) { return fail(e); }
+}
+
+/** Card 156: throws away the department draft. */
+export async function discardDepartmentDraft(): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    const { discardDraft } = await import("@/core/departments");
+    await discardDraft();
+    await audit(me, "discard_department_draft", null);
+    return done("The department draft is gone.");
+  } catch (e) { return fail(e); }
+}

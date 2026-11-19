@@ -26,6 +26,8 @@ const AUDITED = [
   "orgSetDeptBudget", "orgSetDeptEmails", "placeAgent", "orgSetHolder", "orgSetLeadChecks",
   // proposals change an agent's spec or routine
   "proposalAccept", "proposalDecline",
+  // a new department: the owner files it from Avery's draft, or throws the draft away
+  "proposeDepartment", "discardDepartmentDraft",
 ];
 
 // not audited: they change nothing an agent may do, spend or reach, or keep their own history

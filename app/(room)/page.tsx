@@ -13,7 +13,8 @@ import { deptOf, groupByDepartment, headOf, latestOutputs, loadOrg } from "@/cor
 import { listProposals } from "@/core/proposals";
 import { KIND_WORDS } from "@/core/proposal-rules";
 import { hireCost } from "@/dashboard/cost";
-import { monthWords } from "@/core/cost-rules";
+import { monthWords, usd } from "@/core/cost-rules";
+import { peopleOf, type DeptDraft } from "@/core/department-rules";
 import { agentNames } from "@/core/org";
 import { Icon } from "@/dashboard/components/Icon";
 import { inSetup } from "@/core/setup";
@@ -30,7 +31,15 @@ const KIND_LOOK: Record<string, { bg: string; fg: string }> = {
   grant_tool: { bg: "var(--mint-soft)", fg: "var(--mint-ink)" },
   new_tool: { bg: "var(--yel-soft)", fg: "var(--yel-ink)" },
   retire: { bg: "var(--red-soft)", fg: "var(--red-ink)" },
+  department: { bg: "var(--acc-soft)", fg: "var(--acc-ink)" },
 };
+
+/** Card 156: a department proposal's line in Needs you: its people, goals and month if each ran daily, from code. */
+function deptLine(d: DeptDraft): string {
+  const people = peopleOf(d);
+  const month = people.reduce((s, p) => s + hireCost(p).daily.month, 0);
+  return `${people.length} agent${people.length === 1 ? "" : "s"}, ${d.goals.length} goal${d.goals.length === 1 ? "" : "s"} · ${usd(month)} a month if each runs daily`;
+}
 
 export default async function Desk() {
   const f = await getFloor(); // checks the login first, so the page is never built ahead of a request
@@ -90,6 +99,7 @@ export default async function Desk() {
               <b style={{ fontSize: 15.5, fontWeight: 600 }}>{p.title}</b>
               <span className="ink2" style={{ fontSize: 13.5, lineHeight: 1.5 }}>From {p.from_agent ? names[p.from_agent] ?? p.from_agent : p.source === "claude" ? "Claude" : "you"}: {firstSentence(p.why, 220)}</span>
               {p.payload.kind === "hire" && <span className="muted" style={{ fontSize: 12.5 }}>{p.payload.job} · {monthWords(hireCost(p.payload).byHand)}</span>}
+              {p.payload.kind === "department" && <span className="muted" style={{ fontSize: 12.5 }}>{deptLine(p.payload.draft)}</span>}
             </span>
             <Link href={`/proposals/${p.id}`} className="btn dark">Review</Link>
           </div>
