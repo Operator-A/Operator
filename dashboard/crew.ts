@@ -36,8 +36,9 @@ export interface CrewMember {
   manualOnly?: boolean;
   /** agents.in_org: false for a test agent that turning on the org never wakes (docs/org-schedule.md). */
   inOrg?: boolean;
-  /** Average cost of its last real runs (up to 10), or null before it has any. */
-  avgCost?: number | null;
+  /** What a run costs (core/cost-rules.ts runCost): its real average, else the estimate; null when unknown. */
+  perRun?: number | null;
+  costBasis?: "real" | "estimate" | "unknown";
   /** Its cap per run, from its live version. */
   capPerRun?: number;
   trigger?: string;
