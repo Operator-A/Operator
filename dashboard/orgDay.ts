@@ -55,7 +55,7 @@ export function orgDay(o: {
   const inOrg = o.members.filter((m) => m.inOrg !== false);
   const base = inOrg.map((m) => {
     const schedule = m.schedule ?? { kind: "manual" as const };
-    const perRun = m.avgCost ?? m.capPerRun ?? null;
+    const perRun = m.perRun ?? null;
     return {
       id: m.id, name: m.name, role: m.role, hue: m.hue ?? "#999", icon: m.icon,
       schedule, when: schedWords(schedule), next: nextRuns(schedule, o.now, 4),

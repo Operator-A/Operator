@@ -8,6 +8,8 @@ import { when } from "@/dashboard/format";
 import { getProposal, proposalChecks, toolLabel, type Proposal } from "@/core/proposals";
 import { BRAINS, HIRE_STEPS, KIND_WORDS } from "@/core/proposal-rules";
 import { agentNames, agentsIn, deptSpent, loadOrg, monthSpendByAgent } from "@/core/org";
+import { hireCost } from "@/dashboard/cost";
+import { costDetail, monthWords, usd as costUsd } from "@/core/cost-rules";
 
 // One proposal (docs/company-mode.md, slice 3, the Hire artboard): who asked and why, what it
 // holds, what a yes does, what code checks again at the tap, and Yes / Change it first / Not now.
@@ -62,6 +64,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
       ["Each run", p.eachRun],
       ["Good result", p.goodResult],
       ["Brain", BRAINS[p.brain].label],
+      ["A month", (() => { const c = hireCost(p); return `${monthWords(c.byHand)} (${costDetail(c.byHand)}). On a daily schedule, about ${costUsd(c.daily.month)} a month.`; })()],
       ["Reads", p.tools.map(toolLabel).join(", ")],
       ["Hands you", `A ${p.seat} result each run, up to ${HIRE_STEPS} steps`],
     ]
@@ -94,7 +97,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
               <span style={{ fontSize: 13.5, lineHeight: 1.55 }}>{yes.does}</span>
               {p.kind === "hire" && (
                 <span className="ink2" style={{ fontSize: 13, lineHeight: 1.5 }}>
-                  A run costs at most {usd(BRAINS[p.brain].maxCostUsd)}.{dept ? ` ${dept.name} has spent ${usd(deptSpent(org, dept.id, spend))} on AI this month${dept.monthlyBudgetUsd != null ? ` of ${usd(dept.monthlyBudgetUsd)}` : ""}.` : ""}
+                  {monthWords(hireCost(p).byHand)}, at most {usd(BRAINS[p.brain].maxCostUsd)} a run.{dept ? ` ${dept.name} has spent ${usd(deptSpent(org, dept.id, spend))} on AI this month${dept.monthlyBudgetUsd != null ? ` of ${usd(dept.monthlyBudgetUsd)}` : ""}.` : ""}
                 </span>
               )}
               <div className="row wrap" style={{ gap: 8 }}>

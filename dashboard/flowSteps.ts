@@ -4,6 +4,7 @@
 // reworking the shell. Nothing here decides what an agent may do: the server checks every draft
 // against code again (core/agent-spec.ts readSpec).
 import type { AgentSpec, Effort } from "@/core/agent-spec";
+import { estimateRun } from "@/core/cost-rules";
 import type { BuilderMenu, FlowConn } from "./builder";
 
 export const STEPS = [
@@ -25,16 +26,10 @@ export const abilityOf = (t: Pick<Tool, "kind">): Ability => (t.kind === "action
 
 export const money = (v: number) => (v < 0.01 ? `$${v.toFixed(3)}` : `$${v.toFixed(2)}`);
 
-const OUT_TOKENS: Record<Effort, number> = { low: 500, medium: 900, high: 1500 };
-
-/** A rough guide to one run's cost: a turn per tool call plus a wrap-up, each turn re-reading what came before. */
+/** One run's estimate (core/cost-rules.ts), from the model's price on the builder's list. */
 export function estimate(spec: Pick<AgentSpec, "model" | "effort" | "tools" | "limits">, models: Model[]): number | null {
   const m = models.find((x) => x.id === spec.model);
-  if (!m) return null;
-  const turns = Math.min(spec.limits.maxSteps, Math.max(1, spec.tools.length)) + 1;
-  let usd = 0;
-  for (let i = 0; i < turns; i++) usd += (2500 + 1200 * i) * m.in + OUT_TOKENS[spec.effort] * m.out;
-  return Math.min(usd, spec.limits.maxCostUsd);
+  return estimateRun(spec, m ? { in: m.in, out: m.out } : null);
 }
 
 export interface Preset { key: "quick" | "balanced" | "deep"; label: string; about: string; model: string; effort: Effort; recommended?: boolean }

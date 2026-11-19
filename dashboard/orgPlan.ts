@@ -10,10 +10,8 @@ export interface OrgMember {
   name: string;
   /** agents.in_org: false for a test agent that turning on the org never wakes. */
   inOrg: boolean;
-  /** Average cost of its last real runs, or null before it has any. */
-  avgCost: number | null;
-  /** Its cap per run (live version), the cost to plan with before it has run. */
-  capPerRun?: number;
+  /** What a run costs (core/cost-rules.ts runCost): real runs, else the estimate; null when unknown. */
+  perRun: number | null;
 }
 
 export interface WakeLine {
@@ -22,7 +20,7 @@ export interface WakeLine {
   schedule: Schedule;
   /** The first scheduled run once the org is on; null when it runs only by hand. */
   firstRun: number | null;
-  /** Cost a run: its average, or its cap before it has run; null when neither is known. */
+  /** Cost a run: real runs, else the estimate; null when unknown. */
   perRun: number | null;
   /** Cost a month on this schedule: per run times runs in 30 days. 0 by hand. */
   perMonth: number;
@@ -38,7 +36,7 @@ export interface OrgPlan {
   chains: Chain[];
   /** Sum of perMonth, in dollars. */
   totalMonth: number;
-  /** Agents whose cost a run isn't known yet (no runs, no cap): left out of the total. */
+  /** Agents whose cost a run isn't known (a model with no price): left out of the total. */
   unknownCost: string[];
 }
 
@@ -55,7 +53,7 @@ export function planOrgOn(members: readonly OrgMember[], chains: readonly Chain[
   const live = next.filter((c) => c.on);
   const wake = inOrg.map((m): WakeLine => {
     const schedule = scheduleOf(m.id, live);
-    const perRun = m.avgCost ?? m.capPerRun ?? null;
+    const perRun = m.perRun;
     return { id: m.id, name: m.name, schedule, firstRun: nextRuns(schedule, now, 1)[0] ?? null, perRun, perMonth: perRun == null ? 0 : perRun * runsInMonth(schedule) };
   });
   // scheduled first, in the order they run, then by hand

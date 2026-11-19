@@ -88,3 +88,23 @@ https://claude.ai/artifact/8ec8poMoGrDtE3XY1axWrj, phase 6. With many orgs and q
   docs/tenancy.md slice 8.1b). An org with no owner email sees its problems on its Status page only.
 - Cap breaches show as refused proposals; circuit breakers aren't built yet (core/gateway/README.md).
 - `npm run check:status` tests which facts are problems, the alert timing and the email.
+
+## What an agent costs (card 155, `core/cost-rules.ts`)
+
+Every proposed agent comes with its job and what it adds to the month, worked out in code, never by
+a model.
+
+- **A run.** Once an agent has 3 real runs (finished, not a try), a run costs the average of its
+  last 20, from `agent_runs`. Before that it is an estimate from its model's price, effort, tools and
+  step limit (a turn per tool plus a wrap-up), never more than its cost cap.
+- **A month.** A run × runs on its schedule (30 every day, 22 on weekdays, 4 on Mondays). By hand it
+  is $0 a month, and the cost of each press is shown instead.
+- **At most.** The cost cap × runs on its schedule: the most it can spend. The daily budget still
+  stops it sooner.
+- **Who pays.** With the business's own Claude key it is the model cost, "billed by Anthropic to your
+  key". On OPERATOR credits (card 128, slice 4) both numbers include the 20% margin. Until credits are
+  built, every business is on its own key (`dashboard/cost.ts` `billing`).
+
+It shows on hire proposals and the Desk's proposal card, the org's day, turning on the org, the Crew
+canvas and the builder; setup's company chart (card 153) reads the same function. Tested by
+`npm run check:cost`.

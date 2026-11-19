@@ -19,7 +19,9 @@ import { withOrg } from "@/core/tenancy";
 import { MCP_IDS } from "@/core/mcp-rules";
 import { orgState, type OrgState } from "@/core/org-switch";
 import type { CrewMember, IntegrationId } from "./crew";
-import { avgCostOf, buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
+import { buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
+import { runCostOf, type CostSpec } from "./cost";
+import { realCost } from "@/core/cost-rules";
 import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
 import { SESSION_COOKIE, controlsOn, sessionOf } from "./session";
 import { memberById } from "@/core/members";
@@ -197,12 +199,13 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const d0 = budgetDayStart(new Date(now)).getTime();
   const spentToday: Record<string, number> = Object.fromEntries(rows.map((b) => [b.id, 0]));
   for (const run of all) if (Date.parse(run.started_at) >= d0) spentToday[run.agent_id] = (spentToday[run.agent_id] ?? 0) + run.cost_usd;
-  const grants: Record<string, string[]> = {}, liveVersion: Record<string, number> = {}, specs: Record<string, RosterSpec> = {};
+  const grants: Record<string, string[]> = {}, liveVersion: Record<string, number> = {}, specs: Record<string, RosterSpec> = {}, costSpecs: Record<string, CostSpec> = {};
   for (const d of defs.error ? [] : defs.data ?? []) {
-    const spec = (d.spec ?? {}) as { tools?: unknown; name?: unknown; mandate?: unknown; limits?: { maxCostUsd?: unknown } };
+    const spec = (d.spec ?? {}) as { tools?: unknown; name?: unknown; mandate?: unknown; model?: unknown; effort?: unknown; limits?: { maxCostUsd?: unknown; maxSteps?: unknown } };
     grants[d.agent_id] = Array.isArray(spec.tools) ? spec.tools.filter((t): t is string => typeof t === "string") : [];
     liveVersion[d.agent_id] = Number(d.version);
     specs[d.agent_id] = { name: typeof spec.name === "string" ? spec.name : undefined, mandate: typeof spec.mandate === "string" ? spec.mandate : "", tools: grants[d.agent_id], maxCostUsd: Number(spec.limits?.maxCostUsd) || undefined };
+    costSpecs[d.agent_id] = { model: typeof spec.model === "string" ? spec.model : "", effort: typeof spec.effort === "string" ? spec.effort : undefined, tools: grants[d.agent_id], maxSteps: Number(spec.limits?.maxSteps) || undefined, maxCostUsd: Number(spec.limits?.maxCostUsd) || undefined };
   }
   // the roster (docs/agent-roster.md): every agent with a live version, the same whether it started in code or the app
   const live = rows.filter((x) => specs[x.id]).sort((x, y) => (x.created_at ?? "").localeCompare(y.created_at ?? "") || x.id.localeCompare(y.id));
@@ -210,7 +213,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const chains: Chain[] = flowRow.error || !flowRow.data ? [] : readFlow(flowRow.data.flow, palette).flow.chains;
   const tools = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, { label: t.label, kind: t.kind }]));
   const seatTitle = (id: string) => org?.seats.find((x) => x.holder === "agent" && x.agentId === id)?.title ?? null;
-  const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, avgCost: avgCostOf(runs, x.id), seatTitle: seatTitle(x.id), chains })));
+  const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, cost: runCostOf(costSpecs[x.id], realCost(runs, x.id)), seatTitle: seatTitle(x.id), chains })));
   return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0, jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette, org: orgSwitch };
 });
 
@@ -421,11 +424,10 @@ export async function getCrewCanvas(f: Floor): Promise<CrewCanvasData> {
   // every agent with a live version, the same whether it started in code or was built in the app
   const palette: CrewAgent[] = f.palette.ids.map((id) => {
     const a = f.byId[id];
-    const real = f.runs.filter((r) => r.agent_id === id && r.status === "ok" && r.trigger !== "preview").slice(0, 10);
     return {
       id, name: a?.name ?? id, role: a?.role ?? "", hue: a?.hue ?? "#999", icon: a?.icon ?? "cpu",
       enabled: !!f.agents[id]?.enabled, buttonOnly: f.palette.manualOnly.has(id),
-      metrics: METRICS[id] ?? [], avgCost: avgCostOf(f.runs, id), runs: real.length,
+      metrics: METRICS[id] ?? [], perRun: a?.perRun ?? null, estimated: a?.costBasis === "estimate",
     };
   });
   const base = { palette, approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })), controls: controlsOn(), maxSteps: MAX_STEPS, maxChains: MAX_CHAINS, now: f.now };

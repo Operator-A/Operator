@@ -20,7 +20,7 @@ export interface CrewAgent {
   enabled: boolean; buttonOnly: boolean;
   metrics: { key: string; label: string }[];
   /** Average cost of its last real runs (up to 10); null before any. */
-  avgCost: number | null; runs: number;
+  perRun: number | null; estimated: boolean;
 }
 export interface CrewVersion { version: number; active: boolean; note: string | null; createdBy: string; createdAt: string; chains: number; on: string[] }
 export interface CrewCanvasData {
@@ -145,7 +145,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
     ...c.steps.map((st, k): Node => {
       const a = byId[st.agent];
       return { id: `${c.key}:${k}`, type: "block", position: { x: (k + 1) * COL, y: row * ROW }, width: 210, height: 116, draggable: false, connectable: false,
-        data: { title: a ? `${a.name}, ${a.role}` : st.agent, sub: `Step ${k + 1}${a?.avgCost != null ? ` · about ${money(a.avgCost)} a run` : ""}`, lines: [...stepLine(st, k), ...(a && !a.enabled ? ["Off duty: skipped, and the chain stops"] : [])], icon: a?.icon ?? "users", hue: a?.hue, selected: sel?.key === c.key && sel.step === k, dim: !c.on } satisfies BlockData };
+        data: { title: a ? `${a.name}, ${a.role}` : st.agent, sub: `Step ${k + 1}${a?.perRun != null ? ` · about ${money(a.perRun)} a run` : ""}`, lines: [...stepLine(st, k), ...(a && !a.enabled ? ["Off duty: skipped, and the chain stops"] : [])], icon: a?.icon ?? "users", hue: a?.hue, selected: sel?.key === c.key && sel.step === k, dim: !c.on } satisfies BlockData };
     }),
   ]), [draft, sel, byId, d.approvalTools]);
   const edges = useMemo<Edge[]>(() => draft.chains.flatMap((c) => c.steps.map((st, k): Edge => ({
@@ -172,7 +172,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
   };
   const runNow = (c: Chain) => setConfirm({
     title: `Run ${c.name} now?`, body: "Real runs, one after another, shown in Runs. An agent that is off duty is skipped and the chain stops there.",
-    lines: c.steps.map((s, k) => ({ k: `Step ${k + 1}`, v: `${name(s.agent)}${byId[s.agent]?.enabled ? "" : " (off duty, skipped)"}${byId[s.agent]?.avgCost != null ? ` · about ${money(byId[s.agent].avgCost!)}` : ""}` })),
+    lines: c.steps.map((s, k) => ({ k: `Step ${k + 1}`, v: `${name(s.agent)}${byId[s.agent]?.enabled ? "" : " (off duty, skipped)"}${byId[s.agent]?.perRun != null ? ` · about ${money(byId[s.agent].perRun!)}` : ""}` })),
     confirmLabel: "Run chain", kind: "primary", go: () => run(() => actions.runNow(c.key)),
   });
   const doPreview = (c: Chain) => start(async () => {
@@ -180,8 +180,8 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
     catch (e) { setToast({ ok: false, text: e instanceof Error ? e.message : "Preview failed." }); }
   });
 
-  const perRun = chain ? chain.steps.reduce((s, st) => s + (byId[st.agent]?.avgCost ?? 0), 0) : 0;
-  const unknownCost = chain ? chain.steps.some((st) => byId[st.agent]?.avgCost == null) : false;
+  const perRun = chain ? chain.steps.reduce((s, st) => s + (byId[st.agent]?.perRun ?? 0), 0) : 0;
+  const unknownCost = chain ? chain.steps.some((st) => byId[st.agent]?.perRun == null || byId[st.agent]?.estimated) : false;
   const draftNext = chain && chain.on ? nextFirings(chain, d.now, 3) : [];
 
   return (

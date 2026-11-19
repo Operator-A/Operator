@@ -12,6 +12,8 @@ import { deskGreeting, deskLine, firstSentence } from "@/dashboard/desk";
 import { deptOf, groupByDepartment, headOf, latestOutputs, loadOrg } from "@/core/org";
 import { listProposals } from "@/core/proposals";
 import { KIND_WORDS } from "@/core/proposal-rules";
+import { hireCost } from "@/dashboard/cost";
+import { monthWords } from "@/core/cost-rules";
 import { agentNames } from "@/core/org";
 import { Icon } from "@/dashboard/components/Icon";
 import { inSetup } from "@/core/setup";
@@ -81,6 +83,7 @@ export default async function Desk() {
             <span style={{ flex: "1 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
               <b style={{ fontSize: 15.5, fontWeight: 600 }}>{p.title}</b>
               <span className="ink2" style={{ fontSize: 13.5, lineHeight: 1.5 }}>From {p.from_agent ? names[p.from_agent] ?? p.from_agent : p.source === "claude" ? "Claude" : "you"}: {firstSentence(p.why, 220)}</span>
+              {p.payload.kind === "hire" && <span className="muted" style={{ fontSize: 12.5 }}>{p.payload.job} · {monthWords(hireCost(p.payload).byHand)}</span>}
             </span>
             <Link href={`/proposals/${p.id}`} className="btn dark">Review</Link>
           </div>

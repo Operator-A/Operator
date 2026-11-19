@@ -142,7 +142,7 @@ export async function setAgentTime(agentId: string, t: AgentTime | null, confirm
 async function orgPlanNow() {
   const f = await getFloor();
   const flow = await loadFlow(f.palette);
-  const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, avgCost: a.avgCost ?? null, capPerRun: a.capPerRun }));
+  const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, perRun: a.perRun ?? null }));
   return { flow, plan: planOrgOn(members, flow.flow.chains, Date.now()) };
 }
 

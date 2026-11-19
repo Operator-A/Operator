@@ -66,7 +66,7 @@ async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
 
 async function Schedule({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
   const [d, org] = await Promise.all([getCrewCanvas(f), loadOrg().catch(() => null)]);
-  const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, avgCost: a.avgCost ?? null, capPerRun: a.capPerRun }));
+  const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, perRun: a.perRun ?? null }));
   const plan = planOrgOn(members, d.flow.chains, f.now);
   const day = orgDay({
     members: f.crew,
