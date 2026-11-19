@@ -9,6 +9,8 @@ import { getProposal, proposalChecks, toolLabel, type Proposal } from "@/core/pr
 import { BRAINS, HIRE_STEPS, KIND_WORDS } from "@/core/proposal-rules";
 import { agentNames, agentsIn, deptSpent, loadOrg, monthSpendByAgent } from "@/core/org";
 import { hireCost } from "@/dashboard/cost";
+import { draftView } from "@/dashboard/department";
+import { DraftBody } from "@/dashboard/components/department";
 import { costDetail, monthWords, usd as costUsd } from "@/core/cost-rules";
 
 // One proposal (docs/company-mode.md, slice 3, the Hire artboard): who asked and why, what it
@@ -34,6 +36,7 @@ function yesDoes(p: Proposal["payload"]): { label: string; does: string } {
     case "hire": return { label: `Hire ${p.name}, off duty`, does: `Creates ${p.name} as v1, off duty, with only the read tools above, ${p.seatId ? `in the open ${p.seat} seat` : `in a new ${p.seat} seat`}. Nothing runs until you Try it and Go live.` };
     case "grant_tool": return { label: `Give ${p.agent} ${toolLabel(p.tool)}`, does: `Saves a draft version of ${p.agent} with ${toolLabel(p.tool)} added. What runs today doesn’t change until you Try it and Go live.` };
     case "new_tool": return { label: "Find a tool for it", does: "Opens Find a tool, where you pick how: a connection you already have, a server you add by its address, or an ask for a built-in connector. Nothing is granted to anyone until you do it on the builder’s Tools step." };
+    case "department": return { label: `Create ${p.draft.name}`, does: `Adds the ${p.draft.name} department with its head seat, creates ${[p.draft.head, ...p.draft.agents].filter(Boolean).map((x) => x!.name).join(" and ") || "no agents"} off duty with only the read tools shown, sets ${p.draft.goals.length} goal${p.draft.goals.length === 1 ? "" : "s"}, and logs a connection request for any source still missing. Nothing turns on.` };
     case "retire": return p.agentId
       ? { label: `Retire ${p.agent}`, does: `Takes ${p.agent} off duty and opens its seat. Its versions, runs and memory stay, and you can turn it back on.` }
       : { label: `Close the ${p.seat} seat`, does: `Removes the empty ${p.seat} seat from the chart.` };
@@ -70,7 +73,9 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
     ]
     : p.kind === "grant_tool" ? [["Teammate", p.agent], ["Tool", toolLabel(p.tool)]]
     : p.kind === "new_tool" ? [["What it reads", p.what]]
+    : p.kind === "department" ? []
     : [[p.agentId ? "Agent" : "Seat", p.agent ?? p.seat ?? ""]];
+  const deptView = p.kind === "department" ? await draftView(p.draft) : null;
 
   return (
     <>
@@ -87,8 +92,8 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
 
       <div className="home-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))" }}>
         <div className="card" style={{ gap: 12 }}>
-          <span className="card-t">{p.kind === "hire" ? "The job" : "What it asks"}</span>
-          <Lines rows={detail} />
+          <span className="card-t">{p.kind === "hire" ? "The job" : p.kind === "department" ? "The department" : "What it asks"}</span>
+          {deptView ? <DraftBody v={deptView} /> : <Lines rows={detail} />}
         </div>
         <div className="card" style={{ gap: 12 }}>
           {pr.state === "pending" ? (
@@ -117,7 +122,8 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
               <span className="card-t">Decided</span>
               <span style={{ fontSize: 13.5, lineHeight: 1.55 }}>{pr.outcome ?? pr.state}</span>
               {pr.kind === "new_tool" && pr.state === "accepted" && <Link href={`/connections/find?for=${pr.id}`}>Find a tool for it ›</Link>}
-              {pr.result_ref && pr.kind !== "new_tool" && <Link href={pr.kind === "retire" ? `/agents/${pr.result_ref}` : `/build/${pr.result_ref}`}>Open {names[pr.result_ref] ?? "the agent"} ›</Link>}
+              {pr.result_ref && pr.kind === "department" && <Link href="/crew">See it on the org chart ›</Link>}
+              {pr.result_ref && pr.kind !== "new_tool" && pr.kind !== "department" && <Link href={pr.kind === "retire" ? `/agents/${pr.result_ref}` : `/build/${pr.result_ref}`}>Open {names[pr.result_ref] ?? "the agent"} ›</Link>}
             </>
           )}
         </div>

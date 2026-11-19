@@ -353,6 +353,49 @@ The skill lives in the owner's Claude account, so they delete it there.
 
 **Checks.** `npm run check`, `npm run check:chat`, `npm run check:runner`, `npm run build`.
 
+## New department (card 156): designed by talking to Avery
+
+**What the founder sees.**
+
+- **Add a department** in Avery's starters (or just saying so). Avery interviews: what the department
+  is for, what it should track, the goals (with a number from the goal picker where one exists), the
+  tools and sources it needs, and the head plus at most two narrow agents.
+- **The department draft** sits at the top of her chat panel while it fills in: name, purpose,
+  tracks, goals (pill: *in code* or *words only*), sources (*connected*, *add it* with a link to
+  Connections, or *ask for it*), each person with seat, brain, tools and cost, and the month's total
+  if each runs daily. It says what it still needs. **Propose this department** (owner only, off until
+  it has a name, a purpose, a head and a goal) and **Discard**.
+- **Propose** files a proposal of kind *New department* and opens its page: the same draft, what
+  **Yes** does, and what code checked. The draft is cleared. On the Desk it's a card in Needs you.
+- **Yes** creates, in order: the department with its head seat, the head (seated, the seat renamed
+  if the draft gave a title), each narrow agent in a new seat under the head, the goals, and a
+  connection request for each source still to ask for. Every agent starts **off duty with read tools
+  only**; its first run drafts its playbook for approval. If a step fails it stops and says what was
+  done before it.
+
+**How it holds.**
+
+- Two chat-only tools: **Department menu** (read: the measures, the read tools, what's connected,
+  the draft and what it still needs) and **Update the department draft** (report: one part per call,
+  at most 12 from one message, saved after a run that finishes). Avery never creates anything.
+- Every part is checked in code (`core/department-rules.ts`): names, at most 6 tracks, 3 goals,
+  5 sources and 2 narrow agents; a measure must be on the goal picker and a target needs one; a
+  person's tools must be read or calculate tools on the tool list (never an action, a report, or a
+  tool on a server the founder added, which they grant on the builder's Tools step); no links or
+  addresses anywhere, and a source is a service's name only.
+- Where a source stands is worked out in code from the tiles, the servers added and the known
+  servers list, never by the model.
+- Only an owner proposes; a head (or File a proposal) can't file a department. Every check runs again
+  at the owner's yes against the chart as it is then (`departmentProblems`).
+
+**Data.** The draft is the policies row `department_draft` (one per business). Migration
+`20261221090000_department_proposals.sql` widens `proposals.kind` to `department`; until it's applied
+Propose says so.
+
+**Code.** `core/department-rules.ts` (pure), `core/departments.ts`, `dashboard/department.ts`,
+`dashboard/components/department.tsx`, the two tools in `core/avery-chat.ts`, `proposeDepartment` and
+`discardDepartmentDraft` in `dashboard/proposalActions.ts`. **Checks:** `npm run check:department`.
+
 ## Slice 6: MCP connections, Klaviyo first
 
 **What it does.** The runner can now call an MCP server itself, through the same gate as every

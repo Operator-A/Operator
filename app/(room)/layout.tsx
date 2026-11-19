@@ -9,6 +9,9 @@ import { isLive, stateLook, stateOf } from "@/dashboard/status";
 import { LiveRefresher, MobileMenu, RailLink, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { AveryChat } from "@/dashboard/components/avery";
+import { DraftCard } from "@/dashboard/components/department";
+import { currentDraftView } from "@/dashboard/department";
+import { atLeast } from "@/core/roles";
 import { sendToAvery } from "@/dashboard/chatActions";
 import { CHAT_MISSING, chatHistory } from "@/core/avery-chat";
 import { agentNames, companySeat, loadOrg } from "@/core/org";
@@ -37,6 +40,8 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   // Avery's chat: whoever holds the company seat, with the conversation so far
   const [history, org, biz, me] = await Promise.all([chatHistory(30).catch(() => null), loadOrg().catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), requireSession()]);
   const frontId = org ? companySeat(org)?.agentId ?? null : null;
+  // card 156: the department draft Avery is filling in, at the top of her panel
+  const draft = await currentDraftView().catch(() => null);
   const frontName = frontId ? (await agentNames([frontId]))[frontId] ?? "Avery" : "Avery";
   // six places (docs/builder-flow.md, slice 5): Settings sits apart at the bottom of the sidebar
   const nav = [
@@ -88,7 +93,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             <SideLink href="/settings" match="/settings" icon="settings" label="Settings" />
           </aside>
           <main className="main">{children}</main>
-          <AveryChat name={frontName} send={sendToAvery} missing={history ? null : CHAT_MISSING}
+          <AveryChat name={frontName} send={sendToAvery} missing={history ? null : CHAT_MISSING} draft={draft ? <DraftCard v={draft} owner={atLeast(me.role, "owner")} /> : null}
             initial={(history ?? []).map((h) => ({ id: h.id, role: h.role, text: h.text, runId: h.run_id, notes: h.notes }))} />
           <LiveRefresher runs={recent} />
         </div>

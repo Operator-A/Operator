@@ -5,9 +5,13 @@
 // The owner's tap does, and then through the same code paths as the app (a new agent starts off duty
 // with no actions; a tool becomes a draft version that still needs Try it and Go live).
 
+import type { DeptDraft } from "@/core/department-rules";
+
+/** What a head (or Avery's File a proposal) may file. */
 export const PROPOSAL_KINDS = ["hire", "grant_tool", "new_tool", "retire"] as const;
-export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
-export const KIND_WORDS: Record<ProposalKind, string> = { hire: "Hire", grant_tool: "Grant a tool", new_tool: "New tool", retire: "Retire" };
+/** Every kind a proposal can be: a new department is filed only by an owner, from Avery's draft (card 156). */
+export type ProposalKind = (typeof PROPOSAL_KINDS)[number] | "department";
+export const KIND_WORDS: Record<ProposalKind, string> = { hire: "Hire", grant_tool: "Grant a tool", new_tool: "New tool", retire: "Retire", department: "New department" };
 
 export type Brain = "quick" | "thinking";
 /** Claude models only (owner's call, Nov 12). Specialists stay quick unless the job needs judgment (decision 5). */
@@ -23,7 +27,9 @@ export type ProposalPlan =
   | { kind: "hire"; name: string; seat: string; job: string; eachRun: string; goodResult: string; tools: string[]; brain: Brain }
   | { kind: "grant_tool"; agent: string; tool: string }
   | { kind: "new_tool"; what: string }
-  | { kind: "retire"; agent: string | null; seat: string | null };
+  | { kind: "retire"; agent: string | null; seat: string | null }
+  /** Card 156: the department draft as the owner proposed it (core/department-rules.ts). */
+  | { kind: "department"; draft: DeptDraft };
 
 export interface ToolInfo { kind: string; label: string }
 /** The tool list as planProposal reads it. */
@@ -42,7 +48,7 @@ export const toolIds = (v: unknown) => [...new Set(String(v ?? "").split(/[\s,]+
  * agent or a grant may not have (an action) is refused here and again when the owner says yes.
  */
 export function planProposal(input: Record<string, unknown>, tools: Record<string, ToolInfo>): { plan: ProposalPlan; why: string } | { problem: string } {
-  const kind = String(input.kind ?? "") as ProposalKind;
+  const kind = String(input.kind ?? "") as (typeof PROPOSAL_KINDS)[number];
   if (!PROPOSAL_KINDS.includes(kind)) return { problem: "kind must be hire, grant_tool, new_tool or retire" };
   const why = many(input.why, 600);
   if (why.length < 10) return { problem: "say why in a sentence or two" };
@@ -97,6 +103,7 @@ export function proposalTitle(p: ProposalPlan, labelOf: (toolId: string) => stri
     case "grant_tool": return `Give ${p.agent} “${labelOf(p.tool)}”`;
     case "new_tool": return `New tool: ${p.what.length > 80 ? `${p.what.slice(0, 79)}…` : p.what}`;
     case "retire": return p.agent ? `Retire ${p.agent}` : `Close the ${p.seat} seat`;
+    case "department": return `New department: ${p.draft.name}`;
   }
 }
 

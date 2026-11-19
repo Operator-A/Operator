@@ -41,6 +41,7 @@
     "check:brief": "npx --yes tsx scripts/check-brief.ts",
     "check:setup": "npx --yes tsx --conditions=react-server scripts/check-setup.ts",
     "check:cost": "npx --yes tsx --conditions=react-server scripts/check-cost.ts",
+    "check:department": "npx --yes tsx --conditions=react-server scripts/check-department.ts",
     "check:first-job": "npx --yes tsx --conditions=react-server scripts/check-first-job.ts",
     "check:tools-step": "npx --yes tsx --conditions=react-server scripts/check-tools-step.ts",
     "check:ee": "npx --yes tsx ee/check.ts",

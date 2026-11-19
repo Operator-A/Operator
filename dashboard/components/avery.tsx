@@ -10,12 +10,12 @@ import { Icon } from "./Icon";
 
 export interface ChatMsg { id: string; role: "owner" | "avery"; text: string; runId: string | null; notes: string[] }
 
-const STARTERS = ["What needs me today?", "How are the goals?", "Hire someone", "What are the heads planning this week?"];
+const STARTERS = ["What needs me today?", "How are the goals?", "Hire someone", "Add a department"];
 const KEY = "cr_avery";
 const noop = () => () => {};
 const readStored = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
 
-export function AveryChat({ name, initial, missing, send }: { name: string; initial: ChatMsg[]; missing: string | null; send: (text: string) => Promise<ChatAnswer> }) {
+export function AveryChat({ name, initial, missing, send, draft }: { name: string; initial: ChatMsg[]; missing: string | null; send: (text: string) => Promise<ChatAnswer>; /** Card 156: the department draft card, drawn on the server. */ draft?: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   // wide screen: open by default on the Desk; elsewhere it remembers what the owner last did (this browser only).
@@ -75,10 +75,11 @@ export function AveryChat({ name, initial, missing, send }: { name: string; init
             </span>
             <button className="avery-x" onClick={close} aria-label="Close the chat"><Icon name="x" size={18} /></button>
           </div>
+          {draft && <div style={{ padding: "0 14px", maxHeight: "45%", overflowY: "auto", flex: "none" }}>{draft}</div>}
           <div className="avery-list" ref={list} aria-live="polite">
             {!msgs.length && (
               <p className="avery-sub" style={{ lineHeight: 1.5 }}>
-                Ask how a department is doing, tell {name} a rule for an agent in your own words, or ask her to hire someone. She reads the company’s data, saves your rules and files proposals. Nothing changes until you say yes.
+                Ask how a department is doing, tell {name} a rule for an agent in your own words, ask her to hire someone, or design a new department with her. She reads the company’s data, saves your rules and files proposals. Nothing changes until you say yes.
               </p>
             )}
             {missing && <p className="avery-sub" style={{ lineHeight: 1.5 }}>{missing}</p>}
@@ -94,7 +95,7 @@ export function AveryChat({ name, initial, missing, send }: { name: string; init
             {busy && <div className="avery-her avery-sub">{name} is looking…</div>}
           </div>
           <div className="avery-chips">
-            {STARTERS.map((s) => <button key={s} className="avery-chip" disabled={busy} onClick={() => (s === "Hire someone" ? (setText("Hire someone to "), box.current?.focus()) : go(s))}>{s}</button>)}
+            {STARTERS.map((s) => <button key={s} className="avery-chip" disabled={busy} onClick={() => (s === "Hire someone" ? (setText("Hire someone to "), box.current?.focus()) : s === "Add a department" ? (setText("I want a new department for "), box.current?.focus()) : go(s))}>{s}</button>)}
           </div>
           <form className="avery-form" onSubmit={(e) => { e.preventDefault(); go(); }}>
             <label className="avery-sub" htmlFor="avery-input">Ask {name}, or tell her something</label>

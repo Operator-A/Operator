@@ -187,6 +187,13 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
       await close(id, "accepted", `Draft v${v} adds ${t.label}. It runs only after Try it and Go live.`, p.agentId!);
       return { text: `Saved as draft v${v} with ${t.label}. Try it, then Go live; what runs today hasn’t changed.`, href: `/build/${p.agentId}` };
     }
+    if (p.kind === "department") {
+      // card 156: the department, its people off duty, its goals and asks, through the app's own paths
+      const { acceptDepartment } = await import("@/core/departments");
+      const r = await acceptDepartment(p.draft, id, "the owner (new department)");
+      await close(id, "accepted", r.text, r.deptId);
+      return { text: r.text, href: "/crew" };
+    }
     if (p.kind === "new_tool") {
       // a yes hands out nothing: the owner picks how on Find a tool, where an ask for a connector is counted
       await close(id, "accepted", "Sent to Find a tool.");
@@ -279,6 +286,16 @@ export async function proposalChecks(pr: Proposal, org: Org): Promise<Check[]> {
     return [
       { ok: !!s && s.holder !== "agent", text: !s ? "That seat is gone" : s.holder === "agent" ? "Someone sits there now" : `The ${s.title} seat is empty` },
       { ok: !!s && !below(org, s.id).length, text: s && below(org, s.id).length ? "It has seats under it" : "No seats under it" },
+    ];
+  }
+  if (p.kind === "department") {
+    const { departmentProblems, sourcesNow } = await import("@/core/departments");
+    const [problems, sources] = await Promise.all([departmentProblems(p.draft), sourcesNow(p.draft)]);
+    const asks = sources.filter((s) => s.state.state === "ask").map((s) => s.service);
+    return [
+      ...(problems.length ? problems.map((text) => ({ ok: false, text })) : [{ ok: true, text: `No ${p.draft.name} department yet, every name is free, and every tool is a read tool on the list` }]),
+      ...(asks.length ? [{ ok: true, text: `No connection for ${asks.join(", ")}: a request is logged when you approve` }] : []),
+      { ok: true, text: "Every agent starts off duty with no actions; each one’s first run drafts its playbook for you to approve" },
     ];
   }
   return [{ ok: true, text: "A yes hands out nothing: it opens Find a tool, where you pick a connection, add a server, or ask for a connector" }];
