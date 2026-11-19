@@ -153,3 +153,38 @@ export function FactsPanel({ facts, add, edit, confirm, remove }: {
     </div>
   );
 }
+
+/** Step 2, Shopify (card 152): the store's .myshopify.com address, saved before the key. */
+export function StoreForm({ initial, save }: { initial: string; save: (domain: string) => Promise<ActionResult> }) {
+  const router = useRouter();
+  const [v, setV] = useState(initial);
+  const [t, setT] = useState<ActionResult | null>(null);
+  const [busy, start] = useTransition();
+  return (
+    <form className="row wrap" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); start(async () => { const r = await save(v); setT(r); if (r.ok) router.refresh(); }); }}>
+      <input id="shopify-store" className="input" style={{ flex: "1 1 220px", minWidth: 0 }} maxLength={120} value={v} onChange={(e) => setV(e.target.value)} placeholder="your-store.myshopify.com" aria-label="Your store’s .myshopify.com address" />
+      <button className="btn dark sm" disabled={busy || !v.trim()}>Save</button>
+      <Toast t={t} onDone={() => setT(null)} />
+    </form>
+  );
+}
+
+/** Step 2: "A tool that isn't listed?" Code says where it goes; the answer stays on the page, with a link when there is one. */
+export function UnlistedTool({ ask }: { ask: (name: string) => Promise<ActionResult & { href?: string }> }) {
+  const [v, setV] = useState("");
+  const [r, setR] = useState<(ActionResult & { href?: string }) | null>(null);
+  const [busy, start] = useTransition();
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <form className="row wrap" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); start(async () => { const a = await ask(v); setR(a); if (a.ok) setV(""); }); }}>
+        <input id="unlisted-tool" className="input" style={{ flex: "1 1 220px", minWidth: 0 }} maxLength={60} value={v} onChange={(e) => setV(e.target.value)} placeholder="Square, QuickBooks, PostHog…" aria-label="The tool’s name" />
+        <button className="btn outline sm" disabled={busy || !v.trim()}>{busy ? "Checking…" : "Tell Avery"}</button>
+      </form>
+      {r && (
+        <span className="soft-box" role="status" style={{ fontSize: 13, lineHeight: 1.45, background: r.ok ? "var(--soft)" : "var(--red-soft)", color: r.ok ? "inherit" : "var(--red-ink)" }}>
+          {r.text}{r.href && <> <Link href={r.href}>Open it</Link></>}
+        </span>
+      )}
+    </div>
+  );
+}

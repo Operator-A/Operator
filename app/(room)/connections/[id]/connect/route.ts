@@ -8,10 +8,13 @@ import { atLeast, refusal } from "@/core/roles";
 import { isMcpId } from "@/core/mcp-rules";
 import { isCustomId } from "@/core/custom-mcp-rules";
 import { PENDING_COOKIE, PENDING_MINUTES, startConnect } from "@/integrations/mcp";
+import { BACK_COOKIE, backTarget } from "@/core/tools-step-rules";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const back = new URL(`/connections?${isCustomId(id) ? "s" : "c"}=${encodeURIComponent(id)}`, req.url);
+  // from first-run setup (?from=start, card 152) the founder comes back to setup; nothing else is a place
+  const fromStart = req.nextUrl.searchParams.get("from") === "start" && !isCustomId(id);
+  const back = new URL(fromStart ? backTarget("start", id) : `/connections?${isCustomId(id) ? "s" : "c"}=${encodeURIComponent(id)}`, req.url);
   const me = await memberFromCookie(req.cookies.get(SESSION_COOKIE)?.value);
   if (!me) return NextResponse.redirect(new URL("/login", req.url));
   if (!isMcpId(id) && !isCustomId(id)) return NextResponse.redirect(new URL("/connections", req.url));
@@ -23,6 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { url, pending } = await startConnect(id, new URL(`/connections/${id}/callback`, req.url).toString());
     const res = NextResponse.redirect(url);
     res.cookies.set(PENDING_COOKIE, pending, { httpOnly: true, secure: true, sameSite: "lax", path: `/connections/${id}`, maxAge: PENDING_MINUTES * 60 });
+    res.cookies.set(BACK_COOKIE, fromStart ? "start" : "", { httpOnly: true, secure: true, sameSite: "lax", path: `/connections/${id}`, maxAge: fromStart ? PENDING_MINUTES * 60 : 0 });
     return res;
   } catch (e) {
     back.searchParams.set("problem", `Couldn’t start the sign-in: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);

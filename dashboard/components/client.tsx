@@ -148,7 +148,7 @@ export function ActionButton({ action, confirm, className, children, disabled, t
 }
 
 /** Dry run: free, reads real data, writes nothing. Shows the result in place. */
-/** The Desk's "Start your crew": tick department templates, then install them (core/install.ts). */
+/** First-run setup, step 3: tick department templates, then install them (core/install.ts). */
 export function TemplatePicker({ templates, install, initial }: { templates: { id: string; name: string; about: string }[]; install: (ids: string[]) => Promise<ActionResult>; initial?: string[] }) {
   const [picked, setPicked] = useState<string[]>(initial ?? templates.map((t) => t.id));
   const flip = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));

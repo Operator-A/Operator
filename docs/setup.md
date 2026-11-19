@@ -5,7 +5,7 @@ definition). The Desk sends it to `/start` until setup is done. `/start` has fou
 
 1. **Tell Avery about your business.** A conversation with the Chief of Staff, plus a panel of what
    she has learned so far.
-2. **Connect your tools.** A link to Connections (card 152 builds this step out).
+2. **Connect your tools.** A tile per tool, each with click-by-click steps (card 152, below).
 3. **Pick departments.** The department templates (`docs/templates.md`), ticked where Avery leans
    toward them, or **Start empty**.
 4. **Meet your crew.** A placeholder until card 153.
@@ -47,6 +47,31 @@ The tools change nothing. Code saves what they hand it, and only after a run tha
 The site address is checked like a custom server's (`checkAddress`: a public https host). The page
 is untrusted data. It never chooses a recipient, URL, product or category, and the directive says so.
 
+## Connect your tools
+
+Step 2 (card 152) has a tile for Shopify, Mercury, Klaviyo, Gmail and Google Analytics (Analytics
+shows "Coming next" until card 152b builds its read-only server). The tiles, their steps and what
+each permission is for are in `core/tools-step-rules.ts`.
+
+- **Needed for.** A tile is marked "Needed for Finance" when a department Avery leans toward has a
+  tool whose `needs` names it (`SHOPIFY_CONNECTED` and so on, `NEED_TILE`). Nobody types it.
+- **The panel.** Numbered steps, then what each permission is for (from the profile's scopes,
+  `SCOPE_WORDS`), then the Connect button or, for Shopify, the store's address and the read-only key.
+  Gmail also offers the drafts sign-in once the read-only one is connected.
+- **Back to setup.** Connect from here goes to `/connections/<id>/connect?from=start`. The route
+  takes only `start` and keeps it in its own short-lived cookie; the callback returns to
+  `/start#step-2` only when that cookie says so. Anything else returns to Connections, so it can't
+  become an open redirect.
+- **A tool that isn't listed?** The founder types its name and code routes it (`routeUnlisted`): a
+  tile opens, a built-in opens on Connections, a known server opens Add a server with its address
+  filled in, and anything else becomes a connection request (`askFor`). No model call, and nothing is
+  connected.
+- **Skip for now.** Step 3 lists the tools each department still waits on. It installs anyway and
+  starts working once they're connected.
+
+Connecting is the same as on Connections: the same profiles, the vault, the owner check, and the
+same refusals of a sign-in or key that carries more than the profile asks for.
+
 ## What agents read
 
 `loadBusiness` adds the known facts to every agent's opening lines as background
@@ -59,7 +84,9 @@ from Shopify data (`docs/product-facts.md`).
 - `core/setup-rules.ts` (pure, tested by `npm run check:setup`)
 - `core/setup.ts` (state, facts, `askSetup`)
 - `dashboard/setupActions.ts` (the actions, each checking the role again)
-- `dashboard/components/setup.tsx` (the conversation and the panel), `app/start/page.tsx`
+- `core/tools-step-rules.ts` (pure, tested by `npm run check:tools-step`), `dashboard/toolsStep.ts`
+- `dashboard/components/setup.tsx` (the conversation, the panel, the store and unlisted-tool forms), `app/start/page.tsx`
 - `supabase/migrations/20261220090000_business_facts.sql`
 
-**What it replaces.** The Desk's **Start your crew** card and its `installTemplate` action.
+**What it replaces.** The Desk's **Start your crew** card and its `installTemplate` action (card 151),
+and step 2's plain link to Connections (card 152).
