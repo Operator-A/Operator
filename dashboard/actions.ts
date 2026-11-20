@@ -33,10 +33,10 @@ import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlay
 import { loadMemory } from "@/core/memory";
 import { loadOrg, seatPath, setHolder } from "@/core/org";
 import { getFloor, asRole } from "./data";
-import { currentPick } from "./firstJob";
+import { currentPick, needsOf } from "./firstJob";
 import { markFirstJob, setupState } from "@/core/setup";
 import { SETUP_AGENT } from "@/core/setup-rules";
-import { firstJobChains, readFirstJobTap } from "@/core/first-job-rules";
+import { firstJobChains, readFirstJobTap, runnableSteps } from "@/core/first-job-rules";
 import { planOrgOn } from "./orgPlan";
 import { when } from "./format";
 import { schedWords } from "./schedule";
@@ -174,10 +174,12 @@ export async function startFirstJob(agentId: string): Promise<ActionResult> {
     if (!who) return { ok: false, text: "Unknown agent." };
     const ids = [tap.agentId, ...(f.agents[SETUP_AGENT] ? [SETUP_AGENT] : [])];
     const block = await planBlock({ kind: "agent_on", agentIds: ids }); if (block) return { ok: false, text: block };
-    // each first playbook, as the founder, every step: the card showed them
+    // each first playbook, as the founder, with only the steps that can run now (card 189): the card
+    // showed them, and a step whose tool isn't connected would fail the run and put the agent on hold
     for (const id of ids) {
       const p = pendingPlaybook(await listPlaybooks(id));
-      if (p) await withActor(me.email, () => approvePlaybook(id, p.id, p.steps.map((_, i) => i)));
+      const keep = p ? runnableSteps(p.steps.map((s) => s.tool), needsOf, pick.connected) : [];
+      if (p && keep.length) await withActor(me.email, () => approvePlaybook(id, p.id, keep));
     }
     const { error } = await db().from("agents").update({ enabled: true }).in("id", ids);
     if (error) return fail(error.message);

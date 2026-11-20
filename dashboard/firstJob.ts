@@ -15,9 +15,10 @@ import { activePlaybook, listPlaybooks, pendingPlaybook } from "@/core/playbook"
 import { costsFor, toolLabel } from "./company";
 import { billing } from "./cost";
 import { connectedTiles } from "./toolsStep";
+import type { ToolTileId } from "@/core/tools-step-rules";
 import { RUN_COLS, type Floor, type Run } from "./data";
 
-const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[id]?.needs ?? [];
+export const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[id]?.needs ?? [];
 const kindOf = (id: string) => (TOOLS as Record<string, { kind?: string }>)[id]?.kind;
 
 export interface FirstJobOffer {
@@ -49,15 +50,20 @@ export async function jobFloor(health: Floor["health"]): Promise<JobFloor> {
   return { now, tz, agents, runs: r.error ? [] : (r.data ?? []) as Run[], health, approvalsPending: ap.error ? null : ap.count ?? 0 };
 }
 
-export async function currentPick(f: Pick<JobFloor, "agents" | "health">): Promise<{ job: FirstJob | null; waits: DeptWait[]; pending: Set<string> }> {
-  const { data, error } = await db().from("agent_playbooks").select("agent_id").eq("status", "proposed");
+export async function currentPick(f: Pick<JobFloor, "agents" | "health">): Promise<{ job: FirstJob | null; waits: DeptWait[]; pending: Map<string, string[]>; connected: Set<ToolTileId> }> {
+  const { data, error } = await db().from("agent_playbooks").select("agent_id, steps").eq("status", "proposed").order("version", { ascending: false });
   if (error) throw new Error(`Playbooks: ${error.message}`);
-  const pending = new Set((data ?? []).map((r) => String(r.agent_id)));
+  // each agent's newest proposed playbook, as its step tools in order
+  const pending = new Map<string, string[]>();
+  for (const r of data ?? []) {
+    const id = String(r.agent_id);
+    if (!pending.has(id)) pending.set(id, (Array.isArray(r.steps) ? r.steps : []).map((x: { tool?: unknown }) => String(x?.tool ?? "")));
+  }
   const installed = new Set(Object.keys(f.agents));
   const connected = await connectedTiles(f.health);
   const base = { setupTemplate: SETUP_TEMPLATE, installed, connected, needsOf };
   const job = pickFirstJob(TEMPLATES, { ...base, pending, kindOf });
-  return { job, waits: deptWaits(TEMPLATES, base, job?.templateId ?? null), pending };
+  return { job, waits: deptWaits(TEMPLATES, base, job?.templateId ?? null), pending, connected };
 }
 
 const stepLabels = (steps: readonly { tool: string }[]) => steps.map((s) => toolLabel(s.tool));
@@ -72,7 +78,7 @@ export async function firstJobView(f: JobFloor): Promise<FirstJobView | null> {
     const pb = pendingPlaybook(await listPlaybooks(job.agentId));
     const t = TEMPLATES.find((x) => x.id === job.templateId)!;
     const cost = agentsOf(t, { toolLabel, costOf: costsFor(await billing()) }).find((a) => a.id === job.agentId)?.cost ?? null;
-    return { phase: "offer", job: pb ? { ...job, steps: stepLabels(pb.steps), cost, playbookId: pb.id } : null, waits, averyWaits: pending.has(SETUP_AGENT) };
+    return { phase: "offer", job: pb ? { ...job, steps: stepLabels(pb.steps.filter((_, i) => job.keep.includes(i))), cost, playbookId: pb.id } : null, waits, averyWaits: pending.has(SETUP_AGENT) };
   }
   const agentId = st.firstJob!.agentId;
   const [all, connected] = await Promise.all([listPlaybooks(agentId), connectedTiles(f.health)]);
