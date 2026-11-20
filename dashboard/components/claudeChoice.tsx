@@ -9,7 +9,7 @@ import { KeyForm } from "@/dashboard/components/client";
 import { claudeSaveKey } from "@/dashboard/connectionActions";
 
 const PAGE: Record<Exclude<ReturnPlace, "settings">, { path: string; hash: string }> = {
-  start: { path: "/start", hash: "#step-1" },
+  start: { path: "/start", hash: "" },
   connections: { path: "/connections", hash: "#claude" },
 };
 

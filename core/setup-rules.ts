@@ -63,18 +63,33 @@ export function readLeaning(raw: unknown, templateIds: readonly string[]): { lea
 }
 
 /**
+ * Setup is one guided flow (card 181): one step on screen at a time, in this order. The step the founder
+ * is on is kept in the setup state, so a refresh or the way back from a tool's sign-in lands on it.
+ */
+export const STAGES = ["business", "tools", "company", "first"] as const;
+export type Stage = (typeof STAGES)[number];
+export const STAGE_WORDS: Record<Stage, string> = { business: "Your business", tools: "Your tools", company: "Your company", first: "First job" };
+export const isStage = (s: unknown): s is Stage => typeof s === "string" && (STAGES as readonly string[]).includes(s);
+/** The stored step, or the first one when it is missing or not on the list. */
+export const readStage = (raw: unknown): Stage => (isStage(raw) ? raw : "business");
+export const nextStage = (s: Stage): Stage | null => STAGES[STAGES.indexOf(s) + 1] ?? null;
+export const prevStage = (s: Stage): Stage | null => STAGES[STAGES.indexOf(s) - 1] ?? null;
+/** How far along the progress line is, in percent: the end of the current step. */
+export const stageProgress = (s: Stage): number => Math.round(((STAGES.indexOf(s) + 1) / STAGES.length) * 100);
+
+/**
  * The setup state kept in policies (key "setup"). `offer`: setup installed departments, so the Desk offers
  * a first job (card 154); `firstJob`: which agent started it and when.
  */
-export interface SetupState { done: boolean; leaning: Leaning[]; offer: boolean; firstJob: { agentId: string; at: string } | null }
-export const NO_SETUP: SetupState = { done: false, leaning: [], offer: false, firstJob: null };
+export interface SetupState { done: boolean; stage: Stage; leaning: Leaning[]; offer: boolean; firstJob: { agentId: string; at: string } | null }
+export const NO_SETUP: SetupState = { done: false, stage: "business", leaning: [], offer: false, firstJob: null };
 const AGENT_ID = /^[a-z][a-z0-9_]{1,39}$/;
 export function readSetupState(raw: unknown, templateIds: readonly string[]): SetupState {
-  const r = (raw && typeof raw === "object" ? raw : {}) as { done?: unknown; leaning?: unknown; offer?: unknown; firstJob?: unknown };
+  const r = (raw && typeof raw === "object" ? raw : {}) as { done?: unknown; stage?: unknown; leaning?: unknown; offer?: unknown; firstJob?: unknown };
   const l = readLeaning(r.leaning ?? [], templateIds);
   const fj = (r.firstJob && typeof r.firstJob === "object" ? r.firstJob : {}) as { agentId?: unknown; at?: unknown };
   const firstJob = typeof fj.agentId === "string" && AGENT_ID.test(fj.agentId) && typeof fj.at === "string" && !Number.isNaN(Date.parse(fj.at)) ? { agentId: fj.agentId, at: fj.at } : null;
-  return { done: r.done === true, leaning: "leaning" in l ? l.leaning : [], offer: r.offer === true, firstJob };
+  return { done: r.done === true, stage: readStage(r.stage), leaning: "leaning" in l ? l.leaning : [], offer: r.offer === true, firstJob };
 }
 
 /**

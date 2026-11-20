@@ -1,13 +1,27 @@
 # First-run setup
 
 What a new business sees before it has a crew (card 151, the first onboarding card in the product
-definition). The Desk sends it to `/start` until setup is done. `/start` has four steps:
+definition). The Desk sends it to `/start` until setup is done. `/start` is one guided flow, one step
+on screen at a time (card 181, the first slice of the white glove setup, epic card 180):
 
-1. **Tell Avery about your business.** A conversation with the Chief of Staff, plus a panel of what
-   she has learned so far.
-2. **Connect your tools.** A tile per tool, each with click-by-click steps (card 152, below).
+1. **Your business.** One card: "Let's build your company", a box for the business and one for the
+   website. After the first message it becomes the conversation with the Chief of Staff, with what
+   she has learned and the departments she is thinking of beside it.
+2. **Your tools.** A tile per tool, each with click-by-click steps (card 152, below).
 3. **Your company.** The org chart Avery proposes (card 153, below), or **Start empty**.
-4. **Meet your crew.** A placeholder until card 153.
+4. **First job.** What the Desk offers next (card 154), and credits on OPERATOR's Claude.
+
+## One step at a time
+
+The step is `stage` in the `setup` row of `policies` (`STAGES` in `core/setup-rules.ts`: business,
+tools, company, first). `readStage` opens on the first step when the stored one is missing or not on
+the list. **Back** and **Next** call `setupGo` (an approver; the step is checked against the list),
+and the page shows the saved step, so a refresh, a tool's sign-in or Stripe Checkout comes back to
+the same place: their return addresses are plain `/start`.
+
+The look is white glass over soft light that drifts as the steps change (`.wg` in
+`app/globals.css`), always light whatever the Control Room's theme, with a blur-fade as each step
+arrives. Reduced motion turns the movement off.
 
 ## Who goes to setup
 
@@ -19,8 +33,9 @@ or with an agent the owner built, never goes. Setup ends when the owner starts t
 
 ## How Avery thinks (card 162)
 
-Before the conversation opens, step 1 asks how agents think. The cloud edition offers two options,
-OPERATOR's Claude first:
+On the cloud edition the conversation opens straight away on OPERATOR's Claude, with free setup
+(below). Step 1 asks how agents think only when they can't think yet: the open edition with no key, or
+free setup used up with no credits. The cloud edition offers two options, OPERATOR's Claude first:
 
 - **Use OPERATOR's Claude.** Nothing to set up. Runs use the hosted key and are paid from prepaid
   credits at the model price plus 20% (card 128 slice 4). The panel comes from the `HostedClaude`
@@ -84,7 +99,7 @@ property, the panel asks which one agents report on.
   Gmail also offers the drafts sign-in once the read-only one is connected.
 - **Back to setup.** Connect from here goes to `/connections/<id>/connect?from=start`. The route
   takes only `start` and keeps it in its own short-lived cookie; the callback returns to
-  `/start#step-2` only when that cookie says so. Anything else returns to Connections, so it can't
+  `/start` (which opens on the saved step) only when that cookie says so. Anything else returns to Connections, so it can't
   become an open redirect.
 - **A tool that isn't listed?** The founder types its name and code routes it (`routeUnlisted`): a
   tile opens, a built-in opens on Connections, a known server opens Add a server with its address
@@ -159,6 +174,7 @@ from Shopify data (`docs/product-facts.md`).
 - `dashboard/components/setup.tsx` (the conversation, the panel, the store and unlisted-tool forms, the company chart), `app/start/page.tsx`
 - `supabase/migrations/20261220090000_business_facts.sql`
 
-**What it replaces.** The Desk's **Start your crew** card and its `installTemplate` action (card 151),
+**What it replaces.** The four steps stacked on one scrolling page, the step bar of anchor links and
+the `#step-N` return addresses (card 181). The Desk's **Start your crew** card and its `installTemplate` action (card 151),
 step 2's plain link to Connections (card 152), step 3's department checkboxes (`TemplatePicker`,
 card 153), and "approve each playbook on Crew" as the only way to start the first agent (card 154).

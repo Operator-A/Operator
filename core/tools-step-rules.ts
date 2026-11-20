@@ -122,7 +122,7 @@ export const waitingOn = (t: TemplateTools, needsOf: (toolId: string) => readonl
 /** Where Connect sends the founder back to. Only "start" is a place; anything else is Connections, so it can't become an open redirect. */
 export const BACK_COOKIE = "op_conn_back";
 export function backTarget(from: string | null | undefined, id: string): string {
-  return from === "start" ? "/start#step-2" : `/connections?c=${encodeURIComponent(id)}`;
+  return from === "start" ? "/start" : `/connections?c=${encodeURIComponent(id)}`;
 }
 
 /**

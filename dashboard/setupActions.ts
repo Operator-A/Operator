@@ -2,7 +2,8 @@
 // First-run setup actions (card 151, docs/setup.md). Each checks the login and role again. A message to
 // Avery makes real model calls, so it also needs DASHBOARD_CONTROLS=on, like her chat.
 import { revalidatePath } from "next/cache";
-import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, removeFact, setupState, type SetupAnswer } from "@/core/setup";
+import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, removeFact, setStage, setupState, type SetupAnswer } from "@/core/setup";
+import { isStage } from "@/core/setup-rules";
 import { readPick } from "@/core/company-rules";
 import { companyChart } from "./company";
 import { cleanMessage } from "@/core/chat-rules";
@@ -16,15 +17,28 @@ import { asRole } from "./data";
 import { controlsOn } from "./session";
 import type { ActionResult } from "./actions";
 
+/** What a founder reads when real runs are switched off for this app: no setting names, they can't change one. */
+const CONTROLS_OFF = "I can’t answer here yet: real runs are switched off for this OPERATOR. Whoever runs it turns them on.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
 const done = (text: string): ActionResult => { revalidatePath("/start"); return { ok: true, text }; };
+
+/** Setup moves to another step (card 181): Next, Back or a step's own button. Only a step on the list. */
+export async function setupGo(stage: string): Promise<ActionResult> {
+  const { no } = await asRole("approver"); if (no) return no;
+  if (!isStage(stage)) return { ok: false, text: "Unknown step." };
+  try {
+    if (!(await inSetup())) return { ok: false, text: "Setup is finished for this business." };
+    await setStage(stage);
+    return done("");
+  } catch (e) { return fail(e); }
+}
 
 export async function sendSetup(raw: string, site: string): Promise<SetupAnswer> {
   const none = (reply: string): SetupAnswer => ({ ok: false, reply, notes: [], runId: null, costUsd: 0, kept: false, saved: 0, suggested: 0 });
   const { me, no } = await asRole("approver");
   if (no) return none(no.text);
-  if (!controlsOn()) return none("Controls are off, so I can’t answer: each message is a real model call. Set DASHBOARD_CONTROLS=on in Vercel.");
+  if (!controlsOn()) return none(CONTROLS_OFF);
   const m = cleanMessage(raw);
   if ("problem" in m) return none(m.problem);
   if (typeof site !== "string" || site.length > 300) return none("That site address is too long.");
@@ -108,7 +122,7 @@ export async function setupToolAsk(name: string): Promise<ActionResult & { href?
   const { me, no } = await asRole("owner"); if (no) return no;
   const r = routeUnlisted(String(name ?? ""));
   if ("problem" in r) return { ok: false, text: r.problem };
-  if (r.kind === "tile") return { ok: true, text: `${r.name} is on the list above: open its card and follow the steps.`, href: `/start?c=${r.id}#step-2` };
+  if (r.kind === "tile") return { ok: true, text: `${r.name} is on the list above: open its card and follow the steps.`, href: `/start?c=${r.id}` };
   if (r.kind === "builtIn") return { ok: true, text: `${r.name} connects on Connections.`, href: r.href };
   if (r.kind === "known") return { ok: true, text: `${r.name} has its own server. Add it on Connections with its address filled in: you turn on each read-only tool yourself.`, href: r.href };
   try {
