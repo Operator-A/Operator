@@ -2,7 +2,7 @@
 // First-run setup actions (card 151, docs/setup.md). Each checks the login and role again. A message to
 // Avery makes real model calls, so it also needs DASHBOARD_CONTROLS=on, like her chat.
 import { revalidatePath } from "next/cache";
-import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, removeFact, setStage, setupState, skipCategory, type SetupAnswer } from "@/core/setup";
+import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, type SetupAnswer } from "@/core/setup";
 import { isStage } from "@/core/setup-rules";
 import { readPick } from "@/core/company-rules";
 import { companyChart } from "./company";
@@ -12,7 +12,7 @@ import { audit } from "@/core/audit";
 import { installTemplates } from "@/core/install";
 import { saveSettingsFields } from "@/core/settings";
 import { askFor } from "@/core/connector-requests";
-import { isCategory, routeUnlisted } from "@/core/tools-step-rules";
+import { TOOL_CATEGORIES, isCategory, routeUnlisted } from "@/core/tools-step-rules";
 import { asRole } from "./data";
 import { controlsOn } from "./session";
 import type { ActionResult } from "./actions";
@@ -43,6 +43,32 @@ export async function setupSkipTool(cat: string): Promise<ActionResult & { href?
     await skipCategory(cat);
     revalidatePath("/start");
     return { ok: true, href: "/start", text: "Left for later. Tap its box any time to connect it." };
+  } catch (e) { return fail(e); }
+}
+
+/** "Nothing yet" (card 183): the part is marked for Avery to walk the founder into its starter tool after setup. Creates no account. */
+export async function setupPlanGuide(cat: string): Promise<ActionResult & { href?: string }> {
+  const { no } = await asRole("approver"); if (no) return no;
+  if (!isCategory(cat)) return { ok: false, text: "Unknown part of the company." };
+  const starter = TOOL_CATEGORIES.find((c) => c.id === cat)?.starter;
+  if (!starter) return { ok: false, text: "There’s no tool to set up for this part yet." };
+  try {
+    if (!(await inSetup())) return { ok: false, text: "Setup is finished for this business." };
+    await planCategory(cat, { kind: "guide" });
+    revalidatePath("/start");
+    return { ok: true, href: `/start?q=${cat}`, text: `Noted. The steps for ${starter.name} wait on your Desk after setup.` };
+  } catch (e) { return fail(e); }
+}
+
+/** Takes back a part's plan (card 183): "Change my answer" in setup, "Not now" on the Desk afterwards. */
+export async function setupPlanClear(cat: string): Promise<ActionResult & { href?: string }> {
+  const { no } = await asRole("approver"); if (no) return no;
+  if (!isCategory(cat)) return { ok: false, text: "Unknown part of the company." };
+  try {
+    const setup = await inSetup();
+    await planCategory(cat, null);
+    revalidatePath("/start"); revalidatePath("/");
+    return setup ? { ok: true, href: `/start?q=${cat}`, text: "Cleared." } : { ok: true, text: "Removed from your Desk. You can connect it any time on Connections." };
   } catch (e) { return fail(e); }
 }
 
@@ -128,17 +154,21 @@ export async function setupShopifyStore(domain: string): Promise<ActionResult> {
 
 /**
  * Step 2: a tool the founder uses that isn't a tile. Code routes it (core/tools-step-rules.ts): a tile, a
- * built-in, a known server to add by address, or a connection request. No model call; nothing is connected.
+ * built-in, a known server to add by address, or a connection request, and then the part it answers starts
+ * from an export of it (card 183). No model call; nothing is connected.
  */
-export async function setupToolAsk(name: string): Promise<ActionResult & { href?: string }> {
+export async function setupOtherTool(cat: string, name: string): Promise<ActionResult & { href?: string; follow?: boolean }> {
   const { me, no } = await asRole("owner"); if (no) return no;
+  if (!isCategory(cat)) return { ok: false, text: "Unknown part of the company." };
   const r = routeUnlisted(String(name ?? ""));
   if ("problem" in r) return { ok: false, text: r.problem };
-  if (r.kind === "tile") return { ok: true, text: `${r.name} is on the list above: open its card and follow the steps.`, href: `/start?c=${r.id}` };
+  if (r.kind === "tile") return { ok: true, text: `${r.name} connects right here.`, href: `/start?c=${r.id}` };
   if (r.kind === "builtIn") return { ok: true, text: `${r.name} connects on Connections.`, href: r.href };
   if (r.kind === "known") return { ok: true, text: `${r.name} has its own server. Add it on Connections with its address filled in: you turn on each read-only tool yourself.`, href: r.href };
   try {
     await askFor({ name: r.name, what: "A tool the business already uses, named in setup", by: me.email });
-    return { ok: true, text: `Noted: ${r.name} isn’t built in yet, so it’s on the list of connections to build. Until then, a file export from ${r.name} will do (coming soon).` };
+    if (await inSetup()) await planCategory(cat, { kind: "export", tool: r.name });
+    revalidatePath("/start");
+    return { ok: true, href: `/start?q=${cat}`, follow: true, text: `There’s no direct line to ${r.name} yet, so this part starts from an export. I’ve put ${r.name} on our build list.` };
   } catch (e) { return fail(e); }
 }

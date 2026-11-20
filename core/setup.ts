@@ -14,7 +14,7 @@ import { installTemplates } from "@/core/install";
 import { templateList } from "@/core/templates";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
-import { readSkipped, type CategoryId } from "@/core/tools-step-rules";
+import { readPlans, readSkipped, type CategoryId, type CategoryPlan } from "@/core/tools-step-rules";
 import { checkAddress } from "@/core/custom-mcp-rules";
 import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
 import { MAX_REPLY } from "@/core/chat-rules";
@@ -63,6 +63,14 @@ export async function setStage(stage: Stage): Promise<void> {
 export async function skipCategory(cat: CategoryId, on = true): Promise<void> {
   const s = await setupState();
   await saveSetupState({ ...s, skipped: readSkipped(on ? [...s.skipped, cat] : s.skipped.filter((c) => c !== cat)) });
+}
+
+/** What the founder chose for a part they can't connect today (card 183); null takes the choice back. A plan replaces a skip. */
+export async function planCategory(cat: CategoryId, plan: CategoryPlan | null): Promise<void> {
+  const s = await setupState();
+  const plans = { ...s.plans };
+  if (plan) plans[cat] = plan; else delete plans[cat];
+  await saveSetupState({ ...s, plans: readPlans(plans), skipped: plan ? s.skipped.filter((c) => c !== cat) : s.skipped });
 }
 
 /** The first job started (card 154): which agent, and when. */
