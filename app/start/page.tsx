@@ -5,10 +5,9 @@ import { atLeast } from "@/core/roles";
 import { chatHistory } from "@/core/avery-chat";
 import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
-import { FACTS_MISSING, departmentTemplates, inSetup, listFacts, setupState } from "@/core/setup";
-import { TEMPLATE_FIT } from "@/dashboard/setup";
+import { FACTS_MISSING, inSetup, listFacts, setupState } from "@/core/setup";
 import { SETUP_AGENT, STAGES, STAGE_WORDS, nextStage, prevStage, shownStage, stageProgress, wrapScreen, type Stage } from "@/core/setup-rules";
-import { SetupChat, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
+import { SetupChat, Coverage, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
 import { Icon } from "@/dashboard/components/Icon";
 import { SignOutButton } from "@/dashboard/components/signOut";
 import { toolsStep, type TileView } from "@/dashboard/toolsStep";
@@ -17,8 +16,7 @@ import { KeyForm, ActionButton, LiveRefresher } from "@/dashboard/components/cli
 import { FirstJobCard } from "@/dashboard/components/firstJob";
 import { firstJobView, jobFloor } from "@/dashboard/firstJob";
 import { firstSentence } from "@/dashboard/desk";
-import { IdeaAside } from "@/dashboard/components/idea";
-import { companyChart } from "@/dashboard/company";
+import { companyChart, designTools } from "@/dashboard/company";
 import { initialPick } from "@/core/company-rules";
 import { ga4PickProperty, mcpSaveKey } from "@/dashboard/connectionActions";
 import { claudeState } from "@/dashboard/claude";
@@ -63,12 +61,10 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
     const needCredits = inUse(claude) === "hosted" && !!(await extensions.planBlock({ kind: "run", agentId: job?.agentId ?? SETUP_AGENT, trigger: "manual", billing: "credits" }).catch(() => null));
     return { view, job, screen: wrapScreen({ firstJob: state.firstJob, needCredits, jobReady: !!job }) };
   };
-  const templates = departmentTemplates();
-  const leaning = state.leaning.map((l) => ({ ...l, name: templates.find((t) => t.id === l.id)?.name ?? l.id }));
   const blocked = controlsOn() ? null : "Avery can’t answer here yet: real runs are switched off for this OPERATOR. Whoever runs it turns them on.";
-  const { tiles, shopifyDomain, connected } = await toolsStep(state.leaning.map((l) => l.id), health);
+  const { tiles, shopifyDomain, connected } = await toolsStep(state.leaning.map((l) => l.id), health, state.designs.filter((d) => !d.kit).map(designTools));
   const open = tiles.find((t) => t.tile.id === sp.c) ?? null;
-  const chart = companyChart(state.leaning, connected, bill, planNotes(state.plans), planKinds(state.plans));
+  const chart = companyChart(state.leaning, state.designs, connected, bill, planNotes(state.plans), planKinds(state.plans));
   const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected && open ? { ok: true, text: `${open.tile.name} is connected.` } : null;
   // the tools step (card 182): one question per part of the company, the ones a leaned-toward department needs first
   const order = orderCategories(new Set(tiles.filter((t) => t.neededBy.length).map((t) => t.tile.id)));
@@ -115,14 +111,15 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
             )}
             {keyed && talked && (
               <aside className="stack wg-enter" style={{ gap: 16, flex: "1 1 300px" }} aria-label="What Avery has learned">
+                {facts && <Coverage facts={facts} />}
                 {facts ? <FactsPanel facts={facts} add={setupAddFact} edit={setupEditFact} confirm={setupConfirmFact} remove={setupRemoveFact} /> : <div className="wg-glass wg-card sub">{FACTS_MISSING}</div>}
                 <div className="wg-glass wg-card" style={{ gap: 10 }}>
-                  <h2 className="wg-eyebrow">Departments I’m thinking of</h2>
-                  {leaning.length ? (
+                  <h2 className="wg-eyebrow">Avery’s sketch</h2>
+                  {state.designs.length ? (
                     <ul style={{ listStyle: "none", margin: 0, padding: 0 }} className="stack">
-                      {leaning.map((l) => <li key={l.id} className="row" style={{ justifyContent: "space-between", gap: 8, fontSize: 14 }}><span>{l.name}</span><span style={{ color: l.fit === "strong" ? "var(--mint-ink)" : "var(--ink2)" }}>{TEMPLATE_FIT[l.fit]}</span></li>)}
+                      {state.designs.map((d) => <li key={d.key} className="stack" style={{ gap: 2, fontSize: 14 }}><span className="row" style={{ justifyContent: "space-between", gap: 8 }}><b style={{ fontWeight: 600 }}>{d.name}</b><span className="ink2" style={{ fontSize: 12.5 }}>{d.kit ? "From a kit" : "Designed for you"}</span></span><span className="ink2" style={{ fontSize: 13 }}>{d.purpose}</span></li>)}
                     </ul>
-                  ) : <span className="sub">Once Avery knows a little about the business, she lists the departments she thinks fit.</span>}
+                  ) : <span className="sub">Once Avery understands the business, she sketches departments built around it.</span>}
                 </div>
                 {Hosted && (
                   <div className="wg-glass wg-card" style={{ gap: 6 }} aria-label="How Avery thinks">
@@ -219,12 +216,11 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
           <section key="company" className="wg-reveal" aria-labelledby="company-h">
             <div className="wg-enter" style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 10 }}>
               <h1 id="company-h" className="wg-h1" style={{ fontSize: "clamp(30px, 5vw, 44px)" }}>Meet your company.</h1>
-              <span className="wg-lead">{state.leaning.length ? "Built from what you told Avery and the tools you connected. Nothing goes out without your OK." : "Avery hasn’t proposed departments yet. Go back and tell her about your business, or add departments below."}</span>
+              <span className="wg-lead">{state.designs.length ? "Avery designed these from what you told her. Each says why. Nothing goes out without your OK." : "Avery hasn’t sketched your company yet. Go back and tell her more about your business, or add departments below."}</span>
             </div>
             {owner ? (
               <CompanyChart owner={biz.ownerName || "You"} company={chart.company} depts={chart.depts} initial={initialPick(chart.depts)} install={setupInstall} back={setupGo.bind(null, "tools")}
-                empty={<ActionButton className="btn ghost sm" action={setupStartEmpty} follow>Start empty instead</ActionButton>}
-                idea={state.idea ? <IdeaAside idea={state.idea} owner={owner} /> : null} />
+                empty={<ActionButton className="btn ghost sm" action={setupStartEmpty} follow>Start empty instead</ActionButton>} />
             ) : <span className="sub" style={{ textAlign: "center" }}>An owner of this business picks the departments.</span>}
           </section>
         )}

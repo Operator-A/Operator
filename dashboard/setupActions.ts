@@ -2,14 +2,13 @@
 // First-run setup actions (card 151, docs/setup.md). Each checks the login and role again. A message to
 // Avery makes real model calls, so it also needs DASHBOARD_CONTROLS=on, like her chat.
 import { revalidatePath } from "next/cache";
-import { addFact, askSetup, confirmFact, editFact, endWrapUp, ensureAvery, finishSetup, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, startIdea, wantIdea, type SetupAnswer } from "@/core/setup";
-import { ideaSeed, isStage } from "@/core/setup-rules";
+import { addFact, askSetup, confirmFact, editFact, endWrapUp, finishSetup, startCompany, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, type SetupAnswer } from "@/core/setup";
+import { isStage } from "@/core/setup-rules";
 import { readPick } from "@/core/company-rules";
 import { companyChart } from "./company";
 import { cleanMessage } from "@/core/chat-rules";
 import { withActor } from "@/core/actor";
 import { audit } from "@/core/audit";
-import { installTemplates } from "@/core/install";
 import { saveSettingsFields, settings } from "@/core/settings";
 import { validTz } from "@/core/time";
 import { askFor } from "@/core/connector-requests";
@@ -117,15 +116,14 @@ export async function setupInstall(picked: string[]): Promise<ActionResult & { h
   const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const st = await setupState();
-    const pick = readPick((Array.isArray(picked) ? picked : []).slice(0, 20), companyChart(st.leaning, new Set(), "own_key").depts);
+    const pick = readPick((Array.isArray(picked) ? picked : []).slice(0, 20), companyChart(st.leaning, st.designs, new Set(), "own_key").depts);
     if ("problem" in pick) return { ok: false, text: pick.problem };
     const ids = pick.ids;
-    await ensureAvery();
-    const { counts } = await installTemplates(ids);
+    const counts = await startCompany(ids, me.email);
     await finishSetup(true);
     await audit(me, "install_template", ids.join(","), counts);
     revalidatePath("/", "layout");
-    return { ok: true, href: "/start", text: `Installed: ${counts.agents ?? 0} agents in ${counts.departments ?? 0} departments, all off duty.` };
+    return { ok: true, href: "/start", text: `Started: ${counts.agents} agents in ${counts.departments} departments, all off duty.` };
   } catch (e) { return fail(e); }
 }
 
@@ -150,30 +148,6 @@ export async function setupStartEmpty(): Promise<ActionResult & { href?: string 
   } catch (e) { return fail(e); }
 }
 
-/** Avery's idea on the reveal (card 185): Build it with Avery puts it on the plan, Not now takes it off. Builds nothing. */
-export async function setupIdeaWant(on: boolean): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
-  try {
-    await wantIdea(on === true);
-    revalidatePath("/start"); revalidatePath("/");
-    return done(on === true ? "On your plan. Avery starts it with you after your first job." : "Not now. You can build any department later with Avery.");
-  } catch (e) { return fail(e); }
-}
-
-/** Start with Avery on the Desk (card 185): opens a department draft named for the idea. The founder still answers every question. */
-export async function ideaStart(): Promise<ActionResult> {
-  const { me, no } = await asRole("owner"); if (no) return no;
-  try {
-    const idea = await startIdea();
-    const { seedDraft } = await import("@/core/departments");
-    const fresh = await seedDraft(ideaSeed(idea));
-    await audit(me, "start_department_idea", idea.name);
-    revalidatePath("/");
-    return done(fresh ? `Avery opened a draft for ${idea.name}. Answer a few questions in the chat on the right.` : "You already have a department draft open. Finish or discard it first, then ask Avery about this one.");
-  } catch (e) { return fail(e); }
-}
-
-/** Step 2 (card 152): the Shopify store's address, saved with the business's other settings before its key is pasted. */
 /**
  * Step 1 (card 187): the founder's browser says its time zone with the first message, and it becomes the
  * business's, only while none is set (Settings can change it any time; this never overwrites that).

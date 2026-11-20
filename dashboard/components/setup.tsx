@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { SetupAnswer } from "@/core/setup";
 import type { ActionResult } from "@/dashboard/actions";
-import { FACT_TOPICS, TOPIC_WORDS, type Fact, type FactTopic } from "@/core/setup-rules";
+import { AREAS_TO_DESIGN, AREA_WORDS, FACT_TOPICS, INTERVIEW_AREAS, TOPIC_WORDS, coverage, type Fact, type FactTopic } from "@/core/setup-rules";
 import { BILLING_WORDS, usd } from "@/core/cost-rules";
 import { DEPT_STATUS_WORDS, companyTotals, deptMonth, deptStatus, waitLine, type CompanyAgent, type CompanyDept } from "@/core/company-rules";
 import { Toast } from "./client";
@@ -155,6 +155,24 @@ function FactRow({ f, edit, confirm, remove }: { f: Fact; edit: (id: string, tex
   );
 }
 
+/** What Avery still needs to learn (card 192), counted in code from the facts on the right. */
+export function Coverage({ facts }: { facts: Fact[] }) {
+  const c = coverage(facts);
+  return (
+    <div className="wg-glass wg-card" style={{ gap: 10 }} aria-label="What Avery needs to know">
+      <h2 className="wg-eyebrow">What Avery needs to know</h2>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0 }} className="stack">
+        {INTERVIEW_AREAS.map((a) => {
+          const ok = c.covered.includes(a);
+          return <li key={a} className="row" style={{ justifyContent: "space-between", gap: 8, fontSize: 14 }}><span>{AREA_WORDS[a]}</span><span style={{ color: ok ? "var(--mint-ink)" : "var(--ink2)", fontWeight: ok ? 600 : 400 }}>{ok ? "Covered" : "Not yet"}</span></li>;
+        })}
+      </ul>
+      <div aria-hidden style={{ height: 6, borderRadius: 999, background: "var(--soft)", overflow: "hidden" }}><div style={{ width: `${Math.round((c.covered.length / INTERVIEW_AREAS.length) * 100)}%`, height: "100%", background: "var(--acc)" }} /></div>
+      <span className="sub">{c.ready ? "Avery knows enough to sketch your company." : `Avery sketches your company once ${AREAS_TO_DESIGN} of these are covered, including your week.`}</span>
+    </div>
+  );
+}
+
 export function FactsPanel({ facts, add, edit, confirm, remove }: {
   facts: Fact[];
   add: (topic: string, text: string) => Promise<ActionResult>;
@@ -234,11 +252,9 @@ export function UnlistedTool({ ask }: { ask: (name: string) => Promise<ActionRes
  * in sequence. The founder can leave a department out or add one; Start this company installs exactly
  * what's on the chart. Statuses and month totals are worked out in code (core/company-rules.ts).
  */
-export function CompanyChart({ owner, company, depts, initial, install, back, empty, idea }: {
+export function CompanyChart({ owner, company, depts, initial, install, back, empty }: {
   owner: string; company: CompanyAgent[]; depts: CompanyDept[]; initial: string[];
   install: (ids: string[]) => Promise<ActionResult & { href?: string }>; back: () => Promise<ActionResult>; empty?: React.ReactNode;
-  /** Avery's department idea (card 185), drawn beside the chart; not part of the company. */
-  idea?: React.ReactNode;
 }) {
   const router = useRouter();
   const [picked, setPicked] = useState<string[]>(initial);
@@ -275,6 +291,8 @@ export function CompanyChart({ owner, company, depts, initial, install, back, em
                 <span className="wg-eyebrow" style={{ fontSize: 11, minWidth: 0 }}>{d.name}</span>
                 <span className="pill sm" style={{ background: STATUS_COLORS[st][0], color: STATUS_COLORS[st][1], flex: "none" }}>{DEPT_STATUS_WORDS[st]}</span>
               </span>
+              {d.reason && <span className="soft-box" style={{ fontSize: 13, lineHeight: 1.45 }}>You said: “{d.reason}”</span>}
+              {d.kind === "bespoke" && <span className="muted" style={{ fontSize: 12 }}>Designed for you by Avery</span>}
               {d.agents.map((a) => (
                 <span key={a.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                   <b style={{ fontSize: 15.5 }}>{a.name}</b>
@@ -292,7 +310,6 @@ export function CompanyChart({ owner, company, depts, initial, install, back, em
           );
         })}
       </div>
-      {idea}
 
       <div className="wg-glass wg-card wg-pop" style={{ width: "100%", animationDelay: `${1.1 + on.length * 0.18}s` }}>
         <div className="stack" style={{ gap: 2 }} aria-live="polite">

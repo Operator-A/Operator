@@ -1,11 +1,13 @@
 // Setup step 3, "Your company" (card 153, docs/setup.md): the org chart Avery proposes, drawn in code
-// from her leaning (core/setup-rules.ts readLeaning), the department templates, the connected tools
+// from her sketch (core/design-rules.ts), the department templates, the connected tools
 // and what each agent costs (core/cost-rules.ts). The model never writes the chart, a job, a tool or a
 // number: it only named template ids, which code checked. Pure, so check:setup can test it.
 import { DAY_RUNS, type Chain } from "@/core/flow-rules";
 import type { Template } from "@/core/template-rules";
 import { totalCost, type MonthCost } from "@/core/cost-rules";
 import type { Fit, Leaning } from "@/core/setup-rules";
+import { pickId, type Design } from "@/core/design-rules";
+import { peopleOf, type DraftPerson } from "@/core/department-rules";
 
 export interface CompanyAgent {
   id: string;
@@ -37,6 +39,10 @@ export interface CompanyDept {
   waitNotes: Record<string, string>;
   /** Which of those tools the founder planned for (card 184), by tool name. */
   waitKinds: Record<string, "guide" | "export">;
+  /** Card 193: the founder's words Avery designed it for, or null for a template she didn't sketch. */
+  reason: string | null;
+  /** template: on the list, not sketched; kit: sketched from a template under its own name; bespoke: designed from scratch. */
+  kind: "template" | "kit" | "bespoke";
 }
 
 /** A department's status on the reveal (card 184), worked out in code: a plain wait outranks an export, an export outranks a guide. */
@@ -75,6 +81,8 @@ export function runsFor(id: string, chains: readonly unknown[], manualOnly: bool
  */
 export function companyDepts(templates: readonly Template[], o: {
   leaning: readonly Leaning[];
+  /** Avery's sketch (card 193): a kit's name and reason replace the template's; bespoke ones come from bespokeDept. */
+  designs?: readonly Pick<Design, "kit" | "name" | "purpose" | "reason">[];
   setupTemplate: string;
   toolLabel: (id: string) => string;
   costOf: (template: Template, agentId: string, runsPerMonth: number) => MonthCost;
@@ -82,15 +90,40 @@ export function companyDepts(templates: readonly Template[], o: {
   waitNotes?: Readonly<Record<string, string>>;
   waitKinds?: Readonly<Record<string, "guide" | "export">>;
 }): CompanyDept[] {
-  return templates.filter((t) => t.id !== o.setupTemplate).map((t) => ({
-    id: t.id, name: t.name, about: t.about,
+  return templates.filter((t) => t.id !== o.setupTemplate).map((t) => {
+    const d = o.designs?.find((x) => x.kit === t.id);
+    return {
+    id: t.id, name: d?.name ?? t.name, about: d?.purpose || t.about, reason: d?.reason ?? null, kind: d ? "kit" as const : "template" as const,
     fit: o.leaning.find((l) => l.id === t.id)?.fit ?? null,
     agents: agentsOf(t, o),
     openSeats: t.seats.filter((s) => s.holder === "open").map((s) => s.title),
     waitsOn: [...(o.waitsOn[t.id] ?? [])],
     waitNotes: Object.fromEntries((o.waitsOn[t.id] ?? []).filter((n) => o.waitNotes?.[n]).map((n) => [n, o.waitNotes![n]])),
     waitKinds: Object.fromEntries((o.waitsOn[t.id] ?? []).filter((n) => o.waitKinds?.[n]).map((n) => [n, o.waitKinds![n]])),
-  }));
+    };
+  });
+}
+
+/**
+ * A department Avery designed from scratch (card 193), as a branch of the chart: its people from the
+ * draft (head first), each by hand until its playbook is approved, so its cost is per run, not a month.
+ */
+export function bespokeDept(d: Design, o: {
+  toolLabel: (id: string) => string;
+  costOf: (p: DraftPerson) => MonthCost;
+  waitsOn: readonly string[];
+  waitNotes?: Readonly<Record<string, string>>;
+  waitKinds?: Readonly<Record<string, "guide" | "export">>;
+}): CompanyDept {
+  const people = d.draft ? peopleOf(d.draft) : [];
+  return {
+    id: pickId(d), name: d.name, about: d.purpose, fit: "strong", reason: d.reason, kind: "bespoke",
+    agents: people.map((p, i) => ({ id: `${d.key}:${p.name.toLowerCase()}`, name: p.name, role: p.seat, job: p.job, tools: [...new Set(p.tools.map(o.toolLabel))], head: i === 0 && !!d.draft?.head, runsPerMonth: 0, cost: o.costOf(p) })),
+    openSeats: d.draft?.head ? [] : ["Head"],
+    waitsOn: [...o.waitsOn],
+    waitNotes: Object.fromEntries(o.waitsOn.filter((n) => o.waitNotes?.[n]).map((n) => [n, o.waitNotes![n]])),
+    waitKinds: Object.fromEntries(o.waitsOn.filter((n) => o.waitKinds?.[n]).map((n) => [n, o.waitKinds![n]])),
+  };
 }
 
 /** One template's agents, heads first, in seat order. */
@@ -109,10 +142,10 @@ export function agentsOf(t: Template, o: { toolLabel: (id: string) => string; co
   }).sort((x, y) => Number(y.head) - Number(x.head));
 }
 
-/** What the chart starts with: the departments Avery leaned toward, strong or likely. */
+/** What the chart starts with: the departments Avery sketched (kits and bespoke), strong or likely. */
 export const initialPick = (depts: readonly CompanyDept[]): string[] => depts.filter((d) => d.fit).map((d) => d.id);
 
-/** The picked departments, checked against the chart: known ids only, each once, in template order. */
+/** The picked departments, checked against the chart: known ids only, each once, in chart order. */
 export function readPick(picked: readonly unknown[], depts: readonly CompanyDept[]): { ids: string[] } | { problem: string } {
   const want = new Set<string>();
   for (const p of picked) {

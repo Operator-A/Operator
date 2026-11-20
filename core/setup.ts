@@ -11,7 +11,7 @@ import { runExplore } from "@/core/runner";
 import { withRun } from "@/core/runs";
 import { forgetBusiness } from "@/core/business";
 import { installTemplates } from "@/core/install";
-import { templateList } from "@/core/templates";
+import { TEMPLATES, templateList } from "@/core/templates";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
 import { readPlans, readSkipped, type CategoryId, type CategoryPlan } from "@/core/tools-step-rules";
@@ -19,16 +19,17 @@ import { checkAddress } from "@/core/custom-mcp-rules";
 import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
 import { MAX_REPLY } from "@/core/chat-rules";
 import {
-  FACT_TOPICS, FITS, IDEA_LIMITS, MAX_FACTS_PER_MESSAGE, MAX_LEANING, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
-  cleanFact, factProblem, ideaOffer, isStage, readIdea, isTopic, needsSetup, readLeaning, readSetupState, setupDirective, setupPrompt, stateFor,
-  type DeptIdea, type Fact, type FactState, type Leaning, type SetupState, type Stage,
+  FACT_TOPICS, MAX_FACTS_PER_MESSAGE, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
+  cleanFact, coverage, factProblem, SETUP_EFFORT, SETUP_MODEL, isStage, isTopic, needsSetup, readSetupState, setupDirective, setupPrompt, stateFor,
+  type Fact, type FactState, type SetupState, type Stage,
 } from "@/core/setup-rules";
+import { applyDesign, designGaps, pickId, BESPOKE_PREFIX, DESIGN_PARTS, MAX_DESIGN_PARTS, MAX_DESIGNS, REASON_MAX, type Design, type Kit } from "@/core/design-rules";
 
 export const FACTS_MISSING = "The business facts table isn’t in Supabase yet: apply the migration 20261220090000_business_facts.sql.";
 const SETUP_KEY = "setup";
 
 /** The departments Avery may lean toward: every template but the Chief of Staff's. */
-export const departmentTemplates = () => templateList().filter((t) => t.id !== SETUP_TEMPLATE);
+const departmentTemplates = () => templateList().filter((t) => t.id !== SETUP_TEMPLATE);
 
 export async function setupState(): Promise<SetupState> {
   const { data, error } = await db().from("policies").select("value_json").eq("key", SETUP_KEY).maybeSingle();
@@ -49,6 +50,39 @@ export async function inSetup(): Promise<boolean> {
 }
 
 /** Setup is over: the founder installed departments (`offer`: the Desk offers a first job, card 154) or chose to start empty. */
+/**
+ * Start this company (card 193): the picked kits install from their templates (renamed to Avery's
+ * names), then each picked bespoke department is built from its checked draft, everyone off duty.
+ * A bespoke department with a gap stops it before anything is written.
+ */
+export async function startCompany(ids: readonly string[], by: string): Promise<{ agents: number; departments: number }> {
+  const s = await setupState();
+  const bespoke = ids.filter((id) => id.startsWith(BESPOKE_PREFIX)).map((id) => s.designs.find((d) => pickId(d) === id));
+  if (bespoke.some((d) => !d || !d.draft)) throw new Error("A department on the chart isn't in Avery's sketch any more. Reload the page.");
+  for (const d of bespoke as Design[]) {
+    const gaps = designGaps(d);
+    if (gaps.length) throw new Error(`${d.name} still needs ${gaps.join(" and ")}. Tell Avery, or leave it out.`);
+  }
+  const kitIds = ids.filter((id) => !id.startsWith(BESPOKE_PREFIX));
+  await ensureAvery();
+  let agents = 0, departments = 0;
+  if (kitIds.length) {
+    const { counts } = await installTemplates(kitIds);
+    agents += counts.agents ?? 0; departments += counts.departments ?? 0;
+    const { renameDepartment } = await import("@/core/org");
+    for (const d of s.designs.filter((x) => x.kit && kitIds.includes(x.kit))) {
+      const dept = TEMPLATES.find((t) => t.id === d.kit)?.departments[0];
+      if (dept && dept.name !== d.name) await renameDepartment(dept.id, d.name);
+    }
+  }
+  const { buildDepartment } = await import("@/core/departments");
+  for (const d of bespoke as Design[]) {
+    await buildDepartment(d.draft!, "setup: designed by Avery", by, null);
+    departments++; agents += (d.draft!.head ? 1 : 0) + d.draft!.agents.length;
+  }
+  return { agents, departments };
+}
+
 export async function finishSetup(offer = false): Promise<void> {
   // with departments installed, /start keeps the founder for the wrap-up: credits, then the first job (card 186)
   await saveSetupState({ ...(await setupState()), done: true, offer, wrapUp: offer, ...(offer ? { stage: "first" as const } : {}) });
@@ -144,7 +178,7 @@ function saveFactTool(held: { topic: string; text: string }[], have: number): To
     id: "save_fact", label: "Save a fact", detail: "Saves one thing you learned about the business, as a topic and one short line. The founder sees it at once and can correct it",
     kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
     params: [
-      { name: "topic", type: "enum", options: [...FACT_TOPICS], description: "business: its name and kind. sells: what it sells. customers: who buys. channels: where it sells. goals: what the founder wants. hand_off: jobs the founder wants taken off their plate. other: anything else worth knowing." },
+      { name: "topic", type: "enum", options: [...FACT_TOPICS], description: "business: its name and kind. sells: what it sells and how it makes money. customers: who buys. channels: where it sells and how customers find it. goals: what the founder wants this year. hand_off: where the founder's week goes and the jobs they want taken off their plate. other: anything else worth knowing." },
       { name: "text", type: "text", maxLength: 160, description: "One short plain line." },
     ],
     collect: (input, rows) => {
@@ -158,57 +192,63 @@ function saveFactTool(held: { topic: string; text: string }[], have: number): To
   };
 }
 
-/** Lean toward departments: one call per department, ids from the template list only. */
-function leanTool(held: Leaning[]): ToolDef {
-  const ids = departmentTemplates().map((t) => t.id);
+/**
+ * Design a department (card 193): one part per call, about a department named in `dept`. Checked in
+ * code against the sketch so far (core/design-rules.ts, with the card 156 department checks), applied
+ * in order and saved only after a run that finishes. It builds nothing: Start this company does.
+ */
+function designTool(held: { parts: Record<string, unknown>[] }): ToolDef {
   return {
-    id: "lean_departments", label: "Lean toward departments", detail: `Notes one department from the list you think fits, as a strong fit or likely. Up to ${MAX_LEANING}, one call each`,
+    id: "design_department", label: "Design a department", detail: `Sketches one department for this business, one part per call: about (create it with purpose, reason and kit, or change them), goal, head, agent, remove (a goal or agent by its title or name), drop (take the department off). Up to ${MAX_DESIGNS} departments; it builds nothing`,
     kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
     params: [
-      { name: "id", type: "enum", options: ids, description: "The department's id from the list." },
-      { name: "fit", type: "enum", options: [...FITS], description: "strong or likely." },
+      { name: "part", type: "enum", options: [...DESIGN_PARTS], description: "Which part this call changes." },
+      { name: "dept", type: "text", maxLength: 40, description: "The department's name, named for this business (like Shop accounts, Gift season, Patient reminders). Every call about it uses the same name." },
+      { name: "kit", type: "text", maxLength: 40, optional: true, description: "about, when creating: a starting kit's id when one truly fits, or none to design it from scratch." },
+      { name: "reason", type: "text", maxLength: REASON_MAX, optional: true, description: "about: the founder's own words this department answers, quoted or closely paraphrased from the conversation. Never from a web page." },
+      { name: "purpose", type: "text", maxLength: 200, optional: true, description: "about: what the department does for this business, in one sentence." },
+      { name: "name", type: "text", maxLength: 40, optional: true, description: "about: a new name for it. head or agent: a short first name, starting with a capital. remove: the agent's name." },
+      { name: "title", type: "text", maxLength: 120, optional: true, description: "goal: the goal in words. remove: the goal's title." },
+      { name: "measure", type: "text", maxLength: 40, optional: true, description: "goal: a measure key from the list, or none when no number exists yet." },
+      { name: "target", type: "text", maxLength: 20, optional: true, description: "goal: the number the founder said, only with a measure." },
+      { name: "seat", type: "text", maxLength: 60, optional: true, description: "head or agent: the seat's title, like Head of shop accounts or Season planner." },
+      { name: "job", type: "text", maxLength: 200, optional: true, description: "head or agent: what it does, in one sentence." },
+      { name: "each_run", type: "text", maxLength: 1500, optional: true, multiline: true, description: "head or agent: what it does on each run, step by step, using its tools." },
+      { name: "good_result", type: "text", maxLength: 400, optional: true, description: "head or agent: what a good result looks like." },
+      { name: "tools", type: "text", maxLength: 300, optional: true, description: "head or agent: read tool ids from the list, comma separated (at most 8)." },
+      { name: "brain", type: "enum", options: ["quick", "thinking"], default: "quick", description: "head or agent: quick for most jobs; thinking only when the job needs judgment." },
     ],
-    collect: (input, rows) => {
-      const l = readLeaning([...rows, input], ids);
-      return "problem" in l ? { problem: l.problem } : { row: input };
-    },
-    deliver: async (o) => { const l = readLeaning(o.rows, ids); if ("leaning" in l) held.push(...l.leaning); return "kept"; },
+    collect: (input, rows) => (rows.length >= MAX_DESIGN_PARTS ? { problem: `at most ${MAX_DESIGN_PARTS} design updates from one message` } : { row: input }),
+    deliver: async (o) => { held.parts.push(...o.rows); return "kept"; },
   };
 }
 
-/** Suggest a department (card 185): at most one idea, checked in code, kept after a run that finishes. */
-function ideaTool(held: { idea: Omit<DeptIdea, "want" | "started"> | null }): ToolDef {
-  const taken = departmentTemplates().flatMap((t) => [t.id, t.name]);
-  return {
-    id: "suggest_department", label: "Suggest a department", detail: `Suggests one more department the founder could build later, outside the list: a name, why it fits from the conversation, and up to ${IDEA_LIMITS.roles} role titles. Once at most; it builds nothing`,
-    kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
-    params: [
-      { name: "name", type: "text", maxLength: IDEA_LIMITS.name, description: "The department's name, like Events or Partnerships." },
-      { name: "why", type: "text", maxLength: IDEA_LIMITS.why, description: "One or two plain lines on why it fits this business, from what the founder said." },
-      { name: "roles", type: "text", maxLength: 170, optional: true, description: "Up to 4 short role titles, separated by commas, like Partner finder, Follow-up writer." },
-    ],
-    collect: (input, rows) => {
-      if (rows.length) return { problem: "one idea at most" };
-      const i = readIdea(input, taken);
-      return "problem" in i ? { problem: i.problem } : { row: input };
-    },
-    deliver: async (o) => { const i = o.rows[0] ? readIdea(o.rows[0], taken) : null; if (i && !("problem" in i)) held.idea = i; return "kept"; },
-  };
+/** What a bespoke department may use, for the directive: read and calculate tools, and the goal measures. */
+async function designMenu(): Promise<string> {
+  const [{ MEASURES }, { ownMeasureDefs }] = await Promise.all([import("@/core/goal-rules"), import("@/core/goals")]);
+  const own = await ownMeasureDefs().catch(() => []);
+  const tools = Object.values(TOOLS).filter((t) => (t.kind === "read" || t.kind === "calculate") && !t.server && !t.codeOnly).map((t) => `${t.id} (${t.label}: ${t.detail.slice(0, 90)})`);
+  const measures = [...MEASURES, ...own].filter((m) => m.available).map((m) => `${m.key} (${m.label})`);
+  return `Read tools a bespoke person may have: ${tools.join("; ")}.\nGoal measures: ${measures.join("; ")}.`;
 }
 
-/** The founder's answer to Avery's idea in setup (card 185): Build it with Avery, or Not now. */
-export async function wantIdea(on: boolean): Promise<void> {
-  const s = await setupState();
-  if (!s.idea) throw new Error("There's no idea to keep.");
-  await saveSetupState({ ...s, idea: { ...s.idea, want: on } });
-}
+/** The kits Avery may start from: every department template, with the agent names it brings. */
+const kits = (): Kit[] => TEMPLATES.filter((t) => t.id !== SETUP_TEMPLATE).map((t) => ({ id: t.id, name: t.name, agentNames: t.agents.map((a) => a.name) }));
+/** The kits for the directive: what each brings, so Avery starts from one only when it truly fits. */
+const kitLines = () => TEMPLATES.filter((t) => t.id !== SETUP_TEMPLATE).map((t) => ({ id: t.id, name: t.name, about: `${t.about} Brings: ${t.agents.map((a) => `${a.name} (${a.role})`).join(", ")}.` }));
 
-/** Start with Avery, on the Desk after the first job (card 185): marks the idea used and returns it. */
-export async function startIdea(): Promise<DeptIdea> {
-  const s = await setupState();
-  if (!ideaOffer(s) || !s.idea) throw new Error("Nothing to start.");
-  await saveSetupState({ ...s, idea: { ...s.idea, started: true } });
-  return s.idea;
+/** Avery's design parts from one run, applied in order to the saved sketch. Returns the sketch and one line per part. */
+async function applyDesigns(parts: readonly Record<string, unknown>[]): Promise<{ designs: Design[]; done: string[]; not: string[] }> {
+  let designs = (await setupState()).designs;
+  const ctx = await (await import("@/core/departments")).draftCtx();
+  const now = new Date().toISOString(), k = kits();
+  const done: string[] = [], not: string[] = [];
+  for (const p of parts) {
+    const r = applyDesign(designs, p, { ctx: { ...ctx, agentNames: [...ctx.agentNames, ...k.flatMap((x) => x.agentNames)] }, kits: k, now });
+    if ("problem" in r) { not.push(r.problem); continue; }
+    designs = r.designs; done.push(r.note);
+  }
+  return { designs, done, not };
 }
 
 /** Read a web page, held to the founder's own site: Claude's fetch, allowed only on that host. */
@@ -235,14 +275,17 @@ export async function askSetup(message: string, siteRaw: string): Promise<SetupA
   if (!facts) return none(FACTS_MISSING);
   const history = (await chatHistory(12)) ?? [];
   const kept = await keepChat({ role: "owner", text: site ? `${message}\n\n(My site: ${site})` : message });
-  const heldFacts: { topic: string; text: string }[] = [], heldLean: Leaning[] = [], heldIdea: { idea: Omit<DeptIdea, "want" | "started"> | null } = { idea: null };
-  const tools = [saveFactTool(heldFacts, facts.length), leanTool(heldLean), ideaTool(heldIdea), ...(site ? [siteTool(new URL(site).hostname)] : [])];
+  const heldFacts: { topic: string; text: string }[] = [], heldDesign: { parts: Record<string, unknown>[] } = { parts: [] };
+  // the interview comes first (card 192): Avery designs (card 193) only once code counts enough of it
+  const ready = coverage(facts).ready;
+  const tools = [saveFactTool(heldFacts, facts.length), ...(ready ? [designTool(heldDesign)] : []), ...(site ? [siteTool(new URL(site).hostname)] : [])];
   const base = loaded.spec;
   const spec: AgentSpec = {
     ...base,
-    directive: setupDirective(base.name, facts, departmentTemplates()),
+    directive: setupDirective(base.name, facts, kitLines(), ready ? await designMenu() : null, (await setupState()).designs),
     goodResult: "A short plain reply, at most about 90 words, ending with a question or the next step.",
-    effort: "low",
+    model: SETUP_MODEL,
+    effort: SETUP_EFFORT,
     tools: tools.map((t) => t.id),
     limits: { maxSteps: Math.min(base.limits.maxSteps, 6), maxCostUsd: base.limits.maxCostUsd },
     outputName: "setup reply",
@@ -270,8 +313,11 @@ export async function askSetup(message: string, siteRaw: string): Promise<SetupA
     }
     if (saved) notes.push(`Saved ${saved} fact${saved === 1 ? "" : "s"}. Edit or remove any on the right.`);
     if (suggested) notes.push(`${suggested} fact${suggested === 1 ? "" : "s"} from your site wait for you to confirm.`);
-    if (heldLean.length) { await saveSetupState({ ...(await setupState()), leaning: heldLean }); notes.push("Updated the departments I'm thinking of."); }
-    if (heldIdea.idea) { await saveSetupState({ ...(await setupState()), idea: { ...heldIdea.idea, want: false, started: false } }); notes.push(`Noted an idea for later: a ${heldIdea.idea.name} department.`); }
+    if (heldDesign.parts.length) {
+      const d = await applyDesigns(heldDesign.parts);
+      if (d.done.length) { await saveSetupState({ ...(await setupState()), designs: d.designs }); notes.push(`Sketched: ${d.done.join("; ")}.`); }
+      for (const x of d.not) notes.push(`Not in the sketch: ${x}.`);
+    }
     if (saved || suggested) await forgetBusiness();
   }
   const reply = res.status === "skipped" ? `I can't answer right now: ${res.summary}` : (finished && said ? said : res.summary).slice(0, MAX_REPLY);
