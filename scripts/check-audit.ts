@@ -36,6 +36,7 @@ const AUDITED = [
 const NOT_AUDITED: Record<string, string> = {
   dryRun: "reads only, no model, nothing logged",
   setupGo: "which step of setup is on screen; changes nothing else",
+  setupSkipTool: "which setup question is left for later; connects nothing",
   previewChain: "dry runs only",
   dryRunBuilt: "dry run only",
   applyWaiting: "applies approvals already audited",

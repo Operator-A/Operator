@@ -14,6 +14,7 @@ import { installTemplates } from "@/core/install";
 import { templateList } from "@/core/templates";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
+import { readSkipped, type CategoryId } from "@/core/tools-step-rules";
 import { checkAddress } from "@/core/custom-mcp-rules";
 import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
 import { MAX_REPLY } from "@/core/chat-rules";
@@ -56,6 +57,12 @@ export async function finishSetup(offer = false): Promise<void> {
 export async function setStage(stage: Stage): Promise<void> {
   if (!isStage(stage)) throw new Error("Unknown step.");
   await saveSetupState({ ...(await setupState()), stage });
+}
+
+/** A part of the company the founder will connect later (card 182). `on: false` asks it again. */
+export async function skipCategory(cat: CategoryId, on = true): Promise<void> {
+  const s = await setupState();
+  await saveSetupState({ ...s, skipped: readSkipped(on ? [...s.skipped, cat] : s.skipped.filter((c) => c !== cat)) });
 }
 
 /** The first job started (card 154): which agent, and when. */
