@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import {
   FACT_MAX, FACT_TOPICS, MAX_FACTS, MAX_LEANING, SETUP_AGENT, SETUP_TEMPLATE, STAGES, STAGE_WORDS,
+  IDEA_LIMITS, ideaOffer, ideaSeed, readIdea,
   cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readLeaning, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
 } from "../core/setup-rules";
 import { businessLines } from "../core/business-rules";
@@ -38,8 +39,8 @@ assert.match((readLeaning([{ id: SETUP_TEMPLATE, fit: "strong" }], deptIds) as {
 assert.match((readLeaning([{ id: deptIds[0], fit: "perfect" }], deptIds) as { problem: string }).problem, /strong or likely/);
 assert.match((readLeaning([{ id: deptIds[0], fit: "strong" }, { id: deptIds[0], fit: "likely" }], deptIds) as { problem: string }).problem, /twice/);
 assert.match((readLeaning(Array.from({ length: MAX_LEANING + 1 }, () => ({ id: deptIds[0], fit: "strong" })), deptIds) as { problem: string }).problem, /at most/);
-assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, stage: "business", skipped: [], plans: {}, leaning: [], offer: false, firstJob: null }, "a stored list with a bad id is dropped, not trusted");
-assert.deepEqual(readSetupState(null, deptIds), { done: false, stage: "business", skipped: [], plans: {}, leaning: [], offer: false, firstJob: null });
+assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, stage: "business", skipped: [], plans: {}, leaning: [], idea: null, offer: false, firstJob: null }, "a stored list with a bad id is dropped, not trusted");
+assert.deepEqual(readSetupState(null, deptIds), { done: false, stage: "business", skipped: [], plans: {}, leaning: [], idea: null, offer: false, firstJob: null });
 
 // one guided flow (card 181): the step is kept in the setup state, and only a step on the list counts
 assert.deepEqual([...STAGES], ["business", "tools", "company", "first"]);
@@ -162,6 +163,35 @@ assert.match(page184, /Meet your company\./, "step 3 is the reveal");
 assert.match(page184, /back=\{setupGo\.bind\(null, "tools"\)\}/, "Change something goes back to the tools questions");
 assert.match(page184, /empty=\{<ActionButton[^>]*action=\{setupStartEmpty\}/, "Start empty stays, as a quiet link");
 assert.doesNotMatch(read("dashboard/components/setup.tsx"), /role="tree"/, "the old tree chart is gone");
+
+// card 185: Avery's department idea, checked in code before it is kept
+const taken = TEMPLATES.flatMap((t) => [t.id, t.name]);
+assert.deepEqual(readIdea({ name: "Wholesale department", why: "You said cafés keep asking for bags.", roles: "Shop finder, Follow-up writer, Shop finder" }, taken),
+  { name: "Wholesale", why: "You said cafés keep asking for bags.", roles: ["Shop finder", "Follow-up writer"] }, "roles come as a comma list; ' department' is dropped; repeats go");
+assert.deepEqual(readIdea({ name: "Events", why: "Pop-ups.", roles: ["Booker"] }, taken), { name: "Events", why: "Pop-ups.", roles: ["Booker"] }, "a stored list of roles reads back");
+assert.ok("problem" in readIdea({ name: "", why: "x" }, taken), "a name is needed");
+assert.ok("problem" in readIdea({ name: "Wholesale", why: "" }, taken), "a reason is needed");
+assert.ok("problem" in readIdea({ name: "x".repeat(IDEA_LIMITS.name + 1), why: "y" }, taken), "the name is short");
+assert.ok("problem" in readIdea({ name: "Wholesale", why: "y", roles: "a1, b2, c3, d4, e5".replace(/\d/g, "") }, taken), "at most four roles");
+assert.ok("problem" in readIdea({ name: "Wholesale", why: "see https://evil.example" }, taken), "no links in why");
+assert.ok("problem" in readIdea({ name: "Wholesale", why: "write to buyer@shop.com" }, taken), "no addresses");
+assert.ok("problem" in readIdea({ name: "1 Wholesale", why: "y" }, taken), "the name starts with a letter");
+const tpl185 = TEMPLATES.find((t) => t.id !== SETUP_TEMPLATE)!;
+assert.ok("problem" in readIdea({ name: tpl185.name, why: "y" }, taken), "an idea is never a department already on the list");
+const idea = { name: "Wholesale", why: "Cafés ask.", roles: [], want: true, started: false };
+assert.deepEqual(readSetupState({ done: true, idea }, deptIds).idea, idea, "the idea and the founder's answer are kept");
+assert.equal(readSetupState({ idea: { name: "", why: "x", want: true } }, deptIds).idea, null, "a bad stored idea is dropped");
+assert.equal(ideaOffer({ done: true, firstJob: { agentId: "a1", at: "x" }, idea }), true, "the Desk offers it after the first job");
+assert.equal(ideaOffer({ done: true, firstJob: null, idea }), false, "not before the first job");
+assert.equal(ideaOffer({ done: true, firstJob: { agentId: "a1", at: "x" }, idea: { ...idea, want: false } }), false, "not when the founder said Not now");
+assert.equal(ideaOffer({ done: true, firstJob: { agentId: "a1", at: "x" }, idea: { ...idea, started: true } }), false, "only once");
+assert.deepEqual(ideaSeed({ name: "Wholesale", why: "Cafés ask." }), { name: "Wholesale", purpose: "Cafés ask." }, "the draft gets the name and purpose, nothing else");
+assert.match(setupDirective("Avery", [], []), /Suggest a department/i, "Avery is told when to suggest one");
+const setupTs = read("core/setup.ts");
+assert.match(setupTs, /id: "suggest_department"[\s\S]*kind: "report"/, "the idea is a report tool, so it builds nothing");
+assert.match(read("dashboard/components/idea.tsx"), /Build it with Avery/, "the reveal offers Build it with Avery");
+assert.match(read("app/(room)/page.tsx"), /<IdeaCard /, "the Desk shows the idea after the first job");
+assert.match(read("core/departments.ts"), /export async function seedDraft[\s\S]*if \(await loadDraft\(\)\) return false/, "Start with Avery never overwrites an open draft");
 
 // the table: its topics are the code's
 const mig = readdirSync("supabase/migrations").find((f) => f.endsWith("_business_facts.sql"))!;

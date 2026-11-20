@@ -2,8 +2,8 @@
 // First-run setup actions (card 151, docs/setup.md). Each checks the login and role again. A message to
 // Avery makes real model calls, so it also needs DASHBOARD_CONTROLS=on, like her chat.
 import { revalidatePath } from "next/cache";
-import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, type SetupAnswer } from "@/core/setup";
-import { isStage } from "@/core/setup-rules";
+import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, startIdea, wantIdea, type SetupAnswer } from "@/core/setup";
+import { ideaSeed, isStage } from "@/core/setup-rules";
 import { readPick } from "@/core/company-rules";
 import { companyChart } from "./company";
 import { cleanMessage } from "@/core/chat-rules";
@@ -136,6 +136,29 @@ export async function setupStartEmpty(): Promise<ActionResult & { href?: string 
     await audit(me, "finish_setup", "empty");
     revalidatePath("/", "layout");
     return { ok: true, href: "/", text: "Setup finished. Add departments on Crew > Org chart, or ask Avery to hire." };
+  } catch (e) { return fail(e); }
+}
+
+/** Avery's idea on the reveal (card 185): Build it with Avery puts it on the plan, Not now takes it off. Builds nothing. */
+export async function setupIdeaWant(on: boolean): Promise<ActionResult> {
+  const { no } = await asRole("owner"); if (no) return no;
+  try {
+    await wantIdea(on === true);
+    revalidatePath("/start"); revalidatePath("/");
+    return done(on === true ? "On your plan. Avery starts it with you after your first job." : "Not now. You can build any department later with Avery.");
+  } catch (e) { return fail(e); }
+}
+
+/** Start with Avery on the Desk (card 185): opens a department draft named for the idea. The founder still answers every question. */
+export async function ideaStart(): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    const idea = await startIdea();
+    const { seedDraft } = await import("@/core/departments");
+    const fresh = await seedDraft(ideaSeed(idea));
+    await audit(me, "start_department_idea", idea.name);
+    revalidatePath("/");
+    return done(fresh ? `Avery opened a draft for ${idea.name}. Answer a few questions in the chat on the right.` : "You already have a department draft open. Finish or discard it first, then ask Avery about this one.");
   } catch (e) { return fail(e); }
 }
 

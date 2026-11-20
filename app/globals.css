@@ -706,3 +706,5 @@ button.wg-opt { width: 100%; font: inherit; text-align: left; cursor: pointer; }
 .wg-depts { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; margin-bottom: 18px; }
 .wg-dept { border-radius: 22px; padding: 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; overflow-wrap: break-word; }
 @media (prefers-reduced-motion: reduce) { .wg-vline { animation: none; } }
+/* Avery's department idea on the reveal (card 185): dashed, so it reads as a suggestion, not part of the company */
+.wg-idea { width: 100%; max-width: 520px; margin-bottom: 18px; border: 1.5px dashed rgba(42, 47, 134, .35); border-radius: 22px; padding: 18px; display: flex; flex-direction: column; gap: 8px; background: rgba(255, 255, 255, .45); min-width: 0; overflow-wrap: break-word; }
