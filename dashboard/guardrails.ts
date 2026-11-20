@@ -1,4 +1,5 @@
 import "server-only";
+import { listTrust } from "@/core/trust";
 // The crew-wide money and email caps (policies), shown and edited on Settings: lower any time,
 // raise with a confirm and DASHBOARD_CONTROLS=on, never past the limit in code (setCap in
 // dashboard/actions.ts checks every change again). Each agent's own limits are its cost and step
@@ -17,15 +18,16 @@ export async function capLines(now = new Date()): Promise<{ caps: CapLine[] | nu
   await requireSession();
   if (!env.supabaseUrl || !env.supabaseServiceKey) return { caps: null, log: [], problem: "Supabase isn’t set up, so the caps can’t be read." };
   try {
-    const [caps, spent, sent, log] = await Promise.all([
+    const [caps, spent, sent, log, trusted] = await Promise.all([
       loadCaps(), monthSpentUsd(now).catch(() => null), emailsSentToday(now).catch(() => null),
       db().from("policy_log").select("key, old_value, new_value, changed_by, created_at").order("created_at", { ascending: false }).limit(10),
+      listTrust().then((rows) => rows.filter((r) => r.level === "act_undo").length, () => 0),
     ]);
     const used: Record<CapKey, string> = {
       max_purchase_usd: "No payment action exists yet, so nothing has been paid",
       max_monthly_spend_usd: spent == null ? "Can’t read payments" : `${fmtCap("max_monthly_spend_usd", spent)} sent this month`,
       max_emails_per_day: sent == null ? "Can’t read emails" : `${sent} sent today${sent === 0 ? " (no email action exists yet)" : ""}`,
-      undo_window_minutes: "Used once an action type reaches the middle trust level. None has yet",
+      undo_window_minutes: trusted ? `${trusted} kind${trusted === 1 ? "" : "s"} of action at Act with undo (Approvals, Trust levels)` : "Used once an action type earns Act with undo. None has yet",
     };
     return {
       caps: CAP_KEYS.map((k) => ({ key: k, ...CAPS[k], value: caps[k].value, missing: caps[k].raw == null, used: used[k] })),

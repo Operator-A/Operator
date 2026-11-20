@@ -11,7 +11,10 @@ import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { discardLesson, editMemory, forgetMemory, keepLesson, teach as teachMemory } from "@/core/memory";
 import { saveReaction } from "@/core/reactions";
-import { applyApproved, decide, loadCaps, queueBookkeeperProposals, retry } from "@/core/gateway";
+import { applyApproved, cancelScheduled, decide, decideWithTrust, loadCaps, queueBookkeeperProposals, retry } from "@/core/gateway";
+import { acceptOffer, declineOffer, demote } from "@/core/trust";
+import { LEVEL_WORDS, isRejectKind } from "@/core/trust-rules";
+import { TOOLS as WRITE_TOOLS } from "@/core/gateway/policy";
 import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { env } from "@/core/env";
 import { approvalDecided, startStep } from "@/core/chain";
@@ -276,13 +279,13 @@ export async function approve(approvalId: string): Promise<ActionResult> {
   const { me, no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(approvalId)) return { ok: false, text: "Unknown approval." };
   try {
-    const actionId = await decide(approvalId, "approve", me.email);
-    if (!actionId) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
-    const res = await applyNow([actionId]);
+    const d = await decideWithTrust(approvalId, "approve", me.email);
+    if (!d) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
+    const res = await applyNow([d.actionId]);
     await fireApprovalChains("approve");
     revalidatePath("/", "layout");
     await audit(me, "approve", approvalId);
-    return res;
+    return { ...res, text: `${res.text}${d.trust}` };
   } catch (e) { revalidatePath("/", "layout"); return fail(e); }
 }
 
@@ -290,13 +293,14 @@ export async function approve(approvalId: string): Promise<ActionResult> {
  * Rejects an approval. A reason is the owner's own words, so it is a reaction (docs/company-mode.md): it
  * saves a rule for the agent (or its department, or everyone) straight away, with no Keep to tap.
  */
-export async function reject(approvalId: string, reason?: string, scope?: string, keep?: string, replaces?: string | null): Promise<ActionResult> {
+export async function reject(approvalId: string, reason?: string, scope?: string, keep?: string, replaces?: string | null, kind?: string): Promise<ActionResult> {
   const { me, no } = await asRole("approver"); if (no) return no;
   if (!UUID.test(approvalId)) return { ok: false, text: "Unknown approval." };
+  if (!isRejectKind(kind)) return { ok: false, text: "Say why: it got this wrong, against the rules, not now, or something else." };
   const why = String(reason ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
   try {
-    const actionId = await decide(approvalId, "reject", me.email, why || undefined);
-    if (!actionId) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
+    const d = await decideWithTrust(approvalId, "reject", me.email, why || undefined, kind);
+    if (!d) { revalidatePath("/", "layout"); return { ok: false, text: "That item was already decided or has expired." }; }
     await fireApprovalChains("reject");
     let more = "";
     const { data: ap } = await db().from("approvals").select("agent_id, title").eq("id", approvalId).single();
@@ -307,8 +311,8 @@ export async function reject(approvalId: string, reason?: string, scope?: string
     // an agent on a playbook that proposed this goes back to needing approval for its next playbook
     try { if (ap && await holdAfterRejection(ap.agent_id, ap.title)) more += " Its next playbook will wait for your approval."; } catch { /* no playbook tables yet */ }
     revalidatePath("/", "layout");
-    await audit(me, "reject", approvalId, why ? { reason: why } : undefined);
-    return { ok: true, text: `Rejected.${more}` };
+    await audit(me, "reject", approvalId, why ? { reason: why, kind } : { kind });
+    return { ok: true, text: `Rejected.${more}${d.trust}` };
   } catch (e) { return fail(e); }
 }
 
@@ -779,3 +783,57 @@ export async function goLive(agentId: string, version: number, keep: number[] | 
   } catch (e) { return fail(e); }
 }
 
+
+// ---- Trust levels (card 7, docs/trust.md)
+
+const TRUST_KEY = /^[a-z0-9_]{1,60}$/;
+const toolOk = (t: string) => Object.prototype.hasOwnProperty.call(WRITE_TOOLS, t);
+
+/** The owner accepts a promotion card: that agent's tool moves up one level, if its record still earns it. */
+export async function acceptPromotion(agentId: string, tool: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!TRUST_KEY.test(agentId) || !toolOk(tool)) return { ok: false, text: "Unknown promotion." };
+  try {
+    const to = await acceptOffer(agentId, tool, me.email);
+    revalidatePath("/", "layout");
+    await audit(me, "accept_promotion", `${agentId}:${tool}`, { to });
+    return { ok: true, text: `Promoted to ${LEVEL_WORDS[to]}. Back to Draft any time from Approvals.` };
+  } catch (e) { revalidatePath("/", "layout"); return fail(e); }
+}
+
+/** "Not yet" on a promotion card: offered again after more decisions. */
+export async function declinePromotion(agentId: string, tool: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!TRUST_KEY.test(agentId) || !toolOk(tool)) return { ok: false, text: "Unknown promotion." };
+  try {
+    await declineOffer(agentId, tool);
+    revalidatePath("/", "layout");
+    await audit(me, "decline_promotion", `${agentId}:${tool}`);
+    return { ok: true, text: "Not yet. It stays where it is and is offered again after 10 more decisions." };
+  } catch (e) { return fail(e); }
+}
+
+/** Back to Draft by hand: every one waits for an approval again, and anything in its undo window is cancelled. */
+export async function trustToDraft(agentId: string, tool: string): Promise<ActionResult> {
+  const { me, no } = await asRole("approver"); if (no) return no;
+  if (!TRUST_KEY.test(agentId) || !toolOk(tool)) return { ok: false, text: "Unknown action type." };
+  try {
+    const moved = await demote(agentId, tool, `Put back to Draft by ${me.email}.`, me.email);
+    revalidatePath("/", "layout");
+    await audit(me, "trust_to_draft", `${agentId}:${tool}`);
+    return { ok: true, text: moved ? "Back to Draft: every one waits for your approval again." : "It was already at Draft." };
+  } catch (e) { return fail(e); }
+}
+
+/** Cancels an action in its undo window. "Wrong" or "against the rules" drops its type back to Draft. */
+export async function cancelAction(actionId: string, kind: string): Promise<ActionResult> {
+  const { me, no } = await asRole("approver"); if (no) return no;
+  if (!UUID.test(actionId) || !isRejectKind(kind)) return { ok: false, text: "Unknown action." };
+  try {
+    const text = await cancelScheduled(actionId, kind, me.email);
+    revalidatePath("/", "layout");
+    if (!text) return { ok: false, text: "Too late: its undo window already ended, or it was cancelled." };
+    await audit(me, "cancel_action", actionId, { kind });
+    return { ok: true, text };
+  } catch (e) { return fail(e); }
+}

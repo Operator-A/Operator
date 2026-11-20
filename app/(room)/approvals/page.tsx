@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { applyWaiting, approve, approveAll, queueQuinn, reject, retryAction } from "@/dashboard/actions";
+import { acceptPromotion, applyWaiting, approve, approveAll, cancelAction, declinePromotion, queueQuinn, reject, retryAction, trustToDraft } from "@/dashboard/actions";
+import { trustView, type TrustView } from "@/dashboard/trust";
 import { getApprovals, getFloor, getReactRules, type ApprovalItem, type ApprovalsView, type ReactRules } from "@/dashboard/data";
 import { m2, md, when } from "@/dashboard/format";
 import { controlsOn } from "@/dashboard/session";
@@ -15,7 +16,7 @@ const ACTION_LOOK: Record<string, [string, string]> = {
   proposed: ["Waiting on you", "var(--yel)"], approved: ["Approved, not applied", "var(--acc)"], executing: ["Applying", "var(--acc)"],
   applied: ["Applied", "var(--mint)"], partial: ["Partly applied", "var(--mint)"], failed: ["Failed", "var(--red)"],
   rejected: ["Rejected", "var(--mut2)"], expired: ["Expired (stale)", "var(--mut2)"], refused: ["Refused by the gateway", "var(--red)"],
-  sent_back: ["Sent back by its lead", "var(--mut2)"],
+  sent_back: ["Sent back by its lead", "var(--mut2)"], scheduled: ["In its undo window", "var(--acc)"], cancelled: ["Cancelled", "var(--mut2)"],
 };
 const Tag = ({ s }: { s: string }) => {
   const [l, c] = ACTION_LOOK[s] ?? [s, "var(--mut2)"];
@@ -86,7 +87,7 @@ function DeptTag({ i, view }: { i: ApprovalItem; view: ApprovalsView }) {
 
 export default async function Approvals({ searchParams }: { searchParams: Promise<{ dept?: string }> }) {
   const sp = await searchParams;
-  const [f, all] = await Promise.all([getFloor(), getApprovals()]);
+  const [f, all, trust] = await Promise.all([getFloor(), getApprovals(), trustView().catch((e): TrustView => ({ offers: [], scheduled: [], lines: [], undoMinutes: 30, problem: e instanceof Error ? e.message : String(e) }))]);
   // the department filter: one department, the ones off the chart ("none"), or everything
   const dept = all?.departments.some((d) => d.id === sp.dept) || sp.dept === "none" ? sp.dept : undefined;
   const inDept = (i: ApprovalItem) => !dept || (dept === "none" ? !i.department_id : i.department_id === dept);
@@ -154,6 +155,35 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
               <Link href="/approvals?dept=none" className={dept === "none" ? "on" : ""} aria-current={dept === "none" ? "page" : undefined}>Not in a department</Link>
             </nav>
           )}
+          {trust.offers.map((o) => (
+            <div key={`${o.agentId}:${o.tool}`} className="card" style={{ gap: 10, borderLeft: "4px solid var(--mint)" }}>
+              <span className="card-t">Earned trust</span>
+              <span style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.45 }}>{o.text}</span>
+              <span className="sub">Caps, refusals and fresh checks still apply to every one. A “wrong” or “against the rules” later drops it straight back to Draft.</span>
+              <div className="row" style={{ gap: 8 }}>
+                <ActionButton className="btn primary" action={acceptPromotion.bind(null, o.agentId, o.tool)}>Yes, promote</ActionButton>
+                <ActionButton className="btn ghost" action={declinePromotion.bind(null, o.agentId, o.tool)}>Not yet</ActionButton>
+              </div>
+            </div>
+          ))}
+
+          {trust.scheduled.length > 0 && (
+            <div className="card" style={{ gap: 8 }}>
+              <div className="stack" style={{ gap: 2 }}>
+                <span className="card-t">Going out on earned trust ({trust.scheduled.length})</span>
+                <span className="sub">Each runs by itself when its undo window ends ({trust.undoMinutes} minutes, checked every 15, so up to {trust.undoMinutes + 15}). Cancel writes nothing.</span>
+              </div>
+              {trust.scheduled.map((a) => (
+                <div key={a.id} className="row rule wrap" style={{ gap: 10, padding: "8px 0", fontSize: 13 }}>
+                  <span style={{ flex: 1, minWidth: 200 }}>{a.name} · {a.what}: {a.label}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>after {when(a.executeAfter)}</span>
+                  <ActionButton className="btn ghost xs" action={cancelAction.bind(null, a.id, "not_now")}>Cancel</ActionButton>
+                  <ActionButton className="btn ghost xs" action={cancelAction.bind(null, a.id, "wrong")} title="Cancels it and drops this kind back to Draft">Cancel, it’s wrong</ActionButton>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="row wrap" style={{ gap: 10 }}>
             <span className="card-t">Waiting on you ({view.pending.length})</span>
             {view.pending.length > 1 && (
@@ -188,6 +218,19 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
                   <span style={{ flex: 1, minWidth: 200 }}>{i.title}{i.action_reason && <span className="muted"> · {i.action_reason}</span>}</span>
                   <Tag s={i.action_status} />
                   {i.action_status === "failed" && <ActionButton className="btn ghost xs" disabled={!controls} action={retryAction.bind(null, i.action_id)}>Retry</ActionButton>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(trust.lines.length > 0 || trust.problem) && (
+            <div className="card" style={{ gap: 4 }}>
+              <div className="card-h" style={{ marginBottom: 6 }}><span className="card-t">Trust levels</span><span className="sub">Earned per agent and kind of action: 28 of the last 30 approved unedited, then you confirm</span></div>
+              {trust.problem && <span className="sub">{trust.problem}</span>}
+              {trust.lines.map((l) => (
+                <div key={`${l.agentId}:${l.tool}`} className="row rule wrap" style={{ gap: 12, padding: "9px 0", fontSize: 13 }}>
+                  <span style={{ flex: 1, minWidth: 220 }}><b style={{ fontWeight: 600 }}>{l.name} · {l.what}</b> <span className="muted">· {l.levelWords}</span><br /><span className="ink2" style={{ fontSize: 12.5 }}>{l.words}{l.reason && l.level === "draft" && l.changedAt ? ` Last change: ${l.reason}` : ""}</span></span>
+                  {l.level !== "draft" && <ActionButton className="btn ghost xs" action={trustToDraft.bind(null, l.agentId, l.tool)}>Back to Draft</ActionButton>}
                 </div>
               ))}
             </div>

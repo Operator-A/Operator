@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { Toast } from "./client";
+import { REJECT_KINDS, REJECT_WORDS, type RejectKind } from "@/core/trust-rules";
 
 const MAX = 280;
 export type Scope = "agent" | "department" | "crew";
@@ -116,16 +117,18 @@ export function ReactBar({ name, rules, save, current, compact, disabled, why }:
  * Reject on an approval card. Words are optional; when given they save as a rule in the owner's words,
  * straight away, for whoever he picks (the same picker as Not this on a run).
  */
-export function RejectButton({ reject, agentName, rules }: { reject: (reason: string, scope: Scope, keep: ReactKeep, replaces: string | null) => Promise<ActionResult>; agentName: string; rules: ReactRulesView }) {
+export function RejectButton({ reject, agentName, rules }: { reject: (reason: string, scope: Scope, keep: ReactKeep, replaces: string | null, kind: RejectKind) => Promise<ActionResult>; agentName: string; rules: ReactRulesView }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<RuleDraft>(blank);
+  const [kind, setKind] = useState<RejectKind | null>(null);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
   const router = useRouter();
   const go = () => start(async () => {
     let r: ActionResult;
-    try { r = await reject(draft.text, draft.scope, draft.keep, draft.replaces); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setOpen(false); setDraft(blank); setToast(r); router.refresh();
+    if (!kind) return;
+    try { r = await reject(draft.text, draft.scope, draft.keep, draft.replaces, kind); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
+    setOpen(false); setDraft(blank); setKind(null); setToast(r); router.refresh();
   });
   return (
     <>
@@ -135,10 +138,19 @@ export function RejectButton({ reject, agentName, rules }: { reject: (reason: st
           <div className="modal" role="dialog" aria-modal="true" aria-label="Reject" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.02em" }}>Reject this?</h3>
             <p style={{ fontSize: 14, lineHeight: 1.55, color: "var(--ink2)" }}>Nothing is sent or written. If you say why, it’s saved as a rule in your words, so {agentName} doesn’t make the same call again.</p>
+            <div className="stack" style={{ gap: 6 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600 }} className="ink2">Why?</span>
+              <div className="row wrap" style={{ gap: 6 }} role="radiogroup" aria-label="Why">
+                {REJECT_KINDS.map((k) => (
+                  <button key={k} type="button" role="radio" aria-checked={kind === k} className={`btn sm ${kind === k ? "dark" : "ghost"}`} disabled={busy} onClick={() => setKind(k)}>{REJECT_WORDS[k]}</button>
+                ))}
+              </div>
+              {(kind === "wrong" || kind === "policy") && <span className="muted" style={{ fontSize: 11.5, lineHeight: 1.45 }}>This drops {agentName}’s kind of action back to Draft, so every one waits for you again.</span>}
+            </div>
             <RulePicker name={agentName} rules={rules} draft={draft} set={setDraft} disabled={busy} placeholder="Why not? (optional) e.g. Costco runs are supplies, not COGS" />
             <div className="row wrap" style={{ justifyContent: "flex-end", gap: 8, paddingTop: 4 }}>
               <button className="btn ghost" style={{ height: 42 }} onClick={() => setOpen(false)} disabled={busy}>Cancel</button>
-              <button className="btn dark" style={{ height: 42 }} onClick={go} disabled={busy || draft.text.trim().length > MAX}>{busy ? "Working…" : draft.text.trim() ? "Reject and save the rule" : "Reject"}</button>
+              <button className="btn dark" style={{ height: 42 }} onClick={go} disabled={busy || !kind || draft.text.trim().length > MAX}>{busy ? "Working…" : draft.text.trim() ? "Reject and save the rule" : "Reject"}</button>
             </div>
           </div>
         </div>

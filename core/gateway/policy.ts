@@ -25,7 +25,7 @@ export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
 export const TOOLS = {
   [ANNOTATE]: {
     agents: ["bookkeeper", "cfo"],
-    // Draft: every action waits for the owner. Promotion to Act is a later, data-backed decision.
+    // starts at Draft; may earn Act with undo, then Act (core/trust-rules.ts, card 7)
     tier: "Draft" as Tier,
     fields: ["attach", "receipt_path", "category_id", "category", "note"],
     promotable: true,
