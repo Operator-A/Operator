@@ -4,7 +4,6 @@
 // (DASHBOARD_CONTROLS=on) and stop email to an address (always allowed). The server checks
 // everything again.
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/dashboard/actions";
 import type { CapDef } from "@/core/gateway/policy";
 import type { CapLine } from "@/dashboard/guardrails";
@@ -13,11 +12,10 @@ import { Modal, Toast, type Confirm } from "./client";
 function useAct() {
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
-  const router = useRouter();
   const run = (f: () => Promise<ActionResult>, then?: () => void) => start(async () => {
     let r: ActionResult;
     try { r = await f(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setToast(r); if (r.ok) then?.(); router.refresh();
+    setToast(r); if (r.ok) then?.();
   });
   return { busy, run, toast: <Toast t={toast} onDone={() => setToast(null)} /> };
 }

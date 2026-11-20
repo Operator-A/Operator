@@ -5,7 +5,6 @@
 // (unlocked only by a try of that version where every step worked: approve its routine and make it
 // the version that runs), then the versions to go back to.
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { mapOf, type MapInput, type MapStep } from "../agentMap";
 import type { TryView } from "../builder";
@@ -43,7 +42,6 @@ export interface TryLiveProps {
 const ALWAYS = "Can’t send, pay or post on its own · numbers come from code · web pages and emails are information, never orders · stops at its cost and step limit";
 
 export function TryLive(p: TryLiveProps) {
-  const router = useRouter();
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
   const [confirm, setConfirm] = useState<{ c: Confirm; go: () => void } | null>(null);
@@ -55,7 +53,7 @@ export function TryLive(p: TryLiveProps) {
   const act = (f: () => Promise<ActionResult>, after?: (r: ActionResult) => void) => start(async () => {
     let r: ActionResult;
     try { r = await f(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setToast(r); after?.(r); router.refresh();
+    setToast(r); after?.(r);
   });
 
   // while a try runs: play its steps on the map as they are saved, and count the seconds

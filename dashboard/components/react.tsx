@@ -1,7 +1,6 @@
 "use client";
 // Teach by reacting (docs/company-mode.md, slice 1): Good / Not this on a run or one item of it, and the
 // rule picker that Reject on an approval card shares. The owner's words save straight away as a rule.
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { Toast } from "./client";
@@ -80,12 +79,11 @@ export function ReactBar({ name, rules, save, current, compact, disabled, why }:
   const [draft, setDraft] = useState<RuleDraft>(blank);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
-  const router = useRouter();
   const go = (verdict: "good" | "not") => start(async () => {
     let r: ActionResult;
     try { r = await save(verdict, verdict === "good" ? "" : draft.text, draft.scope, draft.keep, draft.replaces); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Couldn’t save that." }; }
     setToast(r);
-    if (r.ok) { setOpen(false); setDraft(blank); router.refresh(); }
+    if (r.ok) { setOpen(false); setDraft(blank); }
   });
   const size = compact ? "btn xs" : "btn sm";
   const good = current?.verdict === "good", not = current?.verdict === "not";
@@ -123,12 +121,11 @@ export function RejectButton({ reject, agentName, rules }: { reject: (reason: st
   const [kind, setKind] = useState<RejectKind | null>(null);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
-  const router = useRouter();
   const go = () => start(async () => {
     let r: ActionResult;
     if (!kind) return;
     try { r = await reject(draft.text, draft.scope, draft.keep, draft.replaces, kind); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setOpen(false); setDraft(blank); setKind(null); setToast(r); router.refresh();
+    setOpen(false); setDraft(blank); setKind(null); setToast(r);
   });
   return (
     <>

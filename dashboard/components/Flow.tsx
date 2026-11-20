@@ -102,7 +102,7 @@ export function Flow(p: FlowProps) {
   const act = (f: () => Promise<ActionResult>, after?: (r: ActionResult) => void) => startT(async () => {
     let r: ActionResult;
     try { r = await f(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setToast(r); after?.(r); router.refresh();
+    setToast(r); after?.(r);
   });
 
   const doSave = () => {

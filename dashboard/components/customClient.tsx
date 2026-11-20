@@ -26,7 +26,7 @@ export function AddServerForm({ add, warning, controls, start: init }: { add: (n
       let r: ActionResult & { id?: string };
       try { r = await add(name, url, auth); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
       setToast(r);
-      if (r.ok && r.id) router.push(`/connections?s=${r.id}`); else router.refresh();
+      if (r.ok && r.id) router.push(`/connections?s=${r.id}`);
     });
   };
   return (
@@ -97,13 +97,12 @@ export function ToolOnForm({ tool, inputs, initial, save, controls, editing }: {
   const [pins, setPins] = useState<Record<string, string>>(initial.pins);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
-  const router = useRouter();
   const pinnable = inputs.filter((i) => i.kind !== "other");
   const go = () => start(async () => {
     let r: ActionResult;
     try { r = await save(label, line, pins); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
     setToast(r);
-    if (r.ok) { setOpen(false); router.refresh(); }
+    if (r.ok) setOpen(false);
   });
   if (!open) return (
     <>
@@ -154,12 +153,11 @@ export function GoalNumberForm({ tool, initial, save, stop, controls }: { tool: 
   const [f, setF] = useState<NumberFormValue>(initial ?? { field: "", label: "", unit: "count", shape: "floor" });
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
-  const router = useRouter();
   const run = (act: () => Promise<ActionResult>) => start(async () => {
     let r: ActionResult;
     try { r = await act(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
     setToast(r);
-    if (r.ok) { setOpen(false); router.refresh(); }
+    if (r.ok) setOpen(false);
   });
   const sid = tool.replace(/[^A-Za-z0-9_-]/g, "-");
   if (!open) return (

@@ -1,7 +1,6 @@
 "use client";
 // The interactive parts of the Memory tab: Edit / Forget on each line, Keep / Discard on a proposed lesson.
 // Teaching happens where the work is (dashboard/components/react.tsx).
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { ActionButton, Toast } from "./client";
@@ -21,13 +20,12 @@ export function MemoryLine({ line, color, edit, forget, keep, keepCrew, discard 
   const [text, setText] = useState(line.text);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
-  const router = useRouter();
   const save = () => start(async () => {
     if (!edit) return;
     let r: ActionResult;
     try { r = await edit(text); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Couldn’t save that." }; }
     setToast(r);
-    if (r.ok) { setEditing(false); router.refresh(); }
+    if (r.ok) setEditing(false);
   });
   return (
     <div className="rule" style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0" }}>

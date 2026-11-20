@@ -3,7 +3,7 @@
 // at the bottom of a phone that opens into a full sheet. Each message is one logged run inside her
 // budget (dashboard/chatActions.ts). The lines under a reply come from code: what it actually saved.
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import type { ChatAnswer } from "@/core/avery-chat";
 import { Icon } from "./Icon";
@@ -17,7 +17,6 @@ const readStored = () => { try { return localStorage.getItem(KEY); } catch { ret
 
 export function AveryChat({ name, initial, missing, send, draft }: { name: string; initial: ChatMsg[]; missing: string | null; send: (text: string) => Promise<ChatAnswer>; /** Card 156: the department draft card, drawn on the server. */ draft?: React.ReactNode }) {
   const path = usePathname();
-  const router = useRouter();
   // wide screen: open by default on the Desk; elsewhere it remembers what the owner last did (this browser only).
   // phone: a bar at the bottom that opens a full sheet, closed again on the next page.
   const stored = useSyncExternalStore(noop, readStored, () => null);
@@ -48,7 +47,6 @@ export function AveryChat({ name, initial, missing, send, draft }: { name: strin
       let a: ChatAnswer;
       try { a = await send(t); } catch (e) { a = { ok: false, reply: e instanceof Error ? e.message : "Something went wrong.", notes: [], runId: null, costUsd: 0, kept: false }; }
       setMsgs((m) => [...m, { id: `a${Date.now()}`, role: "avery", text: a.reply, runId: a.runId, notes: a.notes }]);
-      if (a.notes.length) router.refresh();
     });
   };
 

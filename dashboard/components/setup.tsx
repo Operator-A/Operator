@@ -16,7 +16,6 @@ import { Icon } from "./Icon";
 export interface SetupMsg { id: string; role: "owner" | "avery"; text: string; runId: string | null; notes: string[] }
 
 export function SetupChat({ name, initial, send, ready, blocked, foot }: { name: string; initial: SetupMsg[]; send: (text: string, site: string) => Promise<SetupAnswer>; ready: boolean; blocked: string | null; foot: string | null }) {
-  const router = useRouter();
   const [msgs, setMsgs] = useState<SetupMsg[]>(initial);
   const [text, setText] = useState("");
   const [site, setSite] = useState("");
@@ -36,7 +35,6 @@ export function SetupChat({ name, initial, send, ready, blocked, foot }: { name:
       try { a = await send(t, s); } catch (e) { a = { ok: false, reply: e instanceof Error ? e.message : "Something went wrong.", notes: [], runId: null, costUsd: 0, kept: false, saved: 0, suggested: 0 }; }
       setMsgs((m) => [...m, { id: `a${Date.now()}`, role: "avery", text: a.reply, runId: a.runId, notes: a.notes }]);
       if (a.ok && s) setSite("");
-      router.refresh();
     });
   };
   const off = busy || !ready;
@@ -103,10 +101,9 @@ export function SetupChat({ name, initial, send, ready, blocked, foot }: { name:
 
 /** Back and Next under a step (card 181). The step is saved, then the page shows it. */
 export function StageNav({ back, next, go }: { back: { stage: string; label: string } | null; next: { stage: string; label: string; quiet?: boolean } | null; go: (stage: string) => Promise<ActionResult> }) {
-  const router = useRouter();
   const [busy, start] = useTransition();
   const [bad, setBad] = useState<string | null>(null);
-  const to = (stage: string) => start(async () => { const r = await go(stage); if (r.ok) { setBad(null); router.refresh(); window.scrollTo({ top: 0 }); } else setBad(r.text); });
+  const to = (stage: string) => start(async () => { const r = await go(stage); if (r.ok) { setBad(null); window.scrollTo({ top: 0 }); } else setBad(r.text); });
   return (
     <nav aria-label="Setup steps" className="stack" style={{ gap: 8 }}>
       <div className="row wrap" style={{ gap: 10, justifyContent: "space-between" }}>
@@ -121,12 +118,11 @@ export function StageNav({ back, next, go }: { back: { stage: string; label: str
 type Act = () => Promise<ActionResult>;
 
 function FactRow({ f, edit, confirm, remove }: { f: Fact; edit: (id: string, text: string) => Promise<ActionResult>; confirm: (id: string) => Promise<ActionResult>; remove: (id: string) => Promise<ActionResult> }) {
-  const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(f.text);
   const [t, setT] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
-  const run = (a: Act, after?: () => void) => start(async () => { const r = await a(); setT(r); if (r.ok) { after?.(); router.refresh(); } });
+  const run = (a: Act, after?: () => void) => start(async () => { const r = await a(); setT(r); if (r.ok) after?.(); });
   return (
     <li className="stack" style={{ gap: 6, paddingTop: 10, paddingBottom: 10 }}>
       {editing ? (
@@ -157,7 +153,6 @@ export function FactsPanel({ facts, add, edit, confirm, remove }: {
   confirm: (id: string) => Promise<ActionResult>;
   remove: (id: string) => Promise<ActionResult>;
 }) {
-  const router = useRouter();
   const [topic, setTopic] = useState<FactTopic>("other");
   const [text, setText] = useState("");
   const [t, setT] = useState<ActionResult | null>(null);
@@ -175,7 +170,7 @@ export function FactsPanel({ facts, add, edit, confirm, remove }: {
           </ul>
         </div>
       ))}
-      <form className="stack rule" style={{ gap: 8, paddingTop: 10 }} onSubmit={(e) => { e.preventDefault(); start(async () => { const r = await add(topic, text); setT(r); if (r.ok) { setText(""); router.refresh(); } }); }}>
+      <form className="stack rule" style={{ gap: 8, paddingTop: 10 }} onSubmit={(e) => { e.preventDefault(); start(async () => { const r = await add(topic, text); setT(r); if (r.ok) setText(""); }); }}>
         <span className="muted" style={{ fontSize: 12.5, fontWeight: 600 }}>Add one yourself</span>
         <div className="row wrap" style={{ gap: 8 }}>
           <select className="input" value={topic} onChange={(e) => setTopic(e.target.value as FactTopic)} aria-label="Topic">
@@ -192,12 +187,11 @@ export function FactsPanel({ facts, add, edit, confirm, remove }: {
 
 /** Step 2, Shopify (card 152): the store's .myshopify.com address, saved before the key. */
 export function StoreForm({ initial, save }: { initial: string; save: (domain: string) => Promise<ActionResult> }) {
-  const router = useRouter();
   const [v, setV] = useState(initial);
   const [t, setT] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
   return (
-    <form className="row wrap" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); start(async () => { const r = await save(v); setT(r); if (r.ok) router.refresh(); }); }}>
+    <form className="row wrap" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); start(async () => { const r = await save(v); setT(r); }); }}>
       <input id="shopify-store" className="input" style={{ flex: "1 1 220px", minWidth: 0 }} maxLength={120} value={v} onChange={(e) => setV(e.target.value)} placeholder="your-store.myshopify.com" aria-label="Your store’s .myshopify.com address" />
       <button className="btn dark sm" disabled={busy || !v.trim()}>Save</button>
       <Toast t={t} onDone={() => setT(null)} />
@@ -298,7 +292,7 @@ export function CompanyChart({ owner, company, depts, initial, install, back }: 
       <span className="sub">Every agent starts off duty, every action is an approval card, and nothing runs until you approve each first playbook.</span>
       <div className="row wrap" style={{ gap: 8 }}>
         <button className="btn dark sm" type="button" disabled={busy || !picked.length} onClick={go}>{busy ? "Starting…" : "Start this company"}</button>
-        <button className="btn outline sm" type="button" disabled={busy} onClick={() => start(async () => { const a = await back(); if (a.ok) router.refresh(); else setR(a); })}>Change something</button>
+        <button className="btn outline sm" type="button" disabled={busy} onClick={() => start(async () => { const a = await back(); if (!a.ok) setR(a); })}>Change something</button>
       </div>
       {r && !r.ok && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{r.text}</span>}
     </div>
