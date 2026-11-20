@@ -26,6 +26,7 @@ export async function planBlock(ask: PlanAsk): Promise<string | null> {
   const plan = planBlockFor(await currentPlan(), ask);
   if (plan || ask.kind !== "run" || ask.billing !== "credits") return plan;
   // imported here, since ee/credits.ts reads the plan too
-  const { creditBalance } = await import("./credits");
-  return creditBlock({ billing: ask.billing, trigger: ask.trigger, balance: await creditBalance() });
+  const { creditBalance, setupFree } = await import("./credits");
+  const [balance, free] = await Promise.all([creditBalance(), ask.trigger === "setup" ? setupFree() : 0]);
+  return creditBlock({ billing: ask.billing, trigger: ask.trigger, balance, setupFreeLeft: free });
 }

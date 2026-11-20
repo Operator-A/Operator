@@ -6,6 +6,7 @@
 // Credits only pay for the model. They never change what the crew may do: caps, budgets, approval
 // cards and the hard rules are the same on credits and on a business's own key.
 import { CREDITS_MARGIN, type Billing } from "@/core/cost-rules";
+import { RETURN_PLACES, type ReturnPlace } from "@/core/extension-types";
 
 /** The packs a business can buy, in dollars, and the balance below which credit runs pause. */
 export const PACKS_USD = [10, 25, 50] as const;
@@ -25,15 +26,33 @@ export const balanceOf = (rows: readonly { amount_usd: number | string }[]): num
 /** Runs that think (call Claude). A gateway apply ("approval") doesn't, so credits never hold up a tapped approval. */
 const THINKS = new Set(["cron", "manual", "chain", "setup", "preview"]);
 
-/** Why a run on credits can't start, or null. Only credit runs that call Claude are held to the balance. */
-export function creditBlock(o: { billing: Billing | undefined; trigger: string; balance: number }): string | null {
+/**
+ * Free setup (card 162, decided 2026-11-20): a business on OPERATOR's Claude talks to Avery in setup for
+ * free, up to this much model cost (list price, before the margin), so it can set the business up
+ * before buying credits. Only setup messages (trigger "setup") and only while the business is still
+ * in setup; once setup is done every run needs credits.
+ */
+export const SETUP_FREE_USD = 2;
+
+/** What is left of the free setup allowance: nothing once setup is done. */
+export const setupFreeLeft = (o: { inSetup: boolean; setupSpentUsd: number }): number =>
+  o.inSetup ? r6(Math.max(0, SETUP_FREE_USD - (Number.isFinite(o.setupSpentUsd) ? Math.max(0, o.setupSpentUsd) : SETUP_FREE_USD))) : 0;
+
+/** A setup run's charge: only the part of its cost past the free allowance left before it, plus the margin. */
+export const setupRunCharge = (costUsd: number, freeLeftBefore: number): number =>
+  runCharge((Number.isFinite(costUsd) ? costUsd : 0) - Math.max(0, Number.isFinite(freeLeftBefore) ? freeLeftBefore : 0));
+
+/** Why a run on credits can't start, or null. Only credit runs that call Claude are held to the balance; a setup message with free setup left isn't. */
+export function creditBlock(o: { billing: Billing | undefined; trigger: string; balance: number; setupFreeLeft?: number }): string | null {
   if (o.billing !== "credits" || !THINKS.has(o.trigger)) return null;
+  if (o.trigger === "setup" && (o.setupFreeLeft ?? 0) > 0) return null;
   if (o.balance >= MIN_BALANCE_USD) return null;
   return `Claude credits are at ${usdWords(o.balance)}, under the ${usdWords(MIN_BALANCE_USD)} a run needs. Runs are paused: buy credits on Settings > Billing, or paste your own Claude key on Connections. Nothing has been deleted.`;
 }
 
 /** The pooled key may be used only for a business on credits with enough balance and a plan that allows runs. */
-export const mayUsePooledKey = (o: { balance: number; planBlocked: boolean; keySet: boolean }) => o.keySet && !o.planBlocked && o.balance >= MIN_BALANCE_USD;
+export const mayUsePooledKey = (o: { balance: number; planBlocked: boolean; keySet: boolean; setupFreeLeft?: number }) =>
+  o.keySet && !o.planBlocked && (o.balance >= MIN_BALANCE_USD || (o.setupFreeLeft ?? 0) > 0);
 
 /** A Stripe Checkout session that paid for a pack, from the signed webhook. */
 export interface PaidSession { mode?: unknown; payment_status?: unknown; amount_total?: unknown; currency?: unknown; metadata?: Record<string, unknown> | null; id?: unknown; client_reference_id?: unknown }
@@ -70,4 +89,23 @@ export function creditWords(o: { billing: Billing; balance: number }): string {
   if (o.billing === "own_key") return "Runs use your own Claude key, billed by Anthropic. Credits are only used if you remove it.";
   const low = o.balance < MIN_BALANCE_USD;
   return `Claude credits: ${usdWords(o.balance)}. Each run is charged its model cost plus ${Math.round((CREDITS_MARGIN - 1) * 100)}%.${low ? " Runs are paused until you buy credits." : ""}`;
+}
+
+/**
+ * Where Stripe Checkout comes back to after a pack (card 162): a page from the fixed list, never an
+ * address from the form. Anything else comes back to Settings > Billing.
+ */
+export function packReturn(raw: unknown): { place: ReturnPlace; success: string; cancel: string } {
+  const place: ReturnPlace = (RETURN_PLACES as readonly unknown[]).includes(raw) ? (raw as ReturnPlace) : "settings";
+  if (place === "start") return { place, success: "/start?claude=hosted&credits=added#step-1", cancel: "/start?claude=hosted#step-1" };
+  if (place === "connections") return { place, success: "/connections?credits=added#claude", cancel: "/connections#claude" };
+  return { place, success: "/settings?credits=added#billing", cancel: "/settings#billing" };
+}
+
+/** The page a failed pack purchase goes back to, with the problem shown there (cut to 200 characters). */
+export function packProblem(place: ReturnPlace, problem: string): string {
+  const q = `credits_problem=${encodeURIComponent(problem.slice(0, 200))}`;
+  if (place === "start") return `/start?claude=hosted&${q}#step-1`;
+  if (place === "connections") return `/connections?${q}#claude`;
+  return `/settings?billing_problem=${encodeURIComponent(problem.slice(0, 200))}#billing`;
 }

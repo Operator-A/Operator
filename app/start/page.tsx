@@ -13,7 +13,11 @@ import { toolsStep, type TileView } from "@/dashboard/toolsStep";
 import { KeyForm, ActionButton } from "@/dashboard/components/client";
 import { companyChart } from "@/dashboard/company";
 import { initialPick } from "@/core/company-rules";
-import { claudeSaveKey, ga4PickProperty, mcpSaveKey } from "@/dashboard/connectionActions";
+import { ga4PickProperty, mcpSaveKey } from "@/dashboard/connectionActions";
+import { claudeState } from "@/dashboard/claude";
+import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
+import { extensions } from "@/core/extensions";
+import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
 import { sendSetup, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupStartEmpty, setupToolAsk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
 import { billing } from "@/dashboard/cost";
@@ -23,13 +27,16 @@ import { billing } from "@/dashboard/cost";
 // proposes (card 153); step 4 explains the first job, which the Desk offers (card 154).
 export const maxDuration = 120;
 
-export default async function Setup({ searchParams }: { searchParams: Promise<{ c?: string; connected?: string; problem?: string }> }) {
+export default async function Setup({ searchParams }: { searchParams: Promise<{ c?: string; connected?: string; problem?: string; claude?: string; credits?: string; credits_problem?: string }> }) {
   const sp = await searchParams;
   const me = await requireSession();
   if (!(await inSetup())) redirect("/");
-  const [floor, facts, state, history, biz] = await Promise.all([getFloor(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
+  const [floor, facts, state, history, biz, claude] = await Promise.all([getFloor(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), claudeState()]);
   const owner = atLeast(me.role, "owner");
-  const keyed = !!floor.health?.claude;
+  // own key or OPERATOR's hosted Claude on credits (card 162): either one opens the conversation
+  const keyed = claudeReady(claude);
+  // on OPERATOR's Claude: setup is free (the paid layer says how much is left), the crew's work needs credits
+  const Hosted = inUse(claude) === "hosted" ? extensions.HostedClaude : null;
   const templates = departmentTemplates();
   const leaning = state.leaning.map((l) => ({ ...l, name: templates.find((t) => t.id === l.id)?.name ?? l.id }));
   const blocked = controlsOn() ? null : "Controls are off, so Avery can’t answer yet: each message is a real model call. Set DASHBOARD_CONTROLS=on.";
@@ -62,12 +69,19 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
                 initial={(history ?? []).map((h) => ({ id: h.id, role: h.role, text: h.text, runId: h.run_id, notes: h.notes }))} />
             ) : (
               <section className="card stack" style={{ gap: 12, flex: "999 1 520px", minWidth: 0 }} aria-labelledby="key-h">
-                <h1 id="key-h" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-.02em" }}>First, Avery needs a Claude key</h1>
-                <span className="ink2" style={{ fontSize: 14.5 }}>Every agent thinks with your business’s own Claude key, so Anthropic bills you directly. Make one in the Claude Console (Settings, then API keys) and paste it here. It is locked in the vault and never shown again.</span>
-                {owner ? <KeyForm label="Claude API key" save={claudeSaveKey} placeholder="sk-ant-…" /> : <span className="sub">Ask an owner of this business to paste it.</span>}
+                <h1 id="key-h" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-.02em" }}>First, choose how Avery thinks</h1>
+                <span className="ink2" style={{ fontSize: 14.5 }}>{claude.edition === "cloud" ? "Every agent thinks with Claude. Use OPERATOR’s, paid from credits with nothing to set up, or bring your own key and Anthropic bills you. You can switch later on Connections." : "Every agent thinks with your business’s own Claude key, so Anthropic bills you directly."}</span>
+                <ClaudeChoice state={claude} picked={pickedChoice(claude, sp.claude)} owner={owner} back="start" query={sp} />
               </section>
             )}
             <aside className="stack" style={{ gap: 16, flex: "1 1 300px" }} aria-label="What Avery has learned">
+              {keyed && Hosted && (
+                <div className="card stack" style={{ gap: 6 }} aria-label="How Avery thinks">
+                  <h2 className="card-t" style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: ".04em" }}>On OPERATOR’s Claude</h2>
+                  <Hosted back="start" owner={owner} query={sp} compact />
+                  <Link href="/connections?claude=own#claude" className="sub">Use your own Claude key instead</Link>
+                </div>
+              )}
               {facts ? <FactsPanel facts={facts} add={setupAddFact} edit={setupEditFact} confirm={setupConfirmFact} remove={setupRemoveFact} /> : <div className="card sub">{FACTS_MISSING}</div>}
               <div className="card stack" style={{ gap: 10 }}>
                 <h2 className="card-t" style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: ".04em" }}>Departments I’m thinking of</h2>
@@ -115,6 +129,13 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
           <section id="step-4" className="card stack" style={{ gap: 8 }} aria-labelledby="job-h">
             <h2 id="job-h" className="card-t">4. First job</h2>
             <span className="sub">After Start this company, the Desk picks the first job in code: the agent whose tools are connected and whose work ends in something you approve (the Bookkeeper when your bank is connected). One tap approves its playbook and starts it; every other agent waits for your approval.</span>
+            {Hosted && (
+              <div className="stack rule" style={{ gap: 8, paddingTop: 12 }}>
+                <b style={{ fontSize: 14 }}>Credits for your crew’s work</b>
+                <span className="sub">Setup is free. Your crew’s jobs run on credits, so buy a pack before the first job (or paste your own key on Connections).</span>
+                <Hosted back="start" owner={owner} query={sp} />
+              </div>
+            )}
           </section>
         </main>
       </div>

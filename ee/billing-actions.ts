@@ -7,6 +7,7 @@ import { env } from "@/core/env";
 import { asRole } from "@/dashboard/data";
 import { checkoutUrl, portalUrl } from "./billing";
 import { creditCheckoutUrl } from "./credits";
+import { packProblem, packReturn } from "./credit-rules";
 
 async function base() {
   if (env.dashboardUrl) return env.dashboardUrl;
@@ -30,10 +31,12 @@ export async function manageBilling(): Promise<void> {
   redirect(url);
 }
 
-/** Buy a credit pack: owners only, one Stripe Checkout payment for the pack picked. */
+/** Buy a credit pack: owners only, one Stripe Checkout payment for the pack picked; back is a page from a fixed list (packReturn). */
 export async function buyCredits(form: FormData): Promise<void> {
-  const { no } = await asRole("owner"); if (no) back(no.text);
+  const ret = packReturn(form.get("back"));
+  const fail = (problem: string): never => redirect(packProblem(ret.place, problem));
+  const { no } = await asRole("owner"); if (no) fail(no.text);
   let url = "";
-  try { url = await creditCheckoutUrl(Number(form.get("pack")), await base()); } catch (e) { back(e instanceof Error ? e.message : String(e)); }
+  try { url = await creditCheckoutUrl(Number(form.get("pack")), await base(), ret.place); } catch (e) { fail(e instanceof Error ? e.message : String(e)); }
   redirect(url);
 }

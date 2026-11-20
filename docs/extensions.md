@@ -18,6 +18,7 @@ each slot has a do-nothing default in core:
 | `SignupPage` | the page at `/signup` | none, so `/signup` is not found |
 | `api` | POST `/api/ee/<name>` (`app/api/ee/[name]/route.ts`), such as Stripe's webhook; each route checks its own caller | none, so every name is not found |
 | `afterMembersChange()` | after someone is added to or removed from People | nothing |
+| `HostedClaude` | setup step 1 and Connections > Claude, when the founder picks OPERATOR's Claude (card 162): balance, price, Buy buttons | none, so only the own-key option is offered |
 | `pooledKey()` | by `integrations/anthropic.ts`, only when the business has no Claude key of its own | none, so the run is refused |
 | `afterRun({ runId, costUsd, billing })` | after every run that cost something (`core/runs.ts`) | nothing |
 | `edition` | for anything that needs to say which edition it is | `"open"` |

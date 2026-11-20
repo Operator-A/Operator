@@ -15,7 +15,9 @@ import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/cor
 import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
 import { TOOLS } from "@/core/tools/catalog";
-import { CLAUDE_KEY_ID, mcpStatus, vaultReady } from "@/integrations/mcp";
+import { mcpStatus, vaultReady } from "@/integrations/mcp";
+import { claudeState } from "./claude";
+import { claudeReady } from "@/core/claude-choice-rules";
 import { withOrg } from "@/core/tenancy";
 import { MCP_IDS } from "@/core/mcp-rules";
 import { orgState, type OrgState } from "@/core/org-switch";
@@ -134,7 +136,7 @@ export function health(): Record<IntegrationId, boolean> {
     supabase: !!(env.supabaseUrl && env.supabaseServiceKey),
     // its key is pasted on Connections (the vault): getFloor reads mcp_connections
     shopify: false,
-    // the business's own key, pasted on Connections (the vault): getFloor reads mcp_connections
+    // the business's own key (the vault), or OPERATOR's hosted Claude on credits: getFloor sets it (card 162)
     claude: false,
     // signed in on Connections: getFloor reads mcp_connections
     mercury: false,
@@ -145,7 +147,7 @@ export function health(): Record<IntegrationId, boolean> {
     // both Gmail sign-ins (read only, drafts) are made on Connections: getFloor reads mcp_connections
     gmail: false,
     gmail_read: false,
-    // web search runs through the business's Claude key: getFloor sets it with claude
+    // web search runs through Claude (own key or hosted): getFloor sets it with claude
     web: false,
     // planned for the Conversion Optimizer; nothing uses it yet
     github: false,
@@ -195,9 +197,9 @@ export const getFloor = cache(async (): Promise<Floor> => {
   // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
   const s = await settings();
   if (!s.ownerEmail) h.email = false;
-  // Claude (and web search through it): the business's own key (integrations/anthropic.ts)
-  const ck = await mcpStatus(CLAUDE_KEY_ID);
-  h.claude = h.web = !!ck?.connected && !ck.paused;
+  // Claude (and web search through it): the business's own key, else OPERATOR's hosted Claude on
+  // credits (cloud edition), the same order runs use (integrations/anthropic.ts, card 162)
+  h.claude = h.web = claudeReady(await claudeState());
   const ga4 = mcp.find(([id]) => id === "ga4")?.[1];
   const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0, ga4: !!ga4?.settings.propertyId };
   for (const [id, st] of mcp) if (st?.connected && !st.paused && extra[id] !== false) h[id] = true;

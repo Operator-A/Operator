@@ -10,6 +10,10 @@ export type PlanAsk =
   | { kind: "agent_on"; agentIds: string[] }
   | { kind: "custom_server" };
 
+/** The pages a payment on Stripe may come back to: a fixed list, never an address from a form. */
+export const RETURN_PLACES = ["settings", "start", "connections"] as const;
+export type ReturnPlace = (typeof RETURN_PLACES)[number];
+
 export interface Extensions {
   /** "open" is the AGPL app on its own; "cloud" is the hosted edition built with ee/. */
   edition: "open" | "cloud";
@@ -24,6 +28,14 @@ export interface Extensions {
    * (a card's own short messages, such as a problem after a redirect); null for none.
    */
   SettingsCards: ComponentType<{ query: Readonly<Record<string, string | undefined>> }> | null;
+  /**
+   * The hosted Claude option (card 162): the credit balance, the price and the buttons to buy credits,
+   * shown on setup step 1 and Connections > Claude when the founder picks OPERATOR's Claude. Server
+   * component; back says where Stripe comes back to after a pack is paid; compact shows one line, no
+   * buttons. Free setup (a setup conversation on OPERATOR, up to a limit) is said here too. null: no hosted Claude, so
+   * only the own-key option is offered (the open edition).
+   */
+  HostedClaude: ComponentType<{ back: ReturnPlace; owner: boolean; query: Readonly<Record<string, string | undefined>>; compact?: boolean }> | null;
   /** The sign-up page at /signup, given its query. null: no sign-up, /signup is not found (the open edition). */
   SignupPage: ComponentType<{ query: Readonly<Record<string, string | undefined>> }> | null;
   /**
@@ -47,4 +59,4 @@ export interface Extensions {
 }
 
 /** Every slot, so check:open-core can make sure each edition fills each one. */
-export const SLOTS = ["edition", "planBlock", "SettingsCards", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun"] as const satisfies readonly (keyof Extensions)[];
+export const SLOTS = ["edition", "planBlock", "SettingsCards", "HostedClaude", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun"] as const satisfies readonly (keyof Extensions)[];

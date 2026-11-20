@@ -3,10 +3,10 @@ import "server-only";
 // is core/extensions/none.ts in the open edition and ee/index.ts in the cloud edition; only this
 // file imports it (check:open-core).
 import ext from "operator-extensions";
-import type { Extensions, PlanAsk } from "@/core/extension-types";
+import type { Extensions, PlanAsk, ReturnPlace } from "@/core/extension-types";
 import type { Billing } from "@/core/cost-rules";
 
-export type { PlanAsk };
+export type { PlanAsk, ReturnPlace };
 export const extensions: Extensions = ext;
 export const edition = () => extensions.edition;
 
@@ -27,6 +27,11 @@ export async function membersChanged(): Promise<void> {
 /** The hosted edition's Claude key for a business on credits, or null (the open edition, no credits, a failed check). */
 export async function pooledKey(): Promise<string | null> {
   try { return await extensions.pooledKey(); } catch { return null; }
+}
+
+/** True when a run with no key of its own would get the hosted key now. The key itself stays here, on the server. */
+export async function hostedClaudeReady(): Promise<boolean> {
+  return !!(await pooledKey());
 }
 
 /** Tells the paid layer a run ended (credits take its charge). Never fails the run. */

@@ -6,9 +6,12 @@ import type { ToolDef } from "@/core/tools/types";
 import { Icon } from "@/dashboard/components/Icon";
 import { Avatar, LockList } from "@/dashboard/components/ui";
 import { ActionButton, KeyForm } from "@/dashboard/components/client";
-import { claudeRemoveKey, claudeSaveKey } from "@/dashboard/connectionActions";
+import { claudeRemoveKey } from "@/dashboard/connectionActions";
+import { claudeState } from "@/dashboard/claude";
+import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
+import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
-import { CLAUDE_KEY_ID, MCP_MISSING, VAULT_MISSING, getCustomServer, listCustomServers, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
+import { MCP_MISSING, VAULT_MISSING, getCustomServer, listCustomServers, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
 import { AddServerCard, CustomDetail, CustomTiles, SignInLog } from "@/dashboard/components/CustomServers";
 import { serverOfToolId } from "@/core/custom-mcp-rules";
 import { knownServer } from "@/core/connector-rules";
@@ -219,7 +222,7 @@ function Detail({ c, f, mcp, more, note }: { c: Connection; f: Floor; mcp: McpVi
   );
 }
 
-export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string; s?: string; known?: string; problem?: string; connected?: string }> }) {
+export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string; s?: string; known?: string; problem?: string; connected?: string; claude?: string; credits?: string; credits_problem?: string }> }) {
   const [f, me] = await Promise.all([getFloor(), requireSession()]);
   const sp = await searchParams;
   const pick = sp.c;
@@ -277,7 +280,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
         <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="lock" size={15} />Always on, for every agent</span>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", columnGap: 24 }}><LockList rules={HARD_RULES} dark /></div>
       </div>
-      <ClaudeKeyCard owner={me.role === "owner"} />
+      <ClaudeCard owner={me.role === "owner"} query={sp} />
       <div className="card" style={{ gap: 10 }}>
         <span className="card-t">Behind the scenes</span>
         {BEHIND_THE_SCENES.map((b) => (
@@ -292,23 +295,23 @@ export default async function Connections({ searchParams }: { searchParams: Prom
   );
 }
 
-/** The business's own Claude API key (docs/tenancy.md, slice 8.1c): agents' model calls are billed to it. */
-async function ClaudeKeyCard({ owner }: { owner: boolean }) {
-  const st = await mcpStatus(CLAUDE_KEY_ID);
-  const own = !!st?.connected, paused = !!st?.paused;
-  const ok = own && !paused;
+/** How agents think (card 162): the business's own Claude key (docs/tenancy.md, slice 8.1c), or on the cloud edition OPERATOR's hosted Claude on credits. */
+async function ClaudeCard({ owner, query }: { owner: boolean; query: Readonly<Record<string, string | undefined>> }) {
+  const state = await claudeState();
+  const ok = claudeReady(state);
+  const using = inUse(state);
   return (
-    <div className="card" style={{ gap: 10 }}>
+    <div className="card" id="claude" style={{ gap: 10 }}>
       <span className="row" style={{ gap: 8, justifyContent: "space-between" }}>
-        <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="cpu" size={15} />Claude API</span>
-        <span className="pill sm" style={{ background: ok ? "var(--mint-soft)" : "var(--red-soft)", color: ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{ok ? "Set up" : "Not set up"}</span>
+        <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="cpu" size={15} />Claude</span>
+        <span className="pill sm" style={{ background: ok ? "var(--mint-soft)" : "var(--red-soft)", color: ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{ok ? (using === "hosted" ? "On OPERATOR’s Claude" : "Your own key") : "Not set up"}</span>
       </span>
       <span className="ink2" style={{ fontSize: 12.5 }}>
-        {own ? (paused ? `Paused: ${st?.lastError ?? "Anthropic stopped accepting the key"}. Paste a new one.` : "Agents think with this business’s own Claude key, locked in the vault. Anthropic bills it directly; spend also shows in the run log.")
-          : "Paste a Claude API key from the Claude Console (Settings > API keys). Until then agents can’t think, so runs stop with a note."}
+        {ok ? "Every agent thinks with Claude. A key of your own always comes first; without one, runs use OPERATOR’s Claude and are paid from credits."
+          : state.edition === "cloud" ? "Agents can’t think yet, so runs stop with a note. Buy credits for OPERATOR’s Claude, or paste your own key." : "Paste a Claude API key from the Claude Console (Settings > API keys). Until then agents can’t think, so runs stop with a note."}
       </span>
-      {owner && <KeyForm label="Claude API key" save={claudeSaveKey} placeholder="sk-ant-…" replace={own} />}
-      {owner && own && <ActionButton className="btn outline sm" action={claudeRemoveKey} confirm={{ title: "Forget the Claude key?", body: "The key is forgotten here. Delete it in the Claude Console too if it shouldn’t work anywhere.", confirmLabel: "Forget it", kind: "danger" }}>Forget the key</ActionButton>}
+      <ClaudeChoice state={state} picked={pickedChoice(state, query.claude)} owner={owner} back="connections" query={query} />
+      {owner && state.ownKey && <ActionButton className="btn outline sm" action={claudeRemoveKey} confirm={{ title: "Forget the Claude key?", body: state.edition === "cloud" ? "The key is forgotten here, and runs move to OPERATOR’s Claude on your credits. Delete it in the Claude Console too if it shouldn’t work anywhere." : "The key is forgotten here. Delete it in the Claude Console too if it shouldn’t work anywhere.", confirmLabel: "Forget it", kind: "danger" }}>Forget the key</ActionButton>}
     </div>
   );
 }

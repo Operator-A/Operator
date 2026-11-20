@@ -6,11 +6,13 @@ import { BillingCard } from "./billing-card";
 import { stripeWebhook, syncSeats } from "./billing";
 import { SignupPage } from "./signup-page";
 import { chargeRun, pooledKey } from "./credits";
+import { HostedClaude } from "./hosted-claude";
 
 const cloud: Extensions = {
   edition: "cloud",
   planBlock,
   SettingsCards: BillingCard,
+  HostedClaude,
   SignupPage,
   api: { stripe: stripeWebhook },
   afterMembersChange: syncSeats,

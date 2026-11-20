@@ -7,6 +7,8 @@ const none: Extensions = {
   edition: "open",
   planBlock: async () => null,
   SettingsCards: null,
+  // no hosted Claude: setup and Connections offer only the business's own key
+  HostedClaude: null,
   SignupPage: null,
   api: {},
   afterMembersChange: async () => undefined,
