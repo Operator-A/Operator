@@ -18,7 +18,9 @@ import { peopleOf, type DeptDraft } from "@/core/department-rules";
 import type { ProposalPlan } from "@/core/proposal-rules";
 import { agentNames } from "@/core/org";
 import { Icon } from "@/dashboard/components/Icon";
-import { inSetup } from "@/core/setup";
+import { inSetup, setupState } from "@/core/setup";
+import { ideaOffer } from "@/core/setup-rules";
+import { IdeaCard } from "@/dashboard/components/idea";
 import { firstJobView } from "@/dashboard/firstJob";
 import { FirstJobCard } from "@/dashboard/components/firstJob";
 import { followUpsView } from "@/dashboard/followUps";
@@ -61,7 +63,8 @@ export default async function Desk() {
   const owner = atLeast((await requireSession()).role, "owner");
   const open = needs(f, now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value));
   const org = await loadOrg().catch(() => null);
-  const [goals, pending, first, bill, finish] = await Promise.all([goalsByDept(org), listProposals(["pending"], 12).catch(() => null), firstJobView(f).catch(() => null), billing(), followUpsView(f).catch(() => [])]);
+  const [goals, pending, first, bill, finish, idea] = await Promise.all([goalsByDept(org), listProposals(["pending"], 12).catch(() => null), firstJobView(f).catch(() => null), billing(), followUpsView(f).catch(() => []),
+    setupState().then((s) => (ideaOffer(s) ? s.idea : null)).catch(() => null)]);
   const allGoals = org && goals ? org.departments.flatMap((d) => goals[d.id] ?? []) : [];
   // each goal tile carries its head's latest word (the head's own report, so its words, not code's)
   const heads = org ? org.departments.map((d) => headOf(org, d.id)).filter((s) => s?.holder === "agent" && s.agentId).map((s) => s!.agentId as string) : [];
@@ -97,6 +100,7 @@ export default async function Desk() {
 
       {first && <FirstJobCard v={first} owner={owner} />}
       <FollowUpsCard items={finish} owner={owner} />
+      <IdeaCard idea={idea} owner={owner} />
 
 
       <section className="card" style={{ gap: 12 }} aria-labelledby="goals-h">

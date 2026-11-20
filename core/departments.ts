@@ -40,6 +40,13 @@ async function saveDraft(d: DeptDraft | null): Promise<void> {
 
 export const discardDraft = () => saveDraft(null);
 
+/** Start with Avery (card 185): begins a draft with the idea's name and purpose, only when no draft is open. */
+export async function seedDraft(seed: { name: string; purpose: string }): Promise<boolean> {
+  if (await loadDraft()) return false;
+  await saveDraft({ ...EMPTY_DRAFT, name: seed.name, purpose: seed.purpose, updatedAt: new Date().toISOString() });
+  return true;
+}
+
 /** What the checks read now: the tool list, every measure, the chart's departments and the agents' names. */
 export async function draftCtx(org?: Org | null): Promise<DraftCtx> {
   const [o, own, agents] = await Promise.all([org ?? loadOrg(), ownMeasureDefs().catch(() => []), db().from("agents").select("name")]);

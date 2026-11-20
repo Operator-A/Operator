@@ -19,9 +19,9 @@ import { checkAddress } from "@/core/custom-mcp-rules";
 import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
 import { MAX_REPLY } from "@/core/chat-rules";
 import {
-  FACT_TOPICS, FITS, MAX_FACTS_PER_MESSAGE, MAX_LEANING, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
-  cleanFact, factProblem, isStage, isTopic, needsSetup, readLeaning, readSetupState, setupDirective, setupPrompt, stateFor,
-  type Fact, type FactState, type Leaning, type SetupState, type Stage,
+  FACT_TOPICS, FITS, IDEA_LIMITS, MAX_FACTS_PER_MESSAGE, MAX_LEANING, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
+  cleanFact, factProblem, ideaOffer, isStage, readIdea, isTopic, needsSetup, readLeaning, readSetupState, setupDirective, setupPrompt, stateFor,
+  type DeptIdea, type Fact, type FactState, type Leaning, type SetupState, type Stage,
 } from "@/core/setup-rules";
 
 export const FACTS_MISSING = "The business facts table isn’t in Supabase yet: apply the migration 20261220090000_business_facts.sql.";
@@ -170,6 +170,41 @@ function leanTool(held: Leaning[]): ToolDef {
   };
 }
 
+/** Suggest a department (card 185): at most one idea, checked in code, kept after a run that finishes. */
+function ideaTool(held: { idea: Omit<DeptIdea, "want" | "started"> | null }): ToolDef {
+  const taken = departmentTemplates().flatMap((t) => [t.id, t.name]);
+  return {
+    id: "suggest_department", label: "Suggest a department", detail: `Suggests one more department the founder could build later, outside the list: a name, why it fits from the conversation, and up to ${IDEA_LIMITS.roles} role titles. Once at most; it builds nothing`,
+    kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
+    params: [
+      { name: "name", type: "text", maxLength: IDEA_LIMITS.name, description: "The department's name, like Events or Partnerships." },
+      { name: "why", type: "text", maxLength: IDEA_LIMITS.why, description: "One or two plain lines on why it fits this business, from what the founder said." },
+      { name: "roles", type: "text", maxLength: 170, optional: true, description: "Up to 4 short role titles, separated by commas, like Partner finder, Follow-up writer." },
+    ],
+    collect: (input, rows) => {
+      if (rows.length) return { problem: "one idea at most" };
+      const i = readIdea(input, taken);
+      return "problem" in i ? { problem: i.problem } : { row: input };
+    },
+    deliver: async (o) => { const i = o.rows[0] ? readIdea(o.rows[0], taken) : null; if (i && !("problem" in i)) held.idea = i; return "kept"; },
+  };
+}
+
+/** The founder's answer to Avery's idea in setup (card 185): Build it with Avery, or Not now. */
+export async function wantIdea(on: boolean): Promise<void> {
+  const s = await setupState();
+  if (!s.idea) throw new Error("There's no idea to keep.");
+  await saveSetupState({ ...s, idea: { ...s.idea, want: on } });
+}
+
+/** Start with Avery, on the Desk after the first job (card 185): marks the idea used and returns it. */
+export async function startIdea(): Promise<DeptIdea> {
+  const s = await setupState();
+  if (!ideaOffer(s) || !s.idea) throw new Error("Nothing to start.");
+  await saveSetupState({ ...s, idea: { ...s.idea, started: true } });
+  return s.idea;
+}
+
 /** Read a web page, held to the founder's own site: Claude's fetch, allowed only on that host. */
 function siteTool(host: string): ToolDef {
   const base = TOOLS.web_fetch;
@@ -194,8 +229,8 @@ export async function askSetup(message: string, siteRaw: string): Promise<SetupA
   if (!facts) return none(FACTS_MISSING);
   const history = (await chatHistory(12)) ?? [];
   const kept = await keepChat({ role: "owner", text: site ? `${message}\n\n(My site: ${site})` : message });
-  const heldFacts: { topic: string; text: string }[] = [], heldLean: Leaning[] = [];
-  const tools = [saveFactTool(heldFacts, facts.length), leanTool(heldLean), ...(site ? [siteTool(new URL(site).hostname)] : [])];
+  const heldFacts: { topic: string; text: string }[] = [], heldLean: Leaning[] = [], heldIdea: { idea: Omit<DeptIdea, "want" | "started"> | null } = { idea: null };
+  const tools = [saveFactTool(heldFacts, facts.length), leanTool(heldLean), ideaTool(heldIdea), ...(site ? [siteTool(new URL(site).hostname)] : [])];
   const base = loaded.spec;
   const spec: AgentSpec = {
     ...base,
@@ -230,6 +265,7 @@ export async function askSetup(message: string, siteRaw: string): Promise<SetupA
     if (saved) notes.push(`Saved ${saved} fact${saved === 1 ? "" : "s"}. Edit or remove any on the right.`);
     if (suggested) notes.push(`${suggested} fact${suggested === 1 ? "" : "s"} from your site wait for you to confirm.`);
     if (heldLean.length) { await saveSetupState({ ...(await setupState()), leaning: heldLean }); notes.push("Updated the departments I'm thinking of."); }
+    if (heldIdea.idea) { await saveSetupState({ ...(await setupState()), idea: { ...heldIdea.idea, want: false, started: false } }); notes.push(`Noted an idea for later: a ${heldIdea.idea.name} department.`); }
     if (saved || suggested) await forgetBusiness();
   }
   const reply = res.status === "skipped" ? `I can't answer right now: ${res.summary}` : (finished && said ? said : res.summary).slice(0, MAX_REPLY);

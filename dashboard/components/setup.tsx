@@ -225,9 +225,11 @@ export function UnlistedTool({ ask }: { ask: (name: string) => Promise<ActionRes
  * in sequence. The founder can leave a department out or add one; Start this company installs exactly
  * what's on the chart. Statuses and month totals are worked out in code (core/company-rules.ts).
  */
-export function CompanyChart({ owner, company, depts, initial, install, back, empty }: {
+export function CompanyChart({ owner, company, depts, initial, install, back, empty, idea }: {
   owner: string; company: CompanyAgent[]; depts: CompanyDept[]; initial: string[];
   install: (ids: string[]) => Promise<ActionResult & { href?: string }>; back: () => Promise<ActionResult>; empty?: React.ReactNode;
+  /** Avery's department idea (card 185), drawn beside the chart; not part of the company. */
+  idea?: React.ReactNode;
 }) {
   const router = useRouter();
   const [picked, setPicked] = useState<string[]>(initial);
@@ -281,6 +283,7 @@ export function CompanyChart({ owner, company, depts, initial, install, back, em
           );
         })}
       </div>
+      {idea}
 
       <div className="wg-glass wg-card wg-pop" style={{ width: "100%", animationDelay: `${1.1 + on.length * 0.18}s` }}>
         <div className="stack" style={{ gap: 2 }} aria-live="polite">

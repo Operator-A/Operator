@@ -13,6 +13,7 @@ import { Icon } from "@/dashboard/components/Icon";
 import { toolsStep, type TileView } from "@/dashboard/toolsStep";
 import { categoryOfTile, categoryState, currentCategory, isCategory, orderCategories, planKinds, planNotes, type CategoryId, type Plans, type ToolCategory } from "@/core/tools-step-rules";
 import { KeyForm, ActionButton } from "@/dashboard/components/client";
+import { IdeaAside } from "@/dashboard/components/idea";
 import { companyChart } from "@/dashboard/company";
 import { initialPick } from "@/core/company-rules";
 import { ga4PickProperty, mcpSaveKey } from "@/dashboard/connectionActions";
@@ -206,7 +207,8 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
             </div>
             {owner ? (
               <CompanyChart owner={biz.ownerName || "You"} company={chart.company} depts={chart.depts} initial={initialPick(chart.depts)} install={setupInstall} back={setupGo.bind(null, "tools")}
-                empty={<ActionButton className="btn ghost sm" action={setupStartEmpty} follow>Start empty instead</ActionButton>} />
+                empty={<ActionButton className="btn ghost sm" action={setupStartEmpty} follow>Start empty instead</ActionButton>}
+                idea={state.idea ? <IdeaAside idea={state.idea} owner={owner} /> : null} />
             ) : <span className="sub" style={{ textAlign: "center" }}>An owner of this business picks the departments.</span>}
           </section>
         )}

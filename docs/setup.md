@@ -161,6 +161,22 @@ Step 3 (cards 153, 184) is "Meet your company": an org chart drawn in code (`cor
 
 Every agent still installs off duty with its playbook proposed, and every action stays at Draft.
 
+### Avery's idea (card 185)
+
+Once in setup, and only from what the founder said in the chat (a web page alone is never the reason),
+Avery may suggest one department outside the template list with `suggest_department`: a name, a line on
+why it fits, and up to four role titles. It is a report tool and builds nothing. Code checks it
+(`readIdea` in `core/setup-rules.ts`): a name that starts with a letter, under 40 characters, a reason
+under 200, no links or addresses, and never a department already on the list. It is kept in the setup
+state as `idea` only after a run that finishes.
+
+The reveal draws it beside the chart in a dashed box, "Avery's idea, from our chat", with **Build it with
+Avery** and **Not now** (`setupIdeaWant`, owner only). It is never installed with the company. When the
+founder kept it, the Desk shows "Next: your X department" after the first job has started (`ideaOffer`).
+**Start with Avery** (`ideaStart`, audited) opens a department draft with the idea's name and purpose
+(`seedDraft`, only when no draft is open), and Avery's chat walks the rest of the department interview as
+usual: nothing is hired until the owner approves the proposal.
+
 ## First job
 
 After **Start this company** (card 154; `core/first-job-rules.ts`, `dashboard/firstJob.ts`), the
