@@ -157,6 +157,12 @@ export const usersOf = (id: ConnId, grants: Grants) => Object.keys(grants).filte
 export const ABILITY_WORD: Record<Ability, string> = { read: "Reads", hands: "Hands you", do: "Asks first" };
 
 /** Agents whose saved setup has a tool that needs this check. */
+/** The sidebar's note on Connections: tools an agent uses that aren't set up yet, as setup to do, not a fault. */
+export function toConnect(health: Record<IntegrationId, boolean>, grants: Grants): string | undefined {
+  const n = CONNECTIONS.filter((c) => !c.builtIn && !isSetUp(c, health) && usersOf(c.id, grants).length > 0).length;
+  return n ? `${n} to connect` : undefined;
+}
+
 export function usersOfCheck(c: Connection, k: Check, grants: Grants): string[] {
   const need = new Set(k.tools ?? TOOL_LIST.filter((t) => connOf(t) === c.id).map((t) => t.id));
   return Object.keys(grants).filter((a) => grants[a].some((t) => need.has(t)));

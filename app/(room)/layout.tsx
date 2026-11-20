@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { CONNECTIONS, isSetUp } from "@/dashboard/connections";
+import { toConnect } from "@/dashboard/connections";
 import { getFloor, requireSession } from "@/dashboard/data";
 import { longDay } from "@/dashboard/format";
-import { interruptCount, needs } from "@/dashboard/needs";
+import { alerting, interruptCount, needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import { isLive, stateLook, stateOf } from "@/dashboard/status";
 import { LiveRefresher, MobileMenu, RailLink, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
@@ -31,10 +31,10 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   ]);
   const theme = jar.get("cr_theme")?.value === "dark" ? "dark" : "light";
   const open = needs(floor, floor.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
-  const notSetUp = CONNECTIONS.filter((c) => !c.builtIn && !isSetUp(c, floor.health)).length;
+  const red = alerting(open);
   const rail = floor.crew.map((a) => {
     const st = stateOf(a, floor.agents[a.id], floor.runs, floor.spentToday[a.id] ?? 0);
-    return { a, st, badge: open.filter((n) => n.agentId === a.id).length };
+    return { a, st, badge: red.filter((n) => n.agentId === a.id).length };
   });
   // runs from the last 10 minutes, so the refresher can poll while one is live and say when it ends
   const recent: RecentRun[] = floor.runs
@@ -51,7 +51,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     { href: "/approvals", match: ["/approvals", "/proposals*"], icon: "inbox", label: "Approvals", count: waiting ? String(waiting) : undefined },
     { href: "/crew", match: ["/crew", "/agents/*", "/build*"], icon: "users", label: "Crew", count: `${floor.crew.length}` },
     { href: "/runs", match: "/runs*", icon: "history", label: "Runs" },
-    { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: notSetUp ? `${notSetUp} to fix` : undefined, noteColor: "var(--red-ink)" },
+    { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: toConnect(floor.health, floor.grants), noteColor: "var(--ink2)" },
   ];
 
   return (
@@ -67,9 +67,9 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
           </nav>
           <div className="top-right">
             <span className="wide-only"><ThemeToggle initial={theme} /></span>
-            <Link href="/" className="round" title={open.length ? `${open.length} things need you` : "Nothing needs you"} style={{ position: "relative" }}>
+            <Link href="/" className="round" title={red.length ? `${red.length} thing${red.length === 1 ? "" : "s"} need${red.length === 1 ? "s" : ""} you` : "Nothing needs you"} style={{ position: "relative" }}>
               <Icon name="bell" />
-              {!!open.length && <span style={{ position: "absolute", top: 11, right: 12, width: 7, height: 7, borderRadius: 999, background: "var(--red)", border: "1.5px solid var(--soft)" }} />}
+              {!!red.length && <span style={{ position: "absolute", top: 11, right: 12, width: 7, height: 7, borderRadius: 999, background: "var(--red)", border: "1.5px solid var(--soft)" }} />}
             </Link>
             <span className="date-pill"><Icon name="calendar" size={16} />{longDay(floor.now, floor.tz).replace(/^(\w{3})\w*/, "$1")}</span>
             <span className="me" title={me.email}>{me.email.slice(0, 1).toUpperCase()}</span>

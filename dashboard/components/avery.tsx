@@ -30,7 +30,13 @@ export function AveryChat({ name, initial, missing, send, draft }: { name: strin
   const list = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight }); }, [msgs, open, sheet, busy]);
+  // after layout settles (two frames), so the panel opens on the newest message, not partway up (card 189)
+  useEffect(() => {
+    const el = list.current;
+    if (!el) return;
+    const f = requestAnimationFrame(() => requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight })));
+    return () => cancelAnimationFrame(f);
+  }, [msgs, open, sheet, busy]);
 
   const toggle = (next: boolean) => {
     setManual((m) => ({ ...m, [path]: next }));

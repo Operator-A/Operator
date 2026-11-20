@@ -151,7 +151,8 @@ function Who({ id, f }: { id: string; f: Floor }) {
 function Status({ c, f }: { c: Connection; f: Floor }) {
   if (c.builtIn && !c.checks.length) return <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>Built in</span>;
   const ok = isSetUp(c, f.health);
-  return <span className="pill sm" style={{ background: ok ? "var(--mint-soft)" : "var(--red-soft)", color: ok ? "var(--mint-ink)" : "var(--red-ink)" }}><span className="dot" style={{ width: 6, height: 6, background: ok ? "var(--mint)" : "var(--red)" }} />{ok ? (c.builtIn ? "Built in" : "Set up") : "Not set up"}</span>;
+  // not set up yet is setup to do, not a fault (card 189): grey, never red
+  return <span className="pill sm" style={{ background: ok ? "var(--mint-soft)" : "var(--soft)", color: ok ? "var(--mint-ink)" : "var(--ink2)" }}><span className="dot" style={{ width: 6, height: 6, background: ok ? "var(--mint)" : "var(--mut)" }} />{ok ? (c.builtIn ? "Built in" : "Set up") : "Not set up"}</span>;
 }
 
 function Tile({ c, f, on }: { c: Connection; f: Floor; on: boolean }) {
@@ -213,7 +214,7 @@ function Detail({ c, f, mcp, more, note }: { c: Connection; f: Floor; mcp: McpVi
           <McpPanel c={c} id={m.id} v={m.v} tz={f.tz} />
         </div>
       ))}
-      {c.checks.length > 1 && <span className="row wrap" style={{ gap: 6 }}>{c.checks.map((k) => <span key={k.key} className="pill sm" style={{ background: f.health[k.key] ? "var(--mint-soft)" : "var(--red-soft)", color: f.health[k.key] ? "var(--mint-ink)" : "var(--red-ink)" }}>{k.label}: {f.health[k.key] ? "set up" : "not set up"}</span>)}</span>}
+      {c.checks.length > 1 && <span className="row wrap" style={{ gap: 6 }}>{c.checks.map((k) => <span key={k.key} className="pill sm" style={{ background: f.health[k.key] ? "var(--mint-soft)" : "var(--soft)", color: f.health[k.key] ? "var(--mint-ink)" : "var(--ink2)" }}>{k.label}: {f.health[k.key] ? "set up" : "not set up"}</span>)}</span>}
       {!c.mcp && missing.map((k) => <span key={k.key} className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.checks.length > 1 ? `${k.label}: ` : ""}{k.setup}</span>)}
       {section("Can read", "Looks only. Nothing changes.", t.read, `Agents can’t read anything from ${c.name}.`)}
       {section("Can do", "Each one becomes a card on Approvals. Nothing happens until you tap Approve.", t.do, c.id === "shopify" ? "Nothing. Shopify is read-only here." : "Nothing yet.", true)}
