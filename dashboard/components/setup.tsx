@@ -15,19 +15,21 @@ import { Icon } from "./Icon";
 
 export interface SetupMsg { id: string; role: "owner" | "avery"; text: string; runId: string | null; notes: string[] }
 
-export function SetupChat({ name, initial, send, ready, blocked }: { name: string; initial: SetupMsg[]; send: (text: string, site: string) => Promise<SetupAnswer>; ready: boolean; blocked: string | null }) {
+export function SetupChat({ name, initial, send, ready, blocked, foot }: { name: string; initial: SetupMsg[]; send: (text: string, site: string) => Promise<SetupAnswer>; ready: boolean; blocked: string | null; foot: string | null }) {
   const router = useRouter();
   const [msgs, setMsgs] = useState<SetupMsg[]>(initial);
   const [text, setText] = useState("");
   const [site, setSite] = useState("");
+  const [reading, setReading] = useState("");
   const [busy, start] = useTransition();
   const list = useRef<HTMLDivElement>(null);
-  useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight }); }, [msgs, busy]);
+  useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" }); }, [msgs, busy]);
   const go = () => {
     const t = text.trim();
     if (!t || busy || !ready) return;
     const s = site.trim();
     setText("");
+    setReading(s);
     setMsgs((m) => [...m, { id: `z${Date.now()}`, role: "owner", text: s ? `${t}\n\n(My site: ${s})` : t, runId: null, notes: [] }]);
     start(async () => {
       let a: SetupAnswer;
@@ -37,50 +39,82 @@ export function SetupChat({ name, initial, send, ready, blocked }: { name: strin
       router.refresh();
     });
   };
+  const off = busy || !ready;
+  const submit = (e: React.FormEvent) => { e.preventDefault(); go(); };
+  const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } };
+  const warn = blocked && <div className="soft-box" role="status" style={{ background: "var(--yel-soft)", color: "var(--yel-ink)", fontSize: 13.5 }}>{blocked}</div>;
+
+  // before the first message: one card, nothing else on screen (card 181)
+  if (!msgs.length) {
+    return (
+      <section aria-labelledby="wg-h" className="wg-glass wg-card wg-enter" style={{ maxWidth: 620, margin: "0 auto", width: "100%" }}>
+        <span className="row" style={{ gap: 10 }}><span className="wg-av" aria-hidden>{name[0]}</span><span className="ink2" style={{ fontSize: 13.5 }}>{name}, your chief of staff</span></span>
+        <h1 id="wg-h" className="wg-h1">Let’s build your company.</h1>
+        <p className="wg-lead">Tell me what you sell and what you’re behind on. I’ll build the team around it.</p>
+        {warn}
+        <form className="stack" style={{ gap: 12 }} onSubmit={submit}>
+          <label className="wg-sr" htmlFor="wg-about">About your business</label>
+          <textarea id="wg-about" className="wg-area" rows={3} maxLength={1000} value={text} disabled={off} placeholder="We sell… I’m behind on… I never get to…" onChange={(e) => setText(e.target.value)} onKeyDown={enter} />
+          <div className="row wrap" style={{ gap: 10 }}>
+            <label className="wg-sr" htmlFor="wg-site">Your website (optional)</label>
+            <input id="wg-site" className="wg-in" type="text" inputMode="url" maxLength={300} placeholder="yourstore.com (optional)" value={site} disabled={off} onChange={(e) => setSite(e.target.value)} />
+            <button type="submit" className="btn dark" disabled={off || !text.trim()}>Build my company</button>
+          </div>
+        </form>
+        {foot && <span className="sub" style={{ fontSize: 13 }}>{foot}</span>}
+      </section>
+    );
+  }
   return (
-    <section aria-label={`Conversation with ${name}`} className="stack" style={{ gap: 16, flex: "999 1 520px", minWidth: 0 }}>
-      <div className="stack" style={{ gap: 6 }}>
-        <h1 style={{ fontSize: 30, lineHeight: 1.15, fontWeight: 700, letterSpacing: "-.02em" }}>Tell me about your business</h1>
-        <p className="ink2" style={{ fontSize: 15 }}>Talk the way you would to a new hire. I’ll work out the rest.</p>
-      </div>
-      <div ref={list} className="stack" style={{ gap: 14 }} aria-live="polite">
-        <div className="row" style={{ gap: 12, alignItems: "flex-start" }}>
-          <span className="avery-av lg">{name[0]}</span>
-          <div className="avery-her" style={{ maxWidth: 620 }}>Hi, I’m {name}, your chief of staff. Tell me what you sell, who buys it, and which jobs eat up your week. A link to your site helps, but it’s optional.</div>
-        </div>
+    <section aria-label={`Conversation with ${name}`} className="wg-glass wg-card wg-enter" style={{ flex: "999 1 520px", minWidth: 0 }}>
+      <div ref={list} className="stack wg-talk" style={{ gap: 14 }} aria-live="polite">
         {msgs.map((m) => m.role === "owner"
-          ? <div key={m.id} className="avery-me" style={{ alignSelf: "flex-end", maxWidth: 620, whiteSpace: "pre-wrap" }}>{m.text}</div>
+          ? <div key={m.id} className="wg-me wg-pop">{m.text}</div>
           : (
-            <div key={m.id} className="row" style={{ gap: 12, alignItems: "flex-start" }}>
-              <span className="avery-av lg">{name[0]}</span>
-              <div className="avery-her" style={{ maxWidth: 620 }}>
+            <div key={m.id} className="row wg-pop" style={{ gap: 12, alignItems: "flex-start" }}>
+              <span className="wg-av" aria-hidden>{name[0]}</span>
+              <div className="wg-her">
                 <span style={{ whiteSpace: "pre-wrap" }}>{m.text}</span>
-                {m.notes.map((n, i) => <span key={i} className="avery-note"><Icon name="check" size={14} />{n}</span>)}
-                {m.runId && <Link href={`/runs/${m.runId}`} className="avery-run">See how she worked it out</Link>}
+                {m.notes.map((n, i) => <span key={i} className="wg-note"><Icon name="check" size={14} />{n}</span>)}
+                {m.runId && <Link href={`/runs/${m.runId}`} style={{ fontSize: 12.5 }}>See how she worked it out</Link>}
               </div>
             </div>
           ))}
-        {busy && <div className="avery-her avery-sub">{name} is thinking…</div>}
+        {busy && (
+          <div className="row wg-pop ink2" style={{ gap: 10, fontSize: 14 }}>
+            <span className="wg-dots" aria-hidden><i /><i /><i /></span>
+            {name} is {reading ? `reading ${reading.slice(0, 60)} and ` : ""}laying out your company
+          </div>
+        )}
       </div>
-      {blocked && <div className="card" style={{ background: "var(--yel-soft)", color: "var(--yel-ink)", borderColor: "transparent" }}>{blocked}</div>}
-      <form className="card stack" style={{ gap: 12 }} onSubmit={(e) => { e.preventDefault(); go(); }}>
-        <label className="stack" style={{ gap: 4, fontSize: 13 }}>
-          <span className="ink2">Your site (optional)</span>
-          <input className="input" type="text" inputMode="url" maxLength={300} placeholder="yourbusiness.com" value={site} disabled={busy || !ready} onChange={(e) => setSite(e.target.value)} />
-        </label>
-        <label className="stack" style={{ gap: 4, fontSize: 13 }}>
-          <span className="ink2">Message</span>
-          <textarea className="input" rows={3} maxLength={1000} value={text} disabled={busy || !ready}
-            placeholder="We sell… Our customers are… I never get to…"
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } }} />
-        </label>
-        <div className="row wrap" style={{ gap: 10, justifyContent: "flex-end" }}>
-          <a href="#tools" className="btn outline sm">Skip to tools</a>
-          <button type="submit" className="btn dark sm" disabled={busy || !ready || !text.trim()}>Send</button>
+      {warn}
+      <form className="stack rule" style={{ gap: 10, paddingTop: 14 }} onSubmit={submit}>
+        <label className="wg-sr" htmlFor="wg-msg">Message</label>
+        <textarea id="wg-msg" className="wg-area" rows={2} maxLength={1000} value={text} disabled={off} placeholder={`Answer ${name}, or tell her more`} onChange={(e) => setText(e.target.value)} onKeyDown={enter} />
+        <div className="row wrap" style={{ gap: 10 }}>
+          <label className="wg-sr" htmlFor="wg-site2">Your website (optional)</label>
+          <input id="wg-site2" className="wg-in" type="text" inputMode="url" maxLength={300} placeholder="yourstore.com (optional)" value={site} disabled={off} onChange={(e) => setSite(e.target.value)} />
+          <button type="submit" className="btn dark" disabled={off || !text.trim()}>Send</button>
         </div>
       </form>
     </section>
+  );
+}
+
+/** Back and Next under a step (card 181). The step is saved, then the page shows it. */
+export function StageNav({ back, next, go }: { back: { stage: string; label: string } | null; next: { stage: string; label: string; quiet?: boolean } | null; go: (stage: string) => Promise<ActionResult> }) {
+  const router = useRouter();
+  const [busy, start] = useTransition();
+  const [bad, setBad] = useState<string | null>(null);
+  const to = (stage: string) => start(async () => { const r = await go(stage); if (r.ok) { setBad(null); router.refresh(); window.scrollTo({ top: 0 }); } else setBad(r.text); });
+  return (
+    <nav aria-label="Setup steps" className="stack" style={{ gap: 8 }}>
+      <div className="row wrap" style={{ gap: 10, justifyContent: "space-between" }}>
+        {back ? <button type="button" className="btn outline" disabled={busy} onClick={() => to(back.stage)}>{back.label}</button> : <span />}
+        {next && <button type="button" className={next.quiet ? "btn outline" : "btn dark"} disabled={busy} onClick={() => to(next.stage)}>{next.label}</button>}
+      </div>
+      {bad && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{bad}</span>}
+    </nav>
   );
 }
 
@@ -130,8 +164,8 @@ export function FactsPanel({ facts, add, edit, confirm, remove }: {
   const [busy, start] = useTransition();
   const groups = FACT_TOPICS.map((tp) => ({ tp, items: facts.filter((f) => f.topic === tp) })).filter((g) => g.items.length);
   return (
-    <div className="card stack" style={{ gap: 10, background: "var(--soft)" }}>
-      <h2 className="card-t" style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: ".04em" }}>What I’ve learned so far</h2>
+    <div className="wg-glass wg-card" style={{ gap: 10 }}>
+      <h2 className="wg-eyebrow">What I’ve learned so far</h2>
       {!groups.length && <span className="sub">Nothing yet. What you tell Avery shows up here, and you can correct any of it.</span>}
       {groups.map((g) => (
         <div key={g.tp} className="stack" style={{ gap: 0 }}>
@@ -197,7 +231,7 @@ export function UnlistedTool({ ask }: { ask: (name: string) => Promise<ActionRes
  */
 export function CompanyChart({ owner, company, depts, initial, install, back }: {
   owner: string; company: CompanyAgent[]; depts: CompanyDept[]; initial: string[];
-  install: (ids: string[]) => Promise<ActionResult & { href?: string }>; back: string;
+  install: (ids: string[]) => Promise<ActionResult & { href?: string }>; back: () => Promise<ActionResult>;
 }) {
   const router = useRouter();
   const [picked, setPicked] = useState<string[]>(initial);
@@ -226,7 +260,7 @@ export function CompanyChart({ owner, company, depts, initial, install, back }: 
         <div style={{ paddingLeft: 16, borderLeft: "2px solid var(--line)" }} className="stack">
           {company.map(agentCard)}
           <div className="stack" style={{ gap: 12, paddingLeft: 16, borderLeft: "2px solid var(--line)" }}>
-            {on.length === 0 && <span className="sub">No departments yet. Tell Avery about your business in step 1 and she’ll propose some, or add one below.</span>}
+            {on.length === 0 && <span className="sub">No departments yet. Tell Avery about your business and she’ll propose some, or add one below.</span>}
             {on.map((d) => (
               <div key={d.id} className="stack" style={{ gap: 6 }}>
                 <span className="row wrap" style={{ gap: 8, alignItems: "baseline" }}>
@@ -263,7 +297,7 @@ export function CompanyChart({ owner, company, depts, initial, install, back }: 
       <span className="sub">Every agent starts off duty, every action is an approval card, and nothing runs until you approve each first playbook.</span>
       <div className="row wrap" style={{ gap: 8 }}>
         <button className="btn dark sm" type="button" disabled={busy || !picked.length} onClick={go}>{busy ? "Starting…" : "Start this company"}</button>
-        <a className="btn outline sm" href={back}>Change something</a>
+        <button className="btn outline sm" type="button" disabled={busy} onClick={() => start(async () => { const a = await back(); if (a.ok) router.refresh(); else setR(a); })}>Change something</button>
       </div>
       {r && !r.ok && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{r.text}</span>}
     </div>

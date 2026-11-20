@@ -19,8 +19,8 @@ import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
 import { MAX_REPLY } from "@/core/chat-rules";
 import {
   FACT_TOPICS, FITS, MAX_FACTS_PER_MESSAGE, MAX_LEANING, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
-  cleanFact, factProblem, isTopic, needsSetup, readLeaning, readSetupState, setupDirective, setupPrompt, stateFor,
-  type Fact, type FactState, type Leaning, type SetupState,
+  cleanFact, factProblem, isStage, isTopic, needsSetup, readLeaning, readSetupState, setupDirective, setupPrompt, stateFor,
+  type Fact, type FactState, type Leaning, type SetupState, type Stage,
 } from "@/core/setup-rules";
 
 export const FACTS_MISSING = "The business facts table isn’t in Supabase yet: apply the migration 20261220090000_business_facts.sql.";
@@ -50,6 +50,12 @@ export async function inSetup(): Promise<boolean> {
 /** Setup is over: the founder installed departments (`offer`: the Desk offers a first job, card 154) or chose to start empty. */
 export async function finishSetup(offer = false): Promise<void> {
   await saveSetupState({ ...(await setupState()), done: true, offer });
+}
+
+/** The step of setup the founder is on (card 181). Only a step on the list is kept. */
+export async function setStage(stage: Stage): Promise<void> {
+  if (!isStage(stage)) throw new Error("Unknown step.");
+  await saveSetupState({ ...(await setupState()), stage });
 }
 
 /** The first job started (card 154): which agent, and when. */

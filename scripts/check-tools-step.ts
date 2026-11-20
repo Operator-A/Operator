@@ -40,7 +40,7 @@ assert.deepEqual(waitingOn(tpl("finance"), needsOf, new Set(["shopify"])), ["mer
 assert.deepEqual(waitingOn(tpl("email-marketing"), needsOf, new Set(["klaviyo"])), ["shopify"], "the Campaign writer still waits on Shopify");
 
 // Connect from setup comes back to setup; nothing else is a place
-assert.equal(backTarget("start", "mercury"), "/start#step-2");
+assert.equal(backTarget("start", "mercury"), "/start");
 assert.equal(backTarget("https://evil.example", "mercury"), "/connections?c=mercury");
 assert.equal(backTarget("//evil.example", "klaviyo"), "/connections?c=klaviyo");
 assert.equal(backTarget(null, "klaviyo"), "/connections?c=klaviyo");

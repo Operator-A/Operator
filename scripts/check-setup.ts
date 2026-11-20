@@ -2,8 +2,8 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import {
-  FACT_MAX, FACT_TOPICS, MAX_FACTS, MAX_LEANING, SETUP_AGENT, SETUP_TEMPLATE,
-  cleanFact, factProblem, factsLine, needsSetup, readLeaning, readSetupState, setupDirective, setupPrompt, stateFor,
+  FACT_MAX, FACT_TOPICS, MAX_FACTS, MAX_LEANING, SETUP_AGENT, SETUP_TEMPLATE, STAGES, STAGE_WORDS,
+  cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readLeaning, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
 } from "../core/setup-rules";
 import { businessLines } from "../core/business-rules";
 import { installRows, ontoSetup } from "../core/install-rules";
@@ -38,8 +38,30 @@ assert.match((readLeaning([{ id: SETUP_TEMPLATE, fit: "strong" }], deptIds) as {
 assert.match((readLeaning([{ id: deptIds[0], fit: "perfect" }], deptIds) as { problem: string }).problem, /strong or likely/);
 assert.match((readLeaning([{ id: deptIds[0], fit: "strong" }, { id: deptIds[0], fit: "likely" }], deptIds) as { problem: string }).problem, /twice/);
 assert.match((readLeaning(Array.from({ length: MAX_LEANING + 1 }, () => ({ id: deptIds[0], fit: "strong" })), deptIds) as { problem: string }).problem, /at most/);
-assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, leaning: [], offer: false, firstJob: null }, "a stored list with a bad id is dropped, not trusted");
-assert.deepEqual(readSetupState(null, deptIds), { done: false, leaning: [], offer: false, firstJob: null });
+assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, stage: "business", leaning: [], offer: false, firstJob: null }, "a stored list with a bad id is dropped, not trusted");
+assert.deepEqual(readSetupState(null, deptIds), { done: false, stage: "business", leaning: [], offer: false, firstJob: null });
+
+// one guided flow (card 181): the step is kept in the setup state, and only a step on the list counts
+assert.deepEqual([...STAGES], ["business", "tools", "company", "first"]);
+assert.equal(readStage("tools"), "tools");
+for (const bad of [undefined, null, "", "credits", "TOOLS", 2, { stage: "tools" }]) assert.equal(readStage(bad), "business", `an unknown step (${String(bad)}) opens on the first one`);
+assert.equal(readSetupState({ stage: "company" }, deptIds).stage, "company", "the saved state keeps its step");
+assert.equal(readSetupState({ stage: "nope" }, deptIds).stage, "business");
+assert.equal(prevStage("business"), null, "nothing before the first step");
+assert.equal(nextStage("first"), null, "nothing after the last step");
+assert.deepEqual(STAGES.map((s) => nextStage(s)), ["tools", "company", "first", null]);
+assert.deepEqual(STAGES.map((s) => prevStage(s)), [null, "business", "tools", "company"]);
+assert.deepEqual(STAGES.map(stageProgress), [25, 50, 75, 100]);
+for (const s of STAGES) assert.ok(STAGE_WORDS[s], `${s} has a name`);
+{
+  const page = read("app/start/page.tsx"), parts = read("dashboard/components/setup.tsx"), acts = read("dashboard/setupActions.ts");
+  assert.ok(!/#step-|href="#tools"/.test(page + parts), "no anchor steps: one step is on screen at a time");
+  assert.ok(!/DASHBOARD_CONTROLS/.test(page + parts), "no setting names in what a founder reads in setup");
+  assert.ok(!/DASHBOARD_CONTROLS/.test(acts.replace(/^\/\/.*$/gm, "")), "nor in what setup's actions answer");
+  assert.match(acts, /export async function setupGo[\s\S]{0,200}asRole\("approver"\)[\s\S]{0,120}isStage\(stage\)/, "moving a step checks the role, then the step");
+  assert.match(page, /state\.stage === "business"/, "the page shows the saved step");
+  assert.equal(read("core/tools-step-rules.ts").includes('"/start#'), false, "a sign-in comes back to /start, which opens on the saved step");
+}
 
 // who goes to setup: a new business, never one with a crew
 assert.equal(needsSetup({ done: false, departments: 0, agentIds: [] }), true, "a brand-new business");

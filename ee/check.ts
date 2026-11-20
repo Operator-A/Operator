@@ -230,7 +230,7 @@ assert.ok(!mayUsePooledKey({ balance: 0, planBlocked: false, keySet: true, setup
 }
 
 // where Stripe comes back to after a pack (card 162): a fixed list, never an address from the form
-assert.deepEqual(packReturn("start"), { place: "start", success: "/start?claude=hosted&credits=added#step-1", cancel: "/start?claude=hosted#step-1" });
+assert.deepEqual(packReturn("start"), { place: "start", success: "/start?claude=hosted&credits=added", cancel: "/start?claude=hosted" });
 assert.equal(packReturn("connections").success, "/connections?credits=added#claude");
 assert.equal(packReturn("settings").success, "/settings?credits=added#billing");
 for (const bad of [null, undefined, "", "https://evil.example", "//evil.example", "/start", "START", ["start"]]) assert.equal(packReturn(bad).place, "settings", `${String(bad)} comes back to Settings`);
@@ -238,7 +238,7 @@ for (const p of ["start", "connections", "settings"] as const) {
   const r = packReturn(p);
   for (const u of [r.success, r.cancel, packProblem(p, "x")]) assert.match(u, /^\/(start|connections|settings)[?#]/, "a path on this app, never another host");
 }
-assert.equal(packProblem("start", "a&b#c"), "/start?claude=hosted&credits_problem=a%26b%23c#step-1", "the problem is encoded");
+assert.equal(packProblem("start", "a&b#c"), "/start?claude=hosted&credits_problem=a%26b%23c", "the problem is encoded");
 assert.ok(packProblem("connections", "x".repeat(500)).length < 260, "the problem is cut");
 assert.match(readFileSync("ee/billing-actions.ts", "utf8"), /packReturn\(form\.get\("back"\)\)/, "buyCredits reads the return place through the allowlist");
 assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+HostedClaude,$/m, "the cloud edition fills the HostedClaude slot");

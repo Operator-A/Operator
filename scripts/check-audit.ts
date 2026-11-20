@@ -35,6 +35,7 @@ const AUDITED = [
 // not audited: they change nothing an agent may do, spend or reach, or keep their own history
 const NOT_AUDITED: Record<string, string> = {
   dryRun: "reads only, no model, nothing logged",
+  setupGo: "which step of setup is on screen; changes nothing else",
   previewChain: "dry runs only",
   dryRunBuilt: "dry run only",
   applyWaiting: "applies approvals already audited",
