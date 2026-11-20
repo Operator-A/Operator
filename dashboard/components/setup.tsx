@@ -23,7 +23,14 @@ export function SetupChat({ name, initial, send, ready, blocked, foot, zone }: {
   const [reading, setReading] = useState("");
   const [busy, start] = useTransition();
   const list = useRef<HTMLDivElement>(null);
-  useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" }); }, [msgs, busy]);
+  // to the newest message, after the layout settles: the facts panel beside it re-renders with the
+  // answer, and a smooth scroll started before that stopped short of Avery's reply (card 189)
+  useEffect(() => {
+    const el = list.current;
+    if (!el) return;
+    const f = requestAnimationFrame(() => requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight })));
+    return () => cancelAnimationFrame(f);
+  }, [msgs, busy, initial]);
   const go = () => {
     const t = text.trim();
     if (!t || busy || !ready) return;
@@ -107,8 +114,8 @@ export function StageNav({ back, next, go }: { back: { stage: string; label: str
   const [bad, setBad] = useState<string | null>(null);
   const to = (stage: string) => start(async () => { const r = await go(stage); if (r.ok) { setBad(null); window.scrollTo({ top: 0 }); } else setBad(r.text); });
   return (
-    <nav aria-label="Setup steps" className="stack" style={{ gap: 8 }}>
-      <div className="row wrap" style={{ gap: 10, justifyContent: "space-between" }}>
+    <nav aria-label="Setup steps" className="stack" style={{ gap: 8, position: "sticky", bottom: 12, zIndex: 5 }}>
+      <div className="row wrap wg-glass" style={{ gap: 10, justifyContent: "space-between", padding: 10, borderRadius: 16 }}>
         {back ? <button type="button" className="btn outline" disabled={busy} onClick={() => to(back.stage)}>{back.label}</button> : <span />}
         {next && <button type="button" className={next.quiet ? "btn outline" : "btn dark"} disabled={busy} onClick={() => to(next.stage)}>{next.label}</button>}
       </div>
@@ -278,7 +285,7 @@ export function CompanyChart({ owner, company, depts, initial, install, back, em
               <span className="rule" style={{ fontSize: 13.5, lineHeight: 1.45, paddingTop: 8 }}>{(d.agents.find((a) => a.head) ?? d.agents[0])?.job ?? d.about}</span>
               {d.waitsOn.length > 0 && <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{waitLine(d.waitsOn, d.waitNotes)}</span>}
               <span className="muted" style={{ fontSize: 12.5 }}>
-                {[...new Set(d.agents.flatMap((a) => a.tools))].join(", ") || "No tools"} · {m.unknown.length && m.month === 0 ? "Cost unknown" : `${usd(m.month)} a month${m.unknown.length ? " + cost unknown" : ""}`}
+                {[...new Set(d.agents.flatMap((a) => a.tools))].join(", ") || "No tools"} · {m.month === 0 ? (m.unknown.length ? "Cost unknown" : "$0 a month: runs only when you press Run") : `About ${usd(m.month)} a month${m.unknown.length ? " + cost unknown" : ""}`}
               </span>
               <button className="btn ghost sm" type="button" style={{ alignSelf: "flex-start" }} onClick={() => setPicked((p) => p.filter((x) => x !== d.id))}>Leave out</button>
             </article>
