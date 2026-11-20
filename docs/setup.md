@@ -180,7 +180,8 @@ usual: nothing is hired until the owner approves the proposal.
 ## First job
 
 After **Start this company** (card 154; `core/first-job-rules.ts`, `dashboard/firstJob.ts`), the
-Desk shows one **First job** card. The founder's call (Nov 19): agents start only after the founder
+founder stays in setup for the wrap-up (card 186), and the Desk shows the same **First job** card for a
+founder who leaves early. The founder's call (Nov 19): agents start only after the founder
 approves each first playbook, and this card makes that one tap for the first one.
 
 - **The pick, in code** (`pickFirstJob`): an installed department agent, never the Chief of Staff, with
@@ -196,6 +197,23 @@ approves each first playbook, and this card makes that one tap for the first one
   approvals waiting, for a day. Avery's summary of the day comes at 7:00 CT.
 - **Your other departments**: each says what it waits on, or that it's ready once its playbook is
   approved on Crew.
+
+### The wrap-up (card 186)
+
+Start this company saves `wrapUp: true` with `done` and `offer`, so /start keeps showing the last step
+(`shownStage`) until **Go to your Desk** (`setupToDesk`). There is no Back: the departments are
+installed. `wrapScreen` picks one screen:
+
+- **Setup was on us** (credits): only on OPERATOR's Claude, while the paid layer would block a run for
+  lack of credits (asked through `planBlock`, so core never reads `ee/`). The packs go to Stripe Checkout
+  and come back to /start; **Use my own Claude key instead** shows the step 1 key form. The screen moves
+  on by itself once credits land or a key is saved. The open edition and own key never see it.
+- **Your first job**: the First job card with **Approve and start**, the same action as the Desk.
+- **Your company is ready**: no agent is ready, so each department says what it waits on.
+- **Your company is at work**: the run's progress (it refreshes while the run goes), then its result.
+
+/start never calls `getFloor`: the wrap-up reads a small floor (`jobFloor`: agents, two days of runs,
+approvals waiting, health).
 
 Only a business that installed departments in setup is offered a first job (`offer` in the `setup`
 policies row); one that started empty, or never went through setup, doesn't see the card.

@@ -50,7 +50,13 @@ export async function inSetup(): Promise<boolean> {
 
 /** Setup is over: the founder installed departments (`offer`: the Desk offers a first job, card 154) or chose to start empty. */
 export async function finishSetup(offer = false): Promise<void> {
-  await saveSetupState({ ...(await setupState()), done: true, offer });
+  // with departments installed, /start keeps the founder for the wrap-up: credits, then the first job (card 186)
+  await saveSetupState({ ...(await setupState()), done: true, offer, wrapUp: offer, ...(offer ? { stage: "first" as const } : {}) });
+}
+
+/** Go to your Desk (card 186): the wrap-up ends, and /start sends the founder to the Desk from now on. */
+export async function endWrapUp(): Promise<void> {
+  await saveSetupState({ ...(await setupState()), wrapUp: false });
 }
 
 /** The step of setup the founder is on (card 181). Only a step on the list is kept. */

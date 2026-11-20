@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import {
   FACT_MAX, FACT_TOPICS, MAX_FACTS, MAX_LEANING, SETUP_AGENT, SETUP_TEMPLATE, STAGES, STAGE_WORDS,
-  IDEA_LIMITS, ideaOffer, ideaSeed, readIdea,
+  IDEA_LIMITS, ideaOffer, ideaSeed, readIdea, shownStage, wrapScreen,
   cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readLeaning, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
 } from "../core/setup-rules";
 import { businessLines } from "../core/business-rules";
@@ -39,8 +39,8 @@ assert.match((readLeaning([{ id: SETUP_TEMPLATE, fit: "strong" }], deptIds) as {
 assert.match((readLeaning([{ id: deptIds[0], fit: "perfect" }], deptIds) as { problem: string }).problem, /strong or likely/);
 assert.match((readLeaning([{ id: deptIds[0], fit: "strong" }, { id: deptIds[0], fit: "likely" }], deptIds) as { problem: string }).problem, /twice/);
 assert.match((readLeaning(Array.from({ length: MAX_LEANING + 1 }, () => ({ id: deptIds[0], fit: "strong" })), deptIds) as { problem: string }).problem, /at most/);
-assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, stage: "business", skipped: [], plans: {}, leaning: [], idea: null, offer: false, firstJob: null }, "a stored list with a bad id is dropped, not trusted");
-assert.deepEqual(readSetupState(null, deptIds), { done: false, stage: "business", skipped: [], plans: {}, leaning: [], idea: null, offer: false, firstJob: null });
+assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, stage: "business", skipped: [], plans: {}, leaning: [], idea: null, offer: false, firstJob: null, wrapUp: false }, "a stored list with a bad id is dropped, not trusted");
+assert.deepEqual(readSetupState(null, deptIds), { done: false, stage: "business", skipped: [], plans: {}, leaning: [], idea: null, offer: false, firstJob: null, wrapUp: false });
 
 // one guided flow (card 181): the step is kept in the setup state, and only a step on the list counts
 assert.deepEqual([...STAGES], ["business", "tools", "company", "first"]);
@@ -192,6 +192,26 @@ assert.match(setupTs, /id: "suggest_department"[\s\S]*kind: "report"/, "the idea
 assert.match(read("dashboard/components/idea.tsx"), /Build it with Avery/, "the reveal offers Build it with Avery");
 assert.match(read("app/(room)/page.tsx"), /<IdeaCard /, "the Desk shows the idea after the first job");
 assert.match(read("core/departments.ts"), /export async function seedDraft[\s\S]*if \(await loadDraft\(\)\) return false/, "Start with Avery never overwrites an open draft");
+
+// card 186: the wrap-up after Start this company: credits, then the first job, inside setup
+assert.equal(readSetupState({ done: true, offer: true, wrapUp: true }, deptIds).wrapUp, true, "the wrap-up is kept");
+assert.equal(readSetupState({ done: false, offer: true, wrapUp: true }, deptIds).wrapUp, false, "only after the departments are installed");
+assert.equal(readSetupState({ done: true, offer: false, wrapUp: true }, deptIds).wrapUp, false, "never after Start empty");
+assert.equal(wrapScreen({ firstJob: null, needCredits: true, jobReady: true }), "credits", "credits come first when a run would wait on them");
+assert.equal(wrapScreen({ firstJob: null, needCredits: false, jobReady: true }), "job", "then the first job");
+assert.equal(wrapScreen({ firstJob: null, needCredits: false, jobReady: false }), "waits", "with no agent ready, what each department waits on");
+assert.equal(wrapScreen({ firstJob: { agentId: "x", at: "y" }, needCredits: true, jobReady: false }), "working", "once it started, the company at work");
+assert.equal(shownStage({ stage: "tools", wrapUp: true }), "first", "the wrap-up is always the last step");
+assert.equal(shownStage({ stage: "first", wrapUp: false }), "company", "the last step before installing is the company");
+assert.equal(shownStage({ stage: "tools", wrapUp: false }), "tools");
+const setup186 = read("core/setup.ts"), page186 = read("app/start/page.tsx"), acts186 = read("dashboard/setupActions.ts");
+assert.match(setup186, /wrapUp: offer/, "Start this company opens the wrap-up; Start empty doesn't");
+assert.match(page186, /if \(!setup && !state\.wrapUp\) redirect\("\/"\)/, "/start keeps the founder for the wrap-up");
+assert.match(page186, /planBlock\(\{ kind: "run"/, "credits are asked of the paid layer through planBlock; core never reads ee");
+assert.match(page186, /firstJobView\(await jobFloor\(health\)\)/, "the wrap-up reads a small floor, not getFloor");
+assert.match(page186, /action=\{setupToDesk\}/, "Go to your Desk ends the wrap-up");
+assert.doesNotMatch(page186, /Credits for your crew’s work/, "the old second credits panel is gone");
+assert.match(acts186, /href: "\/start", text: `Installed:/, "Start this company stays in setup");
 
 // the table: its topics are the code's
 const mig = readdirSync("supabase/migrations").find((f) => f.endsWith("_business_facts.sql"))!;

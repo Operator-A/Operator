@@ -2,7 +2,7 @@
 // First-run setup actions (card 151, docs/setup.md). Each checks the login and role again. A message to
 // Avery makes real model calls, so it also needs DASHBOARD_CONTROLS=on, like her chat.
 import { revalidatePath } from "next/cache";
-import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, startIdea, wantIdea, type SetupAnswer } from "@/core/setup";
+import { addFact, askSetup, confirmFact, editFact, endWrapUp, ensureAvery, finishSetup, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, startIdea, wantIdea, type SetupAnswer } from "@/core/setup";
 import { ideaSeed, isStage } from "@/core/setup-rules";
 import { readPick } from "@/core/company-rules";
 import { companyChart } from "./company";
@@ -124,7 +124,17 @@ export async function setupInstall(picked: string[]): Promise<ActionResult & { h
     await finishSetup(true);
     await audit(me, "install_template", ids.join(","), counts);
     revalidatePath("/", "layout");
-    return { ok: true, href: "/", text: `Installed: ${counts.agents ?? 0} agents in ${counts.departments ?? 0} departments, all off duty. The Desk shows the first job: one tap approves it and starts it.` };
+    return { ok: true, href: "/start", text: `Installed: ${counts.agents ?? 0} agents in ${counts.departments ?? 0} departments, all off duty.` };
+  } catch (e) { return fail(e); }
+}
+
+/** Go to your Desk (card 186): ends the wrap-up after the first job, or when no agent is ready yet. Changes nothing else. */
+export async function setupToDesk(): Promise<ActionResult & { href?: string }> {
+  const { no } = await asRole("approver"); if (no) return no;
+  try {
+    await endWrapUp();
+    revalidatePath("/", "layout");
+    return { ok: true, href: "/", text: "" };
   } catch (e) { return fail(e); }
 }
 
