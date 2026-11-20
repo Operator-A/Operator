@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { CONNECTIONS, isSetUp } from "@/dashboard/connections";
 import { getFloor, requireSession } from "@/dashboard/data";
 import { longDay } from "@/dashboard/format";
-import { needs } from "@/dashboard/needs";
+import { interruptCount, needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import { isLive, stateLook, stateOf } from "@/dashboard/status";
 import { LiveRefresher, MobileMenu, RailLink, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
@@ -35,8 +35,8 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   const recent: RecentRun[] = floor.runs
     .filter((r) => floor.now - Date.parse(r.started_at) < 10 * 6e4)
     .map((r) => ({ id: r.id, name: floor.byId[r.agent_id]?.name ?? r.agent_id, status: r.status, live: isLive(r, floor.now) }));
-  // approval cards and proposals both wait on the owner (company mode slice 3)
-  const waiting = (floor.approvalsPending ?? 0) + (floor.proposalsPending ?? 0);
+  // card 158: the badge counts only the four kinds that interrupt (dashboard/needs-rules.ts)
+  const waiting = interruptCount(open);
   // Avery's chat: whoever holds the company seat, with the conversation so far
   const [history, org, biz, me] = await Promise.all([chatHistory(30).catch(() => null), loadOrg().catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), requireSession()]);
   const frontId = org ? companySeat(org)?.agentId ?? null : null;

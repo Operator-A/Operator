@@ -11,15 +11,17 @@ export function deskGreeting(now: number): string {
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 }
 
-/** "Two goals on track, one behind, one can't be measured yet. Three proposals need you." */
-export function deskLine(statuses: GoalStatus[], proposals: number, otherNeeds: number): string {
+/**
+ * "Two goals on track, one behind. Three things need you; two wait for Avery’s summary." Card 158: it
+ * counts only the four kinds that interrupt (dashboard/needs-rules.ts), then what waits.
+ */
+export function deskLine(statuses: GoalStatus[], interrupts: number, later: number, chief = "Avery"): string {
   const n = (s: GoalStatus[]) => statuses.filter((x) => s.includes(x)).length;
   const counts: [number, string][] = ([[n(["on_track", "reached", "done"]), "on track"], [n(["behind", "missed"]), "behind"], [n(["no_measure", "unreadable"]), "can’t be measured yet"], [n(["paused"]), "paused"]] as [number, string][]).filter(([c]) => c > 0);
   const goals = !counts.length ? "No goals set yet." : `${counts.map(([c, t], i) => (i ? `${word(c, true)} ${t}` : `${word(c)} goal${c === 1 ? "" : "s"} ${t}`)).join(", ")}.`;
-  const asks = proposals ? `${word(proposals)} proposal${proposals === 1 ? " needs" : "s need"} you` : "";
-  const other = !otherNeeds ? "" : asks ? `and ${word(otherNeeds, true)} other thing${otherNeeds === 1 ? "" : "s"}` : `${word(otherNeeds)} thing${otherNeeds === 1 ? " needs" : "s need"} you`;
-  const tail = asks || other ? `${[asks, other].filter(Boolean).join(" ")}.` : "Nothing needs you.";
-  return `${goals} ${tail}`;
+  const asks = interrupts ? `${word(interrupts)} thing${interrupts === 1 ? " needs" : "s need"} you` : "Nothing needs you";
+  const wait = later ? `${asks ? "; " : ""}${word(later, true)} ${later === 1 ? "waits" : "wait"} for ${chief}’s summary` : "";
+  return `${goals} ${asks}${wait}.`;
 }
 
 /** The first sentence of an agent's words, cut to a length, for a tile or a card. */

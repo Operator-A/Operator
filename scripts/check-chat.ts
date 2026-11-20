@@ -44,9 +44,9 @@ assert.deepEqual(savedLines([{ tool: "save_rule", ok: true, note: "Saved for Row
   ["Saved for Rowan in your words: “Skip chains.”", "Not saved (“x”): nope."]);
 
 // the Desk's summary line, counted in code
-assert.equal(deskLine(["on_track", "on_track", "behind", "no_measure"], 3, 0), "Two goals on track, one behind, one can’t be measured yet. Three proposals need you.");
-assert.equal(deskLine(["behind"], 1, 2), "One goal behind. One proposal needs you and two other things.");
-assert.equal(deskLine([], 0, 1), "No goals set yet. One thing needs you.");
+assert.equal(deskLine(["on_track", "on_track", "behind", "no_measure"], 3, 0), "Two goals on track, one behind, one can’t be measured yet. Three things need you.");
+assert.equal(deskLine(["behind"], 1, 2), "One goal behind. One thing needs you; two wait for Avery’s summary.");
+assert.equal(deskLine([], 0, 1, "Tess"), "No goals set yet. Nothing needs you; one waits for Tess’s summary.");
 assert.equal(deskLine(["reached"], 0, 0), "One goal on track. Nothing needs you.");
 assert.equal(firstSentence("[runner, spec v2] Leads come in, but nobody follows up after day 4. I asked to hire."), "Leads come in, but nobody follows up after day 4.");
 assert.equal(firstSentence("x".repeat(300), 20).length, 20);

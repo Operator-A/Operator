@@ -37,6 +37,11 @@ function yesDoes(p: Proposal["payload"]): { label: string; does: string } {
     case "grant_tool": return { label: `Give ${p.agent} ${toolLabel(p.tool)}`, does: `Saves a draft version of ${p.agent} with ${toolLabel(p.tool)} added. What runs today doesn’t change until you Try it and Go live.` };
     case "new_tool": return { label: "Find a tool for it", does: "Opens Find a tool, where you pick how: a connection you already have, a server you add by its address, or an ask for a built-in connector. Nothing is granted to anyone until you do it on the builder’s Tools step." };
     case "department": return { label: `Create ${p.draft.name}`, does: `Adds the ${p.draft.name} department with its head seat, creates ${[p.draft.head, ...p.draft.agents].filter(Boolean).map((x) => x!.name).join(" and ") || "no agents"} off duty with only the read tools shown, sets ${p.draft.goals.length} goal${p.draft.goals.length === 1 ? "" : "s"}, and logs a connection request for any source still missing. Nothing turns on.` };
+    case "goal": return p.change === "new"
+      ? { label: "Set this goal", does: "Adds the goal to its department, as if you set it on Goals. Code counts its measure; its head plans around it from the next run." }
+      : p.change === "drop"
+        ? { label: "Drop this goal", does: "Drops the goal, as if you did it on its goal page. Its history stays." }
+        : { label: "Change this goal", does: "Saves the change, as if you edited it on its goal page. A new measure starts its pace again from today." };
     case "retire": return p.agentId
       ? { label: `Retire ${p.agent}`, does: `Takes ${p.agent} off duty and opens its seat. Its versions, runs and memory stay, and you can turn it back on.` }
       : { label: `Close the ${p.seat} seat`, does: `Removes the empty ${p.seat} seat from the chart.` };
@@ -74,6 +79,16 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
     : p.kind === "grant_tool" ? [["Teammate", p.agent], ["Tool", toolLabel(p.tool)]]
     : p.kind === "new_tool" ? [["What it reads", p.what]]
     : p.kind === "department" ? []
+    : p.kind === "goal" ? [
+      ["Department", dept?.name ?? ""],
+      ["Change", p.change === "new" ? "A new goal" : p.change === "drop" ? `Drop “${p.goal}”` : `Change “${p.goal}”`],
+      ...(p.change === "drop" ? [] : [
+        ...(p.title ? [["Goal", p.title] as [string, string]] : []),
+        ...(p.measure ? [["Measure", p.measure === "none" ? "None: words only" : p.measure] as [string, string]] : []),
+        ...(p.target ? [["Target", p.target] as [string, string]] : []),
+        ...(p.dueOn ? [["Due", p.dueOn] as [string, string]] : []),
+      ]),
+    ]
     : [[p.agentId ? "Agent" : "Seat", p.agent ?? p.seat ?? ""]];
   const deptView = p.kind === "department" ? await draftView(p.draft) : null;
 

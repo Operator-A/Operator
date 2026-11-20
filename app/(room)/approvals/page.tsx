@@ -114,8 +114,8 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
 
       {!!f.proposalsPending && (
         <Link href="/proposals" className="card row wrap" style={{ gap: 10, borderLeft: "4px solid var(--acc)", textDecoration: "none", color: "inherit" }}>
-          <span style={{ fontSize: 14.5, fontWeight: 600, flex: 1 }}>{f.proposalsPending} proposal{f.proposalsPending === 1 ? "" : "s"} from your heads</span>
-          <span className="sub">Hires, tools and retirements. Open them ›</span>
+          <span style={{ fontSize: 14.5, fontWeight: 600, flex: 1 }}>{f.proposalsPending} proposal{f.proposalsPending === 1 ? "" : "s"} to decide</span>
+          <span className="sub">Hires, departments, goal changes, tools and retirements. Open them ›</span>
         </Link>
       )}
 

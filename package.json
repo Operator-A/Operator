@@ -43,6 +43,7 @@
     "check:cost": "npx --yes tsx --conditions=react-server scripts/check-cost.ts",
     "check:department": "npx --yes tsx --conditions=react-server scripts/check-department.ts",
     "check:memory-reach": "npx --yes tsx --conditions=react-server scripts/check-memory-reach.ts",
+    "check:interrupts": "npx --yes tsx --conditions=react-server scripts/check-interrupts.ts",
     "check:first-job": "npx --yes tsx --conditions=react-server scripts/check-first-job.ts",
     "check:tools-step": "npx --yes tsx --conditions=react-server scripts/check-tools-step.ts",
     "check:ee": "npx --yes tsx ee/check.ts",
