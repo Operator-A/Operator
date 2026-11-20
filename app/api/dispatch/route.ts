@@ -8,6 +8,8 @@ import { orgOn } from "@/core/org-switch";
 import { cronAuthorized } from "@/core/runs";
 import { withOrg } from "@/core/tenancy";
 import { sendStatusAlerts } from "@/core/status";
+import { applyTrusted } from "@/core/gateway";
+import { controlsOn } from "@/dashboard/session";
 
 export const maxDuration = 60;
 
@@ -18,7 +20,9 @@ export const maxDuration = 60;
 // work itself runs in workers (/api/jobs/<id>), each its own request through withRun. While an org
 // is off (core/org-switch.ts, docs/org-schedule.md) no chain of it starts on its own; the worker
 // lets only steps of a chain the owner started with Run chain go on. Last, it emails the owner any new
-// alert from the Status page (core/status.ts).
+// alert from the Status page (core/status.ts). In between, with DASHBOARD_CONTROLS on, it applies
+// what earned trust let through (core/gateway applyTrusted, card 7): actions whose undo window has
+// passed, and actions at Act, each re-checked and run as its agent.
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const origin = new URL(req.url).origin;
@@ -51,7 +55,9 @@ async function schedule(origin: string, now: number) {
   const stale = await failStale(now);
   const due = await dueJobs(now);
   await Promise.all(due.map((id) => kick(origin, id)));
+  // trusted actions never stop the scheduler; with controls off they wait, as approved ones do
+  const trusted = controlsOn() ? await applyTrusted(new Date(now)).catch((e) => { console.error("[dispatch] trusted", e instanceof Error ? e.message : e); return null; }) : null;
   // alerts read the state after this round's work, and never stop the scheduler
   const alerted = await sendStatusAlerts(origin, now).catch((e) => { console.error("[dispatch] alerts", e instanceof Error ? e.message : e); return []; });
-  return { on, started, kicked: due.length, stale, alerted, problems: flow.problems };
+  return { on, started, kicked: due.length, stale, trusted, alerted, problems: flow.problems };
 }

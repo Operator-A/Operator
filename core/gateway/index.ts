@@ -14,7 +14,9 @@ import { chicagoDate, offsetOn } from "@/core/time";
 import { hasGmail } from "@/integrations/gmail";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
-import { ANNOTATE, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, refuseCampaignTo, MAX_RECEIPT_BYTES, RECEIPT_TYPES, TOOLS, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
+import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
+import { ANNOTATE, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, refuseCampaignTo, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
 export { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL } from "./policy";
 
@@ -36,8 +38,13 @@ async function numPolicy(key: string, d: number) {
   return Number.isFinite(n) && n > 0 ? n : d;
 }
 
-/** Queue an action for approval, or record it as refused. Returns what happened. */
-export async function propose(p: Proposal): Promise<{ status: "queued" | "refused" | "duplicate"; reason?: string; actionId?: string }> {
+/**
+ * Queue an action at its agent's trust level for that tool (core/trust.ts, card 7), or record it as
+ * refused. Draft: an approval card. Act with undo: scheduled, applied by the scheduler after the undo
+ * window unless an approver cancels it. Act: approved, applied by the scheduler's next round. Every
+ * refusal and cap holds at every level, and every apply re-checks live state first.
+ */
+export async function propose(p: Proposal): Promise<{ status: "queued" | "scheduled" | "refused" | "duplicate"; reason?: string; actionId?: string }> {
   const memoMax = await numPolicy("mercury_memo_max_chars", 200);
   const refused = refuseProposal(p.agentId, p.tool, p.target, p.args as Record<string, unknown>, memoMax) ?? (p.tool === DRAFT_EMAIL ? await refuseLead(p.target) : p.tool === CAMPAIGN_DRAFT ? await refuseList(p.target) : null);
   const base = { agent_id: p.agentId, run_id: p.runId ?? null, tool: p.tool, action_type: p.actionType, target: p.target, args_json: p.args };
@@ -48,9 +55,20 @@ export async function propose(p: Proposal): Promise<{ status: "queued" | "refuse
   const { data: action, error } = await db().from("agent_actions").insert({ ...base, status: "proposed" }).select("id").single();
   if (error?.code === "23505") return { status: "duplicate" };
   if (error || !action) throw new Error(`Gateway: could not record the action: ${error?.message}`);
-  // Draft tier: always an approval. Tagged with the agent's department; when that department has
+  const level = await levelOf(p.agentId, p.tool);
+  if (level !== "draft") {
+    const undo = (await loadCaps()).undo_window_minutes.value;
+    const now = Date.now();
+    const patch = level === "act_undo"
+      ? { status: "scheduled", level, execute_after: executeAfter(now, undo) }
+      : { status: "approved", level, decided_at: new Date(now).toISOString() };
+    const { error: e3 } = await db().from("agent_actions").update(patch).eq("id", action.id).eq("status", "proposed");
+    if (!e3) return { status: "scheduled", actionId: action.id };
+    // before the trust migration the columns aren't there: fall back to an approval card
+  }
+  // Draft: always an approval. Tagged with the agent's department; when that department has
   // "Lead checks drafts first" on, it waits for the agent above it for up to LEAD_REVIEW_HOURS.
-  if (TOOLS[p.tool].tier === "Draft") {
+  {
     const [departmentId, checker] = await Promise.all([draftDepartment(p.agentId), draftChecker(p.agentId)]);
     const review = checker ? { reviewer_agent_id: checker.reviewer, review_status: "waiting", review_due: new Date(Date.now() + LEAD_REVIEW_HOURS * 36e5).toISOString() } : {};
     const card = { action_id: action.id, agent_id: p.agentId, title: p.title, reasoning: p.reasoning ?? null, preview: p.preview ?? {} };
@@ -125,7 +143,7 @@ export async function queueBookkeeperProposals(runId?: string | null) {
         : args.category_id ? "No category in Mercury yet. Suggested from Mercury's own category list." : undefined,
       preview: { date: r.date, merchant: r.merchant, amount_usd: Number(r.amount_usd), receipt_path: args.attach ? r.receipt_path : null, category: args.category ?? null, note: args.note ?? null },
     });
-    if (res.status === "queued") {
+    if (res.status === "queued" || res.status === "scheduled") {
       queued++;
       await db().from("expense_docs").update({ proposal_action_id: res.actionId }).eq("id", r.id);
     } else if (res.status === "refused") refused++;
@@ -204,17 +222,65 @@ export async function expireStale() {
   return ids.length;
 }
 
-/** Records the owner's decision on a pending approval. Approving does not write anything by itself. */
-export async function decide(approvalId: string, decision: "approve" | "reject", by: string, reason?: string) {
+/**
+ * Records an approver's decision on a pending approval. Approving does not write anything by itself.
+ * A rejection says why (core/trust-rules.ts REJECT_KINDS): "wrong" or "against the rules" drops that
+ * agent's tool back to Draft; any other decision may open a promotion card (core/trust.ts).
+ */
+export async function decide(approvalId: string, decision: "approve" | "reject", by: string, reason?: string, kind?: RejectKind | null): Promise<string | null> {
+  return (await decideWithTrust(approvalId, decision, by, reason, kind))?.actionId ?? null;
+}
+
+/** decide, with what the decision did to the trust level ("" when nothing changed). */
+export async function decideWithTrust(approvalId: string, decision: "approve" | "reject", by: string, reason?: string, kind?: RejectKind | null): Promise<{ actionId: string; trust: string } | null> {
   const now = new Date().toISOString();
   const status = decision === "approve" ? "approved" : "rejected";
-  const { data: ap, error } = await db().from("approvals").update({ status, decided_at: now, decided_by: by, reject_reason: decision === "reject" ? (reason ?? "rejected by the owner") : null })
-    .eq("id", approvalId).eq("status", "pending").select("action_id").maybeSingle();
+  const rk = decision === "reject" && isRejectKind(kind) ? kind : null;
+  const patch = { status, decided_at: now, decided_by: by, reject_reason: decision === "reject" ? (reason ?? "rejected by the owner") : null };
+  let { data: ap, error } = await db().from("approvals").update({ ...patch, ...(rk ? { reject_kind: rk } : {}) })
+    .eq("id", approvalId).eq("status", "pending").select("action_id, agent_id").maybeSingle();
+  // before the trust migration the column isn't there: the decision is recorded without its kind
+  if (rk && (error?.code === "42703" || error?.code === "PGRST204")) ({ data: ap, error } = await db().from("approvals").update(patch).eq("id", approvalId).eq("status", "pending").select("action_id, agent_id").maybeSingle());
   if (error) throw new Error(error.message);
   if (!ap) return null; // already decided or expired
   await db().from("agent_actions").update({ status, decided_at: now, ...(decision === "reject" ? { reason: reason ?? "rejected by the owner" } : {}) }).eq("id", ap.action_id).eq("status", "proposed");
   await db().from("expense_docs").update({ proposal_status: status }).eq("proposal_action_id", ap.action_id);
-  return ap.action_id as string;
+  const { data: act } = await db().from("agent_actions").select("tool").eq("id", ap.action_id).maybeSingle();
+  const trust = act?.tool ? await afterDecision(ap.agent_id as string, act.tool as string, decision === "reject" ? (rk ?? "other") : null, by) : "";
+  return { actionId: ap.action_id as string, trust };
+}
+
+/**
+ * An approver cancels an action waiting in its undo window. Nothing was written. "Wrong" or "against
+ * the rules" drops that agent's tool back to Draft. Returns what happened, or null when it already went.
+ */
+export async function cancelScheduled(actionId: string, kind: RejectKind, by: string): Promise<string | null> {
+  const { data, error } = await db().from("agent_actions").update({ status: "cancelled", cancel_kind: kind, decided_at: new Date().toISOString(), reason: `Cancelled by ${by.slice(0, 120)} in the undo window.` })
+    .eq("id", actionId).eq("status", "scheduled").select("agent_id, tool").maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return `Cancelled: nothing was written.${await afterDecision(data.agent_id as string, data.tool as string, kind, by)}`;
+}
+
+/**
+ * The scheduler's round (app/api/dispatch), as one org: actions whose undo window has passed become
+ * approved, then everything a trust level approved (Act with undo, Act) is applied with the same fresh
+ * checks as an approver's tap, inside withRun (so only while its agent is on duty). Afterwards each
+ * agent's tool may earn its next promotion card.
+ */
+export async function applyTrusted(now = new Date()): Promise<{ released: number; applied: string | null }> {
+  const iso = now.toISOString();
+  const { data: rel, error } = await db().from("agent_actions").update({ status: "approved", decided_at: iso }).eq("status", "scheduled").lte("execute_after", iso).select("id");
+  if (error) return { released: 0, applied: null }; // before the trust migration: nothing is ever scheduled
+  const { data: auto } = await db().from("agent_actions").select("id, agent_id, tool").eq("status", "approved").in("level", ["act_undo", "act"]).limit(200);
+  const rows = (auto ?? []) as { id: string; agent_id: string; tool: string }[];
+  if (!rows.length) return { released: (rel ?? []).length, applied: null };
+  const res = await applyApproved(rows.map((r) => r.id));
+  for (const k of new Set(rows.map((r) => `${r.agent_id}|${r.tool}`))) {
+    const [agentId, tool] = k.split("|");
+    await refreshOffer(agentId, tool).catch(() => false);
+  }
+  return { released: (rel ?? []).length, applied: res.text };
 }
 
 /** A failed action goes back to approved so the next apply tries it again (with a fresh live check). */
@@ -507,10 +573,10 @@ export async function paidVendorIds(): Promise<Set<string>> {
 
 /**
  * A cap was breached (a payment or email refused by checkPurchase or checkEmail). CLAUDE.md:
- * a cap breach drops that action type back to Draft. The trust levels card adds the demotion;
- * until then this records the refusal so it shows in the gateway log.
+ * a cap breach drops that action type back to Draft (core/trust.ts demote), and the refusal shows in
+ * the gateway log.
  */
 export async function onBreach(b: { agentId: string; tool: string; target: string; reason: string; runId?: string | null }) {
   await db().from("agent_actions").insert({ agent_id: b.agentId, run_id: b.runId ?? null, tool: b.tool, action_type: "cap breach", target: b.target, args_json: {}, status: "refused", reason: b.reason });
-  // TODO(trust levels card): demote b.tool for b.agentId to Draft here.
+  await demote(b.agentId, b.tool, `A cap was hit: ${b.reason}`.slice(0, 300)).catch(() => false);
 }

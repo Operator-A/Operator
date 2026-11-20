@@ -6,10 +6,14 @@ call a write tool: `callWriteTool` (integrations/mcp.ts) can only be imported fr
 on a profile in `core/mcp-rules.ts`.
 
 - `policy.ts`: the rules in plain code. `TOOLS` is the allow-list of write tools, which
-  agents may use each one, its tier and its fields. `refuseProposal` checks a proposal;
+  agents may use each one, its starting tier (always Draft), whether it may ever be promoted, and its
+  fields. `refuseProposal` checks a proposal;
   `planWrite` re-checks it against Mercury's live state right before a write.
-- `index.ts`: `propose` (refuse, or record in `agent_actions` and queue in `approvals`),
-  `queueBookkeeperProposals`, `decide`, `expireStale`, `retry`, `applyApproved`.
+- `index.ts`: `propose` (refuse, or record in `agent_actions` at the agent's trust level for that tool:
+  an approval card at Draft, scheduled at Act with undo, approved at Act), `queueBookkeeperProposals`,
+  `decide` (a rejection says why; wrong or policy drops the type back to Draft), `cancelScheduled`,
+  `applyTrusted` (the scheduler's round), `expireStale`, `retry`, `applyApproved`.
+- Trust levels: `core/trust.ts` and `core/trust-rules.ts`, explained in `docs/trust.md` (card 7).
 
 Sending, payments and posting are allowed by the tech spec only as gateway action types
 with approval levels and caps (see CLAUDE.md). None of them is built yet, so no agent has
