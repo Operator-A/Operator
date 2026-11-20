@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { INTERRUPTS, INTERRUPT_WORDS, MONEY_TOOLS, interruptCounts, interruptKind, totalOf, type Source } from "../dashboard/needs-rules";
-import { interruptCount, needs, split } from "../dashboard/needs";
+import { alerting, interruptCount, needs, split } from "../dashboard/needs";
 import type { Floor } from "../dashboard/data";
 import { GOAL_CHANGES, KIND_WORDS, PROPOSAL_KINDS, planProposal, proposalTitle, toolInfoOf, type ProposalPlan } from "../core/proposal-rules";
 import { TOOLS } from "../core/tools/catalog";
@@ -87,5 +87,18 @@ assert.doesNotMatch(readFileSync("dashboard/needs.ts", "utf8"), /Mercury change|
 // the Desk line counts the four, then what waits
 assert.equal(deskLine(["on_track"], 2, 3, "Avery"), "One goal on track. Two things need you; three wait for Avery’s summary.");
 assert.equal(deskLine([], 0, 0), "No goals set yet. Nothing needs you.");
+
+// card 189: a fresh business isn't covered in red. "Connect a tool" never marks the frame; a failure still does.
+{
+  const n = (from: string) => ({ pri: "Medium", title: from, sub: "", href: "/", n: 1, interrupt: null, source: { from } }) as unknown as Parameters<typeof alerting>[0][number];
+  assert.deepEqual(alerting([n("connection"), n("connection")]), [], "tools not connected yet put no red badge or bell dot");
+  assert.equal(alerting([n("connection"), n("run_failed")]).length, 1, "a failed run still does");
+  const layout = readFileSync("app/(room)/layout.tsx", "utf8"), conn = readFileSync("dashboard/connections.ts", "utf8"), page = readFileSync("app/(room)/connections/page.tsx", "utf8");
+  assert.match(layout, /badge: red\.filter/, "agent badges count only what alerts");
+  assert.match(layout, /!!red\.length && <span/, "the bell dot too");
+  assert.doesNotMatch(layout, /to fix/, "the sidebar never calls an unconnected tool something to fix");
+  assert.match(conn, /usersOf\(c\.id, grants\)\.length > 0\)\.length;\s*return n \? `\$\{n\} to connect`/, "it counts only tools an agent uses, as to connect");
+  assert.doesNotMatch(/function Status[\s\S]*?\n\}/.exec(page)?.[0] ?? "", /--red/, "Not set up is grey on Connections, not red");
+}
 
 console.log("check:interrupts ok");

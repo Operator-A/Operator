@@ -103,6 +103,12 @@ export function split(list: readonly Need[]): { now: Need[]; later: Need[] } {
   return { now, later: list.filter((x) => !x.interrupt) };
 }
 
+/**
+ * What may put a red mark on the frame (an agent's badge, the bell): everything but "connect a tool".
+ * A tool not connected yet is setup, not a fault: it shows on the Desk and on Connections (card 189).
+ */
+export const alerting = (list: readonly Need[]) => list.filter((x) => x.source.from !== "connection");
+
 /** How many things interrupt the owner: the menu badge and the greeting line. */
 export const interruptCount = (list: readonly Need[]) => list.reduce((t, x) => t + (x.interrupt ? x.n : 0), 0);
 
