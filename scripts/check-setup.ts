@@ -218,4 +218,13 @@ const mig = readdirSync("supabase/migrations").find((f) => f.endsWith("_business
 const topics = [...(/topic in \(([^)]*)\)/.exec(read(`supabase/migrations/${mig}`))?.[1] ?? "").matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
 assert.deepEqual(topics, [...FACT_TOPICS], "business_facts.topic allows exactly FACT_TOPICS");
 
+// card 189 walk: the chat follows its newest message, Next stays on screen, a by-hand department isn't "$0.00 a month"
+{
+  const parts = read("dashboard/components/setup.tsx");
+  assert.match(parts, /scrollTo\(\{ top: el\.scrollHeight \}\)/, "the setup chat scrolls to its newest message");
+  assert.match(parts, /aria-label="Setup steps"[^>]*position: "sticky"/, "Back and Next stay on screen");
+  assert.match(parts, /runs only when you press Run/, "a department with no schedule says it runs when you press Run");
+  for (const f of ["prospecting", "email-marketing"]) assert.doesNotMatch(read(`templates/${f}.json`), /"Head of (sales|marketing):/, `${f}: the head's mandate names its own department`);
+}
+
 console.log("check:setup ok");
