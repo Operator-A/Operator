@@ -5,6 +5,7 @@ import { planBlock } from "./plan";
 import { BillingCard } from "./billing-card";
 import { stripeWebhook, syncSeats } from "./billing";
 import { SignupPage } from "./signup-page";
+import { chargeRun, pooledKey } from "./credits";
 
 const cloud: Extensions = {
   edition: "cloud",
@@ -13,6 +14,8 @@ const cloud: Extensions = {
   SignupPage,
   api: { stripe: stripeWebhook },
   afterMembersChange: syncSeats,
+  pooledKey,
+  afterRun: chargeRun,
 };
 
 export default cloud;

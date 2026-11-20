@@ -1,5 +1,5 @@
 // The open edition's slots: nothing is blocked, no extra Settings cards, no sign-up page, no extra
-// routes. tsconfig points "operator-extensions" here; next.config.ts points it at ee/index.ts only
+// routes, no pooled Claude key. tsconfig points "operator-extensions" here; next.config.ts points it at ee/index.ts only
 // when OPERATOR_EDITION=cloud (docs/extensions.md).
 import type { Extensions } from "@/core/extension-types";
 
@@ -10,6 +10,9 @@ const none: Extensions = {
   SignupPage: null,
   api: {},
   afterMembersChange: async () => undefined,
+  // the open edition has no key of its own: every business uses its own Claude key
+  pooledKey: async () => null,
+  afterRun: async () => undefined,
 };
 
 export default none;

@@ -4,6 +4,7 @@ import "server-only";
 // file imports it (check:open-core).
 import ext from "operator-extensions";
 import type { Extensions, PlanAsk } from "@/core/extension-types";
+import type { Billing } from "@/core/cost-rules";
 
 export type { PlanAsk };
 export const extensions: Extensions = ext;
@@ -21,4 +22,14 @@ export async function planBlock(ask: PlanAsk): Promise<string | null> {
 /** Tells the paid layer People changed (the seat count on the bill). Never stops or fails the change. */
 export async function membersChanged(): Promise<void> {
   try { await extensions.afterMembersChange(); } catch { /* the bill catches up on the next change or the next webhook */ }
+}
+
+/** The hosted edition's Claude key for a business on credits, or null (the open edition, no credits, a failed check). */
+export async function pooledKey(): Promise<string | null> {
+  try { return await extensions.pooledKey(); } catch { return null; }
+}
+
+/** Tells the paid layer a run ended (credits take its charge). Never fails the run. */
+export async function runEnded(run: { runId: string; costUsd: number; billing: Billing }): Promise<void> {
+  try { await extensions.afterRun(run); } catch { /* a charge that can't be written is retried by nothing: it is logged in agent_runs and usage_ledger either way */ }
 }

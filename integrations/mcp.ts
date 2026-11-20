@@ -1057,6 +1057,12 @@ export async function removeClaudeKey(): Promise<void> {
   await logEvent(CLAUDE_KEY_ID, "disconnected");
 }
 
+/** Whether the business has its own Claude key here (not paused), without opening it. */
+export async function hasClaudeKey(): Promise<boolean> {
+  const r = await row(CLAUDE_KEY_ID).catch(() => null);
+  return !!r?.secret && !r.paused_at;
+}
+
 /** The business's own Claude key, opened for one call; null when it has none or it is paused. Only integrations/anthropic.ts calls this. */
 export async function claudeKey(): Promise<string | null> {
   const r = await row(CLAUDE_KEY_ID).catch(() => null);

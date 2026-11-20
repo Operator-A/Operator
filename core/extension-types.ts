@@ -1,10 +1,11 @@
 // The slots the paid layer (ee/) may fill, and nothing else (docs/extensions.md). Types only, so
 // core/extensions/none.ts and ee/index.ts can both import them without a cycle.
 import type { ComponentType } from "react";
+import type { Billing } from "@/core/cost-rules";
 
 /** What a plan check is asked about. Each is checked as the current org, after the role check. */
 export type PlanAsk =
-  | { kind: "run"; agentId: string; trigger: string }
+  | { kind: "run"; agentId: string; trigger: string; billing?: Billing }
   | { kind: "invite"; email: string; role: string }
   | { kind: "agent_on"; agentIds: string[] }
   | { kind: "custom_server" };
@@ -32,7 +33,18 @@ export interface Extensions {
   api: Readonly<Record<string, (req: Request) => Promise<Response>>>;
   /** Told after People changes (someone added or removed), as the current org. Never stops the change. */
   afterMembersChange(): Promise<void>;
+  /**
+   * The hosted edition's own Claude key, for a business with no key of its own that is on managed
+   * credits with enough balance and a plan that allows runs (card 128 slice 4); null otherwise. Asked
+   * by integrations/anthropic.ts only, and only when the business has no key of its own.
+   */
+  pooledKey(): Promise<string | null>;
+  /**
+   * Told after every run ends, as the run's org, with its cost from the price list and who paid for
+   * the model. Credits take the run's charge here, once per run. Never stops or changes the run.
+   */
+  afterRun(run: { runId: string; costUsd: number; billing: Billing }): Promise<void>;
 }
 
 /** Every slot, so check:open-core can make sure each edition fills each one. */
-export const SLOTS = ["edition", "planBlock", "SettingsCards", "SignupPage", "api", "afterMembersChange"] as const satisfies readonly (keyof Extensions)[];
+export const SLOTS = ["edition", "planBlock", "SettingsCards", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun"] as const satisfies readonly (keyof Extensions)[];

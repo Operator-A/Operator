@@ -8,17 +8,22 @@ import { currentPlan, subscription } from "./plan";
 import { PLAN, planWords } from "./plan-rules";
 import { CODE_DAYS } from "./signup-rules";
 import { stripeReady } from "./stripe";
-import { addCard, manageBilling } from "./billing-actions";
+import { addCard, buyCredits, manageBilling } from "./billing-actions";
+import { creditBalance, creditRows, creditsReady } from "./credits";
+import { PACKS_USD, creditWords, usdWords } from "./credit-rules";
+import { billingNow } from "@/integrations/anthropic";
 import { createSignupCode, revokeSignupCode } from "./signup-actions";
 import { listCodes } from "./signup";
 import { adminOrgId } from "./admin";
 
 export async function BillingCard({ query }: { query: Readonly<Record<string, string | undefined>> }) {
-  const [me, plan, sub, people] = await Promise.all([
+  const [me, plan, sub, people, billing, credits] = await Promise.all([
     requireSession(),
     currentPlan().then((p) => ({ p, problem: null as string | null }), (e: unknown) => ({ p: null, problem: e instanceof Error ? e.message : String(e) })),
     subscription().catch(() => null),
     listMembers().then((m) => Math.max(1, m.length), () => 1),
+    billingNow().catch(() => "own_key" as const),
+    Promise.all([creditBalance(), creditRows()]).then(([balance, rows]) => ({ balance, rows, problem: null as string | null }), (e: unknown) => ({ balance: 0, rows: [], problem: e instanceof Error ? e.message : String(e) })),
   ]);
   const billed = plan.p && plan.p.kind !== "comped";
   // the admin business makes the sign-up codes (sign-up is invite-only, ee/admin.ts)
@@ -35,6 +40,22 @@ export async function BillingCard({ query }: { query: Readonly<Record<string, st
       {billed && me.role === "owner" && (stripeReady()
         ? <form action={hasCard ? manageBilling : addCard}><button className="btn sm">{hasCard ? "Manage billing" : "Add a card"}</button></form>
         : <span className="muted" style={{ fontSize: 12 }}>Billing isn’t set up on this deployment yet.</span>)}
+      <div className="stack" style={{ gap: 6, paddingTop: 6 }}>
+        <span className="card-t" style={{ fontSize: 14 }}>Claude credits</span>
+        <span className="sub">{credits.problem ?? creditWords({ billing, balance: credits.balance })}</span>
+        {query.credits === "added" && <span className="sub" style={{ color: "var(--mint-ink)" }}>Thanks, your credits are on the way. They can take a minute to show here.</span>}
+        {me.role === "owner" && (stripeReady() && creditsReady()
+          ? <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>{PACKS_USD.map((p) => (
+              <form key={p} action={buyCredits}><input type="hidden" name="pack" value={p} /><button className="btn ghost sm">Buy ${p}</button></form>
+            ))}</div>
+          : <span className="muted" style={{ fontSize: 12 }}>Credits aren’t set up on this deployment yet.</span>)}
+        {credits.rows.map((r, i) => (
+          <div key={i} className="row rule" style={{ justifyContent: "space-between", gap: 8, padding: "4px 0", fontSize: 13 }}>
+            <span>{r.kind === "pack" ? "Credits bought" : "A run"} <span className="muted">· {when(r.created_at)}</span></span>
+            <span>{r.amount_usd > 0 ? "+" : ""}{usdWords(r.amount_usd)}</span>
+          </div>
+        ))}
+      </div>
       {codes && (
         <div className="stack" style={{ gap: 6, paddingTop: 6 }}>
           <span className="card-t" style={{ fontSize: 14 }}>Sign-up codes</span>

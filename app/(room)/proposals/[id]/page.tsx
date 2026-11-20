@@ -8,7 +8,7 @@ import { when } from "@/dashboard/format";
 import { getProposal, proposalChecks, toolLabel, type Proposal } from "@/core/proposals";
 import { BRAINS, HIRE_STEPS, KIND_WORDS } from "@/core/proposal-rules";
 import { agentNames, agentsIn, deptSpent, loadOrg, monthSpendByAgent } from "@/core/org";
-import { hireCost } from "@/dashboard/cost";
+import { billing, hireCost } from "@/dashboard/cost";
 import { draftView } from "@/dashboard/department";
 import { DraftBody } from "@/dashboard/components/department";
 import { costDetail, monthWords, usd as costUsd } from "@/core/cost-rules";
@@ -55,10 +55,11 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
   if (!pr || !org) notFound();
   const p = pr.payload;
   const members = pr.department_id ? agentsIn(org, pr.department_id) : [];
-  const [names, spend, checks] = await Promise.all([
+  const [names, spend, checks, bill] = await Promise.all([
     agentNames([...(pr.from_agent ? [pr.from_agent] : []), ...members]).catch(() => ({} as Record<string, string>)),
     monthSpendByAgent(members).catch(() => ({} as Record<string, number>)),
     pr.state === "pending" ? proposalChecks(pr, org).catch((e) => [{ ok: false, text: e instanceof Error ? e.message : String(e) }]) : Promise.resolve([]),
+    billing(),
   ]);
   const dept = org.departments.find((d) => d.id === pr.department_id) ?? null;
   const fromName = pr.from_agent ? names[pr.from_agent] ?? pr.from_agent : pr.source === "claude" ? "Claude" : "You";
@@ -72,7 +73,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
       ["Each run", p.eachRun],
       ["Good result", p.goodResult],
       ["Brain", BRAINS[p.brain].label],
-      ["A month", (() => { const c = hireCost(p); return `${monthWords(c.byHand)} (${costDetail(c.byHand)}). On a daily schedule, about ${costUsd(c.daily.month)} a month.`; })()],
+      ["A month", (() => { const c = hireCost(p, bill); return `${monthWords(c.byHand)} (${costDetail(c.byHand)}). On a daily schedule, about ${costUsd(c.daily.month)} a month.`; })()],
       ["Reads", p.tools.map(toolLabel).join(", ")],
       ["Hands you", `A ${p.seat} result each run, up to ${HIRE_STEPS} steps`],
     ]
@@ -117,7 +118,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
               <span style={{ fontSize: 13.5, lineHeight: 1.55 }}>{yes.does}</span>
               {p.kind === "hire" && (
                 <span className="ink2" style={{ fontSize: 13, lineHeight: 1.5 }}>
-                  {monthWords(hireCost(p).byHand)}, at most {usd(BRAINS[p.brain].maxCostUsd)} a run.{dept ? ` ${dept.name} has spent ${usd(deptSpent(org, dept.id, spend))} on AI this month${dept.monthlyBudgetUsd != null ? ` of ${usd(dept.monthlyBudgetUsd)}` : ""}.` : ""}
+                  {monthWords(hireCost(p, bill).byHand)}, at most {usd(BRAINS[p.brain].maxCostUsd)} a run.{dept ? ` ${dept.name} has spent ${usd(deptSpent(org, dept.id, spend))} on AI this month${dept.monthlyBudgetUsd != null ? ` of ${usd(dept.monthlyBudgetUsd)}` : ""}.` : ""}
                 </span>
               )}
               <div className="row wrap" style={{ gap: 8 }}>

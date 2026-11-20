@@ -16,6 +16,7 @@ import { initialPick } from "@/core/company-rules";
 import { claudeSaveKey, ga4PickProperty, mcpSaveKey } from "@/dashboard/connectionActions";
 import { sendSetup, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupStartEmpty, setupToolAsk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
+import { billing } from "@/dashboard/cost";
 
 // First-run setup (card 151, docs/setup.md): a new business lands here instead of the Desk. Step 1 is
 // the conversation with Avery; step 2 connects the tools (card 152); step 3 is the company Avery
@@ -35,7 +36,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const steps = ["Your business", "Tools", "Your company", "First job"];
   const { tiles, shopifyDomain, connected } = await toolsStep(state.leaning.map((l) => l.id), floor.health);
   const open = tiles.find((t) => t.tile.id === sp.c) ?? null;
-  const chart = companyChart(state.leaning, connected);
+  const chart = companyChart(state.leaning, connected, await billing());
   const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected && open ? { ok: true, text: `${open.tile.name} is connected.` } : null;
 
   return (

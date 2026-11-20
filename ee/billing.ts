@@ -12,6 +12,7 @@ import { emailOwner, hasEmail } from "@/integrations/email";
 import { stripe, stripePrice, stripeReady, webhookSecret } from "./stripe";
 import { isCustomerId, isOrgId, isSubscriptionId, rowFromSubscription, trialEndFor, validSignature, type StripeSubscription } from "./stripe-rules";
 import type { SubStatus } from "./plan-rules";
+import { recordCredit } from "./credits";
 
 interface Row { status: SubStatus; trial_ends_at: string | null; past_due_since: string | null; stripe_customer_id: string | null; stripe_subscription_id: string | null; seats: number }
 async function row(): Promise<Row | null> {
@@ -98,7 +99,9 @@ export async function stripeWebhook(req: Request): Promise<Response> {
   const obj = event.data?.object ?? {};
   let note = "ignored";
   try {
-    if (event.type === "checkout.session.completed" && obj.mode === "subscription" && isSubscriptionId(obj.subscription)) {
+    if ((event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") && obj.mode === "payment") {
+      note = await recordCredit(obj);
+    } else if (event.type === "checkout.session.completed" && obj.mode === "subscription" && isSubscriptionId(obj.subscription)) {
       const sub = await stripe<StripeSubscription>("GET", `/v1/subscriptions/${obj.subscription}`);
       note = await record(sub, isOrgId(obj.client_reference_id) ? obj.client_reference_id : undefined);
     } else if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {

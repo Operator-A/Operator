@@ -8,7 +8,7 @@ import { TOOLS } from "@/core/tools/catalog";
 import { loadDraft, sourcesNow, type SourceView } from "@/core/departments";
 import { draftGaps, peopleOf, type DeptDraft, type DraftPerson } from "@/core/department-rules";
 import type { MonthCost } from "@/core/cost-rules";
-import { hireCost } from "./cost";
+import { billing, hireCost } from "./cost";
 
 export interface PersonView extends DraftPerson { head: boolean; toolLabels: string[]; perRun: number | null; daily: MonthCost }
 export interface DraftView {
@@ -23,10 +23,10 @@ export interface DraftView {
 }
 
 export async function draftView(d: DeptDraft): Promise<DraftView> {
-  const [own, sources] = await Promise.all([ownMeasureDefs().catch(() => []), sourcesNow(d).catch(() => [])]);
+  const [own, sources, bill] = await Promise.all([ownMeasureDefs().catch(() => []), sourcesNow(d).catch(() => []), billing()]);
   const label = (k: string | null) => (k ? [...MEASURES, ...own].find((m) => m.key === k)?.label ?? k : null);
   const people = peopleOf(d).map((p, i): PersonView => {
-    const c = hireCost(p);
+    const c = hireCost(p, bill);
     return { ...p, head: i === 0 && !!d.head, toolLabels: p.tools.map((t) => TOOLS[t]?.label ?? t), perRun: c.byHand.perRun, daily: c.daily };
   });
   return {

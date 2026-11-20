@@ -53,6 +53,11 @@ export function runCost(real: RealCost | null, estimate: number | null): RunCost
 /** Who pays: the business's own Claude key, or OPERATOR credits (card 128, slice 4) at cost plus the margin. */
 export type Billing = "own_key" | "credits";
 export const CREDITS_MARGIN = 1.2;
+/**
+ * Who pays a business's runs: its own Claude key whenever it has one; otherwise credits on the hosted
+ * edition, and its own key (none yet, so runs are refused) on the open edition.
+ */
+export const billingFor = (o: { ownKey: boolean; edition: "open" | "cloud" }): Billing => (o.ownKey || o.edition === "open" ? "own_key" : "credits");
 export const BILLING_WORDS: Record<Billing, string> = { own_key: "billed by Anthropic to your key", credits: "on your OPERATOR credits" };
 
 export interface MonthCost {
