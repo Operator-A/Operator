@@ -9,6 +9,7 @@ import { isLive, stateLook, stateOf } from "@/dashboard/status";
 import { LiveRefresher, MobileMenu, RailLink, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { AveryChat } from "@/dashboard/components/avery";
+import { SignOutButton } from "@/dashboard/components/signOut";
 import { DraftCard } from "@/dashboard/components/department";
 import { currentDraftView } from "@/dashboard/department";
 import { atLeast } from "@/core/roles";
@@ -79,6 +80,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
               <div className="sheet-group">
                 <SideLink href="/status" match="/status" icon="circle-alert" label="Status" />
                 <SideLink href="/settings" match="/settings" icon="settings" label="Settings" />
+                <SignOutButton />
                 <div style={{ padding: "8px 12px 0" }}><ThemeToggle initial={theme} wide /></div>
               </div>
             </MobileMenu>
@@ -92,6 +94,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             <div className="side-spacer" style={{ flex: 1 }} />
             <SideLink href="/status" match="/status" icon="circle-alert" label="Status" />
             <SideLink href="/settings" match="/settings" icon="settings" label="Settings" />
+            <SignOutButton />
           </aside>
           <main className="main">{children}</main>
           <AveryChat name={frontName} send={sendToAvery} missing={history ? null : CHAT_MISSING} draft={draft ? <DraftCard v={draft} owner={atLeast(me.role, "owner")} /> : null}

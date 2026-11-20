@@ -10,6 +10,7 @@ import { TEMPLATE_FIT } from "@/dashboard/setup";
 import { SETUP_AGENT, STAGES, STAGE_WORDS, nextStage, prevStage, shownStage, stageProgress, wrapScreen, type Stage } from "@/core/setup-rules";
 import { SetupChat, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
 import { Icon } from "@/dashboard/components/Icon";
+import { SignOutButton } from "@/dashboard/components/signOut";
 import { toolsStep, type TileView } from "@/dashboard/toolsStep";
 import { categoryOfTile, categoryState, currentCategory, isCategory, orderCategories, planKinds, planNotes, type CategoryId, type Plans, type ToolCategory } from "@/core/tools-step-rules";
 import { KeyForm, ActionButton, LiveRefresher } from "@/dashboard/components/client";
@@ -94,6 +95,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
         <ol aria-label="Setup progress" className="wg-steps">
           {STAGES.map((s, i) => <li key={s} aria-current={i === at ? "step" : undefined} className={i < at ? "done" : i === at ? "now" : ""}><i aria-hidden />{STAGE_WORDS[s]}</li>)}
         </ol>
+        <SignOutButton look="button" />
       </header>
       <div aria-hidden className="wg-line"><i style={{ width: `${stageProgress(stage)}%` }} /></div>
 
