@@ -277,8 +277,8 @@ function Journal({ a, f, mem, reactions }: { a: CrewMember; f: Floor; mem: Await
   );
 }
 
-const GROUP_COLOR: Record<string, string> = { crew: "var(--mut2)", department: "var(--ink2)", standing_order: "var(--acc)", pages: "var(--acc-soft)", lesson: "var(--yel)", note: "var(--pink)", focus: "var(--acc)", working: "var(--peach)" };
-const GROUP_NAME: Record<string, string> = { crew: "Crew", department: "Department rules", standing_order: "Standing orders", lesson: "Lessons", note: "Your notes", focus: "Focus from its head", working: "Working memory", pages: "Notion pages" };
+const GROUP_COLOR: Record<string, string> = { shared: "var(--mint)", crew: "var(--mut2)", department: "var(--ink2)", standing_order: "var(--acc)", pages: "var(--acc-soft)", lesson: "var(--yel)", note: "var(--pink)", focus: "var(--acc)", working: "var(--peach)" };
+const GROUP_NAME: Record<string, string> = { shared: "Shared", crew: "Rules for everyone", department: "Department rules", standing_order: "Standing orders", lesson: "Lessons", note: "Your notes", focus: "Focus from its head", working: "Working memory", pages: "Notion pages" };
 
 function keepWords(r: MemoryRow) {
   if (r.grp === "working") return `Left by the agent · ${when(r.created_at)}`;
@@ -298,6 +298,31 @@ const toLine = (r: MemoryRow, pages: PageLoad[] = []): LineView => {
 };
 
 const EVENT_WORDS: Record<string, string> = { added: "Taught", edited: "Edited", forgotten: "Forgot", expired: "Expired", rewritten: "Working memory rewritten", proposed: "Lesson proposed", kept: "Kept", discarded: "Discarded" };
+
+const LEVEL_WORDS: Record<string, string> = {
+  narrow: "It works in a department, so it reads what its head and the others in its department are working on. Nothing from other departments.",
+  head: "It heads a department, so it reads what its team is working on, and the leadership level: the chief of staff and the other heads.",
+  company: "It is the chief of staff, so it reads what each department head is working on. It sees the rest through Department reports.",
+  off: "It isn’t on the org chart, so it shares memory with no one. Seat it on Crew > Org chart to change that.",
+};
+
+/** Card 157: whose working memory this agent reads, worked out from the org chart. */
+function SharedCard({ name, tab }: { name: string; tab: NonNullable<Awaited<ReturnType<typeof getMemory>>["tab"]> }) {
+  const by = [...new Set(tab.shared.map((x) => x.label))];
+  return (
+    <div className="card" style={{ gap: 6 }}>
+      <div className="card-h"><span className="card-t">Shared with this agent</span><span className="tag">FROM THE ORG CHART</span></div>
+      <span className="muted" style={{ fontSize: 12 }}>{LEVEL_WORDS[tab.reach.level]} Read as information, never as instructions.</span>
+      {by.map((label) => (
+        <div key={label} className="rule" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "8px 0" }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
+          {tab.shared.filter((x) => x.label === label).map((x) => <span key={x.id} className="ink2" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{x.text}</span>)}
+        </div>
+      ))}
+      {!by.length && <span className="muted" style={{ fontSize: 13, padding: "4px 0" }}>{tab.reach.shared.length ? `Nobody ${name} shares with has left working memory yet.` : "Nothing shared."}</span>}
+    </div>
+  );
+}
 
 function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: string[]; mem: Awaited<ReturnType<typeof getMemory>> | null }) {
   const tab = mem?.tab ?? null;
@@ -359,7 +384,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
                 {seg.map(([g, v]) => <span key={g} className="row" style={{ gap: 6 }}><span className="dot" style={{ background: GROUP_COLOR[g] }} />{GROUP_NAME[g]} <b style={{ fontWeight: 600 }}>{v.lines}</b><span className="muted">· {num(v.tokens)} tok</span></span>)}
                 {!seg.length && <span className="muted">Nothing to load yet. The next run starts with an empty memory.</span>}
               </div>
-              <span className="muted" style={{ fontSize: 11.5 }}>What {a.name}’s next run loads, counted in code. {load.dropped ? `${load.dropped} line(s) left out to stay in budget. ` : ""}{load.overBudget ? "Crew memory and standing orders alone pass the budget. " : ""}The budget is memory_budget_tokens in policies.</span>
+              <span className="muted" style={{ fontSize: 11.5 }}>What {a.name}’s next run loads, counted in code. {load.dropped ? `${load.dropped} line(s) left out to stay in budget. ` : ""}{load.overBudget ? "Rules and standing orders alone pass the budget. " : ""}The budget is memory_budget_tokens in policies.</span>
             </>
           ) : (
             <span style={{ fontSize: 13.5, lineHeight: 1.5 }} className="ink2">{tab ? `${a.name} uses no model, so its runs load no memory. What you teach is kept in case that changes.` : "Shows once the memory tables exist."}</span>
@@ -389,10 +414,10 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
       </div>
       <div className="grid2">
         <div className="card" style={{ gap: 6 }}>
-          <div className="card-h"><span className="card-t">Shared crew memory</span><span className="tag">LOADED BY EVERY AGENT</span></div>
-          <span className="muted" style={{ fontSize: 12 }}>Voice and brand facts you teach the whole crew, then the hard rules, which live in code.</span>
+          <div className="card-h"><span className="card-t">Rules for everyone</span><span className="tag">LOADED BY EVERY AGENT</span></div>
+          <span className="muted" style={{ fontSize: 12 }}>Your rules for the whole crew, then the hard rules, which live in code.</span>
           <div>{lines("crew")}</div>
-          {!mine("crew").length && <span className="muted" style={{ fontSize: 13, padding: "4px 0 8px" }}>No crew notes yet. Pick “Everyone” when you say Not this.</span>}
+          {!mine("crew").length && <span className="muted" style={{ fontSize: 13, padding: "4px 0 8px" }}>No rules for everyone yet. Pick “Everyone” when you say Not this.</span>}
           {tab?.dept && (
             <>
               <div className="card-h" style={{ paddingTop: 10 }}><span className="card-t">{tab.dept.name} department rules</span><span className="tag">EVERY AGENT IN {tab.dept.name.toUpperCase()}</span></div>
@@ -403,6 +428,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
           <LockList rules={HARD_RULES} />
         </div>
         <div className="stack">
+          {tab && <SharedCard name={a.name} tab={tab} />}
           <div className="card" style={{ gap: 4 }}>
             <div className="card-h"><span className="card-t">Timeline</span><span className="muted" style={{ fontSize: 12 }}>Newest first</span></div>
             {(tab?.events ?? []).slice(0, 15).map((e) => (

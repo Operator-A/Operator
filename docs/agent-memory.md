@@ -37,7 +37,7 @@ corrects what it learned on the Memory tab, so he teaches an agent once instead 
 ## A run
 
 1. `withRun` checks on duty and budget, then (for every agent, cron or manual
-   runs only) calls `loadMemory`: kept rows for the agent plus crew rows and its department's rules, expired ones left out.
+   runs only) calls `loadMemory`: kept rows for the agent plus rules for everyone, its department's rules and the working memory it shares by position (see below), expired ones left out.
 2. Tokens are counted in code (characters ÷ 3.5, rounded up). Over budget, lines go in this
    order, oldest first: working memory, lessons, notes. Crew memory and standing orders are
    never trimmed.
@@ -53,6 +53,29 @@ corrects what it learned on the Memory tab, so he teaches an agent once instead 
    next-run notes, retires 30-day notes past their date and replaces working memory. A rules
    fallback or a failed run leaves memory as it was.
 5. A dry run loads memory and reports its size, and writes nothing.
+
+## Who reads whose memory (card 157)
+
+Memory follows the org chart, worked out in code on every run (`memoryReach` in
+`core/memory-rules.ts`), never by the model:
+
+| Seat | Its own lines, rules for everyone | Department rules | Other agents' working memory |
+| --- | --- | --- | --- |
+| A narrow agent (any depth in a department) | yes | its department's | its head and everyone else in its department |
+| A department head | yes | its department's | its team, the chief of staff, the other heads (leadership) |
+| The chief of staff (company seat) | yes | none | every head |
+| Off the chart | yes | none | none |
+
+- Shared lines are other agents' working memory, which a model wrote, so they are data: fenced in
+  `<data>` and labelled with who wrote them ("What Morgan, your head is working on"). Only working
+  memory is shared, never another agent's standing orders, notes, lessons or focus.
+- Over budget, shared lines go first, before the agent's own working memory.
+- Rules for everyone (`grp = crew`, the owner's words from Everyone on Not this, Save a rule or a
+  lesson kept for everyone) and the business facts stay with every agent: they are the owner's
+  instructions and facts, not something an agent learned.
+- The Memory tab's **Shared with this agent** card shows the agent's level and each shared line.
+- `npm run check:memory-reach` proves an agent in one department never reaches another department's
+  agents or rules, and a narrow agent never reaches the chief of staff or another head.
 
 ## Slices
 

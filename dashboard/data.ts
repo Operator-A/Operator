@@ -8,7 +8,8 @@ import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { settings } from "@/core/settings";
 import { openJobsThisWeek } from "@/core/plans";
-import { DEFAULT_BUDGET, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad } from "@/core/memory";
+import { DEFAULT_BUDGET, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad, type SharedLine } from "@/core/memory";
+import type { Reach } from "@/core/memory-rules";
 import { agentDepartment, agentNames, loadOrg } from "@/core/org";
 import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/core/reactions";
 import type { Tally } from "@/core/reaction-rules";
@@ -393,7 +394,7 @@ export async function getApprovals(): Promise<ApprovalsView | null> {
 
 // ---- Memory (docs/agent-memory.md)
 
-export interface MemoryTab { rows: MemoryRow[]; events: MemoryEvent[]; load: MemoryLoad | null; loads: boolean; /** Linked Notion pages, as a run would read them now. */ pages: PageLoad[]; /** The department the agent sits in, whose rules it loads. */ dept: { id: string; name: string } | null }
+export interface MemoryTab { rows: MemoryRow[]; events: MemoryEvent[]; load: MemoryLoad | null; loads: boolean; /** Linked Notion pages, as a run would read them now. */ pages: PageLoad[]; /** The department the agent sits in, whose rules it loads. */ dept: { id: string; name: string } | null; /** Where it sits, and the other agents' working memory it reads because of that (card 157). */ reach: Reach; shared: SharedLine[] }
 
 /** One agent's memory for the Memory tab, and what its next run would load. Null with a reason until the tables exist. */
 export async function getMemory(agentId: string): Promise<{ tab: MemoryTab | null; problem?: string }> {
