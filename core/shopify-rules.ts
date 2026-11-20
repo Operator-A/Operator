@@ -6,6 +6,7 @@
 // if it carries any scope that isn't a read.
 import { offsetOn } from "@/core/time";
 
+
 /** Identity tag so scripts/validate-graphql.mjs can find and check every document. */
 export const gql = String.raw;
 
@@ -18,6 +19,8 @@ export type ShopifyCtx = {
   productCollections: readonly string[];
   /** The product fields (namespace.key) read with them (Settings). */
   productFields: readonly string[];
+  /** The business's time zone (card 187): days in order queries start at its midnight. */
+  timeZone: string;
 };
 
 /**
@@ -67,7 +70,7 @@ export const dayArg = (a: ShopifyArgs, k: string): string | null =>
 export const afterArg = (a: ShopifyArgs): string | null | undefined =>
   a.after == null ? null : typeof a.after === "string" && CURSOR.test(a.after) ? a.after : undefined;
 /** The search for orders from one business-day up to another (the app's time zone). */
-export const createdBetween = (start: string, end: string) => `created_at:>='${start}T00:00:00${offsetOn(start)}' created_at:<'${end}T00:00:00${offsetOn(end)}'`;
+export const createdBetween = (start: string, end: string, tz: string) => `created_at:>='${start}T00:00:00${offsetOn(start, tz)}' created_at:<'${end}T00:00:00${offsetOn(end, tz)}'`;
 
 const day = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
 const after = { type: "string", maxLength: 500 };
@@ -142,14 +145,14 @@ const PRODUCT_FACTS = gql`
 export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
   {
     tool: "shopify_orders_between",
-    description: "Orders from one day up to another (the app's time zone), 100 a page, with totals and line items. No names or addresses.",
+    description: "Orders from one day up to another (the business's time zone), 100 a page, with totals and line items. No names or addresses.",
     inputSchema: { type: "object", required: ["start", "end"], properties: { start: day, end: day, after } },
     doc: BETWEEN,
-    variables: (a) => {
+    variables: (a, ctx) => {
       const start = dayArg(a, "start"), end = dayArg(a, "end"), cur = afterArg(a);
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };
       if (!start || !end || end <= start) return { problem: "start and end must be YYYY-MM-DD, end after start" };
-      return { variables: { query: createdBetween(start, end), after: cur } };
+      return { variables: { query: createdBetween(start, end, ctx.timeZone), after: cur } };
     },
   },
   {
@@ -157,11 +160,11 @@ export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
     description: "Orders from one day up to another, 100 a page, with each line's quantity and its product's unit cost in Shopify today. No names, addresses or prices.",
     inputSchema: { type: "object", required: ["start", "end"], properties: { start: day, end: day, after } },
     doc: ORDER_COSTS,
-    variables: (a) => {
+    variables: (a, ctx) => {
       const start = dayArg(a, "start"), end = dayArg(a, "end"), cur = afterArg(a);
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };
       if (!start || !end || end <= start) return { problem: "start and end must be YYYY-MM-DD, end after start" };
-      return { variables: { query: createdBetween(start, end), after: cur } };
+      return { variables: { query: createdBetween(start, end, ctx.timeZone), after: cur } };
     },
   },
   {
@@ -169,11 +172,11 @@ export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
     description: "Open orders placed since a day that aren't fully shipped, 100 a page: order number and Shopify's fulfillment status only.",
     inputSchema: { type: "object", required: ["since"], properties: { since: day, after } },
     doc: OPEN_ORDERS,
-    variables: (a) => {
+    variables: (a, ctx) => {
       const since = dayArg(a, "since"), cur = afterArg(a);
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };
       if (!since) return { problem: "since must be YYYY-MM-DD" };
-      return { variables: { query: `status:open AND created_at:>='${since}T00:00:00${offsetOn(since)}' AND (fulfillment_status:unshipped OR fulfillment_status:partial)`, after: cur } };
+      return { variables: { query: `status:open AND created_at:>='${since}T00:00:00${offsetOn(since, ctx.timeZone)}' AND (fulfillment_status:unshipped OR fulfillment_status:partial)`, after: cur } };
     },
   },
   {

@@ -159,7 +159,7 @@ are in `core/flow-rules.ts` (no database, so the browser checks a draft too), th
 dispatcher in `app/api/dispatch`. Migration `20261112200000_crew_flow.sql`.
 
 - A flow is up to 12 chains. A chain has a name, an on switch, one start and one to three agents.
-- Starts: a schedule (every day, weekdays or Mondays, Chicago time, on a quarter hour), the Run chain
+- Starts: a schedule (every day, weekdays or Mondays, in the business's time zone, on a quarter hour), the Run chain
   button, or an approval being decided (approve, reject or either; at most once a minute per chain).
 - Each step after the first can: run after the step before worked, failed, or either way; only go
   on if a number the step before computed in code passes a check (Rowan: new leads, drafts; Quinn:

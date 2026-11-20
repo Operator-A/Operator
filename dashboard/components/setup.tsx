@@ -15,7 +15,8 @@ import { Icon } from "./Icon";
 
 export interface SetupMsg { id: string; role: "owner" | "avery"; text: string; runId: string | null; notes: string[] }
 
-export function SetupChat({ name, initial, send, ready, blocked, foot }: { name: string; initial: SetupMsg[]; send: (text: string, site: string) => Promise<SetupAnswer>; ready: boolean; blocked: string | null; foot: string | null }) {
+/** `zone`: while the business has no time zone yet, the first message also sends the browser's (card 187). */
+export function SetupChat({ name, initial, send, ready, blocked, foot, zone }: { name: string; initial: SetupMsg[]; send: (text: string, site: string) => Promise<SetupAnswer>; ready: boolean; blocked: string | null; foot: string | null; zone?: (tz: string) => Promise<ActionResult> }) {
   const [msgs, setMsgs] = useState<SetupMsg[]>(initial);
   const [text, setText] = useState("");
   const [site, setSite] = useState("");
@@ -31,6 +32,7 @@ export function SetupChat({ name, initial, send, ready, blocked, foot }: { name:
     setReading(s);
     setMsgs((m) => [...m, { id: `z${Date.now()}`, role: "owner", text: s ? `${t}\n\n(My site: ${s})` : t, runId: null, notes: [] }]);
     start(async () => {
+      if (zone) { try { await zone(Intl.DateTimeFormat().resolvedOptions().timeZone); } catch { /* Settings can set it */ } }
       let a: SetupAnswer;
       try { a = await send(t, s); } catch (e) { a = { ok: false, reply: e instanceof Error ? e.message : "Something went wrong.", notes: [], runId: null, costUsd: 0, kept: false, saved: 0, suggested: 0 }; }
       setMsgs((m) => [...m, { id: `a${Date.now()}`, role: "avery", text: a.reply, runId: a.runId, notes: a.notes }]);

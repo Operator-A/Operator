@@ -67,16 +67,16 @@ async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
 async function Schedule({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
   const [d, org] = await Promise.all([getCrewCanvas(f), loadOrg().catch(() => null)]);
   const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, perRun: a.perRun ?? null }));
-  const plan = planOrgOn(members, d.flow.chains, f.now);
+  const plan = planOrgOn(members, d.flow.chains, f.now, f.tz);
   const day = orgDay({
     members: f.crew,
     enabled: Object.fromEntries(Object.values(f.agents).map((x) => [x.id, x.enabled])),
     budget: Object.fromEntries(Object.values(f.agents).map((x) => [x.id, x.daily_budget_usd])),
-    grants: f.grants, org, now: f.now,
+    grants: f.grants, org, now: f.now, tz: f.tz,
   });
   return (
     <>
-      <OrgSwitch org={f.org} plan={plan} controls={controlsOn()} turnOn={turnOnOrg.bind(null, true)} turnOff={turnOffOrg} />
+      <OrgSwitch tz={f.tz} org={f.org} plan={plan} controls={controlsOn()} turnOn={turnOnOrg.bind(null, true)} turnOff={turnOffOrg} />
       <OrgDay day={day} controls={controlsOn()} orgOn={f.org.on} setTime={setAgentTime} setOn={setEnabled} />
       <details className="card" style={{ gap: 10 }}>
         <summary style={{ cursor: "pointer", fontSize: 14.5, fontWeight: 600 }}>Edit chains: hand-offs between agents</summary>

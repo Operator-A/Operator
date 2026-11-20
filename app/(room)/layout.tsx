@@ -70,7 +70,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
               <Icon name="bell" />
               {!!open.length && <span style={{ position: "absolute", top: 11, right: 12, width: 7, height: 7, borderRadius: 999, background: "var(--red)", border: "1.5px solid var(--soft)" }} />}
             </Link>
-            <span className="date-pill"><Icon name="calendar" size={16} />{longDay(floor.now).replace(/^(\w{3})\w*/, "$1")}</span>
+            <span className="date-pill"><Icon name="calendar" size={16} />{longDay(floor.now, floor.tz).replace(/^(\w{3})\w*/, "$1")}</span>
             <span className="me" title={me.email}>{me.email.slice(0, 1).toUpperCase()}</span>
             <MobileMenu alert={!!waiting}>
               <div className="sheet-group">

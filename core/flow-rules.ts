@@ -11,7 +11,7 @@
 // A flow is choices from the palette below, never authority. Every run it starts goes through
 // withRun (on duty, daily budget), a skipped run stops the chain, and nothing here can turn an
 // agent on. Inbound email and web pages never choose what runs next: only the saved flow does.
-import { chicagoDate, nextDay, offsetOn } from "@/core/time";
+import { localAt, localDate, nextDay } from "@/core/time";
 
 export const MAX_STEPS = 3;
 // room for a one-step chain per agent (an agent's own schedule, docs/org-schedule.md) plus shared chains
@@ -127,36 +127,35 @@ export function readFlow(raw: unknown, crew: Crew): { flow: Flow; problems: stri
   return { flow: { chains: ok }, problems };
 }
 
-// ---- Time: schedules and waits are Chicago wall-clock times.
+// ---- Time: schedules and waits are wall-clock times in the business's own time zone (card 187).
 
 const weekday = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay();
 export const onDay = (days: Days | undefined, date: string) => !days || days === "daily" || (days === "mondays" ? weekday(date) === 1 : weekday(date) >= 1 && weekday(date) <= 5);
-export const chicagoAt = (date: string, time: string) => Date.parse(`${date}T${time}:00${offsetOn(date)}`);
 
 /**
  * The scheduled firings of a chain that fall in (from, to]. The dispatcher asks about the last
  * hour every 15 minutes; chain_fires makes sure each firing starts once.
  */
-export function firingsBetween(c: Chain, from: number, to: number): number[] {
+export function firingsBetween(c: Chain, from: number, to: number, tz: string): number[] {
   if (c.start.type !== "schedule") return [];
   const out: number[] = [];
-  let d = chicagoDate(0, new Date(from));
+  let d = localDate(tz, 0, new Date(from));
   for (let i = 0; i < 3; i++, d = nextDay(d)) {
     if (!onDay(c.start.days, d)) continue;
-    const t = chicagoAt(d, c.start.time);
+    const t = localAt(d, c.start.time, tz);
     if (t > from && t <= to) out.push(t);
   }
   return out;
 }
 
 /** The next firings of a chain from `now`, for the canvas. */
-export function nextFirings(c: Chain, now = Date.now(), n = 3): number[] {
+export function nextFirings(c: Chain, now: number, n: number, tz: string): number[] {
   if (c.start.type !== "schedule") return [];
   const out: number[] = [];
-  let d = chicagoDate(0, new Date(now));
+  let d = localDate(tz, 0, new Date(now));
   for (let i = 0; i < 14 && out.length < n; i++, d = nextDay(d)) {
     if (!onDay(c.start.days, d)) continue;
-    const t = chicagoAt(d, c.start.time);
+    const t = localAt(d, c.start.time, tz);
     if (t > now) out.push(t);
   }
   return out;
@@ -175,7 +174,7 @@ const pass = (op: Op, a: number, b: number) => (op === ">=" ? a >= b : op === ">
  * What happens after step `k` of a chain ended: stop (with why), start step k+1 now, or wait
  * until a time. A skipped step always stops the chain: the agent was off duty or over budget.
  */
-export function afterStep(c: Chain, k: number, ended: Ended, now = Date.now()): { go: false; why: string } | { go: true; step: number; at: number | null } {
+export function afterStep(c: Chain, k: number, ended: Ended, tz: string, now = Date.now()): { go: false; why: string } | { go: true; step: number; at: number | null } {
   const next = c.steps[k + 1];
   if (!next) return { go: false, why: "That was the last step." };
   if (ended.status === "skipped") return { go: false, why: "The step was skipped (off duty or over budget), so the chain stops." };
@@ -187,9 +186,9 @@ export function afterStep(c: Chain, k: number, ended: Ended, now = Date.now()): 
     if (v === undefined) return { go: false, why: `The step before didn't report ${next.check.metric}, so the check can't pass.` };
     if (!pass(next.check.op, v, next.check.value)) return { go: false, why: `${next.check.metric} was ${v}, not ${next.check.op} ${next.check.value}.` };
   }
-  const today = chicagoDate(0, new Date(now));
+  const today = localDate(tz, 0, new Date(now));
   if (!onDay(next.days, today)) return { go: false, why: `${next.agent} only runs ${DAY_WORDS[next.days!]}.` };
-  const at = next.notBefore ? chicagoAt(today, next.notBefore) : null;
+  const at = next.notBefore ? localAt(today, next.notBefore, tz) : null;
   return { go: true, step: k + 1, at: at && at > now ? at : null };
 }
 

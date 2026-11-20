@@ -2,6 +2,7 @@
 // spec: when it runs, what it reads, how it thinks, what it hands you, and which agents use its
 // result. A run can be laid over it (each tool's calls from run_steps). Plain data and pure helpers;
 // components/AgentMap.tsx draws it. Every box comes from data, nothing is drawn by hand per agent.
+import { zoneLabel } from "@/core/time";
 import type { AgentSpec } from "@/core/agent-spec";
 import type { Run, RunStatus } from "./data";
 import { when } from "./format";
@@ -152,11 +153,11 @@ export function mapOf(x: MapInput): AgentMapModel {
 }
 
 /** A logged run as the map shows it. */
-export function mapRunOf(r: Run, steps: MapStep[]): MapRun {
+export function mapRunOf(r: Run, steps: MapStep[], tz: string): MapRun {
   const mem = r.memory_json;
   const lines = mem ? Object.values(mem.groups).reduce((s, g) => s + g.lines, 0) : 0;
   return {
-    status: r.status, trigger: r.trigger, at: `${when(r.started_at)} CT`,
+    status: r.status, trigger: r.trigger, at: `${when(r.started_at, tz)} ${zoneLabel(tz, r.started_at)}`,
     tokensIn: r.tokens_in, tokensOut: r.tokens_out, costUsd: r.cost_usd,
     memory: mem ? { lines, tokens: mem.tokens } : null,
     steps,

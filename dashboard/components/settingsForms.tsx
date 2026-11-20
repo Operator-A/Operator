@@ -108,6 +108,23 @@ export function BusinessForm({ initial, canEdit, save }: { initial: { name: stri
   );
 }
 
+/** The business's time zone: every time shown, today's limits and chain start times use it. Owners only. */
+export function TimeZoneForm({ initial, canEdit, save }: { initial: string; canEdit: boolean; save: (tz: string) => Promise<ActionResult> }) {
+  const [tz, setTz] = useState(initial);
+  const { busy, run, toast } = useAct();
+  const zones = (() => { try { return Intl.supportedValuesOf("timeZone"); } catch { return [initial]; } })();
+  const list = zones.includes(initial) ? zones : [initial, ...zones];
+  return (
+    <div className="row" style={{ gap: 8 }}>
+      <select className="input" style={{ maxWidth: 240 }} aria-label="Time zone" value={tz} disabled={!canEdit || busy} onChange={(e) => setTz(e.target.value)}>
+        {list.map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}
+      </select>
+      {tz !== initial && <button className="btn dark sm" disabled={busy || !canEdit} onClick={() => run(() => save(tz))}>{busy ? "Saving…" : "Save"}</button>}
+      {toast}
+    </div>
+  );
+}
+
 type WhereKey = "ownerEmail" | "siteUrl" | "shopifyDomain" | "shopifyClientId" | "mercuryAccountIds" | "notionBriefParent" | "notionBriefsDb" | "notionLeadsParent" | "notionBooksParent";
 const WHERE_FIELDS: { k: WhereKey; label: string; hint: string }[] = [
   { k: "siteUrl", label: "Website", hint: "https://example.com, named in outreach drafts" },

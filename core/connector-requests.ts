@@ -4,6 +4,7 @@ import "server-only";
 // service, counted, with one Build Board card made on the first ask; later asks raise the count in
 // the card's title. The card is best effort: a missing setting or a Notion error never stops the
 // ask, it comes back as words. Closing a request moves its card to Done.
+import { orgTz } from "@/core/tz";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { h2, li, notionConnected, notionPageId, notionRow, notionUpdateRow, prop } from "@/integrations/notion";
@@ -18,7 +19,7 @@ export interface ConnectorRequest {
 export const REQUESTS_MISSING = "The connector_requests table isn’t in Supabase yet: apply the migration 20261201090000_connector_requests.sql.";
 const COLS = "id, service_key, name, asks, notes, board_url, state, outcome, created_at, last_asked_at, closed_at";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const today = () => new Date().toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "long", day: "numeric", year: "numeric" });
+const today = async () => new Date().toLocaleDateString("en-US", { timeZone: await orgTz(), month: "long", day: "numeric", year: "numeric" });
 const words = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 200);
 
 /** Open requests first, most asked first; then the closed ones. Null when the table isn't there. */
@@ -40,7 +41,7 @@ async function newCard(name: string, ask: Ask): Promise<{ url: string } | { prob
   if (!env.notionBuildBoardDb) return { problem: "NOTION_BUILD_BOARD_DB_ID isn't set in Vercel." };
   if (!(await notionConnected())) return { problem: "Notion isn't connected: paste its key on Connections." };
   try {
-    const c = requestCard({ name, ask, date: today(), link: env.dashboardUrl ? `${env.dashboardUrl}/connections/find` : null, known: knownServer(name) });
+    const c = requestCard({ name, ask, date: await today(), link: env.dashboardUrl ? `${env.dashboardUrl}/connections/find` : null, known: knownServer(name) });
     const row = await notionRow(env.notionBuildBoardDb, {
       Name: prop.title(c.name), Status: prop.status(REQUEST_CARD.status), Owner: prop.select(REQUEST_CARD.owner), Track: prop.select(REQUEST_CARD.track),
     }, c.sections.flatMap((s) => [h2(s.heading), ...s.lines.map(li)]));

@@ -10,7 +10,7 @@ export interface PersonLine { id: string; email: string; role: Role; you: boolea
 
 type Act = (...a: string[]) => Promise<ActionResult>;
 
-export function People({ people, canEdit, add, setRole, remove }: { people: PersonLine[]; canEdit: boolean; add: Act; setRole: Act; remove: Act }) {
+export function People({ people, canEdit, add, setRole, remove, tz }: { people: PersonLine[]; canEdit: boolean; tz: string; add: Act; setRole: Act; remove: Act }) {
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
   const [email, setEmail] = useState(""), [role, setNewRole] = useState<Role>("approver");
@@ -25,7 +25,7 @@ export function People({ people, canEdit, add, setRole, remove }: { people: Pers
         <div key={p.id} className={"row wrap" + (i ? " rule" : "")} style={{ justifyContent: "space-between", padding: "12px 0", gap: 12, fontSize: 14 }}>
           <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
             <span style={{ overflowWrap: "anywhere" }}>{p.email}{p.you ? <span className="muted"> (you)</span> : null}</span>
-            <span className="muted" style={{ fontSize: 12 }}>{p.lastSignIn ? `Last signed in ${new Date(p.lastSignIn).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Hasn’t signed in yet"}</span>
+            <span className="muted" style={{ fontSize: 12 }}>{p.lastSignIn ? `Last signed in ${new Date(p.lastSignIn).toLocaleString("en-US", { timeZone: tz, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Hasn’t signed in yet"}</span>
           </span>
           {canEdit ? (
             <span className="row" style={{ gap: 8 }}>

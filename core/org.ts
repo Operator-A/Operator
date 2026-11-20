@@ -5,7 +5,8 @@ import "server-only";
 import { actor } from "@/core/actor";
 import { db } from "@/core/db";
 import { spendByAgent } from "@/core/usage";
-import { chicagoDate, offsetOn } from "@/core/time";
+import { localDate, startOf } from "@/core/time";
+import { orgTz } from "@/core/tz";
 import {
   MAX_DEPARTMENTS, MAX_DEPTH, checkerOf, MAX_SEATS, agentsIn, childrenOf, cleanSub, cleanTitle, deptBudgetChange, deptEmailChange, depthOf, deptOf, deptSlug, headOf,
   type Department, type Holder, type Org, type Seat,
@@ -211,17 +212,9 @@ export async function latestOutputs(agentIds: string[]): Promise<Record<string, 
 
 // ---- Department limits (slice 2)
 
-/** Midnight at the start of this Chicago calendar month, as an ISO time. */
-export function chicagoMonthStart(now = new Date()) {
-  const first = `${chicagoDate(0, now).slice(0, 8)}01`;
-  return new Date(`${first}T00:00:00${offsetOn(first)}`).toISOString();
-}
-/** "2026-11": this Chicago calendar month. */
-export const chicagoMonth = (now = new Date()) => chicagoDate(0, now).slice(0, 7);
-
-/** AI spend this Chicago month per agent, from the usage ledger (core/usage.ts). */
+/** AI spend this calendar month (the business's time zone) per agent, from the usage ledger (core/usage.ts). */
 export async function monthSpendByAgent(agentIds: string[], now = new Date()): Promise<Record<string, number>> {
-  return spendByAgent(agentIds, chicagoMonthStart(now));
+  return spendByAgent(agentIds, startOf("month", await orgTz(), now));
 }
 
 /**
@@ -243,7 +236,7 @@ export async function agentDepartment(agentId: string, opts: { spend?: boolean }
  * first caller this month, so a department sends one alert a month however many runs it skips.
  */
 export async function claimBudgetAlert(deptId: string, now = new Date()): Promise<boolean> {
-  const month = chicagoMonth(now);
+  const month = localDate(await orgTz(), 0, now).slice(0, 7);
   const { data, error } = await db().from("departments").update({ budget_alerted: month }).eq("id", deptId).or(`budget_alerted.is.null,budget_alerted.neq.${month}`).select("id");
   return !error && !!data?.length;
 }

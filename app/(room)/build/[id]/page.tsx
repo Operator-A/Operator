@@ -98,7 +98,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
         when={`${schedSentence(sch)}${sch?.chain ? ` In the ${sch.chain} chain.` : ""}`}
         estimate={estimate(s, menu.models)}
         controls={controls}
-        versions={b.versions.map((v) => ({ version: v.version, note: v.note, when: when(v.createdAt), active: v.active, createdBy: v.createdBy, problems: v.problems, looser: live ? specLooser(live.spec, v.spec) : [] }))}
+        versions={b.versions.map((v) => ({ version: v.version, note: v.note, when: when(v.createdAt, f.tz), active: v.active, createdBy: v.createdBy, problems: v.problems, looser: live ? specLooser(live.spec, v.spec) : [] }))}
         tryIt={tryBuilt.bind(null, id)}
         goLive={goLive.bind(null, id)}
         goBack={goBack.bind(null, id)}

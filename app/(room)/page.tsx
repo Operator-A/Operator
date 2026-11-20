@@ -1,3 +1,4 @@
+import { zoneLabel } from "@/core/time";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -91,8 +92,8 @@ export default async function Desk() {
   return (
     <>
       <div className="stack" style={{ gap: 6 }}>
-        <span style={{ fontSize: 13 }} className="muted">{longDay(now)} · {hm(now)} CT</span>
-        <h1 style={{ fontSize: 32, lineHeight: 1.15, fontWeight: 600, letterSpacing: "-.025em" }}>{deskGreeting(now)}.</h1>
+        <span style={{ fontSize: 13 }} className="muted">{longDay(now, f.tz)} · {hm(now, f.tz)} {zoneLabel(f.tz, now)}</span>
+        <h1 style={{ fontSize: 32, lineHeight: 1.15, fontWeight: 600, letterSpacing: "-.025em" }}>{deskGreeting(now, f.tz)}.</h1>
         <p style={{ fontSize: 14.5, textWrap: "pretty" }} className="ink2">{deskLine(allGoals.map((g) => g.status), interruptCount(open), waitCount, chief)}</p>
       </div>
 
@@ -149,7 +150,7 @@ export default async function Desk() {
           </div>
           {summary && (
             <div className="stack" style={{ gap: 4 }}>
-              <span className="ted-k">{chief}’s latest · {longDay(Date.parse(summary.at))}</span>
+              <span className="ted-k">{chief}’s latest · {longDay(Date.parse(summary.at), f.tz)}</span>
               <p className="ink2" style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-line", textWrap: "pretty" }}>{summary.summary}</p>
             </div>
           )}

@@ -38,7 +38,7 @@ assert.deepEqual(readSettings(null), NO_SETTINGS);
 assert.deepEqual(readSettings("junk"), NO_SETTINGS);
 
 // edits: the owner email is always one of the org's owners
-const edit = (p: Partial<SettingsEdit>): SettingsEdit => ({ ownerEmail: "", siteUrl: "", shopifyDomain: "", shopifyClientId: "", mercuryAccountIds: "", notionBriefParent: "", notionBriefsDb: "", notionLeadsParent: "", notionBooksParent: "", productCollections: "", productFields: "", offerTerms: "", costSource: "", costNumber: "", ...p });
+const edit = (p: Partial<SettingsEdit>): SettingsEdit => ({ ownerEmail: "", siteUrl: "", shopifyDomain: "", shopifyClientId: "", mercuryAccountIds: "", notionBriefParent: "", notionBriefsDb: "", notionLeadsParent: "", notionBooksParent: "", productCollections: "", productFields: "", offerTerms: "", costSource: "", costNumber: "", timeZone: "", ...p });
 const owners = ["owner@example.com"];
 assert.ok("problem" in checkSettingsEdit(edit({ ownerEmail: "someone@else.com" }), owners));
 assert.ok("settings" in checkSettingsEdit(edit({ ownerEmail: "Owner@Example.com" }), owners));

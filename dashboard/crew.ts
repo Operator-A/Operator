@@ -9,7 +9,7 @@ export type IntegrationId = "shopify" | "mercury" | "notion" | "email" | "gmail"
 
 export interface Schedule {
   kind: "manual" | Days;
-  /** "HH:MM" in Central Time */
+  /** "HH:MM" in the business's time zone */
   time?: string;
   /** The crew flow chain (core/flow.ts) that runs it on this schedule. Off until the owner turns the chain on. */
   chain?: string;

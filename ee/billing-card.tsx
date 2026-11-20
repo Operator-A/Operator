@@ -1,6 +1,7 @@
 // Copyright Operator Enterprises and Technologies, LLC. Licensed under ee/LICENSE, not the AGPL-3.0.
 // Settings > Billing (the SettingsCards slot): where the business stands, what it pays, and for the
 // owner the buttons to Stripe's own pages (Checkout to add a card, the portal to change or cancel).
+import { orgTz } from "@/core/tz";
 import "server-only";
 import { listMembers } from "@/core/members";
 import { requireSession } from "@/dashboard/data";
@@ -28,7 +29,8 @@ export async function BillingCard({ query }: { query: Readonly<Record<string, st
   const billed = plan.p && plan.p.kind !== "comped";
   // the admin business makes the sign-up codes (sign-up is invite-only, ee/admin.ts)
   const codes = me.orgId === adminOrgId() && me.role === "owner" ? await listCodes().then((rows) => ({ rows, problem: null as string | null }), (e: unknown) => ({ rows: [], problem: e instanceof Error ? e.message : String(e) })) : null;
-  const when = (at: string) => new Date(at).toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric" });
+  const tz = await orgTz();
+  const when = (at: string) => new Date(at).toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric" });
   const codeState = (c: { used_at: string | null; expires_at: string; open: boolean }) => (c.used_at ? `used ${when(c.used_at)}` : c.open ? `open until ${when(c.expires_at)}` : "ended");
   const hasCard = !!sub?.hasCard && sub.status !== "canceled";
   return (

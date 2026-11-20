@@ -3,8 +3,10 @@ import "server-only";
 // from the list in code. The rules (what a goal may hold, pace, status) are in core/goal-rules.ts;
 // the counting is in core/measures.ts. Callers check the login. A goal decides nothing an agent may
 // do: it is what the owner wants, read by heads (goal_progress) and shown on Crew, the home page and its own page.
+import { orgDate, orgTz } from "@/core/tz";
+import { localDate } from "@/core/time";
 import { db } from "@/core/db";
-import { chicagoDate } from "@/core/time";
+
 import { MAX_GOALS_PER_DEPT, measureOf, planGoal, progress, STATUS_WORDS, type GoalInput, type GoalRow, type GoalState, type Progress } from "@/core/goal-rules";
 import { ownMeasures, readMeasures, type Detail } from "@/core/measures";
 import type { MeasureDef } from "@/core/goal-rules";
@@ -39,8 +41,9 @@ export async function getGoal(id: string): Promise<Goal | null> {
 export async function goalsNow(goals: Goal[], now = new Date()): Promise<GoalNow[]> {
   const own = await ownMeasures();
   const reads = await readMeasures(goals.map((g) => g.measure), now, own);
-  const today = chicagoDate(0, now);
-  return goals.map((g) => ({ goal: g, progress: progress(g, g.measure ? reads[g.measure]?.reading ?? null : null, today, own.defs), detail: g.measure ? reads[g.measure]?.detail ?? null : null }));
+  const tz = await orgTz();
+  const today = localDate(tz, 0, now);
+  return goals.map((g) => ({ goal: g, progress: progress(g, g.measure ? reads[g.measure]?.reading ?? null : null, today, own.defs, tz), detail: g.measure ? reads[g.measure]?.detail ?? null : null }));
 }
 
 /** Every measure a goal can use here: core's, the packs', and the business's own goal numbers. */
@@ -60,7 +63,7 @@ export async function createGoal(deptId: string, input: GoalInput): Promise<stri
   const org = await loadOrg();
   if (!org?.departments.some((d) => d.id === deptId)) throw new Error("That department isn’t on the chart.");
   const own = await ownMeasures();
-  const got = planGoal(input, chicagoDate(0), own.defs);
+  const got = planGoal(input, (await orgDate(0)), own.defs);
   if ("error" in got) throw new Error(got.error);
   const open = await listGoals([deptId]);
   if (open == null) throw new Error(GOALS_MISSING);
@@ -78,7 +81,7 @@ export async function editGoal(id: string, input: GoalInput): Promise<void> {
   const g = await getGoal(id);
   if (!g || g.state === "dropped") throw new Error("That goal isn’t there any more.");
   const own = await ownMeasures();
-  const got = planGoal(input, chicagoDate(0), own.defs);
+  const got = planGoal(input, (await orgDate(0)), own.defs);
   if ("error" in got) throw new Error(got.error);
   const p = got.plan;
   const fresh = p.measure !== g.measure;

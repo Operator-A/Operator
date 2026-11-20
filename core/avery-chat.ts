@@ -11,6 +11,7 @@ import "server-only";
 //
 // Nothing here runs, starts or changes an agent, and nothing sends, pays or posts. Rules and
 // proposals are saved only after a run that finishes; code, not the model, says what it saved.
+import { orgDate, orgTz } from "@/core/tz";
 import { db } from "@/core/db";
 import { loadSpec, type AgentSpec } from "@/core/agent-spec";
 import { loadMemory } from "@/core/memory";
@@ -21,7 +22,7 @@ import { runExplore } from "@/core/runner";
 import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, type Business } from "@/core/business-rules";
 import { withRun } from "@/core/runs";
-import { chicagoDate, dayTitle } from "@/core/time";
+import { dayTitle, localDate } from "@/core/time";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
 import { weekOf } from "@/core/plan-rules";
@@ -85,7 +86,7 @@ function crewNowTool(org: Org): ToolDef {
         agentNames(ids),
         db().from("agents").select("id, enabled").in("id", ids),
         db().from("agent_runs").select("agent_id, status, started_at, summary, error").in("agent_id", ids).not("trigger", "in", "(preview,chat)").order("started_at", { ascending: false }).limit(300),
-        db().from("plans").select("department_id, summary, items, review").eq("week_of", weekOf(chicagoDate(0))),
+        db().from("plans").select("department_id, summary, items, review").eq("week_of", weekOf((await orgDate(0)))),
         db().from("proposals").select("title, kind, from_agent, created_at").eq("state", "pending").order("created_at").limit(30),
       ]);
       const onDuty = new Map((agents.data ?? []).map((a) => [a.id as string, !!a.enabled]));
@@ -266,13 +267,14 @@ export async function askAvery(message: string): Promise<ChatAnswer> {
   };
   let block = "";
   try { block = (await loadMemory(agentId)).block; } catch { /* chat without her notes is fine */ }
-  const today = chicagoDate(0);
+  const tz = await orgTz();
+  const today = localDate(tz, 0);
   let reports: { tool: string; ok: boolean; note: string }[] = [];
   let finished = false, said: string | null = null;
   const res = await withRun(agentId, "chat", async (runId) => {
     const r = await runExplore(spec, {
       agentId, runId, memoryBlock: block, deliver: true, chat: true,
-      prompt: chatPrompt(history.map((h): ChatLine => ({ role: h.role, text: h.text })), message, `${dayTitle(today)}, ${today}`),
+      prompt: chatPrompt(history.map((h): ChatLine => ({ role: h.role, text: h.text })), message, `${dayTitle(today)}, ${today} (${tz} time)`),
       tools: { ...TOOLS, ...Object.fromEntries(chatTools.map((t) => [t.id, t])) },
     });
     reports = r.reports; finished = r.finished; said = r.result;

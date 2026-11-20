@@ -1,3 +1,4 @@
+import { orgTz } from "@/core/tz";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/dashboard/data";
@@ -51,7 +52,7 @@ function yesDoes(p: Proposal["payload"]): { label: string; does: string } {
 export default async function ProposalPage({ params }: { params: Promise<{ id: string }> }) {
   await requireSession();
   const { id } = await params;
-  const [pr, org] = await Promise.all([getProposal(id), loadOrg().catch(() => null)]);
+  const [pr, org, tz] = await Promise.all([getProposal(id), loadOrg().catch(() => null), orgTz()]);
   if (!pr || !org) notFound();
   const p = pr.payload;
   const members = pr.department_id ? agentsIn(org, pr.department_id) : [];
@@ -97,7 +98,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
     <>
       <div className="stack" style={{ gap: 8 }}>
         <span className="sub"><Link href="/approvals">Approvals</Link> › <Link href="/proposals">Proposals</Link> › {KIND_WORDS[pr.kind]}</span>
-        <span className="sub">From {fromName}{dept ? ` · ${dept.name}` : ""} · {when(pr.created_at)}{pr.state !== "pending" && pr.decided_at ? ` · decided ${when(pr.decided_at)}` : ""}</span>
+        <span className="sub">From {fromName}{dept ? ` · ${dept.name}` : ""} · {when(pr.created_at, tz)}{pr.state !== "pending" && pr.decided_at ? ` · decided ${when(pr.decided_at, tz)}` : ""}</span>
         <h1 className="h1">{pr.title}</h1>
       </div>
 

@@ -3,6 +3,7 @@ import "server-only";
 // a worker request as the job's org, with its own time limit and through withRun like any other run.
 // A job only names a chain and a step of the SAVED flow; the worker reads the flow for the agent, so
 // nothing outside the flow (an inbound email, a web page, a run's output) can choose what runs.
+import { orgTz } from "@/core/tz";
 import { loadCrew, resolveAgent } from "@/agents/registry";
 import { db } from "@/core/db";
 import { afterStep, loadFlow, type Chain, type Ended } from "@/core/flow";
@@ -28,7 +29,7 @@ export async function startStep(origin: string, c: Chain, ctx: ChainCtx, runAfte
  * scheduler kicks it then), or stop. Returns what happened, in words, for the log.
  */
 export async function continueChain(origin: string, c: Chain, ctx: ChainCtx, runId: string, ended: Ended): Promise<string> {
-  const next = afterStep(c, ctx.step, ended);
+  const next = afterStep(c, ctx.step, ended, await orgTz());
   if (!next.go) return next.why;
   const nctx: ChainCtx = { chainId: ctx.chainId, key: ctx.key, step: next.step, parent: runId, manual: ctx.manual };
   await startStep(origin, c, nctx, next.at ?? undefined);
