@@ -7,12 +7,15 @@ import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 import { FACTS_MISSING, departmentTemplates, inSetup, listFacts, setupState } from "@/core/setup";
 import { TEMPLATE_FIT } from "@/dashboard/setup";
-import { STAGES, STAGE_WORDS, nextStage, prevStage, stageProgress, type Stage } from "@/core/setup-rules";
+import { SETUP_AGENT, STAGES, STAGE_WORDS, nextStage, prevStage, shownStage, stageProgress, wrapScreen, type Stage } from "@/core/setup-rules";
 import { SetupChat, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
 import { Icon } from "@/dashboard/components/Icon";
 import { toolsStep, type TileView } from "@/dashboard/toolsStep";
 import { categoryOfTile, categoryState, currentCategory, isCategory, orderCategories, planKinds, planNotes, type CategoryId, type Plans, type ToolCategory } from "@/core/tools-step-rules";
-import { KeyForm, ActionButton } from "@/dashboard/components/client";
+import { KeyForm, ActionButton, LiveRefresher } from "@/dashboard/components/client";
+import { FirstJobCard } from "@/dashboard/components/firstJob";
+import { firstJobView, jobFloor } from "@/dashboard/firstJob";
+import { firstSentence } from "@/dashboard/desk";
 import { IdeaAside } from "@/dashboard/components/idea";
 import { companyChart } from "@/dashboard/company";
 import { initialPick } from "@/core/company-rules";
@@ -21,7 +24,7 @@ import { claudeState } from "@/dashboard/claude";
 import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
 import { extensions } from "@/core/extensions";
 import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
-import { sendSetup, setupGo, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupOtherTool, setupPlanClear, setupPlanGuide, setupSkipTool, setupStartEmpty } from "@/dashboard/setupActions";
+import { sendSetup, setupGo, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupOtherTool, setupPlanClear, setupPlanGuide, setupSkipTool, setupStartEmpty, setupToDesk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
 import { billing } from "@/dashboard/cost";
 
@@ -44,12 +47,20 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const me = await requireSession();
   // one round for everything the step shows (card 202, docs/speed.md); setup needs which tools are set up, not the Desk's floor
   const [setup, health, facts, state, history, biz, claude, bill] = await Promise.all([inSetup(), getHealth(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), claudeState(), billing()]);
-  if (!setup) redirect("/");
+  // card 186: after Start this company, setup counts as done but /start keeps the wrap-up (credits, then the first job)
+  if (!setup && !state.wrapUp) redirect("/");
   const owner = atLeast(me.role, "owner");
   // own key or OPERATOR's hosted Claude on credits (card 162): either one opens the conversation
   const keyed = claudeReady(claude);
   // on OPERATOR's Claude: setup is free (the paid layer says how much is left), the crew's work needs credits
   const Hosted = inUse(claude) === "hosted" ? extensions.HostedClaude : null;
+  /** The wrap-up (card 186): the first job read from a small floor, and whether a run would wait on credits. */
+  const wrapUp = async () => {
+    const view = await firstJobView(await jobFloor(health)).catch(() => null);
+    const job = view?.phase === "offer" ? view.job : null;
+    const needCredits = inUse(claude) === "hosted" && !!(await extensions.planBlock({ kind: "run", agentId: job?.agentId ?? SETUP_AGENT, trigger: "manual", billing: "credits" }).catch(() => null));
+    return { view, job, screen: wrapScreen({ firstJob: state.firstJob, needCredits, jobReady: !!job }) };
+  };
   const templates = departmentTemplates();
   const leaning = state.leaning.map((l) => ({ ...l, name: templates.find((t) => t.id === l.id)?.name ?? l.id }));
   const blocked = controlsOn() ? null : "Avery can’t answer here yet: real runs are switched off for this OPERATOR. Whoever runs it turns them on.";
@@ -65,9 +76,11 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const catPlan = cat ? state.plans[cat.id] ?? null : null;
   const catTile = cat ? tiles.find((t) => cat.tiles.includes(t.tile.id) && t.state === "connected") ?? null : null;
   const allAsked = !order.some((c) => stateOf(c) === "open");
-  const stage = state.stage, at = STAGES.indexOf(stage);
+  const stage = shownStage(state), at = STAGES.indexOf(stage);
   const talked = (history ?? []).length > 0;
-  const back = prevStage(stage), next = nextStage(stage);
+  // the company step goes forward only by Start this company; the wrap-up has no Back (the departments are installed)
+  const back = stage === "first" ? null : prevStage(stage), next = stage === "company" || stage === "first" ? null : nextStage(stage);
+  const wrap = state.wrapUp ? await wrapUp() : null;
   const nextLabel = stage === "business" ? (talked ? "Next: your tools" : "Skip to tools") : stage === "tools" ? (allAsked ? "Show me my company" : "Skip the rest") : "Next: your first job";
 
   return (
@@ -213,15 +226,34 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
           </section>
         )}
 
-        {state.stage === "first" && (
-          <section key="first" className="wg-glass wg-card wg-enter" style={{ maxWidth: 680, margin: "0 auto", width: "100%" }} aria-labelledby="job-h">
-            <h1 id="job-h" className="wg-h1" style={{ fontSize: 30 }}>Your first job</h1>
-            <span className="wg-lead">After Start this company, the Desk picks the first job: the agent whose tools are connected and whose work ends in something you approve (the Bookkeeper when your bank is connected). One tap approves its playbook and starts it; every other agent waits for your approval.</span>
-            {Hosted && (
-              <div className="stack rule" style={{ gap: 8, paddingTop: 12 }}>
-                <b style={{ fontSize: 14 }}>Credits for your crew’s work</b>
-                <span className="sub">Setup is free. Your crew’s jobs run on credits, so buy a pack before the first job (or paste your own key on Connections).</span>
+        {wrap && (
+          <section key="first" className="stack wg-enter" style={{ gap: 18, maxWidth: 680, margin: "0 auto", width: "100%" }} aria-labelledby="job-h">
+            <div className="stack" style={{ gap: 8, textAlign: "center" }}>
+              <h1 id="job-h" className="wg-h1" style={{ fontSize: "clamp(28px,4.4vw,38px)" }}>
+                {wrap.screen === "credits" ? "Setup was on us." : wrap.screen === "job" ? "Your first job." : wrap.screen === "waits" ? "Your company is ready." : "Your company is at work."}
+              </h1>
+              <span className="wg-lead">
+                {wrap.screen === "credits" ? `Your crew’s work runs on credits.${wrap.job ? ` First up: ${wrap.job.name}, your ${wrap.job.role.toLowerCase()}, ${firstSentence(wrap.job.job, 140).replace(/^./, (c) => c.toLowerCase())}` : ""}`
+                  : wrap.screen === "job" ? "One tap approves its playbook and starts it. Every other agent stays off duty until you approve its own."
+                  : wrap.screen === "waits" ? "No agent can start yet: each department waits on a tool. Connect one and the first job shows on your Desk."
+                  : "Your first agent is on the job. Anything it wants to change comes to you as an approval card."}
+              </span>
+            </div>
+            {wrap.screen === "credits" && Hosted && (
+              <div className="wg-glass wg-card" style={{ gap: 12 }}>
                 <Hosted back="start" owner={owner} query={sp} />
+                {sp.claude === "own"
+                  ? <ClaudeChoice state={claude} picked="own" owner={owner} back="start" query={sp} />
+                  : <Link href="/start?claude=own" scroll={false} className="sub">Use my own Claude key instead</Link>}
+              </div>
+            )}
+            {wrap.view && wrap.screen !== "credits" && <FirstJobCard v={wrap.view} owner={owner} look="card wg-glass" />}
+            {wrap.screen === "working" && wrap.view && wrap.view.phase !== "offer" && wrap.view.run && (
+              <LiveRefresher runs={[{ id: wrap.view.run.id, name: wrap.view.name, status: wrap.view.run.status, live: wrap.view.run.status === "running" }]} />
+            )}
+            {(wrap.screen === "working" || wrap.screen === "waits") && (
+              <div className="row" style={{ justifyContent: "center" }}>
+                <ActionButton className="btn dark" action={setupToDesk} follow>Go to your Desk</ActionButton>
               </div>
             )}
           </section>

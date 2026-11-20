@@ -39,6 +39,7 @@ const NOT_AUDITED: Record<string, string> = {
   setupSkipTool: "which setup question is left for later; connects nothing",
   setupPlanGuide: "marks a setup part for guided steps later; creates and connects nothing",
   setupPlanClear: "takes back a setup part's plan; connects nothing",
+  setupToDesk: "leaves the setup wrap-up for the Desk; changes nothing else",
   setupIdeaWant: "keeps or drops Avery's department idea for later; builds nothing",
   previewChain: "dry runs only",
   dryRunBuilt: "dry run only",

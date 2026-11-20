@@ -14,7 +14,7 @@ import { activePlaybook, listPlaybooks, pendingPlaybook } from "@/core/playbook"
 import { costsFor, toolLabel } from "./company";
 import { billing } from "./cost";
 import { connectedTiles } from "./toolsStep";
-import type { Floor, Run } from "./data";
+import { RUN_COLS, type Floor, type Run } from "./data";
 
 const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[id]?.needs ?? [];
 const kindOf = (id: string) => (TOOLS as Record<string, { kind?: string }>)[id]?.kind;
@@ -31,7 +31,23 @@ export interface FirstJobRunning { phase: "running" | "done"; agentId: string; n
 export type FirstJobView = FirstJobOffer | FirstJobRunning;
 
 /** The pick for the current business now, with what the tap needs. Also used by the action to check the tap. */
-export async function currentPick(f: Floor): Promise<{ job: FirstJob | null; waits: DeptWait[]; pending: Set<string> }> {
+/** What the first job reads from the floor. The Desk passes its floor; setup reads this much only (jobFloor), never getFloor. */
+export type JobFloor = Pick<Floor, "now" | "agents" | "runs" | "health" | "approvalsPending">;
+
+/** A small floor for setup's wrap-up (card 186): the agents, the last two days of runs and the approvals waiting. */
+export async function jobFloor(health: Floor["health"]): Promise<JobFloor> {
+  const now = Date.now();
+  const [a, r, ap] = await Promise.all([
+    db().from("agents").select("id, name, model, enabled, daily_budget_usd"),
+    db().from("agent_runs").select(RUN_COLS).gte("started_at", new Date(now - 2 * 86400e3).toISOString()).order("started_at", { ascending: false }).limit(200),
+    db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending"),
+  ]);
+  if (a.error) throw new Error(`Agents: ${a.error.message}`);
+  const agents = Object.fromEntries(((a.data ?? []) as Floor["agents"][string][]).map((x) => [x.id, x]));
+  return { now, agents, runs: r.error ? [] : (r.data ?? []) as Run[], health, approvalsPending: ap.error ? null : ap.count ?? 0 };
+}
+
+export async function currentPick(f: Pick<JobFloor, "agents" | "health">): Promise<{ job: FirstJob | null; waits: DeptWait[]; pending: Set<string> }> {
   const { data, error } = await db().from("agent_playbooks").select("agent_id").eq("status", "proposed");
   if (error) throw new Error(`Playbooks: ${error.message}`);
   const pending = new Set((data ?? []).map((r) => String(r.agent_id)));
@@ -44,7 +60,7 @@ export async function currentPick(f: Floor): Promise<{ job: FirstJob | null; wai
 
 const stepLabels = (steps: readonly { tool: string }[]) => steps.map((s) => toolLabel(s.tool));
 
-export async function firstJobView(f: Floor): Promise<FirstJobView | null> {
+export async function firstJobView(f: JobFloor): Promise<FirstJobView | null> {
   const st = await setupState();
   const ph = firstJobPhase(st, f.runs, f.now);
   if (!ph) return null;

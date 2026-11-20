@@ -30,11 +30,11 @@ function Steps({ steps }: { steps: string[] }) {
   return <ol className="ink2" style={{ margin: 0, paddingLeft: 20, fontSize: 13.5, lineHeight: 1.6 }}>{steps.map((s, i) => <li key={i}>{s}</li>)}</ol>;
 }
 
-export function FirstJobCard({ v, owner }: { v: FirstJobView; owner: boolean }) {
+export function FirstJobCard({ v, owner, look = "card" }: { v: FirstJobView; owner: boolean; look?: string }) {
   if (v.phase === "offer") {
     const j = v.job;
     return (
-      <section className="card" style={{ gap: 12 }} aria-labelledby="first-h">
+      <section className={look} style={{ gap: 12 }} aria-labelledby="first-h">
         <h2 id="first-h" className="card-t">First job</h2>
         {j ? (
           <>
@@ -64,7 +64,7 @@ export function FirstJobCard({ v, owner }: { v: FirstJobView; owner: boolean }) 
   const r = v.run;
   const going = v.phase === "running";
   return (
-    <section className="card" style={{ gap: 12 }} aria-labelledby="first-h">
+    <section className={look} style={{ gap: 12 }} aria-labelledby="first-h">
       <div className="row" style={{ gap: 10 }}>
         <span className={`dot${going ? " pulse" : ""}`} style={{ width: 10, height: 10, background: going ? "var(--acc)" : r?.status === "ok" ? "var(--mint)" : "var(--red)" }} />
         <h2 id="first-h" className="card-t">{going ? `${v.name} is on the first job` : `${v.name} finished the first job`}</h2>

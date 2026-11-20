@@ -116,19 +116,31 @@ export const ideaOffer = (s: Pick<SetupState, "done" | "firstJob" | "idea">): bo
 /** What Start with Avery puts in the department draft: its name and purpose only, never people or tools. */
 export const ideaSeed = (i: Pick<DeptIdea, "name" | "why">) => ({ name: i.name.slice(0, 40), purpose: i.why.slice(0, 200) });
 
+/** The wrap-up's screen (card 186): credits while a run would be blocked for lack of them, then the first job, or what each department waits on, then the company at work. */
+export type WrapScreen = "credits" | "job" | "waits" | "working";
+export function wrapScreen(p: { firstJob: unknown; needCredits: boolean; jobReady: boolean }): WrapScreen {
+  if (p.firstJob) return "working";
+  if (p.needCredits) return "credits";
+  return p.jobReady ? "job" : "waits";
+}
+/** The step /start shows: the wrap-up is always "first"; "first" before installing goes back to the company. */
+export const shownStage = (s: Pick<SetupState, "stage" | "wrapUp">): Stage => (s.wrapUp ? "first" : s.stage === "first" ? "company" : s.stage);
+
 /**
  * The setup state kept in policies (key "setup"). `offer`: setup installed departments, so the Desk offers
  * a first job (card 154); `firstJob`: which agent started it and when.
  */
-export interface SetupState { done: boolean; stage: Stage; skipped: CategoryId[]; plans: Plans; leaning: Leaning[]; idea: DeptIdea | null; offer: boolean; firstJob: { agentId: string; at: string } | null }
-export const NO_SETUP: SetupState = { done: false, stage: "business", skipped: [], plans: {}, leaning: [], idea: null, offer: false, firstJob: null };
+export interface SetupState { done: boolean; stage: Stage; skipped: CategoryId[]; plans: Plans; leaning: Leaning[]; idea: DeptIdea | null; offer: boolean; firstJob: { agentId: string; at: string } | null;
+  /** Card 186: departments are installed and /start still shows the wrap-up (credits, then the first job) until Go to your Desk. */
+  wrapUp: boolean }
+export const NO_SETUP: SetupState = { done: false, stage: "business", skipped: [], plans: {}, leaning: [], idea: null, offer: false, firstJob: null, wrapUp: false };
 const AGENT_ID = /^[a-z][a-z0-9_]{1,39}$/;
 export function readSetupState(raw: unknown, templateIds: readonly string[]): SetupState {
-  const r = (raw && typeof raw === "object" ? raw : {}) as { done?: unknown; stage?: unknown; skipped?: unknown; plans?: unknown; leaning?: unknown; idea?: unknown; offer?: unknown; firstJob?: unknown };
+  const r = (raw && typeof raw === "object" ? raw : {}) as { done?: unknown; stage?: unknown; skipped?: unknown; plans?: unknown; leaning?: unknown; idea?: unknown; offer?: unknown; firstJob?: unknown; wrapUp?: unknown };
   const l = readLeaning(r.leaning ?? [], templateIds);
   const fj = (r.firstJob && typeof r.firstJob === "object" ? r.firstJob : {}) as { agentId?: unknown; at?: unknown };
   const firstJob = typeof fj.agentId === "string" && AGENT_ID.test(fj.agentId) && typeof fj.at === "string" && !Number.isNaN(Date.parse(fj.at)) ? { agentId: fj.agentId, at: fj.at } : null;
-  return { done: r.done === true, stage: readStage(r.stage), skipped: readSkipped(r.skipped), plans: readPlans(r.plans), leaning: "leaning" in l ? l.leaning : [], idea: storedIdea(r.idea, templateIds), offer: r.offer === true, firstJob };
+  return { done: r.done === true, stage: readStage(r.stage), skipped: readSkipped(r.skipped), plans: readPlans(r.plans), leaning: "leaning" in l ? l.leaning : [], idea: storedIdea(r.idea, templateIds), offer: r.offer === true, firstJob, wrapUp: r.wrapUp === true && r.done === true && r.offer === true };
 }
 
 /**
