@@ -47,6 +47,8 @@ assert.match(CHOICE_WORDS.hosted.line, /plus 20%/, "the price says the margin fr
 const start = readFileSync("app/start/page.tsx", "utf8");
 assert.match(start, /const keyed = claudeReady\(claude\)/, "setup step 1 opens with either option");
 assert.doesNotMatch(start, /First, Avery needs a Claude key/, "setup no longer demands a key");
+assert.match(start, /inUse\(claude\) === "hosted" \? extensions\.HostedClaude : null/, "on OPERATOR's Claude, setup says what's free and what needs credits");
+assert.match(start, /href="\/connections\?claude=own#claude"/, "the own-key option stays one tap away once setup is free");
 assert.match(readFileSync("dashboard/data.ts", "utf8"), /h\.claude = h\.web = claudeReady\(await claudeState\(\)\)/, "health counts hosted Claude");
 const choice = readFileSync("dashboard/components/claudeChoice.tsx", "utf8");
 assert.match(choice, /extensions\.HostedClaude/, "the hosted option comes only from the slot");

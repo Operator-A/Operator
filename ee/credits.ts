@@ -12,7 +12,7 @@ import type { Billing } from "@/core/cost-rules";
 import { stripe } from "./stripe";
 import { currentPlan } from "./plan";
 import { planBlockFor } from "./plan-rules";
-import { balanceOf, creditFromSession, isPack, packReturn, mayUsePooledKey, runCharge, type PaidSession } from "./credit-rules";
+import { balanceOf, creditFromSession, isPack, packReturn, mayUsePooledKey, runCharge, setupFreeLeft, setupRunCharge, type PaidSession } from "./credit-rules";
 
 export const LEDGER_MISSING = "The credits migration (20261224090000_ee_credit_ledger.sql) isn’t applied yet.";
 const missing = (m: string) => (/ee_credit_ledger|relation|schema cache/.test(m) ? LEDGER_MISSING : m);
@@ -34,18 +34,38 @@ export async function creditRows(limit = 8): Promise<{ kind: "pack" | "run"; amo
   return (data ?? []).map((r) => ({ kind: r.kind as "pack" | "run", amount_usd: Number(r.amount_usd), created_at: r.created_at as string }));
 }
 
-/** The pooledKey slot: the hosted key, only for a business with a plan that allows runs and enough credits. */
-export async function pooledKey(): Promise<string | null> {
-  if (!creditsReady()) return null;
-  const [balance, plan] = await Promise.all([creditBalance(), currentPlan()]);
-  const planBlocked = planBlockFor(plan, { kind: "run", agentId: "", trigger: "manual" }) !== null;
-  return mayUsePooledKey({ balance, planBlocked, keySet: true }) ? hostedKey() : null;
+/**
+ * What is left of the free setup allowance (card 162): setup messages' model cost so far, from
+ * agent_runs, against SETUP_FREE_USD, and nothing once setup is done. `except` leaves one run out
+ * (the run being charged, whose cost is already written). A read that fails counts as none left.
+ */
+export async function setupFree(except?: string): Promise<number> {
+  // imported here: core/setup reaches the runner, which reaches the Claude client and these slots
+  const { inSetup } = await import("@/core/setup");
+  if (!(await inSetup())) return 0;
+  let q = db().from("agent_runs").select("cost_usd").eq("trigger", "setup").limit(10_000);
+  if (except) q = q.neq("id", except);
+  const { data, error } = await q;
+  if (error) return 0;
+  return setupFreeLeft({ inSetup: true, setupSpentUsd: (data ?? []).reduce((t, r) => t + (Number(r.cost_usd) || 0), 0) });
 }
 
-/** The afterRun slot: a run on credits is charged its cost plus the margin, once per run (run_id is unique). */
+/** The pooledKey slot: the hosted key, only for a business with a plan that allows runs and enough credits, or free setup left. */
+export async function pooledKey(): Promise<string | null> {
+  if (!creditsReady()) return null;
+  const [balance, plan, free] = await Promise.all([creditBalance(), currentPlan(), setupFree()]);
+  const planBlocked = planBlockFor(plan, { kind: "run", agentId: "", trigger: "manual" }) !== null;
+  return mayUsePooledKey({ balance, planBlocked, keySet: true, setupFreeLeft: free }) ? hostedKey() : null;
+}
+
+/**
+ * The afterRun slot: a run on credits is charged its cost plus the margin, once per run (run_id is
+ * unique). A setup message is charged only for what its cost goes past the free setup left before it.
+ */
 export async function chargeRun(run: { runId: string; costUsd: number; billing: Billing }): Promise<void> {
   if (run.billing !== "credits") return;
-  const charge = runCharge(run.costUsd);
+  const { data: row } = await db().from("agent_runs").select("trigger").eq("id", run.runId).maybeSingle();
+  const charge = row?.trigger === "setup" ? setupRunCharge(run.costUsd, await setupFree(run.runId)) : runCharge(run.costUsd);
   if (!charge) return;
   const { error } = await db().from("ee_credit_ledger").insert({ kind: "run", amount_usd: -charge, cost_usd: run.costUsd, run_id: run.runId });
   if (error && !/duplicate|unique/i.test(error.message)) throw new Error(missing(error.message));

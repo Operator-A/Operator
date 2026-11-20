@@ -8,7 +8,7 @@ import { checkSignup, codeHash, newCode, normalCode, slugFor } from "./signup-ru
 import { formEncode, ourStatus, rowFromSubscription, trialEndFor, validSignature } from "./stripe-rules";
 import { PLAN, monthlyUsd, planBlockFor, planState, planWords, type Subscription } from "./plan-rules";
 import type { PlanAsk } from "../core/extension-types";
-import { MIN_BALANCE_USD, PACKS_USD, balanceOf, creditBlock, creditFromSession, creditWords, isPack, mayUsePooledKey, packProblem, packReturn, runCharge, usdWords } from "./credit-rules";
+import { MIN_BALANCE_USD, PACKS_USD, balanceOf, creditBlock, creditFromSession, creditWords, isPack, mayUsePooledKey, packProblem, packReturn, runCharge, SETUP_FREE_USD, setupFreeLeft, setupRunCharge, usdWords } from "./credit-rules";
 import { billingFor } from "../core/cost-rules";
 
 const now = Date.parse("2026-12-01T12:00:00Z");
@@ -190,11 +190,11 @@ assert.match(creditWords({ billing: "own_key", balance: 3 }), /your own Claude k
 {
   const credits = readFileSync("ee/credits.ts", "utf8");
   assert.doesNotMatch(credits, /core\/vault|core\/gateway|callWriteTool|callMcpTool|\.delete\(|\.update\(|\.upsert\(/, "credits only add ledger rows: no vault, gateway, tool, change or delete");
-  assert.deepEqual([...credits.matchAll(/db\(\)\.from\("(\w+)"\)/g)].map((m) => m[1]).filter((t, i, a) => a.indexOf(t) === i).sort(), ["ee_credit_ledger", "orgs"], "credits read only their ledger and whether the org exists");
+  assert.deepEqual([...credits.matchAll(/db\(\)\.from\("(\w+)"\)/g)].map((m) => m[1]).filter((t, i, a) => a.indexOf(t) === i).sort(), ["agent_runs", "ee_credit_ledger", "orgs"], "credits read only their ledger, whether the org exists, and setup runs' cost (free setup, card 162)");
   assert.match(credits, /process\.env\.OPERATOR_CLAUDE_KEY/, "the hosted key is one setting");
   assert.deepEqual(readdirSync("ee").filter((f) => f !== "check.ts" && /\.tsx?$/.test(f) && /OPERATOR_CLAUDE_KEY/.test(readFileSync(`ee/${f}`, "utf8"))), ["credits.ts"], "only ee/credits.ts reads the hosted key");
   assert.ok(credits.indexOf("if (run.billing !== \"credits\") return;") < credits.indexOf(".insert({ kind: \"run\""), "only a credit run is charged");
-  assert.match(credits, /mayUsePooledKey\(\{ balance, planBlocked, keySet: true \}\) \? hostedKey\(\) : null/, "the hosted key only with a balance and a plan");
+  assert.match(credits, /mayUsePooledKey\(\{ balance, planBlocked, keySet: true, setupFreeLeft: free \}\) \? hostedKey\(\) : null/, "the hosted key only with a plan, and a balance or free setup left");
   const mig = readFileSync("supabase/migrations/20261224090000_ee_credit_ledger.sql", "utf8");
   assert.match(mig, /stripe_session_id text unique/, "a pack is added once per Checkout session");
   assert.match(mig, /run_id uuid unique/, "a run is charged once");
@@ -202,6 +202,31 @@ assert.match(creditWords({ billing: "own_key", balance: 3 }), /your own Claude k
   const claude = readFileSync("integrations/anthropic.ts", "utf8");
   assert.ok(claude.indexOf("if (own) return") < claude.indexOf("await pooledKey()"), "a business's own key is used before the hosted one");
   assert.match(claude, /if \(edition\(\) === "open"\) throw new Error\(NO_CLAUDE_KEY\)/, "the open edition never asks for a hosted key");
+}
+
+// free setup (card 162, Zak 2026-11-20): setup messages are free up to SETUP_FREE_USD while in setup; after setup, credits
+assert.equal(SETUP_FREE_USD, 2);
+assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: 0 }), 2);
+assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: 0.75 }), 1.25);
+assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: 5 }), 0, "never below zero");
+assert.equal(setupFreeLeft({ inSetup: false, setupSpentUsd: 0 }), 0, "nothing free once setup is done");
+assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: Number.NaN }), 0, "a spend that can't be read leaves nothing free");
+assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: -3 }), 2, "a negative spend never adds to the allowance");
+assert.equal(setupRunCharge(0.05, 1), 0, "inside the allowance: free");
+assert.equal(setupRunCharge(0.05, 0.03), 0.024, "only the part past the allowance, plus 20%");
+assert.equal(setupRunCharge(0.05, 0), 0.06, "allowance used up: the full charge");
+assert.equal(setupRunCharge(Number.NaN, 0), 0);
+assert.equal(creditBlock({ billing: "credits", trigger: "setup", balance: 0, setupFreeLeft: 0.5 }), null, "a setup message with free setup left runs with no credits");
+assert.ok(creditBlock({ billing: "credits", trigger: "setup", balance: 0, setupFreeLeft: 0 }), "free setup used up: buy credits");
+for (const t of ["cron", "manual", "chain", "preview"]) assert.ok(creditBlock({ billing: "credits", trigger: t, balance: 0, setupFreeLeft: 2 }), `free setup never pays for a ${t} run`);
+assert.ok(mayUsePooledKey({ balance: 0, planBlocked: false, keySet: true, setupFreeLeft: 1 }), "free setup gets the hosted key");
+assert.ok(!mayUsePooledKey({ balance: 0, planBlocked: true, keySet: true, setupFreeLeft: 1 }), "not when the plan pauses runs");
+assert.ok(!mayUsePooledKey({ balance: 0, planBlocked: false, keySet: true, setupFreeLeft: 0 }));
+{
+  const credits = readFileSync("ee/credits.ts", "utf8");
+  assert.match(credits, /\.eq\("trigger", "setup"\)/, "only setup messages count toward free setup");
+  assert.match(credits, /row\?\.trigger === "setup" \? setupRunCharge\(run\.costUsd, await setupFree\(run\.runId\)\)/, "a setup run is charged only past the allowance left before it");
+  assert.match(readFileSync("ee/plan.ts", "utf8"), /setupFreeLeft: free/, "the run check lets a free setup message through");
 }
 
 // where Stripe comes back to after a pack (card 162): a fixed list, never an address from the form

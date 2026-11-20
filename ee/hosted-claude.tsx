@@ -6,21 +6,25 @@ import "server-only";
 import type { ReturnPlace } from "@/core/extension-types";
 import { stripeReady } from "./stripe";
 import { buyCredits } from "./billing-actions";
-import { creditBalance, creditsReady } from "./credits";
-import { MIN_BALANCE_USD, PACKS_USD, usdWords } from "./credit-rules";
+import { creditBalance, creditsReady, setupFree } from "./credits";
+import { MIN_BALANCE_USD, PACKS_USD, SETUP_FREE_USD, usdWords } from "./credit-rules";
 import { CREDITS_MARGIN } from "@/core/cost-rules";
 
-export async function HostedClaude({ back, owner, query }: { back: ReturnPlace; owner: boolean; query: Readonly<Record<string, string | undefined>> }) {
+export async function HostedClaude({ back, owner, query, compact }: { back: ReturnPlace; owner: boolean; query: Readonly<Record<string, string | undefined>>; compact?: boolean }) {
   const balance = await creditBalance().then((b) => ({ b, problem: null as string | null }), (e: unknown) => ({ b: 0, problem: e instanceof Error ? e.message : String(e) }));
+  const free = await setupFree().catch(() => 0);
   const ready = stripeReady() && creditsReady();
   const enough = balance.b >= MIN_BALANCE_USD;
+  const margin = Math.round((CREDITS_MARGIN - 1) * 100);
+  const line = balance.problem ?? (enough
+    ? <>You have <b>{usdWords(balance.b)}</b> of Claude credits. Each run is charged its model price plus {margin}%, and runs pause below {usdWords(MIN_BALANCE_USD)}.</>
+    : free > 0
+      ? <>Setting up is free: Avery’s setup conversation is on OPERATOR, up to {usdWords(SETUP_FREE_USD)} of Claude ({usdWords(free)} left). Once your company is set up, buy credits to put your crew to work.</>
+      : <>Buy a pack of credits to put your crew to work. Each run is charged its model price plus {margin}%. Credits never expire.</>);
+  if (compact) return <span style={{ fontSize: 13.5 }}>{line}</span>;
   return (
     <div className="stack" style={{ gap: 10 }}>
-      <span style={{ fontSize: 14 }}>
-        {balance.problem ?? (enough
-          ? <>You have <b>{usdWords(balance.b)}</b> of Claude credits. Each run is charged its model price plus {Math.round((CREDITS_MARGIN - 1) * 100)}%, and runs pause below {usdWords(MIN_BALANCE_USD)}.</>
-          : <>Buy a pack of credits to start. Each run is charged its model price plus {Math.round((CREDITS_MARGIN - 1) * 100)}%; a setup conversation usually costs a few cents. Credits never expire.</>)}
-      </span>
+      <span style={{ fontSize: 14 }}>{line}</span>
       {query.credits === "added" && !enough && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--mint-soft)", color: "var(--mint-ink)" }}>Thanks, your credits are on the way. They can take a minute to arrive: refresh this page.</span>}
       {query.credits_problem && <span className="soft-box" role="alert" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{query.credits_problem.slice(0, 200)}</span>}
       {owner ? (ready ? (
@@ -29,7 +33,7 @@ export async function HostedClaude({ back, owner, query }: { back: ReturnPlace; 
             <form key={p} action={buyCredits}>
               <input type="hidden" name="pack" value={p} />
               <input type="hidden" name="back" value={back} />
-              <button className={enough ? "btn ghost sm" : "btn dark sm"}>Buy ${p}</button>
+              <button className={enough || free > 0 ? "btn ghost sm" : "btn dark sm"}>Buy ${p}</button>
             </form>
           ))}
         </div>

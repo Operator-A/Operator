@@ -31,10 +31,11 @@ export interface Extensions {
   /**
    * The hosted Claude option (card 162): the credit balance, the price and the buttons to buy credits,
    * shown on setup step 1 and Connections > Claude when the founder picks OPERATOR's Claude. Server
-   * component; back says where Stripe comes back to after a pack is paid. null: no hosted Claude, so
+   * component; back says where Stripe comes back to after a pack is paid; compact shows one line, no
+   * buttons. Free setup (a setup conversation on OPERATOR, up to a limit) is said here too. null: no hosted Claude, so
    * only the own-key option is offered (the open edition).
    */
-  HostedClaude: ComponentType<{ back: ReturnPlace; owner: boolean; query: Readonly<Record<string, string | undefined>> }> | null;
+  HostedClaude: ComponentType<{ back: ReturnPlace; owner: boolean; query: Readonly<Record<string, string | undefined>>; compact?: boolean }> | null;
   /** The sign-up page at /signup, given its query. null: no sign-up, /signup is not found (the open edition). */
   SignupPage: ComponentType<{ query: Readonly<Record<string, string | undefined>> }> | null;
   /**
