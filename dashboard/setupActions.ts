@@ -2,7 +2,7 @@
 // First-run setup actions (card 151, docs/setup.md). Each checks the login and role again. A message to
 // Avery makes real model calls, so it also needs DASHBOARD_CONTROLS=on, like her chat.
 import { revalidatePath } from "next/cache";
-import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, removeFact, setStage, setupState, type SetupAnswer } from "@/core/setup";
+import { addFact, askSetup, confirmFact, editFact, ensureAvery, finishSetup, inSetup, removeFact, setStage, setupState, skipCategory, type SetupAnswer } from "@/core/setup";
 import { isStage } from "@/core/setup-rules";
 import { readPick } from "@/core/company-rules";
 import { companyChart } from "./company";
@@ -12,7 +12,7 @@ import { audit } from "@/core/audit";
 import { installTemplates } from "@/core/install";
 import { saveSettingsFields } from "@/core/settings";
 import { askFor } from "@/core/connector-requests";
-import { routeUnlisted } from "@/core/tools-step-rules";
+import { isCategory, routeUnlisted } from "@/core/tools-step-rules";
 import { asRole } from "./data";
 import { controlsOn } from "./session";
 import type { ActionResult } from "./actions";
@@ -31,6 +31,18 @@ export async function setupGo(stage: string): Promise<ActionResult> {
     if (!(await inSetup())) return { ok: false, text: "Setup is finished for this business." };
     await setStage(stage);
     return done("");
+  } catch (e) { return fail(e); }
+}
+
+/** The tools step (card 182): this part of the company waits. Saved, so the flow moves to the next question. */
+export async function setupSkipTool(cat: string): Promise<ActionResult & { href?: string }> {
+  const { no } = await asRole("approver"); if (no) return no;
+  if (!isCategory(cat)) return { ok: false, text: "Unknown part of the company." };
+  try {
+    if (!(await inSetup())) return { ok: false, text: "Setup is finished for this business." };
+    await skipCategory(cat);
+    revalidatePath("/start");
+    return { ok: true, href: "/start", text: "Left for later. Tap its box any time to connect it." };
   } catch (e) { return fail(e); }
 }
 

@@ -119,10 +119,56 @@ export function neededBy(picked: readonly TemplateTools[], needsOf: (toolId: str
 export const waitingOn = (t: TemplateTools, needsOf: (toolId: string) => readonly string[], connected: ReadonlySet<ToolTileId>) =>
   tilesFor(t, needsOf).filter((id) => !connected.has(id));
 
-/** Where Connect sends the founder back to. Only "start" is a place; anything else is Connections, so it can't become an open redirect. */
+/**
+ * The tools step asks one question per part of the company (card 182, docs/setup.md): the question, one
+ * line on what connecting it gets the founder, the tools that answer it today, and the line shown once
+ * one is connected. Nobody types which department a category feeds: that comes from the tiles' needs.
+ */
+export const CATEGORY_IDS = ["store", "site", "money", "list", "inbox"] as const;
+export type CategoryId = (typeof CATEGORY_IDS)[number];
+export interface ToolCategory { id: CategoryId; area: string; question: string; value: string; ready: string; tiles: readonly ToolTileId[] }
+export const TOOL_CATEGORIES: readonly ToolCategory[] = [
+  { id: "store", area: "Store", question: "Where do you sell?", value: "Your agents read orders, products and stock, and tell you what sold in plain words.", ready: "Your agents can see your orders, products and stock.", tiles: ["shopify"] },
+  { id: "site", area: "Website", question: "How do you track your website?", value: "Know where visitors come from and where they drop off.", ready: "Visits and conversions go into your summaries.", tiles: ["analytics"] },
+  { id: "money", area: "Books", question: "Where does the money live?", value: "Your bookkeeper categorizes every charge and matches the receipts.", ready: "Your books can start from your real transactions.", tiles: ["mercury"] },
+  { id: "list", area: "Email marketing", question: "What do you use for email marketing?", value: "Campaigns get drafted from what sold best. You press send.", ready: "Your lists and past campaigns are in reach.", tiles: ["klaviyo"] },
+  { id: "inbox", area: "Inbox", question: "What do you use for email?", value: "Receipts get matched from your inbox, and emails you approve wait in your Drafts.", ready: "Receipts can be matched from your inbox.", tiles: ["gmail"] },
+];
+export const isCategory = (c: unknown): c is CategoryId => typeof c === "string" && (CATEGORY_IDS as readonly string[]).includes(c);
+export const categoryOfTile = (tile: unknown): CategoryId | null => TOOL_CATEGORIES.find((c) => (c.tiles as readonly unknown[]).includes(tile))?.id ?? null;
+/** The tile a sign-in belongs to: its own, or its second one (Gmail drafts). */
+export const tileOfMcp = (mcp: string): ToolTileId | null => TOOL_TILES.find((t) => t.mcp === mcp || t.also?.mcp === mcp)?.id ?? null;
+
+/** The order the questions are asked in: parts a leaned-toward department needs first, then the rest, each in list order. */
+export function orderCategories(needed: ReadonlySet<ToolTileId>): ToolCategory[] {
+  const wanted = (c: ToolCategory) => c.tiles.some((t) => needed.has(t));
+  return [...TOOL_CATEGORIES.filter(wanted), ...TOOL_CATEGORIES.filter((c) => !wanted(c))];
+}
+
+/** The categories the founder skipped, as stored: only real ones, each once. */
+export function readSkipped(raw: unknown): CategoryId[] {
+  return Array.isArray(raw) ? CATEGORY_IDS.filter((c) => raw.includes(c)) : [];
+}
+
+export type CategoryState = "connected" | "skipped" | "open";
+export function categoryState(c: ToolCategory, connected: ReadonlySet<ToolTileId>, skipped: readonly CategoryId[]): CategoryState {
+  return c.tiles.some((t) => connected.has(t)) ? "connected" : skipped.includes(c.id) ? "skipped" : "open";
+}
+
+/** The question on screen: the one asked for, else the first still open, else none (every part is connected or skipped). */
+export function currentCategory(order: readonly ToolCategory[], connected: ReadonlySet<ToolTileId>, skipped: readonly CategoryId[], asked: unknown): ToolCategory | null {
+  return order.find((c) => c.id === asked) ?? order.find((c) => categoryState(c, connected, skipped) === "open") ?? null;
+}
+
+/**
+ * Where Connect sends the founder back to. Only "start" is a place; anything else is Connections, so it
+ * can't become an open redirect. From setup it comes back to the question the tool answers.
+ */
 export const BACK_COOKIE = "op_conn_back";
 export function backTarget(from: string | null | undefined, id: string): string {
-  return from === "start" ? "/start" : `/connections?c=${encodeURIComponent(id)}`;
+  if (from !== "start") return `/connections?c=${encodeURIComponent(id)}`;
+  const tile = tileOfMcp(id);
+  return tile ? `/start?c=${tile}` : "/start";
 }
 
 /**

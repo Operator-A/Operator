@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { MCP_SERVERS } from "../core/mcp-rules";
 import { TEMPLATES } from "../core/templates";
 import { TOOLS } from "../core/tools/catalog";
-import { NEED_TILE, SCOPE_WORDS, TOOL_TILES, backTarget, neededBy, permissionsOf, routeUnlisted, tilesFor, waitingOn, type TemplateTools } from "../core/tools-step-rules";
+import { readSetupState } from "../core/setup-rules";
+import { CATEGORY_IDS, NEED_TILE, SCOPE_WORDS, TOOL_CATEGORIES, TOOL_TILES, backTarget, categoryOfTile, categoryState, currentCategory, orderCategories, readSkipped, tileOfMcp, type ToolTileId, neededBy, permissionsOf, routeUnlisted, tilesFor, waitingOn, type TemplateTools } from "../core/tools-step-rules";
 
 const read = (f: string) => readFileSync(f, "utf8");
 const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[id]?.needs ?? [];
@@ -40,13 +41,54 @@ assert.deepEqual(waitingOn(tpl("finance"), needsOf, new Set(["shopify"])), ["mer
 assert.deepEqual(waitingOn(tpl("email-marketing"), needsOf, new Set(["klaviyo"])), ["shopify"], "the Campaign writer still waits on Shopify");
 
 // Connect from setup comes back to setup; nothing else is a place
-assert.equal(backTarget("start", "mercury"), "/start");
+assert.equal(backTarget("start", "mercury"), "/start?c=mercury", "back to the question the tool answers");
+assert.equal(backTarget("start", "gmail_read"), "/start?c=gmail");
+assert.equal(backTarget("start", "gmail"), "/start?c=gmail", "the drafts sign-in belongs to the Gmail tile");
+assert.equal(backTarget("start", "ga4"), "/start?c=analytics");
+assert.equal(backTarget("start", "notion"), "/start", "a sign-in with no tile comes back to setup's saved step");
 assert.equal(backTarget("https://evil.example", "mercury"), "/connections?c=mercury");
 assert.equal(backTarget("//evil.example", "klaviyo"), "/connections?c=klaviyo");
 assert.equal(backTarget(null, "klaviyo"), "/connections?c=klaviyo");
 const connect = read("app/(room)/connections/[id]/connect/route.ts");
 assert.match(connect, /searchParams\.get\("from"\) === "start"/, "the connect route takes from=start only");
 assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookies\.get\(BACK_COOKIE\)\?\.value === "start"/, "the callback trusts only its own cookie");
+
+// one question per part of the company (card 182)
+{
+  const built = TOOL_TILES.filter((t) => t.mcp).map((t) => t.id);
+  for (const id of built) assert.equal(TOOL_CATEGORIES.filter((c) => c.tiles.includes(id)).length, 1, `${id} answers exactly one question`);
+  for (const c of TOOL_CATEGORIES) {
+    assert.ok(c.question.endsWith("?") && c.value && c.ready && c.area, `${c.id}: a question, what it gets you, and the line once connected`);
+    assert.ok(c.value.length <= 110, `${c.id}: value in few words`);
+    for (const t of c.tiles) assert.ok(TOOL_TILES.some((x) => x.id === t), `${c.id}: ${t} is a tile`);
+  }
+  assert.deepEqual(TOOL_CATEGORIES.map((c) => c.id), [...CATEGORY_IDS]);
+  assert.equal(categoryOfTile("mercury"), "money");
+  assert.equal(categoryOfTile("nope"), null);
+  assert.equal(tileOfMcp("gmail"), "gmail");
+  assert.equal(tileOfMcp("mercury_write"), null, "a gateway-only sign-in is no tile");
+  // order: what a leaned-toward department needs comes first, the rest keep list order
+  assert.deepEqual(orderCategories(new Set()).map((c) => c.id), [...CATEGORY_IDS]);
+  assert.deepEqual(orderCategories(new Set(["mercury", "klaviyo"] as const)).map((c) => c.id), ["money", "list", "store", "site", "inbox"]);
+  // skipped: only real categories, each once
+  assert.deepEqual(readSkipped(["inbox", "nope", "inbox", "store", 3]), ["store", "inbox"]);
+  assert.deepEqual(readSkipped("store"), []);
+  assert.deepEqual(readSetupState({ skipped: ["site", "x"] }, []).skipped, ["site"]);
+  // the question on screen
+  const order = orderCategories(new Set());
+  const cur = (connected: ToolTileId[], skipped: string[], asked?: unknown) => currentCategory(order, new Set(connected), readSkipped(skipped), asked)?.id ?? null;
+  assert.equal(cur([], []), "store", "the first open one");
+  assert.equal(cur(["shopify"], ["site"]), "money", "connected and skipped ones are answered");
+  assert.equal(cur(["shopify"], [], "store"), "store", "one asked for shows even when answered");
+  assert.equal(cur([], [], "nope"), "store", "an unknown one is ignored");
+  assert.equal(cur(["shopify", "analytics", "mercury"], ["list", "inbox"]), null, "every part connected or skipped: none");
+  assert.equal(categoryState(order[0], new Set(["shopify"] as const), ["store"]), "connected", "connected wins over skipped");
+  const acts = read("dashboard/setupActions.ts");
+  assert.match(acts, /export async function setupSkipTool[\s\S]{0,140}asRole\("approver"\)[\s\S]{0,80}isCategory\(cat\)/, "skipping checks the role, then the category");
+  const page = read("app/start/page.tsx");
+  assert.ok(!page.includes("ToolTileCard"), "the tile grid is gone");
+  assert.match(page, /isCategory\(sp\.q\) \? sp\.q : categoryOfTile\(sp\.c\)/, "the page only takes a category from the list");
+}
 
 // a tool that isn't listed: a tile, a built-in, a known server, or a request; never a link or a model
 assert.deepEqual(routeUnlisted("Shopify"), { kind: "tile", id: "shopify", name: "Shopify" });

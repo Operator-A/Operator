@@ -11,6 +11,7 @@ import { STAGES, STAGE_WORDS, nextStage, prevStage, stageProgress, type Stage } 
 import { SetupChat, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
 import { Icon } from "@/dashboard/components/Icon";
 import { toolsStep, type TileView } from "@/dashboard/toolsStep";
+import { categoryOfTile, categoryState, currentCategory, isCategory, orderCategories, type CategoryId, type ToolCategory } from "@/core/tools-step-rules";
 import { KeyForm, ActionButton } from "@/dashboard/components/client";
 import { companyChart } from "@/dashboard/company";
 import { initialPick } from "@/core/company-rules";
@@ -19,7 +20,7 @@ import { claudeState } from "@/dashboard/claude";
 import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
 import { extensions } from "@/core/extensions";
 import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
-import { sendSetup, setupGo, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupStartEmpty, setupToolAsk } from "@/dashboard/setupActions";
+import { sendSetup, setupGo, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupSkipTool, setupStartEmpty, setupToolAsk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
 import { billing } from "@/dashboard/cost";
 
@@ -37,7 +38,7 @@ const LIGHT: Record<Stage, [string, string, string]> = {
   first: ["translate(30vw,28vh)", "translate(-26vw,-30vh)", "translate(-6vw,-4vh) scale(1.2)"],
 };
 
-export default async function Setup({ searchParams }: { searchParams: Promise<{ c?: string; connected?: string; problem?: string; claude?: string; credits?: string; credits_problem?: string }> }) {
+export default async function Setup({ searchParams }: { searchParams: Promise<{ c?: string; q?: string; connected?: string; problem?: string; claude?: string; credits?: string; credits_problem?: string }> }) {
   const sp = await searchParams;
   const me = await requireSession();
   if (!(await inSetup())) redirect("/");
@@ -54,10 +55,16 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const open = tiles.find((t) => t.tile.id === sp.c) ?? null;
   const chart = companyChart(state.leaning, connected, await billing());
   const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected && open ? { ok: true, text: `${open.tile.name} is connected.` } : null;
+  // the tools step (card 182): one question per part of the company, the ones a leaned-toward department needs first
+  const order = orderCategories(new Set(tiles.filter((t) => t.neededBy.length).map((t) => t.tile.id)));
+  const cat = currentCategory(order, connected, state.skipped, isCategory(sp.q) ? sp.q : categoryOfTile(sp.c));
+  const catState = cat ? categoryState(cat, connected, state.skipped) : null;
+  const catTile = cat ? tiles.find((t) => cat.tiles.includes(t.tile.id) && t.state === "connected") ?? null : null;
+  const allAsked = !order.some((c) => categoryState(c, connected, state.skipped) === "open");
   const stage = state.stage, at = STAGES.indexOf(stage);
   const talked = (history ?? []).length > 0;
   const back = prevStage(stage), next = nextStage(stage);
-  const nextLabel = stage === "business" ? (talked ? "Next: your tools" : "Skip to tools") : stage === "tools" ? (connected.size ? "Next: your company" : "Skip for now") : "Next: your first job";
+  const nextLabel = stage === "business" ? (talked ? "Next: your tools" : "Skip to tools") : stage === "tools" ? (allAsked ? "Show me my company" : "Skip the rest") : "Next: your first job";
 
   return (
     <div className="wg">
@@ -110,20 +117,66 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
         )}
 
         {state.stage === "tools" && (
-          <section key="tools" className="wg-glass wg-card wg-enter" aria-labelledby="tools-h">
-            <h1 id="tools-h" className="wg-h1" style={{ fontSize: 30 }}>Connect your tools</h1>
-            <span className="wg-lead">Your agents see the business for themselves. Each tool asks only for what its agents read, and you can skip any of them for now.</span>
-            {note && <span className="soft-box" role="status" style={{ fontSize: 13, background: note.ok ? "var(--mint-soft)" : "var(--red-soft)", color: note.ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{note.text}</span>}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
-              {tiles.map((t) => <ToolTileCard key={t.tile.id} t={t} on={open?.tile.id === t.tile.id} />)}
+          <div key="tools" className="wg-stage">
+            <div className="wg-col l">{order.slice(0, 2).map((c, i) => <PartBox key={c.id} c={c} i={i} now={cat?.id === c.id} tiles={tiles} skipped={state.skipped} />)}</div>
+            <div className="wg-center stack" style={{ gap: 12 }}>
+              {note && !note.ok && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{note.text}</span>}
+              {!cat ? (
+                <section key="all" className="wg-glass wg-card wg-enter" aria-labelledby="tools-h">
+                  <h1 id="tools-h" className="wg-h1" style={{ fontSize: 30 }}>That’s what I needed.</h1>
+                  <span className="wg-lead">{connected.size ? `${connected.size} of ${order.length} parts of your company are connected.` : "Nothing is connected yet."} Anything left for later starts working the day you connect it. Tap a box to change it.</span>
+                </section>
+              ) : (
+                <section key={`${cat.id}-${catState}-${open?.tile.id ?? ""}`} className="wg-glass wg-card wg-enter" aria-labelledby="tools-h">
+                  <span className="wg-eyebrow">{order.indexOf(cat) + 1} of {order.length} · {cat.area}</span>
+                  {catState === "connected" && catTile ? (
+                    <>
+                      <span className="pill sm" style={{ alignSelf: "flex-start", background: "var(--mint-soft)", color: "var(--mint-ink)" }}>Connected</span>
+                      <h1 id="tools-h" className="wg-h1" style={{ fontSize: 28 }}>{catTile.tile.name} is connected.</h1>
+                      <span className="wg-lead">{cat.ready}{catTile.who ? <> Signed in as <b>{catTile.who}</b>.</> : ""}{catTile.tile.id === "mercury" ? " If that isn’t your business, change it on Connections." : ""}</span>
+                      {catTile.tile.also && catTile.also && !catTile.also.connected && (
+                        <div className="stack rule" style={{ gap: 6, paddingTop: 12 }}>
+                          <b style={{ fontSize: 14 }}>{catTile.tile.also.label}{catTile.neededBy.length ? ` (needed for ${catTile.neededBy.join(", ")})` : ""}</b>
+                          <span className="sub">{catTile.tile.also.why} Sign in to the same mailbox.</span>
+                          {owner && <div><a className="btn outline sm" href={`/connections/${catTile.tile.also.mcp}/connect?from=start`}>Connect {catTile.tile.also.label}</a></div>}
+                        </div>
+                      )}
+                      <div><Link className="btn dark" href="/start">{order.some((c) => categoryState(c, connected, state.skipped) === "open") ? "Next" : "Done"}</Link></div>
+                    </>
+                  ) : open && cat.tiles.includes(open.tile.id) ? (
+                    <>
+                      <ToolPanel t={open} owner={owner} shopifyDomain={shopifyDomain} />
+                      <div><Link className="btn outline sm" href={`/start?q=${cat.id}`} scroll={false}>Back</Link></div>
+                    </>
+                  ) : (
+                    <>
+                      <h1 id="tools-h" className="wg-h1" style={{ fontSize: "clamp(26px, 4vw, 32px)" }}>{cat.question}</h1>
+                      <span className="wg-lead">{cat.value}</span>
+                      <div className="stack" style={{ gap: 10 }}>
+                        {tiles.filter((t) => cat.tiles.includes(t.tile.id)).map((t) => (
+                          <Link key={t.tile.id} className="wg-opt" href={`/start?q=${cat.id}&c=${t.tile.id}`} scroll={false}>
+                            <span className="row" style={{ gap: 10 }}><Icon name={t.tile.icon} size={16} /><b style={{ fontSize: 16 }}>{t.tile.name}</b></span>
+                            <span className="ink2" style={{ fontSize: 13 }}>{t.state === "paused" ? "Paused: reconnect" : t.state === "coming" ? "Coming soon" : "Connect, read-only"}</span>
+                          </Link>
+                        ))}
+                      </div>
+                      <details>
+                        <summary className="ink2" style={{ fontSize: 14, cursor: "pointer" }}>Something else?</summary>
+                        <div className="stack" style={{ gap: 8, paddingTop: 10 }}>
+                          <span className="sub">Tell Avery its name. If it has its own server you can add it by address; if not, it goes on the list of connections to build.</span>
+                          {owner ? <UnlistedTool ask={setupToolAsk} /> : <span className="sub">An owner of this business connects tools.</span>}
+                        </div>
+                      </details>
+                      {catState === "open"
+                        ? <div><ActionButton className="btn outline sm" action={setupSkipTool.bind(null, cat.id)} follow>Skip for now</ActionButton></div>
+                        : <span className="sub">Left for later. It starts working the day you connect it.</span>}
+                    </>
+                  )}
+                </section>
+              )}
             </div>
-            {open && <ToolPanel t={open} owner={owner} shopifyDomain={shopifyDomain} />}
-            <div className="stack rule" style={{ gap: 8, paddingTop: 12 }}>
-              <b style={{ fontSize: 14 }}>A tool that isn’t listed?</b>
-              <span className="sub">Tell Avery its name. If it has its own server you can add it by address; if not, it goes on the list of connections to build.</span>
-              {owner ? <UnlistedTool ask={setupToolAsk} /> : <span className="sub">An owner of this business connects tools.</span>}
-            </div>
-          </section>
+            <div className="wg-col r">{order.slice(2).map((c, i) => <PartBox key={c.id} c={c} i={i + 2} now={cat?.id === c.id} tiles={tiles} skipped={state.skipped} />)}</div>
+          </div>
         )}
 
         {state.stage === "company" && (
@@ -158,7 +211,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
 
         <StageNav go={setupGo}
           back={back ? { stage: back, label: "Back" } : null}
-          next={next ? { stage: next, label: nextLabel, quiet: stage === "business" && !talked } : null} />
+          next={next ? { stage: next, label: nextLabel, quiet: (stage === "business" && !talked) || (stage === "tools" && !allAsked) } : null} />
       </main>
     </div>
   );
@@ -171,18 +224,20 @@ const STATE_WORD: Record<TileView["state"], { text: string; bg: string; fg: stri
   coming: { text: "Coming next", bg: "var(--soft)", fg: "var(--mut)" },
 };
 
-function ToolTileCard({ t, on }: { t: TileView; on: boolean }) {
-  const w = STATE_WORD[t.state];
+/** One part of the company beside the question (card 182): open, being asked, connected, or left for later. */
+function PartBox({ c, i, now, tiles, skipped }: { c: ToolCategory; i: number; now: boolean; tiles: TileView[]; skipped: readonly CategoryId[] }) {
+  const mine = tiles.filter((t) => c.tiles.includes(t.tile.id));
+  const on = mine.find((t) => t.state === "connected");
+  const needed = [...new Set(mine.flatMap((t) => t.neededBy))];
+  const st = on ? "on" : now ? "now" : skipped.includes(c.id) ? "skip" : "wait";
+  const pill = { on: ["Connected", "var(--mint-soft)", "var(--mint-ink)"], now: ["Now", "#E4E7FF", "#2A2F86"], skip: ["Later", "var(--soft)", "var(--ink2)"], wait: ["Open", "var(--soft)", "var(--ink2)"] }[st];
   return (
-    <Link href={on ? "/start" : `/start?c=${t.tile.id}`} scroll={false} className="card" aria-current={on ? "true" : undefined} style={{ gap: 10, padding: 14, textDecoration: "none", color: "var(--ink)", outline: on ? "2px solid var(--ink)" : undefined }}>
-      <span className="row" style={{ gap: 10 }}>
-        <span style={{ width: 36, height: 36, borderRadius: 11, background: "var(--soft)", display: "grid", placeItems: "center", flex: "none" }}><Icon name={t.tile.icon} size={16} /></span>
-        <span style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}><span style={{ fontSize: 15, fontWeight: 600 }}>{t.tile.name}</span><span className="muted" style={{ fontSize: 12 }}>{t.tile.gives}</span></span>
+    <Link href={`/start?q=${c.id}`} scroll={false} aria-current={now ? "step" : undefined} className={`wg-glass wg-node wg-pop ${st}`} style={{ animationDelay: `${0.1 + i * 0.12}s` }}>
+      <span className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "nowrap" }}>
+        <b style={{ fontSize: 16, letterSpacing: "-.01em" }}>{on ? on.tile.name : c.area}</b>
+        <span className="pill sm" style={{ background: pill[1], color: pill[2], flex: "none" }}>{pill[0]}</span>
       </span>
-      <span className="row wrap" style={{ gap: 6 }}>
-        <span className="pill sm" style={{ background: w.bg, color: w.fg }}>{w.text}</span>
-        {t.neededBy.length > 0 && t.state !== "connected" && <span className="pill sm" style={{ background: "var(--yel-soft)", color: "var(--yel-ink)" }}>Needed for {t.neededBy.join(", ")}</span>}
-      </span>
+      <span className="ink2" style={{ fontSize: 13, lineHeight: 1.45 }}>{on ? `${c.area}. ${on.who ?? c.ready}` : st === "skip" ? "Starts the day you connect it." : needed.length ? `Needed for ${needed.join(", ")}` : c.question}</span>
     </Link>
   );
 }

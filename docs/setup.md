@@ -87,25 +87,36 @@ is untrusted data. It never chooses a recipient, URL, product or category, and t
 
 ## Connect your tools
 
-Step 2 (card 152) has a tile for Shopify, Mercury, Klaviyo, Gmail and Google Analytics (our own
-read-only server, card 152b, `docs/mcp-everywhere.md`). The tiles, their steps and what each
-permission is for are in `core/tools-step-rules.ts`. When the Analytics sign-in sees more than one
+Step 2 asks one question per part of the company (card 182; the first version was a grid of tiles,
+card 152). The parts are `TOOL_CATEGORIES` in `core/tools-step-rules.ts`: Store (Shopify), Website
+(Google Analytics, our own read-only server, card 152b, `docs/mcp-everywhere.md`), Books (Mercury),
+Email marketing (Klaviyo) and Inbox (Gmail). Each has its question, one line on what connecting it
+gets the founder, and the line shown once it is connected. The tools themselves, their steps and what
+each permission is for are still `TOOL_TILES`. When the Analytics sign-in sees more than one
 property, the panel asks which one agents report on.
 
-- **Needed for.** A tile is marked "Needed for Finance" when a department Avery leans toward has a
-  tool whose `needs` names it (`SHOPIFY_CONNECTED` and so on, `NEED_TILE`). Nobody types it.
+- **The question.** One on screen at a time, in the middle, with the five parts as boxes around it
+  (under it on a phone): open, being asked, connected with the account's name, or left for later.
+  Tapping a box goes to its question. Which one is on screen is worked out in code
+  (`currentCategory`): the one asked for (`?q=`, or the tool in `?c=`), else the first still open.
+- **The order.** Parts that a department Avery leans toward needs come first (`orderCategories`);
+  the box says "Needed for Finance" from the tools' `needs` (`SHOPIFY_CONNECTED` and so on,
+  `NEED_TILE`). Nobody types it.
+- **Skip for now** is saved (`skipped` in the setup state, `setupSkipTool`), so the next question
+  comes up and the box says Later. When every part is connected or skipped, the card says so and Next
+  reads "Show me my company".
 - **The panel.** Numbered steps, then what each permission is for (from the profile's scopes,
   `SCOPE_WORDS`), then the Connect button or, for Shopify, the store's address and the read-only key.
   Gmail also offers the drafts sign-in once the read-only one is connected.
 - **Back to setup.** Connect from here goes to `/connections/<id>/connect?from=start`. The route
   takes only `start` and keeps it in its own short-lived cookie; the callback returns to
-  `/start` (which opens on the saved step) only when that cookie says so. Anything else returns to Connections, so it can't
+  `/start?c=<the tool>` (the question that tool answers, on the saved step) only when that cookie says so. Anything else returns to Connections, so it can't
   become an open redirect.
 - **A tool that isn't listed?** The founder types its name and code routes it (`routeUnlisted`): a
   tile opens, a built-in opens on Connections, a known server opens Add a server with its address
   filled in, and anything else becomes a connection request (`askFor`). No model call, and nothing is
   connected.
-- **Skip for now.** Step 3 shows the tools each department still waits on. It installs anyway and
+- **Left for later.** Step 3 shows the tools each department still waits on. It installs anyway and
   starts working once they're connected.
 
 ## Your company

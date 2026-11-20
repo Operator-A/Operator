@@ -38,8 +38,8 @@ assert.match((readLeaning([{ id: SETUP_TEMPLATE, fit: "strong" }], deptIds) as {
 assert.match((readLeaning([{ id: deptIds[0], fit: "perfect" }], deptIds) as { problem: string }).problem, /strong or likely/);
 assert.match((readLeaning([{ id: deptIds[0], fit: "strong" }, { id: deptIds[0], fit: "likely" }], deptIds) as { problem: string }).problem, /twice/);
 assert.match((readLeaning(Array.from({ length: MAX_LEANING + 1 }, () => ({ id: deptIds[0], fit: "strong" })), deptIds) as { problem: string }).problem, /at most/);
-assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, stage: "business", leaning: [], offer: false, firstJob: null }, "a stored list with a bad id is dropped, not trusted");
-assert.deepEqual(readSetupState(null, deptIds), { done: false, stage: "business", leaning: [], offer: false, firstJob: null });
+assert.deepEqual(readSetupState({ done: true, leaning: [{ id: "nope", fit: "strong" }] }, deptIds), { done: true, stage: "business", skipped: [], leaning: [], offer: false, firstJob: null }, "a stored list with a bad id is dropped, not trusted");
+assert.deepEqual(readSetupState(null, deptIds), { done: false, stage: "business", skipped: [], leaning: [], offer: false, firstJob: null });
 
 // one guided flow (card 181): the step is kept in the setup state, and only a step on the list counts
 assert.deepEqual([...STAGES], ["business", "tools", "company", "first"]);

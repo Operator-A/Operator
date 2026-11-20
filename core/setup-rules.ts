@@ -1,6 +1,8 @@
 // First-run setup, step 1 (card 151, docs/setup.md): the founder tells Avery about the business, and
 // code keeps what she learned as business facts the founder can correct. Pure, so check:setup can test it.
 
+import { readSkipped, type CategoryId } from "@/core/tools-step-rules";
+
 /** What a fact is about. The order is the order of the "What I've learned so far" panel. */
 export const FACT_TOPICS = ["business", "sells", "customers", "channels", "goals", "hand_off", "other"] as const;
 export type FactTopic = (typeof FACT_TOPICS)[number];
@@ -81,15 +83,15 @@ export const stageProgress = (s: Stage): number => Math.round(((STAGES.indexOf(s
  * The setup state kept in policies (key "setup"). `offer`: setup installed departments, so the Desk offers
  * a first job (card 154); `firstJob`: which agent started it and when.
  */
-export interface SetupState { done: boolean; stage: Stage; leaning: Leaning[]; offer: boolean; firstJob: { agentId: string; at: string } | null }
-export const NO_SETUP: SetupState = { done: false, stage: "business", leaning: [], offer: false, firstJob: null };
+export interface SetupState { done: boolean; stage: Stage; skipped: CategoryId[]; leaning: Leaning[]; offer: boolean; firstJob: { agentId: string; at: string } | null }
+export const NO_SETUP: SetupState = { done: false, stage: "business", skipped: [], leaning: [], offer: false, firstJob: null };
 const AGENT_ID = /^[a-z][a-z0-9_]{1,39}$/;
 export function readSetupState(raw: unknown, templateIds: readonly string[]): SetupState {
-  const r = (raw && typeof raw === "object" ? raw : {}) as { done?: unknown; stage?: unknown; leaning?: unknown; offer?: unknown; firstJob?: unknown };
+  const r = (raw && typeof raw === "object" ? raw : {}) as { done?: unknown; stage?: unknown; skipped?: unknown; leaning?: unknown; offer?: unknown; firstJob?: unknown };
   const l = readLeaning(r.leaning ?? [], templateIds);
   const fj = (r.firstJob && typeof r.firstJob === "object" ? r.firstJob : {}) as { agentId?: unknown; at?: unknown };
   const firstJob = typeof fj.agentId === "string" && AGENT_ID.test(fj.agentId) && typeof fj.at === "string" && !Number.isNaN(Date.parse(fj.at)) ? { agentId: fj.agentId, at: fj.at } : null;
-  return { done: r.done === true, stage: readStage(r.stage), leaning: "leaning" in l ? l.leaning : [], offer: r.offer === true, firstJob };
+  return { done: r.done === true, stage: readStage(r.stage), skipped: readSkipped(r.skipped), leaning: "leaning" in l ? l.leaning : [], offer: r.offer === true, firstJob };
 }
 
 /**
