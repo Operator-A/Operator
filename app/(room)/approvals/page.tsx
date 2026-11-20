@@ -93,7 +93,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
   const inDept = (i: ApprovalItem) => !dept || (dept === "none" ? !i.department_id : i.department_id === dept);
   const view = all && { ...all, pending: all.pending.filter(inDept), withLead: all.withLead.filter(inDept), waiting: all.waiting.filter(inDept), decided: all.decided.filter(inDept) };
   const controls = controlsOn();
-  const blocker = !controls ? "DASHBOARD_CONTROLS is off" : await writeBlocker();
+  const blocker = !controls ? "Real runs are off on this OPERATOR" : await writeBlocker();
   const quinnOn = !!f.agents.bookkeeper?.enabled;
   const live = !blocker && quinnOn;
   // what a Reject with words can save to or replace, per agent with a card waiting
@@ -210,7 +210,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
             <div className="card" style={{ gap: 10 }}>
               <div className="card-h">
                 <span className="card-t">Approved, not applied yet ({view.waiting.length})</span>
-                <ActionButton className="btn dark sm" disabled={!controls} title={!controls ? "DASHBOARD_CONTROLS is off" : undefined} action={applyWaiting}
+                <ActionButton className="btn dark sm" disabled={!controls} title={!controls ? "Real runs are off on this OPERATOR" : undefined} action={applyWaiting}
                   confirm={{ title: "Apply approved changes?", body: "Each one is checked again first: a Mercury change against Mercury, a Gmail draft against the leads list. Each runs as its agent, so it’s skipped while that agent is off duty.", confirmLabel: "Apply now" }}>Apply now</ActionButton>
               </div>
               {view.waiting.map((i) => (

@@ -152,7 +152,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
             <div className="row wrap" style={{ gap: 8 }}>
               <DryRun action={dryRun.bind(null, a.id)} />
               <ActionButton className="btn dark" action={realRun.bind(null, a.id)} disabled={!controls || !row || st === "running"} busyLabel="Starting…"
-                title={!controls ? "Real runs need DASHBOARD_CONTROLS=on" : st === "running" ? `${a.name} is working. One run at a time.` : undefined}
+                title={!controls ? "Real runs are off on this OPERATOR" : st === "running" ? `${a.name} is working. One run at a time.` : undefined}
                 confirm={{ title: `Run ${a.name} for real?`, body: row?.enabled ? `${a.name} reads real data and writes: ${a.writes}. Shows in Runs.` : `${a.name} is off duty, so this run is logged as skipped at $0.`, lines: [{ k: "Expected cost", v: row?.enabled ? a.estCostLabel ?? "?" : "$0" }, { k: "Spent today", v: `${m4(f.spentToday[a.id] ?? 0)} of ${m2(row?.daily_budget_usd ?? 0)}` }, ...((f.grants[a.id] ?? []).includes("gmail_draft_lead") && !f.health.gmail ? [{ k: "Note", v: "Gmail isn’t connected, so drafts land in Notion only." }] : [])], confirmLabel: "Run for real", kind: "dark" }}>
                 {st === "running" ? <><span className="dot pulse" style={{ background: "var(--acc)" }} />Working…</> : realLabel}
               </ActionButton>
@@ -162,7 +162,7 @@ function HeroFull({ a, f, controls }: { a: CrewMember; f: Floor; controls: boole
               <Icon name="chevron-right" size={15} style={{ opacity: 0.5 }} />
             </Link>
             <span style={{ fontSize: 12.5 }} className="ink2">{combined(a, row)}</span>
-            {!controls && <span className="sub">Real runs are off here until DASHBOARD_CONTROLS=on. Dry runs always work.</span>}
+            {!controls && <span className="sub">Real runs are off on this OPERATOR. Dry runs always work.</span>}
           </>
       </div>
     </div>

@@ -32,7 +32,7 @@ export function VendorForm({ add, controls }: { add: (f: { name: string; kind: s
       <div className="row wrap" style={{ gap: 8 }}>
         <input className="input" style={{ flex: 2, minWidth: 200 }} placeholder="Mercury recipient id (optional for now)" value={f.mercuryRecipientId} onChange={(e) => setF({ ...f, mercuryRecipientId: e.target.value })} />
         <input className="input" style={{ flex: 1, minWidth: 160 }} placeholder="Contact email (optional)" value={f.contactEmail} onChange={(e) => setF({ ...f, contactEmail: e.target.value })} />
-        <button className="btn dark sm" disabled={busy || !controls || !f.name.trim()} title={controls ? "Adds the payee. A first payment to it always waits for you." : "Needs DASHBOARD_CONTROLS=on"} onClick={() => run(() => add(f), () => setF({ name: "", kind: "importer", mercuryRecipientId: "", contactEmail: "" }))}>Add vendor</button>
+        <button className="btn dark sm" disabled={busy || !controls || !f.name.trim()} title={controls ? "Adds the payee. A first payment to it always waits for you." : "Needs real runs switched on for this OPERATOR"} onClick={() => run(() => add(f), () => setF({ name: "", kind: "importer", mercuryRecipientId: "", contactEmail: "" }))}>Add vendor</button>
       </div>
       {toast}
     </div>
@@ -76,7 +76,7 @@ export function CapForm({ c, controls, save }: { c: CapLine; controls: boolean; 
         {c.unit === "usd" && <span className="muted">$</span>}
         <input className="input" type="number" min={0} step={c.unit === "usd" ? "0.01" : "1"} style={{ width: 96 }} value={v} aria-label={c.label} onChange={(e) => setV(e.target.value)} />
         <button className="btn dark sm" disabled={busy || !changed || past || (looser && !controls)}
-          title={past ? bounds : looser && !controls ? "Raising needs DASHBOARD_CONTROLS=on" : looser ? "Needs a confirm" : "Lowering applies right away"}
+          title={past ? bounds : looser && !controls ? "Raising needs real runs switched on for this OPERATOR" : looser ? "Needs a confirm" : "Lowering applies right away"}
           onClick={() => (looser ? setConfirm({ title: `Loosen ${c.label.toLowerCase()}?`, body: `${c.about} Every agent gets the new limit from the next check. ${bounds}.`, lines: [{ k: "Now", v: fmtCap(c, c.value) }, { k: "New", v: fmtCap(c, n) }], confirmLabel: "Save", kind: "dark" }) : go(false))}>
           {busy ? "Saving…" : "Save"}
         </button>

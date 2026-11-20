@@ -44,7 +44,7 @@ import { controlsOn } from "./session";
 
 export interface ActionResult { ok: boolean; text: string }
 
-const CONTROLS_OFF = "Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to allow this.";
+const CONTROLS_OFF = "Real runs are switched off on this OPERATOR. Whoever runs it can turn them on.";
 /** An agent with a live version, as the Control Room shows it (docs/agent-roster.md); null otherwise. */
 const crewAgent = async (id: string) => { const a = (await getFloor()).byId[id]; return a ?? null; };
 /** An agent's name, or its id when it isn't on the roster. */
@@ -246,7 +246,7 @@ export async function turnOffOrg(): Promise<ActionResult> {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Why approved actions can't be applied from here at all right now, or null. Each kind's own blocker (Mercury token, Gmail) is the gateway's to say. */
-const applyBlocker = () => (!controlsOn() ? "Approved, not applied yet: DASHBOARD_CONTROLS is off." : null);
+const applyBlocker = () => (!controlsOn() ? "Approved, not applied yet: real runs are switched off on this OPERATOR." : null);
 
 /** This deployment's own address, for a chain step's request to /api/agents. */
 async function selfOrigin() {

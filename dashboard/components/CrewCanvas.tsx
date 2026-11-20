@@ -315,7 +315,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
 
           <div className="row wrap" style={{ gap: 8 }}>
             <button className="btn ghost sm" disabled={busy} onClick={() => doPreview(chain)} title="Dry-runs each step on real data. No writes, no model, no cost, nothing logged.">Preview chain</button>
-            <button className="btn primary sm" disabled={busy || !saved || !d.controls} onClick={() => saved && runNow(saved)} title={!saved ? "Save the chain first" : !d.controls ? "DASHBOARD_CONTROLS is off" : "Real runs of the saved chain"}>Run chain</button>
+            <button className="btn primary sm" disabled={busy || !saved || !d.controls} onClick={() => saved && runNow(saved)} title={!saved ? "Save the chain first" : !d.controls ? "Real runs are off on this OPERATOR" : "Real runs of the saved chain"}>Run chain</button>
             <span style={{ flex: 1 }} />
             <button className="btn ghost sm" onClick={() => { change({ chains: draft.chains.filter((c) => c.key !== chain.key) }); setSel(null); }}>Delete chain</button>
           </div>
@@ -339,7 +339,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
       <div className="card" style={{ gap: 12 }}>
         <div className="card-h"><span className="card-t">Save</span><span className="sub" style={{ flex: 1 }}>Saves the whole canvas as a new flow version. You can roll back to any version.</span></div>
         {dirty && problems.length > 0 && <div className="card dashed" style={{ padding: 12, fontSize: 13 }}>{problems.join(" ")}</div>}
-        {dirty && looser.length > 0 && <span className="sub">Needs a confirm{d.controls ? "" : " and DASHBOARD_CONTROLS=on"}: {looser.join("; ")}.</span>}
+        {dirty && looser.length > 0 && <span className="sub">Needs a confirm{d.controls ? "" : " and real runs switched on for this OPERATOR"}: {looser.join("; ")}.</span>}
         <div className="row wrap" style={{ gap: 8 }}>
           <input className="input" style={{ flex: 1, minWidth: 200 }} placeholder="Why (shows in the version list)" value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} />
           <button className="btn dark sm" disabled={busy || !dirty || problems.length > 0 || !note.trim() || (looser.length > 0 && !d.controls)} onClick={save}>Save flow</button>

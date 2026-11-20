@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // Connections are the owner's (docs/tenancy.md, slice 2)
   if (!atLeast(me.role, "owner")) { back.searchParams.set("problem", refusal(me.role, "owner")); return NextResponse.redirect(back); }
   // a custom server is connected only with Controls on, like adding one
-  if (isCustomId(id) && !controlsOn()) { back.searchParams.set("problem", "Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to connect a custom server."); return NextResponse.redirect(back); }
+  if (isCustomId(id) && !controlsOn()) { back.searchParams.set("problem", "Real runs are switched off on this OPERATOR, so a custom server can’t be connected yet."); return NextResponse.redirect(back); }
   try {
     const { url, pending } = await startConnect(id, new URL(`/connections/${id}/callback`, req.url).toString());
     const res = NextResponse.redirect(url);

@@ -187,7 +187,7 @@ function Editor({ r, controls, orgOn, busy, onClose, onSave, onHand, onDuty }: {
 
         <div className="soft-box">
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>On duty</span><span className="sub">{r.enabled ? "Runs go through" : "Every run is skipped at $0"}{orgOn ? "" : " · the org switch turns everyone on at once"}</span></div>
-          <button type="button" className={"switch" + (r.enabled ? " on" : "")} aria-pressed={r.enabled} aria-label="On duty" disabled={busy || (!r.enabled && !controls)} title={!r.enabled && !controls ? "Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to allow this." : undefined} onClick={() => onDuty(!r.enabled)}><span /></button>
+          <button type="button" className={"switch" + (r.enabled ? " on" : "")} aria-pressed={r.enabled} aria-label="On duty" disabled={busy || (!r.enabled && !controls)} title={!r.enabled && !controls ? "Real runs are switched off on this OPERATOR. Whoever runs it can turn them on." : undefined} onClick={() => onDuty(!r.enabled)}><span /></button>
         </div>
 
         <fieldset style={{ border: 0, padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -218,7 +218,7 @@ function Editor({ r, controls, orgOn, busy, onClose, onSave, onHand, onDuty }: {
           ))}
         </div>
 
-        {blocked && <span className="sub">Giving {r.name} a schedule or moving it needs DASHBOARD_CONTROLS=on in Vercel.</span>}
+        {blocked && <span className="sub">Giving {r.name} a schedule or moving it waits until real runs are switched on for this OPERATOR.</span>}
         <div className="row wrap" style={{ justifyContent: "space-between", gap: 8 }}>
           {scheduled ? <button type="button" className="btn ghost" onClick={onHand} disabled={busy}>Make it by hand only</button> : <span />}
           <div className="row" style={{ gap: 8 }}>

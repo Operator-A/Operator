@@ -43,8 +43,8 @@ export function AddServerForm({ add, warning, controls, start: init }: { add: (n
         <label className="row" style={{ gap: 8, fontSize: 13.5 }}><input id="custom-auth-key" type="radio" name="custom-auth" checked={auth === "key"} onChange={() => setAuth("key")} />With a key the service gave you</label>
       </fieldset>
       <span className="row wrap" style={{ gap: 8, alignItems: "center" }}>
-        <button className="btn dark sm" disabled={!controls || busy || !name.trim() || !url.trim()} title={!controls ? "DASHBOARD_CONTROLS is off" : undefined} onClick={() => setOpen(true)}>{busy ? "Checking the address…" : "Add server"}</button>
-        {!controls && <span className="muted" style={{ fontSize: 12 }}>Adding a server needs DASHBOARD_CONTROLS=on in Vercel.</span>}
+        <button className="btn dark sm" disabled={!controls || busy || !name.trim() || !url.trim()} title={!controls ? "Real runs are off on this OPERATOR" : undefined} onClick={() => setOpen(true)}>{busy ? "Checking the address…" : "Add server"}</button>
+        {!controls && <span className="muted" style={{ fontSize: 12 }}>Adding a server waits until real runs are switched on for this OPERATOR.</span>}
       </span>
       {open && <Modal c={confirm} busy={busy} onCancel={() => setOpen(false)} onGo={go} />}
       <Toast t={toast} onDone={() => setToast(null)} />
@@ -80,7 +80,7 @@ export function ScopesAndConnect({ id, offered, chosen, save, controls, again }:
         </>
       ) : <span className="muted" style={{ fontSize: 12.5 }}>The server doesn’t list scopes, so the sign-in asks for none by name. Check what its own page says before you say yes.</span>}
       <span className="row wrap" style={{ gap: 8 }}>
-        <button className="btn dark sm" disabled={!controls || busy} title={!controls ? "DASHBOARD_CONTROLS is off" : undefined} onClick={go}>{busy ? "Working…" : again ? "Sign in again" : "Connect"}</button>
+        <button className="btn dark sm" disabled={!controls || busy} title={!controls ? "Real runs are off on this OPERATOR" : undefined} onClick={go}>{busy ? "Working…" : again ? "Sign in again" : "Connect"}</button>
       </span>
       <Toast t={toast} onDone={() => setToast(null)} />
     </div>
@@ -106,7 +106,7 @@ export function ToolOnForm({ tool, inputs, initial, save, controls, editing }: {
   });
   if (!open) return (
     <>
-      <button className={`btn ${editing ? "outline" : "dark"} sm`} disabled={!controls} title={!controls ? "DASHBOARD_CONTROLS is off" : undefined} onClick={() => setOpen(true)}>{editing ? "Edit" : "Turn on"}</button>
+      <button className={`btn ${editing ? "outline" : "dark"} sm`} disabled={!controls} title={!controls ? "Real runs are off on this OPERATOR" : undefined} onClick={() => setOpen(true)}>{editing ? "Edit" : "Turn on"}</button>
       <Toast t={toast} onDone={() => setToast(null)} />
     </>
   );
@@ -162,7 +162,7 @@ export function GoalNumberForm({ tool, initial, save, stop, controls }: { tool: 
   const sid = tool.replace(/[^A-Za-z0-9_-]/g, "-");
   if (!open) return (
     <>
-      <button className="btn ghost sm" disabled={!controls} title={!controls ? "DASHBOARD_CONTROLS is off" : "Code calls it with its pinned inputs and reads one number for a goal"} onClick={() => setOpen(true)}>{initial ? "Edit goal number" : "Use as a goal number"}</button>
+      <button className="btn ghost sm" disabled={!controls} title={!controls ? "Real runs are off on this OPERATOR" : "Code calls it with its pinned inputs and reads one number for a goal"} onClick={() => setOpen(true)}>{initial ? "Edit goal number" : "Use as a goal number"}</button>
       {initial && <button className="btn ghost sm" disabled={busy || !controls} onClick={() => run(stop)}>Stop using as a goal number</button>}
       <Toast t={toast} onDone={() => setToast(null)} />
     </>

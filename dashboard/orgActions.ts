@@ -93,7 +93,7 @@ export async function placeAgent(agentId: string, seatId: string | null): Promis
 
 // ---- Department limits and rules (slice 2)
 
-const CONTROLS_OFF = "Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to allow this.";
+const CONTROLS_OFF = "Real runs are switched off on this OPERATOR. Whoever runs it can turn them on.";
 const SLUG = /^[a-z][a-z0-9_]{1,39}$/;
 
 /** A blank box means no department limit. */

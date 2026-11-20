@@ -13,7 +13,7 @@ export async function sendToAvery(raw: string): Promise<ChatAnswer> {
   const none = (reply: string): ChatAnswer => ({ ok: false, reply, notes: [], runId: null, costUsd: 0, kept: false });
   const { me, no } = await asRole("approver");
   if (no) return none(no.text);
-  if (!controlsOn()) return none("Controls are off, so I can’t answer: each message is a real model call. Set DASHBOARD_CONTROLS=on in Vercel.");
+  if (!controlsOn()) return none("Real runs are switched off on this OPERATOR, so I can’t answer: each message is a real model call. Whoever runs it can turn them on.");
   const m = cleanMessage(raw);
   if ("problem" in m) return none(m.problem);
   try {

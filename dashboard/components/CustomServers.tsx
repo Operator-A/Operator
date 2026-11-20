@@ -156,7 +156,7 @@ export function CustomDetail({ c, status, log, controls, note, usedBy }: { c: Cu
         ? <ScopesAndConnect id={c.id} offered={c.scopesOffered} chosen={c.scopes} save={customScopes.bind(null, c.id)} controls={controls} />
         : <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <KeyForm label={`${c.name} key`} save={customKey.bind(null, c.id)} placeholder="The key from the service" />
-            <span className="muted" style={{ fontSize: 12 }}>It’s sent only to {host(c.url)}, as a bearer token. {c.name} must accept it before it’s kept, and it’s never shown again.{controls ? "" : " Connecting needs DASHBOARD_CONTROLS=on."}</span>
+            <span className="muted" style={{ fontSize: 12 }}>It’s sent only to {host(c.url)}, as a bearer token. {c.name} must accept it before it’s kept, and it’s never shown again.{controls ? "" : " Connecting waits until real runs are switched on for this OPERATOR."}</span>
           </span>)}
 
       {st !== "new" && (
