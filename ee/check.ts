@@ -204,7 +204,7 @@ assert.match(creditWords({ billing: "own_key", balance: 3 }), /your own Claude k
   assert.match(claude, /if \(edition\(\) === "open"\) throw new Error\(NO_CLAUDE_KEY\)/, "the open edition never asks for a hosted key");
 }
 
-// free setup (card 162, Zak 2026-11-20): setup messages are free up to SETUP_FREE_USD while in setup; after setup, credits
+// free setup (card 162, decided 2026-11-20): setup messages are free up to SETUP_FREE_USD while in setup; after setup, credits
 assert.equal(SETUP_FREE_USD, 2);
 assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: 0 }), 2);
 assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: 0.75 }), 1.25);

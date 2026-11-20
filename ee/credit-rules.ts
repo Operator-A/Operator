@@ -27,7 +27,7 @@ export const balanceOf = (rows: readonly { amount_usd: number | string }[]): num
 const THINKS = new Set(["cron", "manual", "chain", "setup", "preview"]);
 
 /**
- * Free setup (card 162, Zak 2026-11-20): a business on OPERATOR's Claude talks to Avery in setup for
+ * Free setup (card 162, decided 2026-11-20): a business on OPERATOR's Claude talks to Avery in setup for
  * free, up to this much model cost (list price, before the margin), so it can set the business up
  * before buying credits. Only setup messages (trigger "setup") and only while the business is still
  * in setup; once setup is done every run needs credits.
