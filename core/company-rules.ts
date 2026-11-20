@@ -35,7 +35,21 @@ export interface CompanyDept {
   waitsOn: string[];
   /** What the founder planned for a tool it waits on (card 183), by tool name: a full sentence. */
   waitNotes: Record<string, string>;
+  /** Which of those tools the founder planned for (card 184), by tool name. */
+  waitKinds: Record<string, "guide" | "export">;
 }
+
+/** A department's status on the reveal (card 184), worked out in code: a plain wait outranks an export, an export outranks a guide. */
+export type DeptStatus = "ready" | "after" | "export" | "waiting";
+export const DEPT_STATUS_WORDS: Record<DeptStatus, string> = { ready: "Ready", after: "After setup", export: "From an export", waiting: "Waiting on a tool" };
+export function deptStatus(d: Pick<CompanyDept, "waitsOn" | "waitKinds">): DeptStatus {
+  if (!d.waitsOn.length) return "ready";
+  if (d.waitsOn.some((n) => !d.waitKinds[n])) return "waiting";
+  return d.waitsOn.some((n) => d.waitKinds[n] === "export") ? "export" : "after";
+}
+
+/** What a department adds to the month, summed in code over its agents; agents with no estimate are named, not counted as zero. */
+export const deptMonth = (d: Pick<CompanyDept, "agents">) => totalCost(d.agents.map((a) => ({ name: a.name, cost: a.cost })));
 
 /** The line under a department that waits on tools: plain ones wait for a connection, planned ones say the plan. */
 export function waitLine(waitsOn: readonly string[], notes: Readonly<Record<string, string>>): string {
@@ -66,6 +80,7 @@ export function companyDepts(templates: readonly Template[], o: {
   costOf: (template: Template, agentId: string, runsPerMonth: number) => MonthCost;
   waitsOn: Readonly<Record<string, readonly string[]>>;
   waitNotes?: Readonly<Record<string, string>>;
+  waitKinds?: Readonly<Record<string, "guide" | "export">>;
 }): CompanyDept[] {
   return templates.filter((t) => t.id !== o.setupTemplate).map((t) => ({
     id: t.id, name: t.name, about: t.about,
@@ -74,6 +89,7 @@ export function companyDepts(templates: readonly Template[], o: {
     openSeats: t.seats.filter((s) => s.holder === "open").map((s) => s.title),
     waitsOn: [...(o.waitsOn[t.id] ?? [])],
     waitNotes: Object.fromEntries((o.waitsOn[t.id] ?? []).filter((n) => o.waitNotes?.[n]).map((n) => [n, o.waitNotes![n]])),
+    waitKinds: Object.fromEntries((o.waitsOn[t.id] ?? []).filter((n) => o.waitKinds?.[n]).map((n) => [n, o.waitKinds![n]])),
   }));
 }
 

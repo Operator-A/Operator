@@ -8,7 +8,7 @@ import {
 import { businessLines } from "../core/business-rules";
 import { installRows, ontoSetup } from "../core/install-rules";
 import { mergeTemplates, templateProblems, type Template } from "../core/template-rules";
-import { agentsOf, companyDepts, companyTotals, initialPick, readPick, runsFor } from "../core/company-rules";
+import { DEPT_STATUS_WORDS, agentsOf, companyDepts, companyTotals, deptMonth, deptStatus, initialPick, readPick, runsFor } from "../core/company-rules";
 import { monthCost, runCost } from "../core/cost-rules";
 import { TEMPLATES } from "../core/templates";
 
@@ -141,6 +141,27 @@ const actions = read("dashboard/setupActions.ts");
 assert.match(actions, /export async function setupInstall[\s\S]*?readPick\([\s\S]*?installTemplates\(ids\)/, "install receives exactly the checked picks");
 assert.match(read("app/start/page.tsx"), /<CompanyChart /, "step 3 is the company chart");
 assert.doesNotMatch(read("dashboard/components/client.tsx"), /TemplatePicker/, "the old picker is gone");
+
+// ---- Meet your company (card 184): each department's status and month, worked out in code
+const ds = (waitsOn: string[], waitKinds: Record<string, "guide" | "export"> = {}) => deptStatus({ waitsOn, waitKinds });
+assert.equal(ds([]), "ready");
+assert.equal(ds(["Klaviyo"], { Klaviyo: "guide" }), "after", "planned for Avery to set up");
+assert.equal(ds(["Mercury"], { Mercury: "export" }), "export");
+assert.equal(ds(["Klaviyo", "Mercury"], { Klaviyo: "guide", Mercury: "export" }), "export", "an export outranks a guide");
+assert.equal(ds(["Klaviyo", "Shopify"], { Klaviyo: "guide" }), "waiting", "a tool with no plan outranks both");
+assert.deepEqual(Object.values(DEPT_STATUS_WORDS), ["Ready", "After setup", "From an export", "Waiting on a tool"]);
+const planned = companyDepts(TEMPLATES, { leaning: [], setupTemplate: "chief-of-staff", toolLabel: label, costOf: fake, waitsOn: { finance: ["Mercury"], "email-marketing": ["Klaviyo", "Shopify"] }, waitKinds: { Mercury: "export", Klaviyo: "guide", Gmail: "export" } });
+assert.deepEqual(planned.map((d) => [d.id, deptStatus(d)]), [["finance", "export"], ["prospecting", "ready"], ["email-marketing", "waiting"], ["store-analytics", "ready"]], "kinds only for tools the department waits on");
+assert.deepEqual(planned[0].waitKinds, { Mercury: "export" });
+const fm = deptMonth(fin);
+assert.ok(Math.abs(fm.month - fin.agents.reduce((s, a) => s + a.cost.month, 0)) < 1e-6, "a department's month is the sum of its agents");
+const unknownCost = monthCost({ run: runCost(null, null), cap: null, runsPerMonth: 4, billing: "own_key" });
+assert.deepEqual(deptMonth({ agents: [{ ...fin.agents[0], name: "X", cost: unknownCost }] }).unknown, ["X"], "an agent with no estimate is named, not counted as zero");
+const page184 = read("app/start/page.tsx");
+assert.match(page184, /Meet your company\./, "step 3 is the reveal");
+assert.match(page184, /back=\{setupGo\.bind\(null, "tools"\)\}/, "Change something goes back to the tools questions");
+assert.match(page184, /empty=\{<ActionButton[^>]*action=\{setupStartEmpty\}/, "Start empty stays, as a quiet link");
+assert.doesNotMatch(read("dashboard/components/setup.tsx"), /role="tree"/, "the old tree chart is gone");
 
 // the table: its topics are the code's
 const mig = readdirSync("supabase/migrations").find((f) => f.endsWith("_business_facts.sql"))!;
