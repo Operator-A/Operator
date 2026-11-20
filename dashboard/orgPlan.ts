@@ -1,4 +1,5 @@
-// What turning on the org does, worked out in code before the owner confirms it (docs/org-schedule.md).
+// Who works when the org is on, and what it costs a month, worked out in code (docs/org-schedule.md):
+// the first job's reply and the org switch summary on Crew > Schedule.
 // Pure: no database, so `npm run check:org-switch` tests it and the confirm and the action agree.
 import { DAY_RUNS, type Chain } from "@/core/flow-rules";
 import type { Schedule } from "./crew";
@@ -8,7 +9,7 @@ import { nextRuns } from "./schedule";
 export interface OrgMember {
   id: string;
   name: string;
-  /** agents.in_org: false for a test agent that turning on the org never wakes. */
+  /** agents.in_org: false for a test agent that never goes on duty with the org. */
   inOrg: boolean;
   /** What a run costs (core/cost-rules.ts runCost): real runs, else the estimate; null when unknown. */
   perRun: number | null;

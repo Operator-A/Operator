@@ -98,7 +98,7 @@ export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; con
             {!day.rows.length && <span className="sub">No agent is in the org yet.</span>}
           </div>
         </div>
-        {day.left.length > 0 && <span className="sub">Left out of the org (test): {day.left.join(", ")}. Turning on the org never wakes them.</span>}
+        {day.left.length > 0 && <span className="sub">Left out of the org (test): {day.left.join(", ")}. They never go on duty with the org.</span>}
       </section>
 
       {/* ---- what the org costs */}

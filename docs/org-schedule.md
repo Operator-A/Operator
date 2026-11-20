@@ -30,9 +30,12 @@ and per-agent control over when each agent runs and what that costs.
   on its own: the dispatcher (`app/api/dispatch`) starts no scheduled chain, the worker
   (`app/api/jobs`) skips any step of a chain not started with Run chain, and a decided approval starts no chain (`approvalDecided`). The Run button and Run
   chain still work for agents on duty, because the owner pressed them.
-- **Turn on the org** (Controls on + a confirm that lists who wakes, each first run and the cost a
-  month): every agent in the org goes on duty (`agents.enabled`), every chain whose agents are all
-  in the org is saved on (one new `crew_flow` version), and then the flag turns on, last.
+- **Turning it on (card 188, Nov 20):** there is no bulk Turn on the org any more. The org first
+  comes on with the first job (`startFirstJob`, docs/setup.md), which approves that agent's first
+  playbook. After Turn off, an owner can turn the switch back on (`turnOrgBackOn`), and no agent
+  wakes with it. Each agent goes on duty from its own page or the org's day (`setEnabled`), and
+  only with an approved playbook (`onDutyProblem` in `core/on-duty-rules.ts`; `check:on-duty`).
+  Decision 3 above now reads: the first job is launch.
 - **Turn off the org** (always allowed): the flag turns off first, then every agent goes off duty.
   Chains keep their on switch, so turning the org back on brings back the same day. This replaces
   Pause all in Settings.

@@ -53,6 +53,7 @@
     "check:speed": "npx --yes tsx scripts/check-speed.ts",
     "check:wording": "npx --yes tsx scripts/check-wording.ts",
     "check:time-zone": "npx --yes tsx scripts/check-time-zone.ts",
+    "check:on-duty": "npx --yes tsx scripts/check-on-duty.ts",
     "check:ee": "npx --yes tsx ee/check.ts",
     "check:all": "node scripts/check-all.mjs",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",

@@ -105,6 +105,6 @@ a model.
   key". On OPERATOR credits (card 128, slice 4) both numbers include the 20% margin. Until credits are
   built, every business is on its own key (`dashboard/cost.ts` `billing`).
 
-It shows on hire proposals and the Desk's proposal card, the org's day, turning on the org, the Crew
+It shows on hire proposals and the Desk's proposal card, the org's day, the org switch, the Crew
 canvas and the builder; setup's company chart (card 153) reads the same function. Tested by
 `npm run check:cost`.
