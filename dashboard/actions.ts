@@ -1,6 +1,7 @@
 "use server";
 // Control Room actions. Each one checks the signed-in member's role first (asRole, docs/tenancy.md). Anything that can spend money
 // or wake an agent also needs DASHBOARD_CONTROLS=on; stopping things never does.
+import { onDutyProblem } from "@/core/on-duty-rules";
 import { zoneLabel } from "@/core/time";
 import { audit } from "@/core/audit";
 import { headers } from "next/headers";
@@ -103,7 +104,12 @@ export async function setEnabled(agentId: string, on: boolean): Promise<ActionRe
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
   if (on && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
-  if (on) { const plan = await planBlock({ kind: "agent_on", agentIds: [agentId] }); if (plan) return { ok: false, text: plan }; }
+  if (on) {
+    // only with an approved playbook (card 188): no path puts an agent on duty without one
+    const problem = onDutyProblem(who.name, await listPlaybooks(agentId).catch(() => null));
+    if (problem) return { ok: false, text: problem };
+    const plan = await planBlock({ kind: "agent_on", agentIds: [agentId] }); if (plan) return { ok: false, text: plan };
+  }
   const { error } = await db().from("agents").update({ enabled: on }).eq("id", agentId);
   if (error) return fail(error.message);
   revalidatePath("/", "layout");
@@ -195,35 +201,18 @@ function firstJobPlan(f: Awaited<ReturnType<typeof getFloor>>, ids: readonly str
   return planOrgOn(f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: ids.includes(a.id), perRun: a.perRun ?? null })), chains, Date.now(), f.tz);
 }
 
-/** What turning on the org would do now: who wakes, first runs, chains, cost a month. */
-async function orgPlanNow() {
-  const f = await getFloor();
-  const flow = await loadFlow(f.palette);
-  const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, perRun: a.perRun ?? null }));
-  return { flow, tz: f.tz, plan: planOrgOn(members, flow.flow.chains, Date.now(), f.tz) };
-}
-
-export async function turnOnOrg(confirmed: boolean): Promise<ActionResult> {
+/**
+ * After Stop everything: the org switch back on (card 188). No agent wakes with it; each goes on duty
+ * from its own page (setEnabled), and only with an approved playbook. The first job turns it on first.
+ */
+export async function turnOrgBackOn(): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
-  if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} Turning on the org wakes the agents.` };
-  if (!confirmed) return { ok: false, text: "Confirm first: turning on the org wakes the agents." };
+  if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
   try {
-    // test agents must stay off: without agents.in_org there is no way to tell them apart
-    const probe = await db().from("agents").select("id, in_org").limit(1);
-    if (probe.error) return fail(/in_org/.test(probe.error.message) ? "Apply the org switch migration (20261128090000_org_switch.sql) first." : probe.error.message);
-    const { flow, plan, tz } = await orgPlanNow();
-    if (!plan.wake.length) return { ok: false, text: "No agent is in the org yet." };
-    const ids = plan.wake.map((w) => w.id);
-    const block = await planBlock({ kind: "agent_on", agentIds: ids }); if (block) return { ok: false, text: block };
-    const { error } = await db().from("agents").update({ enabled: true }).in("id", ids);
-    if (error) return fail(error.message);
-    if (plan.chainsOn.length) await saveFlowVersion({ chains: plan.chains }, `Turned on the org: ${plan.chainsOn.join(", ")} on`, me.email, flow.version);
-    // the switch last, so nothing starts before the agents and chains are ready
     await setOrg(true, me.email);
     revalidatePath("/", "layout");
-    const first = plan.wake.find((w) => w.firstRun);
-    await audit(me, "turn_on_org", null, { agents: ids.length });
-    return { ok: true, text: `The org is on. ${ids.length} agent${ids.length === 1 ? " is" : "s are"} on duty${first ? `; first up, ${first.name} at ${when(first.firstRun!, tz)} ${zoneLabel(tz, first.firstRun!)}` : ""}.` };
+    await audit(me, "turn_org_back_on");
+    return { ok: true, text: "The org is on. Put each agent back on duty from its page; one with an approved playbook can go now." };
   } catch (e) { return fail(e); }
 }
 

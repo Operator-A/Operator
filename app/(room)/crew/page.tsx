@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { previewChain, rollBackFlow, runChainNow, saveCrewFlow, setAgentTime, setEnabled, turnOffOrg, turnOnOrg } from "@/dashboard/actions";
+import { previewChain, rollBackFlow, runChainNow, saveCrewFlow, setAgentTime, setEnabled, turnOffOrg, turnOrgBackOn } from "@/dashboard/actions";
 import { orgDay } from "@/dashboard/orgDay";
 import { OrgDay } from "@/dashboard/components/OrgDay";
 import { planOrgOn } from "@/dashboard/orgPlan";
@@ -76,7 +76,7 @@ async function Schedule({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
   });
   return (
     <>
-      <OrgSwitch tz={f.tz} org={f.org} plan={plan} controls={controlsOn()} turnOn={turnOnOrg.bind(null, true)} turnOff={turnOffOrg} />
+      <OrgSwitch tz={f.tz} org={f.org} plan={plan} controls={controlsOn()} turnOn={turnOrgBackOn} turnOff={turnOffOrg} />
       <OrgDay day={day} controls={controlsOn()} orgOn={f.org.on} setTime={setAgentTime} setOn={setEnabled} />
       <details className="card" style={{ gap: 10 }}>
         <summary style={{ cursor: "pointer", fontSize: 14.5, fontWeight: 600 }}>Edit chains: hand-offs between agents</summary>

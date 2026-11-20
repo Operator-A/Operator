@@ -12,7 +12,7 @@ each slot has a do-nothing default in core:
 | --- | --- | --- |
 | `planBlock({ kind: "run" })` | before every run, after the on-duty and budget checks (`core/runs.ts`) | never blocks |
 | `planBlock({ kind: "invite" })` | an owner adds a person on Settings > People | never blocks |
-| `planBlock({ kind: "agent_on" })` | putting an agent back on duty, or turning on the org | never blocks |
+| `planBlock({ kind: "agent_on" })` | putting an agent on duty, or the first job | never blocks |
 | `planBlock({ kind: "custom_server" })` | adding a custom MCP server on Connections | never blocks |
 | `SettingsCards` | extra cards at the bottom of Settings | none |
 | `SignupPage` | the page at `/signup` | none, so `/signup` is not found |

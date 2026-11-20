@@ -1,12 +1,13 @@
-// The org switch at the top of Crew > Schedule (docs/org-schedule.md). Off: what turning it on
-// wakes, worked out in code (dashboard/orgPlan.ts), behind Controls and a confirm. On: one button
+// The org switch at the top of Crew > Schedule (docs/org-schedule.md). It first comes on with the
+// first job (card 188); no button wakes every agent at once. After a stop, the owner turns the switch
+// back on and puts agents on duty one at a time, each only with an approved playbook. On: one button
 // that stops everything, always allowed.
 import type { ActionResult } from "@/dashboard/actions";
 import type { OrgPlan } from "@/dashboard/orgPlan";
 import type { OrgState } from "@/core/org-switch";
 import { m2, when } from "@/dashboard/format";
-import { schedWords } from "@/dashboard/schedule";
 import { zoneLabel } from "@/core/time";
+import Link from "next/link";
 import { ActionButton } from "./client";
 import { Icon } from "./Icon";
 
@@ -28,9 +29,9 @@ export function OrgSwitch({ org, plan, controls, turnOn, turnOff, tz }: { tz: st
           <span style={{ fontSize: 13.5, color: "#C3C3CB", lineHeight: 1.5 }}>
             {org.on
               ? `${n} agent${n === 1 ? "" : "s"} in the org, ${scheduled.length} on a schedule${first ? `. Next: ${first.name}, ${when(first.firstRun!, tz)} ${zoneLabel(tz, first.firstRun!)}` : ""}. ${total[0].toUpperCase()}${total.slice(1)}.`
-              : n
-                ? `Nothing runs on its own. Turn it on and ${n} agent${n === 1 ? "" : "s"} go on duty${scheduled.length ? `, ${scheduled.length} of them on the schedule below` : ""}; ${total}.`
-                : "Nothing runs on its own, and no agent is in the org yet."}
+              : org.at
+                ? "Nothing runs on its own. Turn it back on, then put each agent on duty from its page once its playbook is approved."
+                : "Nothing runs on its own. The org comes on with your first job, on the Desk; then each agent goes on duty once you approve its playbook."}
           </span>
         </div>
       </div>
@@ -40,21 +41,14 @@ export function OrgSwitch({ org, plan, controls, turnOn, turnOff, tz }: { tz: st
             confirm={{ title: "Turn off the org?", body: "Every agent goes off duty and nothing runs on its own. Anything you start is skipped and logged at $0. Turning it back on brings back the same schedule.", confirmLabel: "Turn off the org", kind: "danger" }}>
             Turn off the org
           </ActionButton>
-        ) : (
-          <ActionButton className="btn primary" action={turnOn} disabled={!controls || !n}
+        ) : org.at ? (
+          <ActionButton className="btn primary" action={turnOn} disabled={!controls}
             title={!controls ? "Real runs are switched off on this OPERATOR. Whoever runs it can turn them on." : undefined}
-            confirm={{
-              title: "Turn on the org?",
-              body: `This is launch. ${n} agent${n === 1 ? " goes" : "s go"} on duty${plan.chainsOn.length ? ` and ${plan.chainsOn.length === 1 ? "a chain turns" : `${plan.chainsOn.length} chains turn`} on` : ""}. Each run still checks its daily and department budget. Turning it off stops everything at once.`,
-              lines: [
-                ...plan.wake.map((w) => ({ k: w.name, v: w.firstRun ? `${schedWords(w.schedule)} · first ${when(w.firstRun, tz)} · ${w.perRun == null ? "cost unknown" : `${perMonth(w.perMonth)} a month`}` : "By hand only · $0 unless you press Run" })),
-                ...(plan.left.length ? [{ k: "Stays off", v: `${plan.left.map((x) => x.name).join(", ")} (test)` }] : []),
-                { k: "A month", v: total },
-              ],
-              confirmLabel: "Turn on the org",
-            }}>
-            Turn on the org
+            confirm={{ title: "Turn the org back on?", body: "No agent wakes with it. Put each one back on duty from its page; only an agent with an approved playbook can go.", confirmLabel: "Turn the org back on" }}>
+            Turn the org back on
           </ActionButton>
+        ) : (
+          <Link href="/" className="btn primary">Start your first job</Link>
         )}
         {!org.on && !controls && <span style={{ fontSize: 12, color: "#C3C3CB" }}>Needs real runs switched on</span>}
         {org.on && org.at && <span style={{ fontSize: 12, color: "#C3C3CB" }}>On since {when(org.at, tz)} {zoneLabel(tz, org.at)}</span>}

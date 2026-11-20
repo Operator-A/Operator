@@ -34,7 +34,7 @@ export interface CrewMember {
   schedule?: Schedule;
   /** Runs only by hand (agents.manual_only). */
   manualOnly?: boolean;
-  /** agents.in_org: false for a test agent that turning on the org never wakes (docs/org-schedule.md). */
+  /** agents.in_org: false for a test agent that never goes on duty with the org (docs/org-schedule.md). */
   inOrg?: boolean;
   /** What a run costs (core/cost-rules.ts runCost): its real average, else the estimate; null when unknown. */
   perRun?: number | null;
