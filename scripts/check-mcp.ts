@@ -540,7 +540,7 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
 // ---- The business's own Claude key (docs/tenancy.md, slice 8.1c)
 {
   const anth = readFileSync("integrations/anthropic.ts", "utf8");
-  assert.match(anth, /const own = await claudeKey\(\);\n\s+if \(!own\) throw new Error\(NO_CLAUDE_KEY\);\n\s+return new Anthropic\(\{ apiKey: own \}\);/, "every business uses its own Claude key, or the run is refused");
+  assert.match(anth, /const own = await claudeKey\(\);\n\s+if \(own\) return new Anthropic\(\{ apiKey: own \}\);\n\s+if \(edition\(\) === "open"\) throw new Error\(NO_CLAUDE_KEY\);\n\s+const pooled = await pooledKey\(\);\n\s+if \(!pooled\) throw new Error\(NO_CREDITS\);\n\s+return new Anthropic\(\{ apiKey: pooled \}\);/, "a business's own Claude key first; on the hosted edition, its credits through the paid layer (card 128 slice 4); otherwise the run is refused");
   assert.doesNotMatch(anth, /new Anthropic\(\)|HOME_ORG_ID|ANTHROPIC_API_KEY/, "no business falls back to the app's key (card 135)");
   const save = mcpSrc.slice(mcpSrc.indexOf("export async function saveClaudeKey"), mcpSrc.indexOf("export async function removeClaudeKey"));
   assert.ok(save.includes("id: CLAUDE_KEY_ID, secret: await sealSecret({ key } satisfies KeySecret)") && save.includes('await logEvent(CLAUDE_KEY_ID, "connected", "Claude API key", [key]);'), "the Claude key is sealed in the vault and never logged");

@@ -8,6 +8,8 @@ import { checkSignup, codeHash, newCode, normalCode, slugFor } from "./signup-ru
 import { formEncode, ourStatus, rowFromSubscription, trialEndFor, validSignature } from "./stripe-rules";
 import { PLAN, monthlyUsd, planBlockFor, planState, planWords, type Subscription } from "./plan-rules";
 import type { PlanAsk } from "../core/extension-types";
+import { MIN_BALANCE_USD, PACKS_USD, balanceOf, creditBlock, creditFromSession, creditWords, isPack, mayUsePooledKey, runCharge, usdWords } from "./credit-rules";
+import { billingFor } from "../core/cost-rules";
 
 const now = Date.parse("2026-12-01T12:00:00Z");
 const DAY = 86_400_000;
@@ -140,4 +142,66 @@ assert.match(readFileSync("ee/billing-actions.ts", "utf8"), /^"use server";/);
   assert.match(readFileSync("ee/signup-page.tsx", "utf8"), /if \(!adminOrgId\(\)\)/, "/signup says when sign-up is closed");
 }
 
-console.log("check:ee ok (plan, trial, grace, comped, Stripe signatures and rows, sign-up codes)");
+// Managed Claude credits (card 128 slice 4): who pays, a run's charge, the balance, and buying a pack
+assert.equal(billingFor({ ownKey: true, edition: "cloud" }), "own_key", "a business's own key always wins");
+assert.equal(billingFor({ ownKey: false, edition: "cloud" }), "credits");
+assert.equal(billingFor({ ownKey: false, edition: "open" }), "own_key", "the open edition has no credits");
+assert.deepEqual([...PACKS_USD], [10, 25, 50]);
+assert.equal(MIN_BALANCE_USD, 0.5);
+assert.equal(runCharge(0.1), 0.12, "cost plus 20%");
+assert.equal(runCharge(0.0021), 0.00252, "a fraction of a cent is charged exactly, not rounded up");
+assert.equal(runCharge(0), 0);
+assert.equal(runCharge(-1), 0, "never a credit from a run");
+assert.equal(runCharge(Number.NaN), 0);
+assert.equal(balanceOf([{ amount_usd: "10.000000" }, { amount_usd: -0.12 }, { amount_usd: "-0.00252" }]), 9.87748);
+assert.equal(balanceOf([]), 0);
+{
+  const run = (billing: "own_key" | "credits", trigger: string, balance: number) => creditBlock({ billing, trigger, balance });
+  assert.equal(run("own_key", "cron", 0), null, "a business's own key is never held to credits");
+  assert.equal(run("credits", "cron", 0.5), null);
+  assert.match(run("credits", "cron", 0.49)!, /Claude credits are at \$0\.49.*Runs are paused.*Nothing has been deleted/);
+  for (const t of ["manual", "chain", "setup", "preview"]) assert.ok(run("credits", t, 0), `${t} needs credits`);
+  assert.equal(run("credits", "approval", 0), null, "a tapped approval is applied whatever the balance");
+  assert.equal(creditBlock({ billing: undefined, trigger: "cron", balance: 0 }), null);
+}
+assert.ok(mayUsePooledKey({ balance: 0.5, planBlocked: false, keySet: true }));
+assert.ok(!mayUsePooledKey({ balance: 0.49, planBlocked: false, keySet: true }), "not under the minimum");
+assert.ok(!mayUsePooledKey({ balance: 50, planBlocked: true, keySet: true }), "not when the plan pauses runs");
+assert.ok(!mayUsePooledKey({ balance: 50, planBlocked: false, keySet: false }), "not when the deployment has no key");
+assert.ok(isPack(25) && isPack("10") && !isPack(11) && !isPack("10.0") && !isPack(" 1e1") && !isPack(null));
+{
+  const org = "0e1a7c4e-0002-4000-8000-000000000002";
+  const paid = { id: "cs_test_a1B2c3D4e5", mode: "payment", payment_status: "paid", amount_total: 2500, currency: "usd", client_reference_id: org, metadata: { org_id: org, kind: "credits", pack: "25" } };
+  assert.deepEqual(creditFromSession(paid), { org, session: "cs_test_a1B2c3D4e5", usd: 25 });
+  assert.ok("skip" in creditFromSession({ ...paid, amount_total: 1000 }), "the pack named must be the amount charged");
+  assert.ok("skip" in creditFromSession({ ...paid, metadata: { ...paid.metadata, pack: "100" }, amount_total: 10000 }), "only our packs");
+  assert.ok("skip" in creditFromSession({ ...paid, payment_status: "unpaid" }), "not before it's paid");
+  assert.ok("skip" in creditFromSession({ ...paid, mode: "subscription" }), "the plan's checkout is not credits");
+  assert.ok("skip" in creditFromSession({ ...paid, metadata: { ...paid.metadata, kind: "other" } }), "only sessions we started for credits");
+  assert.ok("skip" in creditFromSession({ ...paid, currency: "eur" }), "dollars only");
+  assert.ok("skip" in creditFromSession({ ...paid, client_reference_id: "0e1a7c4e-0003-4000-8000-000000000003" }), "the org must match the session's");
+  assert.ok("skip" in creditFromSession({ ...paid, metadata: { ...paid.metadata, org_id: "nope" } }), "an org id we made");
+  assert.ok("skip" in creditFromSession({ ...paid, id: "pi_123" }), "a Checkout session id");
+}
+assert.equal(usdWords(0.004), "$0.01");
+assert.equal(usdWords(-0.12), "-$0.12");
+assert.match(creditWords({ billing: "credits", balance: 0.2 }), /Claude credits: \$0\.20\. Each run is charged its model cost plus 20%\. Runs are paused until you buy credits\./);
+assert.match(creditWords({ billing: "own_key", balance: 3 }), /your own Claude key/);
+{
+  const credits = readFileSync("ee/credits.ts", "utf8");
+  assert.doesNotMatch(credits, /core\/vault|core\/gateway|callWriteTool|callMcpTool|\.delete\(|\.update\(|\.upsert\(/, "credits only add ledger rows: no vault, gateway, tool, change or delete");
+  assert.deepEqual([...credits.matchAll(/db\(\)\.from\("(\w+)"\)/g)].map((m) => m[1]).filter((t, i, a) => a.indexOf(t) === i).sort(), ["ee_credit_ledger", "orgs"], "credits read only their ledger and whether the org exists");
+  assert.match(credits, /process\.env\.OPERATOR_CLAUDE_KEY/, "the hosted key is one setting");
+  assert.deepEqual(readdirSync("ee").filter((f) => f !== "check.ts" && /\.tsx?$/.test(f) && /OPERATOR_CLAUDE_KEY/.test(readFileSync(`ee/${f}`, "utf8"))), ["credits.ts"], "only ee/credits.ts reads the hosted key");
+  assert.ok(credits.indexOf("if (run.billing !== \"credits\") return;") < credits.indexOf(".insert({ kind: \"run\""), "only a credit run is charged");
+  assert.match(credits, /mayUsePooledKey\(\{ balance, planBlocked, keySet: true \}\) \? hostedKey\(\) : null/, "the hosted key only with a balance and a plan");
+  const mig = readFileSync("supabase/migrations/20261224090000_ee_credit_ledger.sql", "utf8");
+  assert.match(mig, /stripe_session_id text unique/, "a pack is added once per Checkout session");
+  assert.match(mig, /run_id uuid unique/, "a run is charged once");
+  assert.match(mig, /revoke update, delete, truncate on ee_credit_ledger/, "ledger rows are never changed or deleted");
+  const claude = readFileSync("integrations/anthropic.ts", "utf8");
+  assert.ok(claude.indexOf("if (own) return") < claude.indexOf("await pooledKey()"), "a business's own key is used before the hosted one");
+  assert.match(claude, /if \(edition\(\) === "open"\) throw new Error\(NO_CLAUDE_KEY\)/, "the open edition never asks for a hosted key");
+}
+
+console.log("check:ee ok (credits, plan, trial, grace, comped, Stripe signatures and rows, sign-up codes)");

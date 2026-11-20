@@ -65,7 +65,8 @@ const read = (f: string) => readFileSync(f, "utf8");
 assert.doesNotMatch(read("dashboard/flowSteps.ts"), /2500 \+ 1200/, "the builder's estimate comes from core/cost-rules.ts");
 assert.doesNotMatch(read("dashboard/roster.ts"), /avgCostOf/, "the roster's average comes from realCost");
 for (const f of ["dashboard/orgDay.ts", "dashboard/orgPlan.ts"]) assert.doesNotMatch(read(f), /capPerRun \?\?/, `${f} doesn't plan with the cap as a run's cost`);
-assert.match(read("app/(room)/proposals/[id]/page.tsx"), /hireCost\(p\)/, "a hire proposal shows its month");
-assert.match(read("app/(room)/page.tsx"), /hireCost\(p\.payload\)/, "the Desk's proposal card shows its month");
+assert.match(read("app/(room)/proposals/[id]/page.tsx"), /hireCost\(p, bill\)/, "a hire proposal shows its month, for the business's billing");
+assert.match(read("app/(room)/page.tsx"), /hireCost\(p\.payload, bill\)/, "the Desk's proposal card shows its month, for the business's billing");
+assert.match(read("dashboard/cost.ts"), /export const billing = \(\): Promise<Billing> => billingNow\(\)/, "who pays is the business's own: its key, or credits (card 128 slice 4)");
 
 console.log("check:cost ok");

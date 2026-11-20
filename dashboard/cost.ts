@@ -5,12 +5,13 @@ import { estimateRun, monthCost, runCost, type Billing, type Effort, type MonthC
 import { modelDef } from "@/integrations/models";
 import { DAY_RUNS } from "@/core/flow-rules";
 import { BRAINS, HIRE_STEPS, type Brain } from "@/core/proposal-rules";
+import { billingNow } from "@/integrations/anthropic";
 
 /**
- * Who pays for this business's runs. Every business uses its own Claude key until managed credits
- * are built (card 128, slice 4), which will answer "credits" for a business on them.
+ * Who pays for this business's runs: its own Claude key, or managed credits on the hosted edition
+ * when it has none (card 128 slice 4). A page reads it once and hands it to every cost it shows.
  */
-export const billing = (): Billing => "own_key";
+export const billing = (): Promise<Billing> => billingNow().catch(() => "own_key" as const);
 
 /** The parts of a spec the estimate reads, as saved (unknown fields fall back to safe defaults). */
 export interface CostSpec { model: string; effort?: string; tools: readonly string[]; maxSteps?: number; maxCostUsd?: number }
@@ -27,12 +28,12 @@ export function estimateOf(s: CostSpec): number | null {
 export const runCostOf = (s: CostSpec, real: RealCost | null): RunCost => runCost(real, estimateOf(s));
 
 /** A month's cost at this many runs a month (0 by hand). */
-export const monthCostOf = (s: CostSpec, real: RealCost | null, runsPerMonth: number): MonthCost =>
-  monthCost({ run: runCostOf(s, real), cap: s.maxCostUsd ?? null, runsPerMonth, billing: billing() });
+export const monthCostOf = (s: CostSpec, real: RealCost | null, runsPerMonth: number, bill: Billing): MonthCost =>
+  monthCost({ run: runCostOf(s, real), cap: s.maxCostUsd ?? null, runsPerMonth, billing: bill });
 
 /** What a proposed hire would cost (card 155): its brain, its tools and the hire step limit. A new agent runs only by hand until it's scheduled. */
-export function hireCost(p: { brain: Brain; tools: readonly string[] }): { byHand: MonthCost; daily: MonthCost } {
+export function hireCost(p: { brain: Brain; tools: readonly string[] }, bill: Billing): { byHand: MonthCost; daily: MonthCost } {
   const b = BRAINS[p.brain];
   const spec: CostSpec = { model: b.model, effort: b.effort, tools: p.tools, maxSteps: HIRE_STEPS, maxCostUsd: b.maxCostUsd };
-  return { byHand: monthCostOf(spec, null, 0), daily: monthCostOf(spec, null, DAY_RUNS.daily) };
+  return { byHand: monthCostOf(spec, null, 0, bill), daily: monthCostOf(spec, null, DAY_RUNS.daily, bill) };
 }

@@ -12,8 +12,8 @@ import { INTERRUPT_WORDS, interruptKind, type Interrupt } from "@/dashboard/need
 import { deskGreeting, deskLine, firstSentence } from "@/dashboard/desk";
 import { companySeat, deptOf, groupByDepartment, headOf, latestOutputs, loadOrg } from "@/core/org";
 import { listProposals } from "@/core/proposals";
-import { hireCost } from "@/dashboard/cost";
-import { monthWords, usd } from "@/core/cost-rules";
+import { billing, hireCost } from "@/dashboard/cost";
+import { monthWords, usd, type Billing } from "@/core/cost-rules";
 import { peopleOf, type DeptDraft } from "@/core/department-rules";
 import type { ProposalPlan } from "@/core/proposal-rules";
 import { agentNames } from "@/core/org";
@@ -39,9 +39,9 @@ const Label = ({ k }: { k: Interrupt }) => (
 );
 
 /** Card 156: a department proposal's line in Needs you: its people, goals and month if each ran daily, from code. */
-function deptLine(d: DeptDraft): string {
+function deptLine(d: DeptDraft, bill: Billing): string {
   const people = peopleOf(d);
-  const month = people.reduce((s, p) => s + hireCost(p).daily.month, 0);
+  const month = people.reduce((s, p) => s + hireCost(p, bill).daily.month, 0);
   return `${people.length} agent${people.length === 1 ? "" : "s"}, ${d.goals.length} goal${d.goals.length === 1 ? "" : "s"} · ${usd(month)} a month if each runs daily`;
 }
 
@@ -59,7 +59,7 @@ export default async function Desk() {
   const owner = atLeast((await requireSession()).role, "owner");
   const open = needs(f, now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value));
   const org = await loadOrg().catch(() => null);
-  const [goals, pending, first] = await Promise.all([goalsByDept(org), listProposals(["pending"], 12).catch(() => null), firstJobView(f).catch(() => null)]);
+  const [goals, pending, first, bill] = await Promise.all([goalsByDept(org), listProposals(["pending"], 12).catch(() => null), firstJobView(f).catch(() => null), billing()]);
   const allGoals = org && goals ? org.departments.flatMap((d) => goals[d.id] ?? []) : [];
   // each goal tile carries its head's latest word (the head's own report, so its words, not code's)
   const heads = org ? org.departments.map((d) => headOf(org, d.id)).filter((s) => s?.holder === "agent" && s.agentId).map((s) => s!.agentId as string) : [];
@@ -124,8 +124,8 @@ export default async function Desk() {
             <span style={{ flex: "1 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
               <b style={{ fontSize: 15.5, fontWeight: 600 }}>{p.title}</b>
               <span className="ink2" style={{ fontSize: 13.5, lineHeight: 1.5 }}>From {p.from_agent ? names[p.from_agent] ?? p.from_agent : p.source === "claude" ? "Claude" : "you"}: {firstSentence(p.why, 220)}</span>
-              {p.payload.kind === "hire" && <span className="muted" style={{ fontSize: 12.5 }}>{p.payload.job} · {monthWords(hireCost(p.payload).byHand)}</span>}
-              {p.payload.kind === "department" && <span className="muted" style={{ fontSize: 12.5 }}>{deptLine(p.payload.draft)}</span>}
+              {p.payload.kind === "hire" && <span className="muted" style={{ fontSize: 12.5 }}>{p.payload.job} · {monthWords(hireCost(p.payload, bill).byHand)}</span>}
+              {p.payload.kind === "department" && <span className="muted" style={{ fontSize: 12.5 }}>{deptLine(p.payload.draft, bill)}</span>}
               {p.payload.kind === "goal" && <span className="muted" style={{ fontSize: 12.5 }}>{goalLine(p.payload, org?.departments.find((d) => d.id === p.department_id)?.name)}</span>}
             </span>
             <Link href={`/proposals/${p.id}`} className="btn dark">Review</Link>

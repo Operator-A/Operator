@@ -3,6 +3,7 @@
 import "server-only";
 import { db } from "@/core/db";
 import type { PlanAsk } from "@/core/extension-types";
+import { creditBlock } from "./credit-rules";
 import { planBlockFor, planState, type PlanState, type SubStatus, type Subscription } from "./plan-rules";
 
 export async function subscription(): Promise<Subscription | null> {
@@ -20,6 +21,11 @@ export async function currentPlan(now = Date.now()): Promise<PlanState> {
   return planState(await subscription(), { now });
 }
 
+/** The planBlock slot: the plan first, then, for a run that thinks on credits, the credit balance. */
 export async function planBlock(ask: PlanAsk): Promise<string | null> {
-  return planBlockFor(await currentPlan(), ask);
+  const plan = planBlockFor(await currentPlan(), ask);
+  if (plan || ask.kind !== "run" || ask.billing !== "credits") return plan;
+  // imported here, since ee/credits.ts reads the plan too
+  const { creditBalance } = await import("./credits");
+  return creditBlock({ billing: ask.billing, trigger: ask.trigger, balance: await creditBalance() });
 }

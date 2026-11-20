@@ -13,12 +13,13 @@ import { BASELINE, EE_TABLES, isEeTable, laterMigrations } from "./lib/schema";
 import { brandWords } from "./lib/brand.mjs";
 
 const sql = readFileSync(BASELINE, "utf8");
-// ee_* tables are the paid layer's: the baseline has core's, ee_tables.sql the rest (card 136)
-const eeOnly = TENANT_TABLES.filter(isEeTable);
 // tables made by a migration after the starting two (card 151 on): held to the same rules below
 const later = laterMigrations();
 const laterMade = later.flatMap(({ file, sql: s }) => [...s.replace(/--.*$/gm, "").matchAll(/^create table ([a-z_]+) \(([\s\S]*?)\n\);/gm)].map((m) => ({ file, sql: s, name: m[1], body: m[2] })));
 const laterNames = new Set(laterMade.map((t) => t.name));
+// ee_* tables are the paid layer's: the baseline has core's, ee_tables.sql the ones from before card
+// 151, and a later migration the rest (card 128 slice 4's credit ledger), held to the same rules
+const eeOnly = TENANT_TABLES.filter((t) => isEeTable(t) && !laterNames.has(t));
 const coreTables = TENANT_TABLES.filter((t) => !isEeTable(t) && !laterNames.has(t));
 const tables = [...sql.matchAll(/^CREATE TABLE public\.([a-z_]+) \(([\s\S]*?)\n\);/gm)].map((m) => ({ name: m[1], body: m[2] }));
 const names = tables.map((t) => t.name).sort();

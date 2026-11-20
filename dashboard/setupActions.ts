@@ -64,7 +64,7 @@ export async function setupInstall(picked: string[]): Promise<ActionResult & { h
   const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const st = await setupState();
-    const pick = readPick((Array.isArray(picked) ? picked : []).slice(0, 20), companyChart(st.leaning, new Set()).depts);
+    const pick = readPick((Array.isArray(picked) ? picked : []).slice(0, 20), companyChart(st.leaning, new Set(), "own_key").depts);
     if ("problem" in pick) return { ok: false, text: pick.problem };
     const ids = pick.ids;
     await ensureAvery();

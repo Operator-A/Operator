@@ -3,7 +3,9 @@ import "server-only";
 // integrations/models.ts (every provider's prices live there).
 import Anthropic from "@anthropic-ai/sdk";
 import { modelDef } from "./models";
-import { claudeKey } from "./mcp";
+import { claudeKey, hasClaudeKey } from "./mcp";
+import { edition, pooledKey } from "@/core/extensions";
+import { billingFor, type Billing } from "@/core/cost-rules";
 
 export { Anthropic };
 
@@ -21,16 +23,26 @@ export const WEB_SEARCH_USD = 0.01; // per search
 export const priceOf = (id: string): { in: number; out: number } | null => { const m = modelDef(id); return m ? { in: m.in, out: m.out } : null; };
 
 export const NO_CLAUDE_KEY = "This business has no Claude API key yet. Paste one on Connections > Claude API.";
+export const NO_CREDITS = "This business has no Claude key of its own and no Claude credits to run on. Buy credits on Settings > Billing, or paste your own key on Connections > Claude API.";
+
+/** Who pays the current business's runs (core/cost-rules.ts billingFor). */
+export async function billingNow(): Promise<Billing> {
+  return billingFor({ ownKey: await hasClaudeKey(), edition: edition() });
+}
 
 /**
  * The Claude client for the current business (docs/tenancy.md, slice 8.1c): its own key from the
- * vault, so Anthropic bills it directly. Without one, the run is refused, the same for every business
- * (card 135). Managed credits (card 128, slice 4) will add a metered way through the paid layer.
+ * vault, so Anthropic bills it directly. Without one, the hosted edition's key when the business is on
+ * managed credits with a balance (card 128 slice 4; the paid layer decides, and charges each run in
+ * withRun); otherwise the run is refused, the same for every business (card 135).
  */
 export async function claude(): Promise<Anthropic> {
   const own = await claudeKey();
-  if (!own) throw new Error(NO_CLAUDE_KEY);
-  return new Anthropic({ apiKey: own });
+  if (own) return new Anthropic({ apiKey: own });
+  if (edition() === "open") throw new Error(NO_CLAUDE_KEY);
+  const pooled = await pooledKey();
+  if (!pooled) throw new Error(NO_CREDITS);
+  return new Anthropic({ apiKey: pooled });
 }
 
 /** Every input token a response billed, cache reads and writes included. */

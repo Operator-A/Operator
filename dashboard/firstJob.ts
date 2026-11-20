@@ -11,7 +11,8 @@ import { agentsOf } from "@/core/company-rules";
 import { deptWaits, firstJobPhase, pickFirstJob, type DeptWait, type FirstJob } from "@/core/first-job-rules";
 import type { MonthCost } from "@/core/cost-rules";
 import { activePlaybook, listPlaybooks, pendingPlaybook } from "@/core/playbook";
-import { costOf, toolLabel } from "./company";
+import { costsFor, toolLabel } from "./company";
+import { billing } from "./cost";
 import { connectedTiles } from "./toolsStep";
 import type { Floor, Run } from "./data";
 
@@ -52,7 +53,7 @@ export async function firstJobView(f: Floor): Promise<FirstJobView | null> {
     if (!job) return { phase: "offer", job: null, waits, averyWaits: pending.has(SETUP_AGENT) };
     const pb = pendingPlaybook(await listPlaybooks(job.agentId));
     const t = TEMPLATES.find((x) => x.id === job.templateId)!;
-    const cost = agentsOf(t, { toolLabel, costOf }).find((a) => a.id === job.agentId)?.cost ?? null;
+    const cost = agentsOf(t, { toolLabel, costOf: costsFor(await billing()) }).find((a) => a.id === job.agentId)?.cost ?? null;
     return { phase: "offer", job: pb ? { ...job, steps: stepLabels(pb.steps), cost, playbookId: pb.id } : null, waits, averyWaits: pending.has(SETUP_AGENT) };
   }
   const agentId = st.firstJob!.agentId;

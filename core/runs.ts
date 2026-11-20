@@ -8,7 +8,9 @@ import { agentSpend } from "@/core/usage";
 import { env } from "@/core/env";
 import { agentDepartment, claimBudgetAlert, deptBudgetBlock } from "@/core/org";
 import { emailOwner, hasEmail } from "@/integrations/email";
-import { planBlock } from "@/core/extensions";
+import { planBlock, runEnded } from "@/core/extensions";
+import { billingNow } from "@/integrations/anthropic";
+import type { Billing } from "@/core/cost-rules";
 import { afterLoad, loadMemory, loadSummary, saveWorking, type MemoryLoad } from "@/core/memory";
 
 /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; manual runs use the same header. */
@@ -43,7 +45,7 @@ export interface RunChain { chainId: string; key: string; step: number; parent?:
  * the agent is off duty; it still needs budget. So may a setup message (card 151, docs/setup.md), and
  * only for the Chief of Staff while the business has no departments yet.
  */
-async function blockedReason(agentId: string, trigger: string) {
+async function blockedReason(agentId: string, trigger: string, billing: Billing) {
   const { data: agent } = await db().from("agents").select("enabled, daily_budget_usd").eq("id", agentId).single();
   if (!agent) return "Agent is not in the agents table.";
   if (trigger === "setup") {
@@ -54,7 +56,7 @@ async function blockedReason(agentId: string, trigger: string) {
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
   const spent = await agentSpend(agentId, since.toISOString());
   if (spent >= Number(agent.daily_budget_usd)) return `Daily budget of $${agent.daily_budget_usd} reached ($${spent.toFixed(2)} spent).`;
-  return (await deptBlocked(agentId)) ?? planBlock({ kind: "run", agentId, trigger });
+  return (await deptBlocked(agentId)) ?? planBlock({ kind: "run", agentId, trigger, billing });
 }
 
 /**
@@ -103,8 +105,10 @@ async function loggedRun(agentId: string, trigger: string, job: (runId: string, 
   started(run.id);
   const finish = (patch: Record<string, unknown>) => db().from("agent_runs").update({ ended_at: new Date().toISOString(), ...patch }).eq("id", run.id);
   let memory: MemoryLoad | null = null, memoryNote = "";
+  // who pays for the model, decided once at the start: the business's own key, or credits (card 128 slice 4)
+  const billing: Billing = await billingNow().catch(() => "own_key" as const);
   try {
-    const blocked = await blockedReason(agentId, trigger);
+    const blocked = await blockedReason(agentId, trigger, billing);
     const agentRun = !blocked && (trigger === "cron" || trigger === "manual" || trigger === "chain");
     // only agent runs load memory; a gateway apply run (trigger "approval") is not the agent thinking,
     // and a Preview reads memory itself without counting anything down
@@ -127,6 +131,7 @@ async function loggedRun(agentId: string, trigger: string, job: (runId: string, 
       // every run's metrics are kept: a try's spec_version and finished flag are what unlock Go live
       ...(res.metrics ? { metrics: res.metrics } : {}),
     });
+    if (res.costUsd) await runEnded({ runId: run.id, costUsd: res.costUsd, billing });
     return { ...res, summary: `${res.summary}${memoryNote}`, runId: run.id };
   } catch (e) {
     await finish({ status: "failed", error: e instanceof Error ? e.message : String(e), ...(memory ? { memory_json: loadSummary(memory) } : {}) });

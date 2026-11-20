@@ -18,6 +18,8 @@ each slot has a do-nothing default in core:
 | `SignupPage` | the page at `/signup` | none, so `/signup` is not found |
 | `api` | POST `/api/ee/<name>` (`app/api/ee/[name]/route.ts`), such as Stripe's webhook; each route checks its own caller | none, so every name is not found |
 | `afterMembersChange()` | after someone is added to or removed from People | nothing |
+| `pooledKey()` | by `integrations/anthropic.ts`, only when the business has no Claude key of its own | none, so the run is refused |
+| `afterRun({ runId, costUsd, billing })` | after every run that cost something (`core/runs.ts`) | nothing |
 | `edition` | for anything that needs to say which edition it is | `"open"` |
 
 ## How the swap works
@@ -88,3 +90,28 @@ it unset, nobody makes codes and `/signup` says sign-up is closed (`ee/admin.ts`
 admin by being first; a code is
 ended, never deleted. Sign-up is the one server action with no role check, like signing in: the
 code is its check (check:roles).
+
+## Managed Claude credits (cloud edition, card 128 slice 4)
+
+A business on the cloud edition can run without its own Claude key: it buys prepaid credits and its
+runs use the deployment's key, charged at Anthropic's list price plus 20% (`ee/credit-rules.ts`).
+
+- **Who pays** is decided in code (`billingFor` in `core/cost-rules.ts`): the business's own key
+  whenever it has one (Connections > Claude API); otherwise credits on the cloud edition. The open
+  edition has no credits, so a business without a key has its runs refused, as before. Every cost
+  screen (proposals, setup's company chart, the Desk) shows the price on credits, margin included.
+- **Packs** of $10, $25 or $50 (owners, Settings > Billing) open a one-time Stripe Checkout payment.
+  The webhook adds the credit once per Checkout session, only when it is paid, in dollars, and the
+  amount charged is exactly one of the packs (`checkout.session.completed` and
+  `checkout.session.async_payment_succeeded` with mode `payment`).
+- **A run** on credits is charged its cost from the price list times 1.2, once per run, after it
+  ends. Below $0.50, runs that call Claude pause with a reason on the run log; a tapped approval is
+  still applied, and nothing is deleted. A run can take the balance a little under zero (at most its
+  cap); the next run waits for a top-up.
+- **The deployment's key** is one setting, `OPERATOR_CLAUDE_KEY`, read only by `ee/credits.ts` and
+  handed out only for a business with a plan that allows runs and at least $0.50 of credits.
+- **The ledger** is `ee_credit_ledger` (migration `20261224090000_ee_credit_ledger.sql`): a row per
+  pack and per run, never changed or deleted; the balance is the sum, worked out in code.
+
+Credits only pay for the model. Caps, budgets, approval cards and the hard rules are the same on
+credits and on a business's own key.
