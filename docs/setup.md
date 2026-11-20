@@ -246,7 +246,7 @@ card 153), and "approve each playbook on Crew" as the only way to start the firs
 
 ## Wording a founder reads (card 187)
 
-Real runs (Controls) are on by default in the cloud edition, unless DASHBOARD_CONTROLS=off; self-host keeps them off until DASHBOARD_CONTROLS=on (Zak, Nov 20). When they are switched off (`controlsOn()` in `dashboard/session.ts`), every screen and reply says so
+Real runs (Controls) are on by default in the cloud edition, unless DASHBOARD_CONTROLS=off; self-host keeps them off until DASHBOARD_CONTROLS=on (decided Nov 20). When they are switched off (`controlsOn()` in `dashboard/session.ts`), every screen and reply says so
 in app words: "Real runs are switched off on this OPERATOR. Whoever runs it can turn them on." The env
 var's name stays in docs, comments and `dashboard/session.ts`; `check:wording` fails on any other mention
 in `app/`, `dashboard/` or `ee/`.

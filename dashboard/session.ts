@@ -4,7 +4,7 @@ export { SESSION_COOKIE, SESSION_DAYS, loginConfigured, newSessionToken, session
 
 /**
  * Controls that can spend money or wake an agent (real runs, back on the crew, budget changes). The cloud
- * edition has them on unless DASHBOARD_CONTROLS says off (Zak, Nov 20: a cloud founder can't set an env var,
+ * edition has them on unless DASHBOARD_CONTROLS says off (Nov 20: a cloud founder can't set an env var,
  * and budgets, caps and approval cards still hold every run); self-host keeps them off until it says on.
  */
 export const controlsOn = () => controlsFrom(process.env.DASHBOARD_CONTROLS, process.env.OPERATOR_EDITION);
