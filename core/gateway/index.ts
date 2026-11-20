@@ -10,7 +10,8 @@ import { withRun } from "@/core/runs";
 import { LEAD_REVIEW_HOURS, draftChecker, draftDepartment } from "@/core/org";
 import { hasMercury, mercuryCategories, mercuryTransaction } from "@/integrations/mercury";
 import { callWriteTool, mcpStatus } from "@/integrations/mcp";
-import { chicagoDate, offsetOn } from "@/core/time";
+import { startOf } from "@/core/time";
+import { orgTz } from "@/core/tz";
 import { hasGmail } from "@/integrations/gmail";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
@@ -544,23 +545,17 @@ export async function loadCaps(): Promise<Record<CapKey, { value: number; raw: u
   return Object.fromEntries(CAP_KEYS.map((k) => [k, { value: effectiveCap(k, raw.get(k)), raw: raw.has(k) ? raw.get(k) : null }])) as Record<CapKey, { value: number; raw: unknown }>;
 }
 
-const chicagoStart = (unit: "day" | "month", now = new Date()) => {
-  const d = chicagoDate(0, now);
-  const day = unit === "day" ? d : `${d.slice(0, 8)}01`;
-  return new Date(`${day}T00:00:00${offsetOn(day)}`).toISOString();
-};
-
-/** Money sent this Chicago calendar month, from applied payment actions (computed in code). */
+/** Money sent this calendar month in the business's time zone, from applied payment actions (computed in code). */
 export async function monthSpentUsd(now = new Date()): Promise<number> {
-  const { data, error } = await db().from("agent_actions").select("args_json").eq("tool", PAY_TOOL).in("status", ["applied", "executing"]).gte("executed_at", chicagoStart("month", now));
+  const { data, error } = await db().from("agent_actions").select("args_json").eq("tool", PAY_TOOL).in("status", ["applied", "executing"]).gte("executed_at", startOf("month", await orgTz(), now));
   if (error) throw new Error(error.message);
   const cents = (data ?? []).reduce((s, r) => s + Math.round(Number((r.args_json as { amount_usd?: number } | null)?.amount_usd ?? 0) * 100), 0);
   return cents / 100;
 }
 
-/** Outbound emails sent today (Chicago), from applied email actions. Briefs to the owner are reports, not actions, so they don't count. */
+/** Outbound emails sent today (in the business's time zone), from applied email actions. Briefs to the owner are reports, not actions, so they don't count. */
 export async function emailsSentToday(now = new Date()): Promise<number> {
-  const { count, error } = await db().from("agent_actions").select("id", { count: "exact", head: true }).eq("tool", EMAIL_TOOL).in("status", ["applied", "executing"]).gte("executed_at", chicagoStart("day", now));
+  const { count, error } = await db().from("agent_actions").select("id", { count: "exact", head: true }).eq("tool", EMAIL_TOOL).in("status", ["applied", "executing"]).gte("executed_at", startOf("day", await orgTz(), now));
   if (error) throw new Error(error.message);
   return count ?? 0;
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { orgTz } from "@/core/tz";
 import { loadCrew } from "@/agents/registry";
 import { claimFiring, startStep } from "@/core/chain";
 import { allOrgIds } from "@/core/db";
@@ -41,11 +42,11 @@ export async function GET(req: Request) {
 async function schedule(origin: string, now: number) {
   const started: string[] = [];
   const flow = await loadFlow(await loadCrew());
-  const on = await orgOn();
+  const [on, tz] = await Promise.all([orgOn(), orgTz()]);
   for (const c of flow.flow.chains) {
     if (!on || !c.on) continue;
     // an hour back, so a late or missed call still catches the firing
-    for (const at of firingsBetween(c, now - 60 * 6e4, now)) {
+    for (const at of firingsBetween(c, now - 60 * 6e4, now, tz)) {
       const chainId = crypto.randomUUID();
       if (!(await claimFiring(c.key, at, chainId))) continue;
       started.push(`${c.name} (${new Date(at).toISOString()})`);

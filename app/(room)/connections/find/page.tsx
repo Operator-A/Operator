@@ -125,7 +125,7 @@ export default async function FindATool({ searchParams }: { searchParams: Promis
                   : e.stale ? <span className="pill sm" style={pill("var(--yel-soft, var(--soft))", "var(--ink)")}>Stale: {e.days} days old</span>
                   : <span className="pill sm" style={pill("var(--soft)", "var(--ink2)")}>Fresh for {e.fresh_days - e.days} more day{e.fresh_days - e.days === 1 ? "" : "s"}</span>}
               </span>
-              <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{e.row_count} rows · {e.columns.map((c) => c.name).join(", ").slice(0, 160)} · uploaded {when(e.uploaded_at)}</span>
+              <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{e.row_count} rows · {e.columns.map((c) => c.name).join(", ").slice(0, 160)} · uploaded {when(e.uploaded_at, f.tz)}</span>
             </span>
             <ActionButton className="btn outline sm" action={exportRemove.bind(null, e.id)} confirm={{ title: `Remove the ${e.name} export?`, body: "Its rows are deleted here. Agents can’t read it any more. You can upload it again.", confirmLabel: "Remove", kind: "dark" }}>Remove</ActionButton>
           </div>
@@ -144,7 +144,7 @@ export default async function FindATool({ searchParams }: { searchParams: Promis
             </span>
             {last && <span className="ink2" style={{ fontSize: 13, lineHeight: 1.5 }}>{last.by}: {last.what}</span>}
             <span className="row wrap" style={{ gap: 8, alignItems: "center" }}>
-              <span className="muted" style={{ fontSize: 12, flex: 1 }}>Last asked {when(r.last_asked_at)}</span>
+              <span className="muted" style={{ fontSize: 12, flex: 1 }}>Last asked {when(r.last_asked_at, f.tz)}</span>
               {r.board_url && <a href={r.board_url} target="_blank" rel="noreferrer" className="btn outline sm">Card</a>}
               {r.state === "open" && (k?.builtIn || exportKeys.has(serviceKey(r.name))) && <ActionButton className="btn dark sm" action={connectorClose.bind(null, r.id, "ready")} confirm={exportKeys.has(serviceKey(r.name)) ? { title: `Is ${r.name} connected now?`, body: "Its uploaded export switches over and uploads stop. Agents read it through its connection.", confirmLabel: "It’s connected", kind: "dark" } : undefined}>{k?.builtIn ? "A built-in connector is ready" : "It’s connected now"}</ActionButton>}
               {r.state === "open" && <ActionButton className="btn outline sm" action={connectorClose.bind(null, r.id, "not_needed")} confirm={{ title: `Close the ${r.name} request?`, body: "Its Build Board card moves to Done. A new ask opens it again.", confirmLabel: "Close it", kind: "dark" }}>Close</ActionButton>}

@@ -193,12 +193,23 @@ export async function saveBusinessProfile(f: { name: string; about: string; owne
   } catch (e) { return fail(e); }
 }
 
+/** The business's time zone (Settings > General, and setup's first step from the browser). Owners only. */
+export async function saveTimeZone(tz: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    const r = await saveSettingsFields({ timeZone: String(tz ?? "") }, ["timeZone"], () => 64);
+    if ("problem" in r) return { ok: false, text: r.problem };
+    await audit(me, "save_time_zone", null, { time_zone: r.settings.timeZone });
+    return done("Saved. Times, today’s limits and schedules use it from now on.");
+  } catch (e2) { return fail(e2); }
+}
+
 /** Where things go (Settings): the owner email, website, Shopify store, Mercury accounts and Notion pages of this business. */
 const WHERE_KEYS = ["ownerEmail", "siteUrl", "shopifyDomain", "shopifyClientId", "mercuryAccountIds", "notionBriefParent", "notionBriefsDb", "notionLeadsParent", "notionBooksParent"] as const;
 const PRODUCT_KEYS = ["productCollections", "productFields", "offerTerms"] as const;
 const COST_KEYS = ["costSource", "costNumber"] as const;
 
-export async function saveWhereThingsGo(f: Omit<SettingsEdit, "productCollections" | "productFields" | "offerTerms" | "costSource" | "costNumber">): Promise<ActionResult> {
+export async function saveWhereThingsGo(f: Omit<SettingsEdit, "productCollections" | "productFields" | "offerTerms" | "costSource" | "costNumber" | "timeZone">): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const r = await saveSettingsFields(f, WHERE_KEYS, () => 300);

@@ -91,7 +91,7 @@ assert.deepEqual(firstJobChains(turned.chains, ids).on, [], "turning on twice ch
 assert.deepEqual(firstJobChains(chains, ["nobody"]).on, []);
 // who wakes and when, for the reply: only the two, with Avery's summary scheduled
 const members = allAgents.map((id) => ({ id, name: id, inOrg: ids.includes(id), perRun: 0.01 }));
-const plan = planOrgOn(members, turned.chains, T);
+const plan = planOrgOn(members, turned.chains, T, "America/Chicago");
 assert.deepEqual(plan.wake.map((w) => w.id).sort(), [...ids].sort());
 assert.ok(plan.wake.find((w) => w.id === SETUP_AGENT)?.firstRun, "Avery's morning summary is scheduled");
 

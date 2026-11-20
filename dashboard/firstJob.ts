@@ -2,6 +2,7 @@ import "server-only";
 // The Desk's first job (card 154, docs/setup.md): what the card shows, read for the current business.
 // The pick and the phases are in core/first-job-rules.ts; this reads the setup row, the installed
 // agents, the playbooks waiting and the connected tools.
+import { orgTz } from "@/core/tz";
 import { db } from "@/core/db";
 import { TEMPLATES } from "@/core/templates";
 import { TOOLS } from "@/core/tools/catalog";
@@ -27,24 +28,25 @@ export interface FirstJobOffer {
   /** Avery's first playbook waits too: the tap approves it, so her 7:00 summary starts. */
   averyWaits: boolean;
 }
-export interface FirstJobRunning { phase: "running" | "done"; agentId: string; name: string; steps: string[]; run: Run | null; approvalsPending: number | null; waits: DeptWait[] }
+export interface FirstJobRunning { phase: "running" | "done"; agentId: string; name: string; steps: string[]; run: Run | null; approvalsPending: number | null; waits: DeptWait[]; tz: string }
 export type FirstJobView = FirstJobOffer | FirstJobRunning;
 
 /** The pick for the current business now, with what the tap needs. Also used by the action to check the tap. */
 /** What the first job reads from the floor. The Desk passes its floor; setup reads this much only (jobFloor), never getFloor. */
-export type JobFloor = Pick<Floor, "now" | "agents" | "runs" | "health" | "approvalsPending">;
+export type JobFloor = Pick<Floor, "now" | "tz" | "agents" | "runs" | "health" | "approvalsPending">;
 
 /** A small floor for setup's wrap-up (card 186): the agents, the last two days of runs and the approvals waiting. */
 export async function jobFloor(health: Floor["health"]): Promise<JobFloor> {
   const now = Date.now();
-  const [a, r, ap] = await Promise.all([
+  const [a, r, ap, tz] = await Promise.all([
     db().from("agents").select("id, name, model, enabled, daily_budget_usd"),
     db().from("agent_runs").select(RUN_COLS).gte("started_at", new Date(now - 2 * 86400e3).toISOString()).order("started_at", { ascending: false }).limit(200),
     db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    orgTz(),
   ]);
   if (a.error) throw new Error(`Agents: ${a.error.message}`);
   const agents = Object.fromEntries(((a.data ?? []) as Floor["agents"][string][]).map((x) => [x.id, x]));
-  return { now, agents, runs: r.error ? [] : (r.data ?? []) as Run[], health, approvalsPending: ap.error ? null : ap.count ?? 0 };
+  return { now, tz, agents, runs: r.error ? [] : (r.data ?? []) as Run[], health, approvalsPending: ap.error ? null : ap.count ?? 0 };
 }
 
 export async function currentPick(f: Pick<JobFloor, "agents" | "health">): Promise<{ job: FirstJob | null; waits: DeptWait[]; pending: Set<string> }> {
@@ -77,7 +79,7 @@ export async function firstJobView(f: JobFloor): Promise<FirstJobView | null> {
   const templateId = TEMPLATES.find((t) => t.agents.some((a) => a.id === agentId))?.id ?? null;
   return {
     phase: ph.phase, agentId, name: f.agents[agentId]?.name ?? agentId,
-    steps: stepLabels(activePlaybook(all)?.steps ?? []), run: ph.run, approvalsPending: f.approvalsPending,
+    steps: stepLabels(activePlaybook(all)?.steps ?? []), run: ph.run, approvalsPending: f.approvalsPending, tz: f.tz,
     waits: deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: new Set(Object.keys(f.agents)), connected, needsOf }, templateId),
   };
 }

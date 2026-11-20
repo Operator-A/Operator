@@ -43,7 +43,7 @@ export interface OrgPlan {
 /** Runs in 30 days on a schedule (DAY_RUNS: 30 daily, 22 on weekdays, 4 on Mondays), none by hand. */
 export const runsInMonth = (s: Schedule) => (s.kind === "manual" ? 0 : DAY_RUNS[s.kind] ?? 0);
 
-export function planOrgOn(members: readonly OrgMember[], chains: readonly Chain[], now: number): OrgPlan {
+export function planOrgOn(members: readonly OrgMember[], chains: readonly Chain[], now: number, tz: string): OrgPlan {
   const inOrg = members.filter((m) => m.inOrg);
   const ids = new Set(inOrg.map((m) => m.id));
   // a chain comes on with the org only when every agent in it is in the org; one that is on stays on
@@ -54,7 +54,7 @@ export function planOrgOn(members: readonly OrgMember[], chains: readonly Chain[
   const wake = inOrg.map((m): WakeLine => {
     const schedule = scheduleOf(m.id, live);
     const perRun = m.perRun;
-    return { id: m.id, name: m.name, schedule, firstRun: nextRuns(schedule, now, 1)[0] ?? null, perRun, perMonth: perRun == null ? 0 : perRun * runsInMonth(schedule) };
+    return { id: m.id, name: m.name, schedule, firstRun: nextRuns(schedule, now, 1, tz)[0] ?? null, perRun, perMonth: perRun == null ? 0 : perRun * runsInMonth(schedule) };
   });
   // scheduled first, in the order they run, then by hand
   wake.sort((a, b) => (a.firstRun ?? Infinity) - (b.firstRun ?? Infinity) || a.name.localeCompare(b.name));

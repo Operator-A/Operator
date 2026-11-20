@@ -4,6 +4,8 @@
 // agent's schedule (days, time, on duty). Numbers come from dashboard/orgDay.ts, worked out in code
 // on the server; this only shows them and sends the owner's choices to the server actions, which check
 // everything again.
+import { dow, hm, md } from "@/dashboard/format";
+import { zoneLabel } from "@/core/time";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "@/dashboard/actions";
 import { DAY_RUNS, DAY_WORDS, DAYS, type AgentTime, type Days } from "@/core/flow-rules";
@@ -14,9 +16,6 @@ import { Icon } from "./Icon";
 type SetTime = (agentId: string, t: AgentTime | null, confirmed: boolean) => Promise<ActionResult>;
 type SetOn = (agentId: string, on: boolean) => Promise<ActionResult>;
 
-const TZ = "America/Chicago";
-const hmF = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
-const dayF = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", month: "short", day: "numeric" });
 const money = (v: number) => (v > 0 && v < 0.01 ? "under $0.01" : `$${v.toFixed(2)}`);
 const perRunWords = (v: number | null) => (v == null ? "Unknown" : v < 0.01 ? `$${v.toFixed(3)}` : `$${v.toFixed(2)}`);
 const hourWords = (h: number) => (h === 0 || h === 24 ? "Midnight" : h === 12 ? "Noon" : h < 12 ? `${h} AM` : `${h - 12} PM`);
@@ -57,7 +56,7 @@ export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; con
         <div className="row wrap" style={{ justifyContent: "space-between", gap: 8 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span className="card-t">The org’s day</span>
-            <span className="sub">Central Time{orgOn ? "" : " · runs only once the org is on"} · tap an agent to change when it runs</span>
+            <span className="sub">{zoneLabel(day.tz)}{orgOn ? "" : " · runs only once the org is on"} · tap an agent to change when it runs</span>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -147,7 +146,7 @@ export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; con
         </div>
       </section>
 
-      {edit && <Editor r={edit} controls={controls} orgOn={orgOn} busy={busy} onClose={() => setEdit(null)}
+      {edit && <Editor tz={day.tz} r={edit} controls={controls} orgOn={orgOn} busy={busy} onClose={() => setEdit(null)}
         onSave={(t, needsConfirm) => {
           if (!needsConfirm) return run(() => setTime(edit.id, t, false));
           setConfirm({
@@ -163,8 +162,8 @@ export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; con
   );
 }
 
-function Editor({ r, controls, orgOn, busy, onClose, onSave, onHand, onDuty }: {
-  r: DayRow; controls: boolean; orgOn: boolean; busy: boolean; onClose: () => void;
+function Editor({ r, tz, controls, orgOn, busy, onClose, onSave, onHand, onDuty }: {
+  r: DayRow; tz: string; controls: boolean; orgOn: boolean; busy: boolean; onClose: () => void;
   onSave: (t: AgentTime, needsConfirm: boolean) => void; onHand: () => void; onDuty: (on: boolean) => void;
 }) {
   const [days, setDays] = useState<Days>(r.schedule.kind === "manual" ? "weekdays" : r.schedule.kind);
@@ -208,7 +207,7 @@ function Editor({ r, controls, orgOn, busy, onClose, onSave, onHand, onDuty }: {
         {scheduled && r.next.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>Next runs{orgOn ? "" : " once the org is on"}</span>
-            <div className="row wrap" style={{ gap: 6 }}>{r.next.map((t) => <span key={t} className="pill sm" style={{ background: "var(--soft)" }}>{dayF.format(new Date(t))} · {hmF.format(new Date(t))}</span>)}</div>
+            <div className="row wrap" style={{ gap: 6 }}>{r.next.map((t) => <span key={t} className="pill sm" style={{ background: "var(--soft)" }}>{dow(t, tz)}, {md(t, tz)} · {hm(t, tz)}</span>)}</div>
           </div>
         )}
 

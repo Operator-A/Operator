@@ -5,10 +5,11 @@ import "server-only";
 // Settings (integrations/email.ts has no recipient argument), with a Notion copy as the archive: a row
 // in the Briefs database (docs/briefs-database.md), or a page per day when that isn't set up. Either the
 // email or Notion alone also works.
+import { orgDate } from "@/core/tz";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { settings } from "@/core/settings";
-import { chicagoDate, dayTitle } from "@/core/time";
+import { dayTitle } from "@/core/time";
 import { emailOwner, hasEmail } from "@/integrations/email";
 import { h2, li, notionArchive, notionPage, notionRow, notionConnected, notionRowOn, notionUpdateRow, p, prop, type Block, type Props } from "@/integrations/notion";
 import { openOrders } from "@/integrations/shopify/orders";
@@ -60,7 +61,7 @@ async function ownNumberLines(): Promise<string[]> {
 /** Today's facts, every number worked out in code. */
 async function facts() {
   const dayAgo = new Date(Date.now() - 864e5).toISOString();
-  const since = chicagoDate(OPEN_ORDER_DAYS);
+  const since = await orgDate(OPEN_ORDER_DAYS);
   const [{ data: kpis }, { data: runs }, { data: pending }, { count: newDrafts }, orders, goals, ownNumbers] = await Promise.all([
     db().from("kpi_snapshots").select("*").order("date", { ascending: false }).limit(KPI_DAYS),
     // a try from the builder is not a run the brief reports on
@@ -76,7 +77,7 @@ async function facts() {
   const behind: GoalBehind[] = goals.filter((g) => g.progress.status === "behind" || g.progress.status === "missed")
     .map((g) => ({ title: g.goal.title, line: g.progress.line, status: g.progress.status as GoalBehind["status"] }));
   return {
-    today: chicagoDate(0),
+    today: (await orgDate(0)),
     yesterday: (kpis?.[0] as Kpi | undefined) ?? null,
     lastWeek: (kpis ?? []).slice(1) as Kpi[],
     openOrders: orders,

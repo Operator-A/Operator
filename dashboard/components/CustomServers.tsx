@@ -18,14 +18,14 @@ export const EVENT_LABEL: Record<McpLogRow["event"], string> = {
   added: "Added", tool_on: "Tool turned on", tool_off: "Tool turned off", paused: "Paused", resumed: "Running again", tools_accepted: "Changed tools accepted",
 };
 
-export function SignInLog({ log }: { log: McpLogRow[] }) {
+export function SignInLog({ log, tz }: { log: McpLogRow[]; tz: string }) {
   if (!log.length) return null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <span style={{ fontSize: 13, fontWeight: 700 }}>Sign-in log</span>
       {log.map((e, i) => (
         <span key={i} className="row" style={{ gap: 8, fontSize: 12.5 }}>
-          <span className="muted" style={{ flex: "none", minWidth: 92 }}>{when(e.at)}</span>
+          <span className="muted" style={{ flex: "none", minWidth: 92 }}>{when(e.at, tz)}</span>
           <span className="ink2">{EVENT_LABEL[e.event] ?? e.event}{e.detail && e.event !== "resealed" ? `: ${e.detail}` : ""}</span>
         </span>
       ))}
@@ -133,7 +133,7 @@ function ToolRow({ c, t, paused, controls }: { c: CustomServer; t: CustomTool; p
 }
 
 /** One custom server: sign-in, the tool check, its tools (all off to start) and its log. */
-export function CustomDetail({ c, status, log, controls, note, usedBy }: { c: CustomServer; status: McpStatus | null; log: McpLogRow[]; controls: boolean; note: { ok: boolean; text: string } | null; usedBy: string[] }) {
+export function CustomDetail({ c, status, log, controls, note, usedBy, tz }: { tz: string; c: CustomServer; status: McpStatus | null; log: McpLogRow[]; controls: boolean; note: { ok: boolean; text: string } | null; usedBy: string[] }) {
   const st = stateOf(status);
   const reason = status?.lastError ?? "";
   const toolsPause = st === "paused" && reason.startsWith("the server ");
@@ -163,7 +163,7 @@ export function CustomDetail({ c, status, log, controls, note, usedBy }: { c: Cu
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {st === "paused"
             ? <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>Paused: {reason || "the sign-in stopped working"}. No agent can reach {c.name} until {toolsPause ? "you accept the change" : ownerPause ? "you run it again" : c.auth === "oauth" ? "you sign in again" : "you paste a new key"}.</span>
-            : <span style={{ fontSize: 13 }}>{c.auth === "oauth" ? "Signed in" : "Key locked in the vault"}{status?.connectedAt ? ` ${when(status.connectedAt)}` : ""}. {status?.toolsCheckedAt ? `Tools checked ${when(status.toolsCheckedAt)}.` : ""}</span>}
+            : <span style={{ fontSize: 13 }}>{c.auth === "oauth" ? "Signed in" : "Key locked in the vault"}{status?.connectedAt ? ` ${when(status.connectedAt, tz)}` : ""}. {status?.toolsCheckedAt ? `Tools checked ${when(status.toolsCheckedAt, tz)}.` : ""}</span>}
           {toolsPause && (
             <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
               The tools marked Changed below show the server’s new words and inputs. {gone.length ? `Gone from the server: ${gone.join(", ")}. ` : ""}Accepting keeps your names, lines and pins, takes the new version, and turns off anything gone or that no longer only reads.
@@ -192,7 +192,7 @@ export function CustomDetail({ c, status, log, controls, note, usedBy }: { c: Cu
           {!c.tools.length && <span className="muted" style={{ fontSize: 13 }}>No tools listed yet. Tap Check tools now.</span>}
         </div>
       )}
-      <SignInLog log={log} />
+      <SignInLog log={log} tz={tz} />
     </div>
   );
 }

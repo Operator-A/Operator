@@ -8,8 +8,9 @@ import "server-only";
 // proposal and handed to the tool gateway (core/gateway), which applies it only after an approver
 // approves it in the Control Room.
 // Emails are untrusted: Haiku only reads fields off them, code decides every match.
+import { orgTz } from "@/core/tz";
 import { db } from "@/core/db";
-import { TZ, chicagoDate, dayTitle } from "@/core/time";
+import { dayTitle, localDate } from "@/core/time";
 import {
   DEFAULT_POLICIES, amountText, coverage, mileageUsd, needsEvidence, photoNeeded, whyNoMatch,
   type BookPolicies, type DocStatus, type ReadReceipt,
@@ -63,7 +64,8 @@ const COLS = "id, mercury_txn_id, account_id, date, merchant, amount_usd, mercur
 const usage = () => ({ in: 0, out: 0, cost: 0 });
 type Usage = ReturnType<typeof usage>;
 
-const chicagoDay = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(iso));
+/** A posted time as a calendar date in the business's time zone. */
+const dayIn = (iso: string, tz: string) => localDate(tz, 0, new Date(iso));
 const gmailDate = (ymd: string, shiftDays: number) => new Date(Date.parse(`${ymd}T12:00:00Z`) + shiftDays * 864e5).toISOString().slice(0, 10).replace(/-/g, "/");
 const merchantOf = (t: MercuryTxn) => (t.counterpartyName || t.counterpartyNickname || t.bankDescription || "Unknown").trim().slice(0, 200);
 const usd = (n: number) => `$${n.toFixed(2)}`;
@@ -83,12 +85,12 @@ async function policies(): Promise<BookPolicies> {
 }
 
 /** A new row for a Mercury charge, with the status code can decide without looking for a receipt. */
-function newDoc(t: MercuryTxn): Doc {
+function newDoc(t: MercuryTxn, tz: string): Doc {
   const merchant = merchantOf(t);
   const evidence = needsEvidence(t.kind, merchant);
   const inMercury = !!t.attachments?.length;
   return {
-    mercury_txn_id: t.id, account_id: t.accountId ?? null, date: chicagoDay(t.postedAt!), merchant,
+    mercury_txn_id: t.id, account_id: t.accountId ?? null, date: dayIn(t.postedAt!, tz), merchant,
     amount_usd: round2(Math.abs(t.amount)), mercury_kind: t.kind ?? null, mercury_category: t.mercuryCategory ?? null,
     category_id: t.categoryData?.id ?? null, category: t.categoryData?.name ?? null,
     status: !evidence ? "not_needed" : inMercury ? "matched" : "open",
@@ -213,12 +215,13 @@ async function closeMonth(today: string, p: BookPolicies) {
  */
 export async function syncBooks(runId: string | undefined, opts: { notionParent?: string } = {}): Promise<{ summary: string; tokensIn: number; tokensOut: number; costUsd: number }> {
   if (!(await hasMercury())) throw new Error("Mercury isn’t connected: tap Connect on Connections → Mercury (the business's own account).");
-  const today = chicagoDate(0);
-  const start = chicagoDate(LOOKBACK_DAYS);
+  const tz = await orgTz();
+  const today = localDate(tz, 0);
+  const start = localDate(tz, LOOKBACK_DAYS);
   const [p, txns, { data: existingRows, error }] = await Promise.all([
     policies(),
     mercuryTransactions(start, today),
-    db().from("expense_docs").select(COLS).gte("date", chicagoDate(LOOKBACK_DAYS + 2)),
+    db().from("expense_docs").select(COLS).gte("date", localDate(tz, LOOKBACK_DAYS + 2)),
   ]);
   if (error) throw new Error(`Could not read expense_docs (is the starting migration applied?): ${error.message}`);
   const existing = new Map(((existingRows ?? []) as Doc[]).map((d) => [d.mercury_txn_id, d]));
@@ -229,7 +232,7 @@ export async function syncBooks(runId: string | undefined, opts: { notionParent?
   const touched = new Map<string, Doc>(); // existing rows that changed, by txn id
   for (const t of charges) {
     const old = existing.get(t.id);
-    if (!old) { fresh.push(newDoc(t)); continue; }
+    if (!old) { fresh.push(newDoc(t, tz)); continue; }
     const next = { ...old };
     // a category set in Mercury (by a person or a Mercury rule) always wins; the sync never changes it
     if ((t.categoryData?.id ?? null) !== old.category_id) { next.category_id = t.categoryData?.id ?? null; next.category = t.categoryData?.name ?? null; }

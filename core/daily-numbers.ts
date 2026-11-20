@@ -4,9 +4,10 @@ import "server-only";
 // owner picked on Settings: none, Shopify's unit cost, or a number in dollars from the business's own
 // tool (read after the same tool check agents get). The tools calc_daily_snapshot and
 // report_kpi_snapshot call it (core/tools/catalog.ts); the morning brief reads the saved rows.
+import { orgDate } from "@/core/tz";
 import { db } from "@/core/db";
 import { settings } from "@/core/settings";
-import { chicagoDate, nextDay } from "@/core/time";
+import {nextDay } from "@/core/time";
 import { ownNumberSources, readOwnNumber } from "@/core/tools/custom";
 import { mercuryCash } from "@/integrations/mercury";
 import { orderCostsBetween, ordersBetween } from "@/integrations/shopify/orders";
@@ -27,7 +28,7 @@ async function costOn(date: string): Promise<DayCost> {
   }
   if (s.costSource === "own" && s.costNumber) {
     // the own number gives yesterday's cost: it can't answer for another day
-    if (date !== chicagoDate(1)) return { source: "own", usd: null, note: "your own number gives yesterday's cost only" };
+    if (date !== (await orgDate(1))) return { source: "own", usd: null, note: "your own number gives yesterday's cost only" };
     const src = (await ownNumberSources()).find((n) => n.key === s.costNumber);
     if (!src || src.number.unit !== "usd") return { source: "own", usd: null, note: "the number picked on Settings › Daily numbers isn't on Connections any more" };
     const r = await readOwnNumber(src).catch((e: unknown) => ({ error: why(e) }));
@@ -36,7 +37,8 @@ async function costOn(date: string): Promise<DayCost> {
   return { source: "none", usd: null };
 }
 
-export async function snapshot(date = chicagoDate(1), opts: { dryRun?: boolean } = {}): Promise<DayRow> {
+export async function snapshot(day?: string, opts: { dryRun?: boolean } = {}): Promise<DayRow> {
+  const date = day ?? await orgDate(1);
   const failed: string[] = [];
   const [orders, cost, cash] = await Promise.all([
     ordersBetween(date, nextDay(date)),

@@ -67,7 +67,7 @@ export function deptNamed(name: string | undefined, departments: { id: string; n
 export function chatPrompt(history: ChatLine[], message: string, today: string): string {
   const earlier = history.slice(-HISTORY_TURNS).map((l) => `${l.role === "owner" ? "Them" : "You"}: ${l.text.replace(/\s+/g, " ").slice(0, 600)}`).join("\n");
   return [
-    `Today is ${today} (Central time). A person from the business is talking to you in the Control Room chat.`,
+    `Today is ${today}. A person from the business is talking to you in the Control Room chat.`,
     earlier ? `Earlier in this conversation:\n${earlier}` : "",
     `Their new message:\n${message}`,
     "Read what you need with your tools, then call finish with your reply to them.",

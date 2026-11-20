@@ -30,6 +30,7 @@ export interface CrewCanvasData {
   controls: boolean; maxSteps: number; maxChains: number; problem?: string;
   /** When the server read this, for the next firings of a draft chain. */
   now: number;
+  tz: string;
 }
 export interface CrewActions {
   save: (flow: Flow, note: string, confirmed: boolean) => Promise<ActionResult>;
@@ -44,7 +45,7 @@ const QUARTERS = Array.from({ length: 96 }, (_, i) => `${String(Math.floor(i / 4
 const WHEN_LABEL: Record<When, string> = { ok: "after it worked", failed: "after it failed", any: "either way" };
 const money = (v: number) => (v === 0 ? "$0" : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`);
 const clock = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`; };
-const ct = (iso: string) => new Date(iso).toLocaleString("en-US", { timeZone: "America/Chicago", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const ct = (iso: string, tz: string) => new Date(iso).toLocaleString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const same = (a: Flow, b: Flow) => JSON.stringify(a) === JSON.stringify(b);
 const readDraft = (): Flow | null => { try { const v = localStorage.getItem(DRAFT_KEY); return v ? JSON.parse(v) : null; } catch { return null; } };
 const writeDraft = (f: Flow | null) => { try { if (f) localStorage.setItem(DRAFT_KEY, JSON.stringify(f)); else localStorage.removeItem(DRAFT_KEY); } catch { /* storage blocked: the draft lives until reload */ } };
@@ -180,7 +181,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
 
   const perRun = chain ? chain.steps.reduce((s, st) => s + (byId[st.agent]?.perRun ?? 0), 0) : 0;
   const unknownCost = chain ? chain.steps.some((st) => byId[st.agent]?.perRun == null || byId[st.agent]?.estimated) : false;
-  const draftNext = chain && chain.on ? nextFirings(chain, d.now, 3) : [];
+  const draftNext = chain && chain.on ? nextFirings(chain, d.now, 3, d.tz) : [];
 
   return (
     <div className="stack">
@@ -259,7 +260,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
               <span className="ted-k">Cost</span>
               <span style={{ fontSize: 14 }}>About <b>{money(perRun)}</b> a run{unknownCost ? " (some agents have no real run yet)" : ""}{chain.on && runsPerMonth(chain) > 0 && <> · about <b>{money(perRun * runsPerMonth(chain))}</b> a month</>}</span>
               <span className="sub">From each agent’s last real runs. A step that is skipped or stops the chain costs nothing.</span>
-              {chain.on && chain.start.type === "schedule" && <span className="sub">Next: {(saved && same({ chains: [saved] }, { chains: [chain] }) ? d.next[chain.key] ?? [] : draftNext.map((t) => new Date(t).toISOString())).map(ct).join(" · ") || "none"}</span>}
+              {chain.on && chain.start.type === "schedule" && <span className="sub">Next: {(saved && same({ chains: [saved] }, { chains: [chain] }) ? d.next[chain.key] ?? [] : draftNext.map((t) => new Date(t).toISOString())).map((t) => ct(t, d.tz)).join(" · ") || "none"}</span>}
             </div>
           </div>
 
@@ -352,7 +353,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
           {d.versions.map((v) => (
             <div key={v.version} className="row wrap rule" style={{ gap: 10, padding: "10px 0", fontSize: 13 }}>
               <span style={{ fontWeight: 600, minWidth: 34 }}>v{v.version}</span>
-              <span style={{ flex: 1, minWidth: 180 }}>{v.note ?? ""} <span className="muted">· {v.chains} chain{v.chains === 1 ? "" : "s"}, {v.on.length ? `on: ${v.on.join(", ")}` : "all off"} · {v.createdBy} · {ct(v.createdAt)}</span></span>
+              <span style={{ flex: 1, minWidth: 180 }}>{v.note ?? ""} <span className="muted">· {v.chains} chain{v.chains === 1 ? "" : "s"}, {v.on.length ? `on: ${v.on.join(", ")}` : "all off"} · {v.createdBy} · {ct(v.createdAt, d.tz)}</span></span>
               {v.active ? <span className="pill sm" style={{ background: "var(--mint-soft)", color: "var(--mint-ink)" }}>Active</span> : <button className="btn ghost xs" disabled={busy} onClick={() => rollBack(v)}>Roll back</button>}
             </div>
           ))}

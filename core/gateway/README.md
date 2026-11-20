@@ -103,7 +103,7 @@ The fences the payment and email action types will have to pass. Neither action 
   payment to a vendor is flagged so it always waits for the owner.
 - `checkEmail`: never to an address in `email_suppressions`, never past today's cap, and for an
   agent seated in a department never past that department's cap (never above the company cap).
-- `index.ts`: `loadCaps`, `monthSpentUsd` and `emailsSentToday` (Chicago month and day, from
+- `index.ts`: `loadCaps`, `monthSpentUsd` and `emailsSentToday` (month and day in the business's time zone, from
   applied actions), `paidVendorIds`, and `onBreach`, where the trust levels card will demote
   the action type to Draft.
 - Only a signed-in the owner adds vendors (Settings, `DASHBOARD_CONTROLS=on`).

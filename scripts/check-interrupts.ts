@@ -70,7 +70,7 @@ no({ change: "new", title: "Grow orders", due_on: "March" }, /due_on is a date/)
 const store = readFileSync("core/proposals.ts", "utf8");
 assert.match(store, /const dept = seat\?\.departmentId \?\? deptId;/, "a head reaches only its own department");
 assert.match(store, /open\.length >= MAX_GOALS_PER_DEPT/, "the 3-goal limit is checked when filed");
-assert.match(store, /planGoal\(input, chicagoDate\(0\), await ownMeasureDefs\(\)\)/, "the measure and target pass the Goals page's checks");
+assert.match(store, /planGoal\(input, \(?await orgDate\(0\)\)?, await ownMeasureDefs\(\)\)/, "the measure and target pass the Goals page's checks");
 assert.match(store, /const c = await goalCheck\(p, dept, p\.goalId \?\? null\);\s*if \("problem" in c\) throw/, "checked again at the owner's yes");
 for (const f of ["createGoal(dept", "editGoal(c.goal!.id", "setGoalState(c.goal!.id, \"dropped\")"]) assert.ok(store.includes(f), `the yes goes through ${f}`);
 const propose = TOOLS.propose.params.find((p) => p.name === "kind");

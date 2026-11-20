@@ -65,7 +65,7 @@ function agentsOf(f: Floor): SeatAgent[] {
   return f.crew.map((a): SeatAgent => {
     const st = stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0);
     const last = f.runs.find((r) => r.agent_id === a.id && r.status !== "skipped");
-    return { id: a.id, name: a.name, role: a.role, href: `/agents/${a.id}`, icon: a.icon, hue: a.hue ?? null, look: stateLook(st, f.org.on), last: last ? `Last ran ${when(last.started_at)}` : "Never run" };
+    return { id: a.id, name: a.name, role: a.role, href: `/agents/${a.id}`, icon: a.icon, hue: a.hue ?? null, look: stateLook(st, f.org.on), last: last ? `Last ran ${when(last.started_at, f.tz)}` : "Never run" };
   });
 }
 

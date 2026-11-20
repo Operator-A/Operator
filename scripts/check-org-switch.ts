@@ -9,6 +9,7 @@ import { orgDay } from "../dashboard/orgDay";
 import type { CrewMember } from "../dashboard/crew";
 
 // Monday 2026-11-16, 3:00 PM Central
+const CT = "America/Chicago";
 const now = Date.parse("2026-11-16T15:00:00-06:00");
 const morning: Chain = { key: "morning", name: "Morning", on: false, start: { type: "schedule", days: "daily", time: "05:30" }, steps: [{ agent: "cfo" }, { agent: "chief_of_staff", days: "weekdays", notBefore: "06:45", passAlong: true }] };
 const test: Chain = { key: "test", name: "Test", on: false, start: { type: "schedule", days: "daily", time: "09:00" }, steps: [{ agent: "scratch" }] };
@@ -20,7 +21,7 @@ const members = [
   { id: "scratch", name: "Scratch", inOrg: false, perRun: 0.01 },
 ];
 
-const p = planOrgOn(members, [morning, test], now);
+const p = planOrgOn(members, [morning, test], now, CT);
 
 // every agent in the org wakes; the test agent and its chain stay off
 assert.deepEqual(p.wake.map((w) => w.id), ["cfo", "chief_of_staff", "b_piper", "wholesale_hunter"]);
@@ -49,14 +50,14 @@ assert.equal(p.totalMonth.toFixed(2), (0.05 * 30 + 0.02 * 22).toFixed(2));
 assert.deepEqual(p.unknownCost, []);
 
 // a chain already on stays on and isn't counted as turned on
-const p2 = planOrgOn(members, [{ ...morning, on: true }], now);
+const p2 = planOrgOn(members, [{ ...morning, on: true }], now, CT);
 assert.deepEqual(p2.chainsOn, []);
 assert.equal(p2.wake.find((w) => w.id === "cfo")!.firstRun, cfo.firstRun);
 
 // a scheduled agent with no cost known is named, not guessed
-const p3 = planOrgOn([{ id: "cfo", name: "Morgan", inOrg: true, perRun: null }], [{ ...morning, steps: [{ agent: "cfo" }] }], now);
+const p3 = planOrgOn([{ id: "cfo", name: "Morgan", inOrg: true, perRun: null }], [{ ...morning, steps: [{ agent: "cfo" }] }], now, CT);
 // a chain with an agent outside the org (here, one not in the list) never comes on
-assert.deepEqual(planOrgOn([{ id: "cfo", name: "Morgan", inOrg: true, perRun: 0.05 }], [morning], now).chainsOn, []);
+assert.deepEqual(planOrgOn([{ id: "cfo", name: "Morgan", inOrg: true, perRun: 0.05 }], [morning], now, CT).chainsOn, []);
 assert.deepEqual(p3.unknownCost, ["Morgan"]);
 assert.equal(p3.totalMonth, 0);
 
@@ -68,10 +69,10 @@ assert.equal(runsInMonth({ kind: "mondays" }), 4);
 // ---- Mondays (slice 3): a chain can start on Mondays only; the next Monday from Monday afternoon is a week out
 assert.equal(onDay("mondays", "2026-11-16"), true);
 assert.equal(onDay("mondays", "2026-11-17"), false);
-assert.deepEqual(nextRuns({ kind: "mondays", time: "07:00" }, now, 2), [Date.parse("2026-11-23T07:00:00-06:00"), Date.parse("2026-11-30T07:00:00-06:00")]);
+assert.deepEqual(nextRuns({ kind: "mondays", time: "07:00" }, now, 2, CT), [Date.parse("2026-11-23T07:00:00-06:00"), Date.parse("2026-11-30T07:00:00-06:00")]);
 const mondayFlow: Flow = { chains: [{ key: "plan", name: "Plan", on: true, start: { type: "schedule", days: "mondays", time: "07:00" }, steps: [{ agent: "b_piper" }] }] };
 assert.deepEqual(flowProblems(mondayFlow, { ids: ["b_piper"], manualOnly: new Set() }), []);
-assert.deepEqual(nextFirings(mondayFlow.chains[0], now, 1), [Date.parse("2026-11-23T07:00:00-06:00")]);
+assert.deepEqual(nextFirings(mondayFlow.chains[0], now, 1, CT), [Date.parse("2026-11-23T07:00:00-06:00")]);
 assert.equal(runsPerMonth(mondayFlow.chains[0]), 4);
 assert.deepEqual(flowProblems({ chains: [{ ...mondayFlow.chains[0], start: { type: "schedule", days: "fridays" as never, time: "07:00" } }] }, { ids: ["b_piper"], manualOnly: new Set() }).length, 1);
 
@@ -122,7 +123,7 @@ const day = orgDay({
     m("wholesale_hunter", "Rowan", { kind: "manual" }, 1.02),
     m("scratch", "Scratch", { kind: "manual" }, null, { inOrg: false }),
   ],
-  enabled: { cfo: true }, budget: { cfo: 0.5 }, grants: { chief_of_staff: ["report_morning_brief"] }, org, now,
+  enabled: { cfo: true }, budget: { cfo: 0.5 }, grants: { chief_of_staff: ["report_morning_brief"] }, org, now, tz: CT,
 });
 assert.deepEqual(day.groups.map((g) => [g.name, g.rows.map((r) => r.id)]), [["Company", ["chief_of_staff"]], ["Finance", ["cfo"]], ["Not on the chart", ["wholesale_hunter"]]]);
 assert.deepEqual(day.window, [4, 12]);

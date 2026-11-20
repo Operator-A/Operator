@@ -5,9 +5,9 @@ import type { GoalStatus } from "@/core/goal-rules";
 const WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
 const word = (n: number, lower = false) => { const w = n <= 10 ? WORDS[n] : String(n); return lower ? w.toLowerCase() : w; };
 
-/** "Good morning" before noon Central Time, "Good afternoon" until 5 PM, then "Good evening". */
-export function deskGreeting(now: number): string {
-  const h = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: "America/Chicago" }).format(new Date(now)));
+/** "Good morning" before noon in the business's time zone, "Good afternoon" until 5 PM, then "Good evening". */
+export function deskGreeting(now: number, tz: string): string {
+  const h = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: tz }).format(new Date(now)));
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 }
 

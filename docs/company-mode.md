@@ -119,7 +119,7 @@ reaction). `proposeLesson` stays for a lead's or head's send-back.
 | Measure | Shape | Counted from |
 |---|---|---|
 | Wholesale accounts won | total, by a date | `wholesale_leads` at stage Won |
-| Revenue this month | month | Shopify orders this Chicago month, cancelled left out |
+| Revenue this month | month | Shopify orders this month (the business's time zone), cancelled left out |
 | Orders this month | month | the same orders, counted |
 | Months of runway | floor | Mercury cash ÷ net burn per 30 days over 90 days (`core/money.ts`) |
 | Email list size | total, by a date | profiles on the list picked on Connections › Klaviyo, read over Klaviyo's MCP server (slice 6) |
@@ -261,7 +261,7 @@ plans no department):
   its earlier focus. Planning again the same week replaces the plan. With no lines and a plan this
   week, the result is saved as the review; with no plan yet, as the plan's words.
 
-Weeks are Chicago weeks starting Monday. Scheduling stays as it is: heads are off duty until
+Weeks start Monday, in the business's time zone. Scheduling stays as it is: heads are off duty until
 launch, and the first run of a week plans whenever it happens. When heads go on duty, give each a
 Monday morning schedule and chain it after its team to get the review.
 

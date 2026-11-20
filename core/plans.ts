@@ -4,10 +4,11 @@ import "server-only";
 // teammate (a 7-day focus note), an open seat, or the owner (a person's job). A run that hands in no
 // lines while this week's plan exists is the review. Who a line names is matched against the chart
 // in code; a plan grants nothing, and nothing here runs, sends or spends.
+import { orgDate } from "@/core/tz";
 import { db } from "@/core/db";
 import { setFocus } from "@/core/memory";
 import { agentNames, below, liveAgentIds, loadOrg, seatOf, type Org } from "@/core/org";
-import { chicagoDate } from "@/core/time";
+
 import { FOCUS_DAYS, addDays, focusText, openJobs, planItems, runMode, weekOf, type PlanItem } from "@/core/plan-rules";
 
 export interface Plan {
@@ -57,10 +58,10 @@ export async function savePlan(headId: string, runId: string | null, summary: st
   const org = await loadOrg();
   if (!org) throw new Error("The org chart isn't set up.");
   const r = await reachOf(org, headId);
-  const week = weekOf(chicagoDate(0));
+  const week = weekOf((await orgDate(0)));
   const { items, dropped } = planItems(lines, r);
   if (!items.length) throw new Error(`no line named anyone it can reach (${dropped.join("; ")})`);
-  const until = addDays(chicagoDate(0), FOCUS_DAYS);
+  const until = addDays((await orgDate(0)), FOCUS_DAYS);
   let focused = 0;
   for (const it of items.filter((i) => i.kind === "agent")) {
     try { it.memoryId = await setFocus(it.agentId!, focusText(r.head, until, it.words), r.head, `plan:${week}:${r.deptId}`, FOCUS_DAYS); focused++; }
@@ -79,7 +80,7 @@ export async function saveReview(headId: string, runId: string | null, words: st
   const org = await loadOrg();
   if (!org) throw new Error("The org chart isn't set up.");
   const r = await reachOf(org, headId);
-  const week = weekOf(chicagoDate(0));
+  const week = weekOf((await orgDate(0)));
   const text = clip(words, 2000);
   if (!text) return "nothing to save";
   const plan = await getPlan(r.deptId, week);
@@ -111,7 +112,7 @@ export async function weekView(agentId: string) {
   const org = await loadOrg();
   if (!org) throw new Error("The org chart isn't set up.");
   const r = await reachOf(org, agentId);
-  const today = chicagoDate(0), week = weekOf(today);
+  const today = (await orgDate(0)), week = weekOf(today);
   const plan = await getPlan(r.deptId, week);
   const mode = runMode(!!plan);
   return {
@@ -130,7 +131,7 @@ export async function weekView(agentId: string) {
 
 /** Jobs from this week's plans that the owner hasn't marked done, for Needs you, with the department's goal page to open. Empty when the table isn't there. */
 export async function openJobsThisWeek(): Promise<{ planId: string; head: string | null; title: string; href: string }[]> {
-  const { data, error } = await db().from("plans").select("id, department_id, head_agent, items").eq("week_of", weekOf(chicagoDate(0)));
+  const { data, error } = await db().from("plans").select("id, department_id, head_agent, items").eq("week_of", weekOf((await orgDate(0))));
   if (error || !data?.length) return [];
   const { data: goals } = await db().from("goals").select("id, department_id").in("department_id", data.map((p) => p.department_id)).in("state", ["active", "paused"]).order("created_at");
   const goalOf = (dept: string) => (goals ?? []).find((g) => g.department_id === dept)?.id as string | undefined;

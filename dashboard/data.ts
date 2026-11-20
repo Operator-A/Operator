@@ -1,6 +1,8 @@
 import "server-only";
 // Everything the Control Room reads. Server only: the service-role client never reaches
 // the browser, and every function checks the login first.
+import { orgTz } from "@/core/tz";
+import { DEFAULT_TZ } from "@/core/time";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -95,6 +97,8 @@ export interface Floor {
   problem?: string;
   /** When this request read the floor; pages use it instead of calling Date.now() while rendering. */
   now: number;
+  /** The business's time zone (card 187), for every time on screen; client components get it from here. */
+  tz: string;
   agents: Record<string, AgentRow>;
   runs: Run[];
   spentToday: Record<string, number>;
@@ -190,7 +194,8 @@ export const getFloor = cache(async (): Promise<Floor> => {
   await requireSession();
   const h = health();
   const now = Date.now();
-  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, org: { on: false, at: null, by: null, known: false } };
+  const tz = h.supabase ? await orgTz() : DEFAULT_TZ;
+  const empty: Floor = { ok: false, now, tz, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, org: { on: false, at: null, by: null, known: false } };
   if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
   const since = new Date(now - 60 * 864e5).toISOString();
   const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, set, orgSwitch] = await Promise.all([
@@ -239,7 +244,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const tools = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, { label: t.label, kind: t.kind }]));
   const seatTitle = (id: string) => org?.seats.find((x) => x.holder === "agent" && x.agentId === id)?.title ?? null;
   const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, cost: runCostOf(costSpecs[x.id], realCost(runs, x.id)), seatTitle: seatTitle(x.id), chains })));
-  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0,
+  return { ok: true, now, tz, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0,
     approvalTools: ap.error ? [] : (ap.data ?? []).map((x) => toolOfCard(x.agent_actions)), proposalKinds: pp.error ? [] : (pp.data ?? []).map((x) => String(x.kind)),
     jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette, org: orgSwitch };
 });
@@ -457,11 +462,11 @@ export async function getCrewCanvas(f: Floor): Promise<CrewCanvasData> {
       metrics: METRICS[id] ?? [], perRun: a?.perRun ?? null, estimated: a?.costBasis === "estimate",
     };
   });
-  const base = { palette, approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })), controls: controlsOn(), maxSteps: MAX_STEPS, maxChains: MAX_CHAINS, now: f.now };
+  const base = { palette, approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })), controls: controlsOn(), maxSteps: MAX_STEPS, maxChains: MAX_CHAINS, now: f.now, tz: f.tz };
   if (!health().supabase) return { ...base, version: 0, note: null, flow: { chains: [] }, problems: [], versions: [], next: {}, problem: "Supabase isn’t set up, so there is no flow to show." };
   try {
     const [active, all] = await Promise.all([loadFlow(f.palette), listFlowVersions(f.palette)]);
-    const next = Object.fromEntries(active.flow.chains.map((c) => [c.key, nextFirings(c, f.now, 3).map((t) => new Date(t).toISOString())]));
+    const next = Object.fromEntries(active.flow.chains.map((c) => [c.key, nextFirings(c, f.now, 3, f.tz).map((t) => new Date(t).toISOString())]));
     return {
       ...base, version: active.version, note: active.note, flow: active.flow, problems: active.problems, next,
       versions: all.map((v) => ({ version: v.version, active: v.active, note: v.note, createdBy: v.createdBy, createdAt: v.createdAt, chains: v.flow.chains.length, on: v.flow.chains.filter((c) => c.on).map((c) => c.name) })),

@@ -154,7 +154,8 @@ export function DryRun({ action, compact }: { action: Act; compact?: boolean }) 
   const go = () => start(async () => {
     let r: ActionResult;
     try { r = await action(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Dry run failed." }; }
-    setRes({ ...r, at: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Chicago" }) });
+    // the moment it ended, on the viewer's own clock: it was just now
+    setRes({ ...r, at: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
   });
   return (
     <>
@@ -163,7 +164,7 @@ export function DryRun({ action, compact }: { action: Act; compact?: boolean }) 
         <div style={{ flexBasis: "100%", padding: "14px 16px", borderRadius: 18, border: "1px dashed var(--mut2)", display: "flex", flexDirection: "column", gap: 6 }}>
           {busy ? <span style={{ fontSize: 13 }} className="muted">Dry run going… reading real data, writing nothing.</span> : res && (
             <>
-              <span style={{ fontSize: 11.5, fontWeight: 600 }} className="muted">Dry run · {res.at} CT · nothing written, $0</span>
+              <span style={{ fontSize: 11.5, fontWeight: 600 }} className="muted">Dry run · {res.at} · nothing written, $0</span>
               <span style={{ fontSize: 13.5, lineHeight: 1.5, color: res.ok ? "inherit" : "var(--red-ink)" }}>{res.text}</span>
             </>
           )}
