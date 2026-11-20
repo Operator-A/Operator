@@ -235,7 +235,25 @@ approves each first playbook, and this card makes that one tap for the first one
 - **Running, then done**: the steps and a pulse while the run goes, then its summary, its cost and the
   approvals waiting, for a day. Avery's summary of the day comes at 7:00 in the business's time zone.
 - **Your other departments**: each says what it waits on, or that it's ready once its playbook is
-  approved on Crew.
+  approved on Crew. Departments Avery designed come first.
+
+### A first try for a department Avery designed (card 194)
+
+A designed department's agents are built with no playbook: a playbook step is a tool call with fixed
+inputs, and a draft has only the tools and a sentence on each run, so code doesn't guess them. Their
+first job is a **first try** instead: one real run that reads only, sends nothing, queues nothing and
+saves no output for other agents (trigger `preview`, the builder's Try it), after which code drafts the
+routine from the calls that worked (`afterRun`).
+
+- **The pick**: `builtCandidates` finds the installed people of the sketch's designed departments by name
+  (names are unique across the sketch). Those with no playbook yet can start when at least one of their
+  tools needs nothing unconnected. They rank before every template's agent, since they answer the
+  founder's own words: workers before heads, every tool connected first, then sketch order.
+- **The tap** (`startFirstJob`): Avery's playbook is approved and she goes on duty as before. The
+  designed agent stays **off duty** (card 188: no agent goes on duty without an approved playbook) and
+  makes its try in the background (`startTry`). The setup state keeps the kind (`firstJob.kind: "try"`).
+- **After the try** the card shows the routine that was drafted and **Review its routine**, which opens
+  the agent's page, where Go live approves it. The founder then puts the agent on duty.
 
 ### The wrap-up (card 186)
 

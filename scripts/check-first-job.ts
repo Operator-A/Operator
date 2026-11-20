@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { TEMPLATES } from "../core/templates";
 import { TOOLS } from "../core/tools/catalog";
 import { SETUP_AGENT, SETUP_TEMPLATE, readSetupState } from "../core/setup-rules";
-import { DONE_FOR_MS, deptWaits, firstJobChains, firstJobPhase, laterWords, missingTiles, pickFirstJob, readFirstJobTap, runnableSteps, type JobRun } from "../core/first-job-rules";
+import { DONE_FOR_MS, builtCandidates, deptWaits, firstJobChains, firstJobPhase, laterWords, missingTiles, pickFirstJob, readFirstJobTap, runnableSteps, type JobRun } from "../core/first-job-rules";
 import { mergeTemplates } from "../core/template-rules";
 import { planOrgOn } from "../dashboard/orgPlan";
 import type { Chain } from "../core/flow-rules";
@@ -84,7 +84,9 @@ assert.ok(waits.find((w) => w.templateId === "prospecting")?.waitsOn.includes("G
 assert.deepEqual(deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: new Set([SETUP_AGENT, "cfo", "bookkeeper"]), connected: new Set(), needsOf }, null).map((w) => w.templateId), ["finance"], "only installed departments");
 
 // setup state: offer and firstJob read safely
-assert.deepEqual(readSetupState({ done: true, offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z" } }, []), { done: true, stage: "business", skipped: [], plans: {}, designs: [], leaning: [], offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z" }, wrapUp: false });
+assert.deepEqual(readSetupState({ done: true, offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z" } }, []), { done: true, stage: "business", skipped: [], plans: {}, designs: [], leaning: [], offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z", kind: "playbook" }, wrapUp: false });
+assert.equal(readSetupState({ firstJob: { agentId: "tess", at: "2026-11-19T20:00:00Z", kind: "try" } }, []).firstJob?.kind, "try", "a first try is kept as one");
+assert.equal(readSetupState({ firstJob: { agentId: "tess", at: "2026-11-19T20:00:00Z", kind: "launch" } }, []).firstJob?.kind, "playbook", "anything else reads as a playbook job");
 assert.equal(readSetupState({ firstJob: { agentId: "Bad Id!", at: "2026-11-19" } }, []).firstJob, null);
 assert.equal(readSetupState({ firstJob: { agentId: "bookkeeper", at: "not a date" } }, []).firstJob, null);
 assert.equal(readSetupState({ offer: "yes" }, []).offer, false, "only true offers");
@@ -131,6 +133,50 @@ const members = allAgents.map((id) => ({ id, name: id, inOrg: ids.includes(id), 
 const plan = planOrgOn(members, turned.chains, T, "America/Chicago");
 assert.deepEqual(plan.wake.map((w) => w.id).sort(), [...ids].sort());
 assert.ok(plan.wake.find((w) => w.id === SETUP_AGENT)?.firstRun, "Avery's morning summary is scheduled");
+
+// card 194: a department Avery designed starts with a first try (its agents have no playbook yet)
+{
+  const readTool = Object.values(TOOLS).find((t) => t.kind === "read" && needsOf(t.id).length === 0)!;
+  const shopTool = Object.values(TOOLS).find((t) => t.kind === "read" && needsOf(t.id).includes("SHOPIFY_CONNECTED"))!;
+  const person = (name: string, tools: string[]) => ({ name, seat: `${name}'s seat`, job: `${name} watches the standing orders.`, tools });
+  const designs = [
+    { key: "money-desk", name: "Money desk", kit: "finance", draft: null },
+    { key: "shop-accounts", name: "Shop accounts", kit: null, draft: { head: person("Tess", [readTool.id]), agents: [person("Ivo", [shopTool.id])] } },
+    { key: "gifts", name: "Holiday boxes", kit: null, draft: { head: person("Nell", [shopTool.id]), agents: [person("Ghost", [readTool.id])] } },
+  ];
+  const agents = [{ id: "tess", name: "Tess" }, { id: "ivo", name: "Ivo" }, { id: "nell", name: "Nell" }];
+  const built = builtCandidates(designs, agents);
+  assert.deepEqual(built.map((b) => [b.agentId, b.deptId, b.head]), [["tess", "design:shop-accounts", true], ["ivo", "design:shop-accounts", false], ["nell", "design:gifts", true]], "kits are skipped; a person not installed is skipped; head first, sketch order");
+  const pickB = (connected: ToolTileId[], b = built) => pickFirstJob(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed, pending, connected: new Set(connected), needsOf, kindOf, built: b });
+  const a = pickB(["mercury", "shopify"]);
+  assert.equal(a?.kind, "try", "a designed department goes first, even over a template job that proposes");
+  assert.equal(a?.agentId, "ivo", "workers before heads");
+  assert.deepEqual([a?.templateId, a?.dept, a?.proposes, a?.keep], ["design:shop-accounts", "Shop accounts", false, []]);
+  const b = pickB(["mercury"]);
+  assert.equal(b?.agentId, "tess", "Ivo needs Shopify for every tool he has: not runnable; Tess reads what needs nothing");
+  assert.deepEqual(b?.later, []);
+  assert.equal(pickB(["mercury"], built.filter((x) => x.agentId !== "tess"))?.kind, "playbook", "no designed agent can start: a template's job is picked as before");
+  assert.deepEqual(pickB([], built.filter((x) => x.agentId === "nell")), pickB([], []), "a designed agent with every tool waiting is never picked");
+  const w = deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: new Set(["tess", "ivo", "nell", "cfo", "bookkeeper"]), connected: new Set(), needsOf, built }, "design:shop-accounts");
+  assert.deepEqual(w.map((x) => [x.templateId, x.dept, x.waitsOn.length > 0]), [["design:gifts", "Holiday boxes", true], ["finance", "Finance", true]], "designed departments are listed first, the first job's own left out");
+
+  // a first try follows its preview run; a playbook job never counts one
+  const tryStarted = { offer: true, firstJob: { agentId: "bookkeeper", at: new Date(T).toISOString(), kind: "try" as const } };
+  assert.equal(firstJobPhase(tryStarted, [run({ trigger: "preview", status: "ok", ended_at: new Date(T + 9e3).toISOString() })], T + 60e3)?.phase, "done", "the try's run is the first job");
+  assert.equal(firstJobPhase(tryStarted, [run({ status: "ok", ended_at: new Date(T + 9e3).toISOString() })], T + 60e3)?.phase, "running", "a manual run isn't the try");
+
+  const acts = readFileSync("dashboard/actions.ts", "utf8");
+  const sf = acts.slice(acts.indexOf("export async function startFirstJob"), acts.indexOf("function firstJobPlan"));
+  assert.match(sf, /const ids = \[\.\.\.\(isTry \? \[\] : \[tap\.agentId\]\)/, "a designed agent is never put on duty by the first job: it has no approved playbook (card 188)");
+  assert.match(sf, /isTry \? await startTry\(tap\.agentId, who\.name\) : await startRun\(/);
+  assert.match(sf, /markFirstJob\(tap\.agentId, isTry \? "try" : "playbook"\)/);
+  assert.match(acts, /async function tryOnce[\s\S]*withRun\(agentId, "preview"[\s\S]*afterRun\(agentId, rid, got\)/, "a try is a preview run through withRun, and its routine is drafted by code after it");
+  assert.match(acts, /async function startTry[\s\S]*tryOnce\(agentId, t, true, markStarted\)/, "the first try explores fresh, in the background");
+  const card = readFileSync("dashboard/components/firstJob.tsx", "utf8");
+  assert.match(card, /Start its first try/);
+  assert.match(card, /href=\{`\/build\/\$\{v\.agentId\}`\}[^>]*>Review its routine/, "after the try, the founder reviews its routine on its page");
+  assert.match(readFileSync("dashboard/firstJob.ts", "utf8"), /\.eq\("trigger", "preview"\)/, "the Desk reads the try's run, which its floor leaves out");
+}
 
 // the action re-checks in code and the Desk draws the card
 const actions = readFileSync("dashboard/actions.ts", "utf8");

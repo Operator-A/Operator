@@ -6,12 +6,16 @@ import type { Template } from "@/core/template-rules";
 import { NEED_TILE, TOOL_TILES, type ToolTileId } from "@/core/tools-step-rules";
 
 export interface FirstJob {
+  /** playbook: approve its first playbook and put it on duty (a template's agent). try: one try that reads only,
+   * sends nothing and drafts its routine, while it stays off duty (an agent Avery designed, card 194). */
+  kind: "playbook" | "try";
   agentId: string;
   name: string;
   role: string;
+  /** The template id, or a designed department's pick id (core/design-rules.ts pickId). */
   templateId: string;
   dept: string;
-  /** The template's mandate: the job it does. */
+  /** The template's mandate (or the designed person's job): the job it does. */
   job: string;
   /** Its job ends in an approval card (it has an action tool whose tool is connected). */
   proposes: boolean;
@@ -39,7 +43,30 @@ export interface PickInput {
   needsOf: (toolId: string) => readonly string[];
   /** A tool's kind (core/tools/catalog.ts): "action" tools end in an approval card. */
   kindOf: (toolId: string) => string | undefined;
+  /** Agents of designed departments with no playbook yet (builtCandidates, then filtered by the caller). */
+  built?: readonly BuiltCandidate[];
 }
+
+/** A person of a department Avery designed, installed as an agent (card 194). */
+export interface BuiltCandidate { agentId: string; name: string; role: string; job: string; tools: readonly string[]; head: boolean; deptId: string; dept: string; order: number }
+
+/**
+ * The installed people of the designed departments in the sketch, in sketch and seat order (head first).
+ * Each is found by name among the installed agents: names are unique across the sketch (core/design-rules.ts).
+ */
+export function builtCandidates(designs: readonly { key: string; name: string; kit: string | null; draft: { head: DraftPersonLike | null; agents: readonly DraftPersonLike[] } | null }[], agents: readonly { id: string; name: string }[]): BuiltCandidate[] {
+  const out: BuiltCandidate[] = [];
+  designs.forEach((d) => {
+    if (d.kit || !d.draft) return;
+    const people = [...(d.draft.head ? [{ p: d.draft.head, head: true }] : []), ...d.draft.agents.map((p) => ({ p, head: false }))];
+    for (const { p, head } of people) {
+      const a = agents.find((x) => x.name === p.name);
+      if (a) out.push({ agentId: a.id, name: p.name, role: p.seat || (head ? "Head" : "Agent"), job: p.job, tools: [...p.tools], head, deptId: `design:${d.key}`, dept: d.name, order: out.length });
+    }
+  });
+  return out;
+}
+type DraftPersonLike = { name: string; seat: string; job: string; tools: readonly string[] };
 
 type Spec = { mandate?: string; tools?: string[] };
 const specOf = (t: Template, id: string): Spec => ((t.specs as Record<string, Spec>)[id] ?? {});
@@ -65,9 +92,19 @@ export function missingTiles(tools: readonly string[], needsOf: PickInput["needs
  * without the rest). Ranked: a job that ends in an approval card first (its action's tool connected),
  * then workers before heads, then an agent with every tool over one missing some, then templates in
  * order, then seat order. Null when no agent has a step that can run.
+ *
+ * Card 194: an agent of a department Avery designed has no playbook yet, so its first job is a try that
+ * drafts one. It ranks before every template's agent (it answers the founder's own words), workers
+ * before heads, every tool connected first, then sketch order. It can start when at least one of its
+ * tools needs nothing that isn't connected.
  */
 export function pickFirstJob(templates: readonly Template[], p: PickInput): FirstJob | null {
   const cands: { j: FirstJob; rank: number[] }[] = [];
+  for (const b of p.built ?? []) {
+    if (!b.tools.some((id) => !missingTiles([id], p.needsOf, p.connected).length)) continue;
+    const later = missingTiles(b.tools, p.needsOf, p.connected).map((id) => TOOL_TILES.find((x) => x.id === id)!.name);
+    cands.push({ j: { kind: "try", agentId: b.agentId, name: b.name, role: b.role, templateId: b.deptId, dept: b.dept, job: b.job, proposes: false, keep: [], later }, rank: [-1, b.head ? 1 : 0, later.length ? 1 : 0, b.order, 0] });
+  }
   templates.forEach((t, ti) => {
     if (t.id === p.setupTemplate) return;
     const dept = t.departments[0]?.name ?? t.name;
@@ -84,7 +121,7 @@ export function pickFirstJob(templates: readonly Template[], p: PickInput): Firs
       const proposes = actions.some((id) => !missingTiles([id], p.needsOf, p.connected).length);
       const later = missingTiles([...steps, ...actions], p.needsOf, p.connected).map((id) => TOOL_TILES.find((x) => x.id === id)!.name);
       cands.push({
-        j: { agentId: a.id, name: a.name, role: a.role || s.title, templateId: t.id, dept, job: spec.mandate?.trim() || s.sub || s.title, proposes, keep, later },
+        j: { kind: "playbook", agentId: a.id, name: a.name, role: a.role || s.title, templateId: t.id, dept, job: spec.mandate?.trim() || s.sub || s.title, proposes, keep, later },
         rank: [proposes ? 0 : 1, s.parent == null ? 1 : 0, later.length ? 1 : 0, ti, si],
       });
     });
@@ -96,13 +133,17 @@ export function pickFirstJob(templates: readonly Template[], p: PickInput): Firs
 /** "Starts without Shopify and Gmail." for a first job that waits on nothing it needs now. */
 export const laterWords = (later: readonly string[]) => (later.length ? `It starts without ${later.join(" and ")}; connect ${later.length === 1 ? "it" : "them"} later to add what ${later.length === 1 ? "it reads" : "they read"}.` : "");
 
-/** Every installed department but the first job's, with the tools it still waits on. */
-export function deptWaits(templates: readonly Template[], p: Pick<PickInput, "setupTemplate" | "installed" | "connected" | "needsOf">, skip: string | null): DeptWait[] {
-  return templates.filter((t) => t.id !== p.setupTemplate && t.id !== skip && t.agents.some((a) => p.installed.has(a.id))).map((t) => {
+/** Every installed department but the first job's, with the tools it still waits on: designed ones first (card 194). */
+export function deptWaits(templates: readonly Template[], p: Pick<PickInput, "setupTemplate" | "installed" | "connected" | "needsOf" | "built">, skip: string | null): DeptWait[] {
+  const designed = [...new Set((p.built ?? []).map((b) => b.deptId))].filter((id) => id !== skip).map((id) => {
+    const people = (p.built ?? []).filter((b) => b.deptId === id);
+    return { templateId: id, dept: people[0].dept, waitsOn: missingTiles(people.flatMap((b) => b.tools), p.needsOf, p.connected).map((t) => TOOL_TILES.find((x) => x.id === t)!.name) };
+  });
+  return [...designed, ...templates.filter((t) => t.id !== p.setupTemplate && t.id !== skip && t.agents.some((a) => p.installed.has(a.id))).map((t) => {
     const tools = t.agents.filter((a) => p.installed.has(a.id)).flatMap((a) => specOf(t, a.id).tools ?? []);
     const waitsOn = missingTiles(tools, p.needsOf, p.connected).map((id) => TOOL_TILES.find((x) => x.id === id)!.name);
     return { templateId: t.id, dept: t.departments[0]?.name ?? t.name, waitsOn };
-  });
+  })];
 }
 
 /** How long the Desk keeps the first job's result up after its run ends. */
@@ -117,13 +158,14 @@ export type FirstJobPhase<R extends JobRun = JobRun> =
 
 /**
  * What the Desk shows: the offer until the first job starts, then its run while it goes, then its
- * result for a day. Null for a business that wasn't offered one (started empty, or never went through setup).
+ * result for a day. A first try (card 194) follows its try, which is a preview run; a first playbook job
+ * never counts a preview. Null for a business that wasn't offered one (started empty, or never went through setup).
  */
-export function firstJobPhase<R extends JobRun>(s: { offer: boolean; firstJob: { agentId: string; at: string } | null }, runs: readonly R[], now: number): FirstJobPhase<R> {
+export function firstJobPhase<R extends JobRun>(s: { offer: boolean; firstJob: { agentId: string; at: string; kind?: "playbook" | "try" } | null }, runs: readonly R[], now: number): FirstJobPhase<R> {
   if (!s.offer) return null;
   if (!s.firstJob) return { phase: "offer" };
   const since = Date.parse(s.firstJob.at) - 60e3;
-  const run = runs.filter((r) => r.agent_id === s.firstJob!.agentId && r.trigger !== "preview" && Date.parse(r.started_at) >= since)
+  const run = runs.filter((r) => r.agent_id === s.firstJob!.agentId && (r.trigger === "preview") === (s.firstJob!.kind === "try") && Date.parse(r.started_at) >= since)
     .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))[0] ?? null;
   if (!run || run.status === "running") return now - Date.parse(s.firstJob.at) < DONE_FOR_MS ? { phase: "running", run } : null;
   const ended = Date.parse(run.ended_at ?? run.started_at);

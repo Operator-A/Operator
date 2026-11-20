@@ -109,7 +109,7 @@ export const shownStage = (s: Pick<SetupState, "stage" | "wrapUp">): Stage => (s
  */
 export interface SetupState { done: boolean; stage: Stage; skipped: CategoryId[]; plans: Plans; designs: Design[];
   /** The kits in Avery's sketch, as the tools step and the chart read them; worked out from designs, never stored. */
-  leaning: Leaning[]; offer: boolean; firstJob: { agentId: string; at: string } | null;
+  leaning: Leaning[]; offer: boolean; firstJob: { agentId: string; at: string; kind: "playbook" | "try" } | null;
   /** Card 186: departments are installed and /start still shows the wrap-up (credits, then the first job) until Go to your Desk. */
   wrapUp: boolean }
 export const NO_SETUP: SetupState = { done: false, stage: "business", skipped: [], plans: {}, designs: [], leaning: [], offer: false, firstJob: null, wrapUp: false };
@@ -117,8 +117,8 @@ const AGENT_ID = /^[a-z][a-z0-9_]{1,39}$/;
 export function readSetupState(raw: unknown, templateIds: readonly string[]): SetupState {
   const r = (raw && typeof raw === "object" ? raw : {}) as { done?: unknown; stage?: unknown; skipped?: unknown; plans?: unknown; designs?: unknown; offer?: unknown; firstJob?: unknown; wrapUp?: unknown };
   const designs = readDesigns(r.designs, templateIds);
-  const fj = (r.firstJob && typeof r.firstJob === "object" ? r.firstJob : {}) as { agentId?: unknown; at?: unknown };
-  const firstJob = typeof fj.agentId === "string" && AGENT_ID.test(fj.agentId) && typeof fj.at === "string" && !Number.isNaN(Date.parse(fj.at)) ? { agentId: fj.agentId, at: fj.at } : null;
+  const fj = (r.firstJob && typeof r.firstJob === "object" ? r.firstJob : {}) as { agentId?: unknown; at?: unknown; kind?: unknown };
+  const firstJob = typeof fj.agentId === "string" && AGENT_ID.test(fj.agentId) && typeof fj.at === "string" && !Number.isNaN(Date.parse(fj.at)) ? { agentId: fj.agentId, at: fj.at, kind: fj.kind === "try" ? "try" as const : "playbook" as const } : null;
   return { done: r.done === true, stage: readStage(r.stage), skipped: readSkipped(r.skipped), plans: readPlans(r.plans), designs, leaning: leaningOf(designs), offer: r.offer === true, firstJob, wrapUp: r.wrapUp === true && r.done === true && r.offer === true };
 }
 

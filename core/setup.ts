@@ -114,8 +114,8 @@ export async function planCategory(cat: CategoryId, plan: CategoryPlan | null): 
 }
 
 /** The first job started (card 154): which agent, and when. */
-export async function markFirstJob(agentId: string): Promise<void> {
-  await saveSetupState({ ...(await setupState()), firstJob: { agentId, at: new Date().toISOString() } });
+export async function markFirstJob(agentId: string, kind: "playbook" | "try" = "playbook"): Promise<void> {
+  await saveSetupState({ ...(await setupState()), firstJob: { agentId, at: new Date().toISOString(), kind } });
 }
 
 /** Avery, off duty in the company seat, so the conversation has someone to talk to. Only into an empty business. */
