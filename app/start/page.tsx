@@ -11,7 +11,7 @@ import { STAGES, STAGE_WORDS, nextStage, prevStage, stageProgress, type Stage } 
 import { SetupChat, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
 import { Icon } from "@/dashboard/components/Icon";
 import { toolsStep, type TileView } from "@/dashboard/toolsStep";
-import { categoryOfTile, categoryState, currentCategory, isCategory, orderCategories, planNotes, type CategoryId, type Plans, type ToolCategory } from "@/core/tools-step-rules";
+import { categoryOfTile, categoryState, currentCategory, isCategory, orderCategories, planKinds, planNotes, type CategoryId, type Plans, type ToolCategory } from "@/core/tools-step-rules";
 import { KeyForm, ActionButton } from "@/dashboard/components/client";
 import { companyChart } from "@/dashboard/company";
 import { initialPick } from "@/core/company-rules";
@@ -54,7 +54,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const blocked = controlsOn() ? null : "Avery can’t answer here yet: real runs are switched off for this OPERATOR. Whoever runs it turns them on.";
   const { tiles, shopifyDomain, connected } = await toolsStep(state.leaning.map((l) => l.id), health);
   const open = tiles.find((t) => t.tile.id === sp.c) ?? null;
-  const chart = companyChart(state.leaning, connected, bill, planNotes(state.plans));
+  const chart = companyChart(state.leaning, connected, bill, planNotes(state.plans), planKinds(state.plans));
   const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected && open ? { ok: true, text: `${open.tile.name} is connected.` } : null;
   // the tools step (card 182): one question per part of the company, the ones a leaned-toward department needs first
   const order = orderCategories(new Set(tiles.filter((t) => t.neededBy.length).map((t) => t.tile.id)));
@@ -199,18 +199,15 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
         )}
 
         {state.stage === "company" && (
-          <section key="company" className="wg-glass wg-card wg-enter" aria-labelledby="company-h">
-            <h1 id="company-h" className="wg-h1" style={{ fontSize: 30 }}>Your company</h1>
-            <span className="wg-lead">{state.leaning.length ? "Avery’s proposal, from what you told her and the tools you connected. Each agent shows its job, the tools it uses and what it adds to the month." : "Avery hasn’t proposed departments yet. Go back and tell her about your business, or add departments below."}</span>
+          <section key="company" className="wg-reveal" aria-labelledby="company-h">
+            <div className="wg-enter" style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 10 }}>
+              <h1 id="company-h" className="wg-h1" style={{ fontSize: "clamp(30px, 5vw, 44px)" }}>Meet your company.</h1>
+              <span className="wg-lead">{state.leaning.length ? "Built from what you told Avery and the tools you connected. Nothing goes out without your OK." : "Avery hasn’t proposed departments yet. Go back and tell her about your business, or add departments below."}</span>
+            </div>
             {owner ? (
-              <>
-                <CompanyChart owner={biz.ownerName || "You"} company={chart.company} depts={chart.depts} initial={initialPick(chart.depts)} install={setupInstall} back={setupGo.bind(null, "business")} />
-                <div className="row wrap rule" style={{ gap: 12, justifyContent: "space-between", paddingTop: 12 }}>
-                  <span style={{ display: "flex", flexDirection: "column", gap: 2 }}><b style={{ fontSize: 14 }}>Start empty</b><span className="sub">Keep Avery alone, add departments on Crew &gt; Org chart and build each agent yourself.</span></span>
-                  <ActionButton className="btn outline sm" action={setupStartEmpty} follow>Start empty</ActionButton>
-                </div>
-              </>
-            ) : <span className="sub">An owner of this business picks the departments.</span>}
+              <CompanyChart owner={biz.ownerName || "You"} company={chart.company} depts={chart.depts} initial={initialPick(chart.depts)} install={setupInstall} back={setupGo.bind(null, "tools")}
+                empty={<ActionButton className="btn ghost sm" action={setupStartEmpty} follow>Start empty instead</ActionButton>} />
+            ) : <span className="sub" style={{ textAlign: "center" }}>An owner of this business picks the departments.</span>}
           </section>
         )}
 

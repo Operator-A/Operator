@@ -8,8 +8,8 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import type { SetupAnswer } from "@/core/setup";
 import type { ActionResult } from "@/dashboard/actions";
 import { FACT_TOPICS, TOPIC_WORDS, type Fact, type FactTopic } from "@/core/setup-rules";
-import { BILLING_WORDS, costDetail, monthWords, usd } from "@/core/cost-rules";
-import { companyTotals, waitLine, type CompanyAgent, type CompanyDept } from "@/core/company-rules";
+import { BILLING_WORDS, usd } from "@/core/cost-rules";
+import { DEPT_STATUS_WORDS, companyTotals, deptMonth, deptStatus, waitLine, type CompanyAgent, type CompanyDept } from "@/core/company-rules";
 import { Toast } from "./client";
 import { Icon } from "./Icon";
 
@@ -221,12 +221,13 @@ export function UnlistedTool({ ask }: { ask: (name: string) => Promise<ActionRes
 }
 
 /**
- * Step 3, "Your company" (card 153): the org chart Avery proposes, drawn in code. The founder can leave
- * a department out or add one; Start this company installs exactly what's on the chart.
+ * Step 3, "Meet your company" (cards 153, 184): the org chart Avery proposes, drawn in code and revealed
+ * in sequence. The founder can leave a department out or add one; Start this company installs exactly
+ * what's on the chart. Statuses and month totals are worked out in code (core/company-rules.ts).
  */
-export function CompanyChart({ owner, company, depts, initial, install, back }: {
+export function CompanyChart({ owner, company, depts, initial, install, back, empty }: {
   owner: string; company: CompanyAgent[]; depts: CompanyDept[]; initial: string[];
-  install: (ids: string[]) => Promise<ActionResult & { href?: string }>; back: () => Promise<ActionResult>;
+  install: (ids: string[]) => Promise<ActionResult & { href?: string }>; back: () => Promise<ActionResult>; empty?: React.ReactNode;
 }) {
   const router = useRouter();
   const [picked, setPicked] = useState<string[]>(initial);
@@ -237,64 +238,74 @@ export function CompanyChart({ owner, company, depts, initial, install, back }: 
   const tot = companyTotals(depts, picked, company);
   const billing = company[0]?.cost.billing ?? on[0]?.agents[0]?.cost.billing;
   const go = () => start(async () => { const a = await install(picked); setR(a); if (a.ok && a.href) router.push(a.href); });
-  const agentCard = (a: CompanyAgent) => (
-    <div key={a.id} className="soft-box stack" style={{ gap: 4, background: "var(--panel, var(--soft))", border: "1px solid var(--line)" }}>
-      <span className="row" style={{ justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-        <b style={{ fontSize: 14 }}>{a.name} · {a.role}</b>
-        <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{a.cost.perRun == null ? "Cost unknown" : a.runsPerMonth ? `${usd(a.cost.month)}/mo` : "$0/mo"}</span>
-      </span>
-      <span style={{ fontSize: 13, lineHeight: 1.45 }}>{a.job}</span>
-      {a.tools.length > 0 && <span className="muted" style={{ fontSize: 12 }}>Uses: {a.tools.join(", ")}</span>}
-      <span className="muted" style={{ fontSize: 12 }}>{monthWords(a.cost)} · {costDetail(a.cost)}</span>
-    </div>
-  );
+  const chief = company[0];
+  const STATUS_COLORS = { ready: ["var(--mint-soft)", "var(--mint-ink)"], after: ["#E4E7FF", "#2A2F86"], export: ["#E4E7FF", "#2A2F86"], waiting: ["var(--soft)", "var(--ink2)"] } as const;
   return (
-    <div className="stack" style={{ gap: 14 }}>
-      <div className="stack" style={{ gap: 8 }} role="tree" aria-label="Your company">
-        <div className="soft-box" style={{ fontSize: 14 }}><b>{owner}</b> · Founder</div>
-        <div style={{ paddingLeft: 16, borderLeft: "2px solid var(--line)" }} className="stack">
-          {company.map(agentCard)}
-          <div className="stack" style={{ gap: 12, paddingLeft: 16, borderLeft: "2px solid var(--line)" }}>
-            {on.length === 0 && <span className="sub">No departments yet. Tell Avery about your business and she’ll propose some, or add one below.</span>}
-            {on.map((d) => (
-              <div key={d.id} className="stack" style={{ gap: 6 }}>
-                <span className="row wrap" style={{ gap: 8, alignItems: "baseline" }}>
-                  <b style={{ fontSize: 15 }}>{d.name}</b>
-                  {d.fit && <span className="pill sm">{d.fit === "strong" ? "Avery: strong fit" : "Avery: likely"}</span>}
-                  <button className="btn ghost sm" type="button" onClick={() => setPicked((p) => p.filter((x) => x !== d.id))}>Leave out</button>
+    <div className="wg-reveal-body">
+      <div className="wg-glass wg-pop wg-founder" style={{ animationDelay: ".15s" }}>{owner}, founder</div>
+      <i aria-hidden className="wg-vline" style={{ animationDelay: ".4s" }} />
+      {chief && (
+        <div className="wg-glass wg-pop wg-chief" style={{ animationDelay: ".6s" }}>
+          <span aria-hidden className="wg-avatar">{chief.name.slice(0, 1)}</span>
+          <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+            <b style={{ fontSize: 16 }}>{chief.name}, {chief.role.toLowerCase()}</b>
+            <span className="ink2" style={{ fontSize: 13.5, lineHeight: 1.45 }}>{chief.job}</span>
+          </span>
+        </div>
+      )}
+      <i aria-hidden className="wg-vline" style={{ animationDelay: ".85s" }} />
+      {on.length === 0 && <div className="wg-glass wg-card sub" style={{ maxWidth: 520 }}>No departments yet. Tell Avery about your business and she’ll propose some, or add one below.</div>}
+      <div className="wg-depts">
+        {on.map((d, i) => {
+          const st = deptStatus(d), m = deptMonth(d);
+          return (
+            <article key={d.id} className="wg-glass wg-pop wg-dept" style={{ animationDelay: `${1 + i * 0.18}s` }} aria-label={d.name}>
+              <span className="row" style={{ justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "nowrap" }}>
+                <span className="wg-eyebrow" style={{ fontSize: 11, minWidth: 0 }}>{d.name}</span>
+                <span className="pill sm" style={{ background: STATUS_COLORS[st][0], color: STATUS_COLORS[st][1], flex: "none" }}>{DEPT_STATUS_WORDS[st]}</span>
+              </span>
+              {d.agents.map((a) => (
+                <span key={a.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  <b style={{ fontSize: 15.5 }}>{a.name}</b>
+                  <span className="ink2" style={{ fontSize: 13 }}>{a.role}</span>
                 </span>
-                {d.waitsOn.length > 0 && <span className="sub">{waitLine(d.waitsOn, d.waitNotes)}</span>}
-                {d.agents.map(agentCard)}
-                {d.openSeats.length > 0 && <span className="muted" style={{ fontSize: 12.5 }}>Open seats: {d.openSeats.join(", ")}</span>}
+              ))}
+              {d.openSeats.length > 0 && <span className="muted" style={{ fontSize: 12.5 }}>Open seats: {d.openSeats.join(", ")}</span>}
+              <span className="rule" style={{ fontSize: 13.5, lineHeight: 1.45, paddingTop: 8 }}>{(d.agents.find((a) => a.head) ?? d.agents[0])?.job ?? d.about}</span>
+              {d.waitsOn.length > 0 && <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{waitLine(d.waitsOn, d.waitNotes)}</span>}
+              <span className="muted" style={{ fontSize: 12.5 }}>
+                {[...new Set(d.agents.flatMap((a) => a.tools))].join(", ") || "No tools"} · {m.unknown.length && m.month === 0 ? "Cost unknown" : `${usd(m.month)} a month${m.unknown.length ? " + cost unknown" : ""}`}
+              </span>
+              <button className="btn ghost sm" type="button" style={{ alignSelf: "flex-start" }} onClick={() => setPicked((p) => p.filter((x) => x !== d.id))}>Leave out</button>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="wg-glass wg-card wg-pop" style={{ width: "100%", animationDelay: `${1.1 + on.length * 0.18}s` }}>
+        <div className="stack" style={{ gap: 2 }} aria-live="polite">
+          <b style={{ fontSize: 15 }}>{tot.agents} agents · about {usd(tot.month)} a month once on duty</b>
+          <span className="muted" style={{ fontSize: 12.5 }}>At most {usd(tot.atMost)} a month on these schedules{tot.unknown.length ? `, plus ${tot.unknown.join(", ")} (cost unknown)` : ""} · estimates until each has run{billing ? ` · ${BILLING_WORDS[billing]}` : ""}</span>
+        </div>
+        {also.length > 0 && (
+          <div className="stack" style={{ gap: 6 }}>
+            <span className="wg-eyebrow" style={{ fontSize: 11 }}>Also available</span>
+            {also.map((d) => (
+              <div key={d.id} className="row rule" style={{ gap: 12, paddingTop: 10, alignItems: "flex-start" }}>
+                <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}><b style={{ fontSize: 14 }}>{d.name}</b><span className="sub">{d.about}</span></span>
+                <button className="btn outline sm" type="button" onClick={() => setPicked((p) => [...p, d.id])}>Add</button>
               </div>
             ))}
           </div>
+        )}
+        <span className="sub">Every agent starts off duty, every action is an approval card, and nothing runs until you approve each first playbook.</span>
+        <div className="row wrap" style={{ gap: 8, alignItems: "center" }}>
+          <button className="btn dark" type="button" disabled={busy || !picked.length} onClick={go}>{busy ? "Starting…" : "Start this company"}</button>
+          <button className="btn outline sm" type="button" disabled={busy} onClick={() => start(async () => { const a = await back(); if (!a.ok) setR(a); })}>Change something</button>
+          {empty}
         </div>
+        {r && !r.ok && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{r.text}</span>}
       </div>
-
-      <div className="soft-box stack" style={{ gap: 2 }} aria-live="polite">
-        <b style={{ fontSize: 14 }}>{tot.agents} agents · about {usd(tot.month)} a month once on duty</b>
-        <span className="muted" style={{ fontSize: 12.5 }}>At most {usd(tot.atMost)} a month on these schedules{tot.unknown.length ? `, plus ${tot.unknown.join(", ")} (cost unknown)` : ""} · estimates until each has run{billing ? ` · ${BILLING_WORDS[billing]}` : ""}</span>
-      </div>
-
-      {also.length > 0 && (
-        <div className="stack" style={{ gap: 6 }}>
-          <span className="ted-k">Also available</span>
-          {also.map((d) => (
-            <div key={d.id} className="row rule" style={{ gap: 12, paddingTop: 10, alignItems: "flex-start" }}>
-              <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}><b style={{ fontSize: 14 }}>{d.name}</b><span className="sub">{d.about}</span></span>
-              <button className="btn outline sm" type="button" onClick={() => setPicked((p) => [...p, d.id])}>Add</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <span className="sub">Every agent starts off duty, every action is an approval card, and nothing runs until you approve each first playbook.</span>
-      <div className="row wrap" style={{ gap: 8 }}>
-        <button className="btn dark sm" type="button" disabled={busy || !picked.length} onClick={go}>{busy ? "Starting…" : "Start this company"}</button>
-        <button className="btn outline sm" type="button" disabled={busy} onClick={() => start(async () => { const a = await back(); if (!a.ok) setR(a); })}>Change something</button>
-      </div>
-      {r && !r.ok && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{r.text}</span>}
     </div>
   );
 }

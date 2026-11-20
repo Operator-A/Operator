@@ -695,3 +695,14 @@ button.wg-opt { width: 100%; font: inherit; text-align: left; cursor: pointer; }
 @keyframes skelPulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 @keyframes skelIn { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .skel, .skel-page { animation: none; } }
+
+/* Meet your company (card 184): founder, Avery, then a card per department, in sequence */
+.wg-reveal { width: 100%; max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+.wg-reveal-body { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 0; }
+.wg-founder { border-radius: 999px; padding: 10px 20px; font-weight: 700; font-size: 15px; }
+.wg-chief { border-radius: 22px; padding: 16px 22px; display: flex; gap: 14px; align-items: center; max-width: 440px; }
+.wg-avatar { width: 42px; height: 42px; flex: none; border-radius: 99px; background: #14141A; color: #fff; display: grid; place-items: center; font-weight: 700; }
+.wg-vline { display: block; width: 2px; height: 28px; background: linear-gradient(rgba(124, 140, 248, .2), rgba(124, 140, 248, .8)); animation: wgEnter .5s cubic-bezier(.22, .8, .2, 1) both; }
+.wg-depts { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; margin-bottom: 18px; }
+.wg-dept { border-radius: 22px; padding: 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; overflow-wrap: break-word; }
+@media (prefers-reduced-motion: reduce) { .wg-vline { animation: none; } }

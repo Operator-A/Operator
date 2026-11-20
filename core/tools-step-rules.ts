@@ -210,6 +210,13 @@ export function planNotes(plans: Plans): Record<string, string> {
   return out;
 }
 
+/** Which planned kind each waiting tool has, by tool name, for the reveal's status (card 184). */
+export function planKinds(plans: Plans): Record<string, "guide" | "export"> {
+  const out: Record<string, "guide" | "export"> = {};
+  for (const c of TOOL_CATEGORIES) { const p = plans[c.id]; if (p) for (const id of c.tiles) out[TILE_BY_ID[id].name] = p.kind; }
+  return out;
+}
+
 /**
  * What is left to finish after setup, for the Desk: a guided part until its tool is connected, an export
  * part until a file with that tool's name is uploaded. `exportKeys` are the service keys of uploaded exports.

@@ -136,23 +136,28 @@ property, the panel asks which one agents report on.
 
 ## Your company
 
-Step 3 (card 153) is an org chart drawn in code (`core/company-rules.ts`, `dashboard/company.ts`):
+Step 3 (cards 153, 184) is "Meet your company": an org chart drawn in code (`core/company-rules.ts`,
+`dashboard/company.ts`) and revealed in sequence.
 
-- **The founder** at the top, then the Chief of Staff in the company seat, then a branch per
-  department template Avery leans toward, strong or likely. The model only named template ids in the
-  conversation (`readLeaning`); it never writes the chart, a job, a tool or a number.
-- **Each agent** shows its name and role, its job (the template's mandate), the tools it uses (labels
-  from the tool list) and what it adds to the month (`docs/usage.md`, "What an agent costs"): an
-  estimate on the template's schedule, with "at most" from its cap. Open seats show by title, with no
-  cost. A department that waits on a tool says so.
+- **The founder** at the top, then the Chief of Staff in the company seat, then a glass card per
+  department template Avery leans toward, strong or likely, each appearing a moment after the last
+  (all at once with reduced motion). The model only named template ids in the conversation
+  (`readLeaning`); it never writes the chart, a job, a tool or a number.
+- **Each department card** shows its agents (name and role), the head's job (the template's
+  mandate), the tools its agents use (labels from the tool list) and what it adds to the month
+  (`deptMonth`, summed in code from each agent's estimate, `docs/usage.md`). An agent with no
+  estimate is named as cost unknown, never counted as zero. Open seats show by title, with no cost.
+- **Its status** (`deptStatus`): Waiting on a tool when it waits on a tool with no plan; else From an
+  export when one of its tools is planned as an export (card 183); else After setup when one is
+  planned for Avery to set up; else Ready. The line under it says which tool (`waitLine`).
 - **The total** under the chart: agents, about how much a month once on duty, at most how much, and
   who pays.
 - **Leave out** takes a department off the chart; **Also available** lists the rest, each with
   **Add**.
 - **Start this company** installs exactly what's on the chart: `setupInstall` checks the picks
   against the chart (`readPick`: known department ids only, in template order) before
-  `installTemplates`. **Change something** goes back to the conversation, where her new leaning
-  redraws the chart.
+  `installTemplates`. **Change something** goes back to the tools questions. **Start empty instead**
+  is a quiet link beside them.
 
 Every agent still installs off duty with its playbook proposed, and every action stays at Draft.
 
