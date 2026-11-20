@@ -9,6 +9,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { statusMap } from "../core/mcp-rules";
 
 // actions that change nothing the page shows: they answer with text only
 const READ_ONLY = new Set([
@@ -58,6 +59,17 @@ for (const f of ["app", "dashboard", "core", "ee", "templates"].filter(existsSyn
   for (const n of bareRefreshes(src)) problems.push(`${f}:${n}: router.refresh() renders the page a second time. The server action should call revalidatePath instead; if this refresh has another reason, end the line with // refresh-ok: <reason>.`);
 }
 for (const k of READ_ONLY) { const [f, a] = k.split(":"); if (!existsSync(f) || !new RegExp(`export async function ${a}\\b`).test(readFileSync(f, "utf8"))) problems.push(`scripts/check-speed.ts: READ_ONLY names ${k}, which no longer exists.`); }
+// 4. Pages load only what they show (card 202): one query for every connection's status, and setup
+//    reads which tools are set up (getHealth), not the Desk's whole floor.
+const st = statusMap([{ id: "gmail", settings: { mailbox: "a@b.co" }, connected_at: "2026-11-20T00:00:00Z", last_error: null, paused_at: null, tools_seen: { a: "1", b: "2" }, tools_checked_at: null },
+  { id: "notion", settings: null, connected_at: null, last_error: "expired", paused_at: "2026-11-20T01:00:00Z", tools_seen: null, tools_checked_at: null }]);
+assert.deepEqual(st.gmail, { connected: true, paused: false, connectedAt: "2026-11-20T00:00:00Z", lastError: null, settings: { mailbox: "a@b.co" }, toolsCheckedAt: null, toolsSeen: ["a", "b"] });
+assert.equal(st.notion.paused, true); assert.deepEqual(st.notion.settings, {}); assert.equal(st.mercury, undefined);
+const read = (f: string) => (existsSync(f) ? readFileSync(f, "utf8") : "");
+if (/\bgetFloor\(/.test(read("app/start/page.tsx"))) problems.push("app/start/page.tsx calls getFloor: setup needs getHealth only (card 202).");
+for (const f of ["dashboard/data.ts", "dashboard/toolsStep.ts"]) if (/\bawait mcpStatus\(/.test(read(f))) problems.push(`${f}: one query per connection; use mcpStatuses() once (card 202).`);
+if (!/mcpStatuses\(\)/.test(read("dashboard/data.ts"))) problems.push("dashboard/data.ts: getHealth should read every connection with mcpStatuses() (card 202).");
+
 if (!existsSync("app/(room)/loading.tsx")) problems.push("app/(room)/loading.tsx is missing: Control Room clicks would wait on a blank pause.");
 
 if (problems.length) { console.error(problems.join("\n")); process.exit(1); }

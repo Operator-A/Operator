@@ -15,7 +15,7 @@ import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/cor
 import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
 import { TOOLS } from "@/core/tools/catalog";
-import { mcpStatus, vaultReady } from "@/integrations/mcp";
+import { CLAUDE_KEY_ID, mcpStatuses, vaultReady, type McpStatus } from "@/integrations/mcp";
 import { claudeState } from "./claude";
 import { claudeReady } from "@/core/claude-choice-rules";
 import { withOrg } from "@/core/tenancy";
@@ -166,6 +166,25 @@ export function health(): Record<IntegrationId, boolean> {
   };
 }
 
+/**
+ * Which tools are set up, on its own (card 202, docs/speed.md): one query for every connection, the
+ * business's settings and its Claude. Setup reads only this; getFloor builds on it.
+ */
+export const getHealth = cache(async (): Promise<Record<IntegrationId, boolean>> => {
+  await requireSession();
+  const h = health();
+  if (!h.supabase) return h;
+  const [mcp, s] = await Promise.all([mcpStatuses().catch(() => ({} as Record<string, McpStatus>)), settings()]);
+  if (!s.ownerEmail) h.email = false;
+  // Claude (and web search through it): the business's own key, else OPERATOR's hosted Claude on
+  // credits (cloud edition), the same order runs use (integrations/anthropic.ts, card 162)
+  h.claude = h.web = claudeReady(await claudeState({ status: mcp[CLAUDE_KEY_ID] ?? null }));
+  // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
+  const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0, ga4: !!mcp.ga4?.settings.propertyId };
+  for (const id of MCP_IDS) { const st = mcp[id]; if (st?.connected && !st.paused && extra[id] !== false) h[id] = true; }
+  return h;
+});
+
 /** Agents, the last 60 days of runs (newest first, at most 1000) and today's spend. */
 export const getFloor = cache(async (): Promise<Floor> => {
   await requireSession();
@@ -174,7 +193,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, org: { on: false, at: null, by: null, known: false } };
   if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
   const since = new Date(now - 60 * 864e5).toISOString();
-  const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, mcp, orgSwitch] = await Promise.all([
+  const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, set, orgSwitch] = await Promise.all([
     // role, icon, hue, manual_only and created_at come with the roster migration; the older shape until then
     // in_org comes with the org switch migration, role, icon, hue, manual_only and created_at with the roster one; older shapes until then
     db().from("agents").select("id, name, model, enabled, daily_budget_usd, role, icon, hue, manual_only, in_org, created_at")
@@ -191,18 +210,10 @@ export const getFloor = cache(async (): Promise<Floor> => {
     db().from("agent_defs").select("agent_id, version, spec").eq("active", true),
     db().from("crew_flow").select("flow").eq("active", true).maybeSingle(),
     loadOrg().catch(() => null),
-    Promise.all(MCP_IDS.map(async (id) => [id, await mcpStatus(id)] as const)),
+    getHealth(),
     orgState(),
   ]);
-  // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
-  const s = await settings();
-  if (!s.ownerEmail) h.email = false;
-  // Claude (and web search through it): the business's own key, else OPERATOR's hosted Claude on
-  // credits (cloud edition), the same order runs use (integrations/anthropic.ts, card 162)
-  h.claude = h.web = claudeReady(await claudeState());
-  const ga4 = mcp.find(([id]) => id === "ga4")?.[1];
-  const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0, ga4: !!ga4?.settings.propertyId };
-  for (const [id, st] of mcp) if (st?.connected && !st.paused && extra[id] !== false) h[id] = true;
+  Object.assign(h, set);
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];
   const agents = Object.fromEntries(rows.map((x) => [x.id, { id: x.id, name: x.name, model: x.model, enabled: x.enabled, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));

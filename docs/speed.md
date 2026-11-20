@@ -24,5 +24,9 @@ them fast. `npm run check:speed` enforces the rules marked (checked).
 2. **Something moves at once** (checked). `app/(room)/loading.tsx` fills the main column while the next
    page renders; the sidebar, top bar and Avery's chat stay. Buttons show their own busy state
    (`useTransition`) while an action runs.
-3. **Load what the screen shows.** A page reads what it draws, in one parallel wave. (Card 202: one query
-   for all tool connections, setup without the Desk's floor.)
+3. **Load what the screen shows** (checked where it bit us). A page reads what it draws, in one parallel
+   round. Card 202: every connection's status is one query (`mcpStatuses()` in integrations/mcp.ts, no
+   secret read), not one per server; `getHealth()` (dashboard/data.ts) answers "which tools are set up" on
+   its own, and setup uses it instead of the Desk's whole floor; the Control Room layout and the setup page
+   start all their loads at once; the Mercury account name on the setup tools step (a call to Mercury) is
+   kept 10 minutes per business.
