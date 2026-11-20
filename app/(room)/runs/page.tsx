@@ -43,7 +43,7 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Q> 
         </form>
       </div>
       {!f.ok && <div className="card" style={{ background: "var(--red-soft)", color: "var(--red-ink)" }}>{f.problem}</div>}
-      <RunTable runs={rows.slice(0, 300)} who={f.byId} foot={
+      <RunTable tz={f.tz} runs={rows.slice(0, 300)} who={f.byId} foot={
         <span className="row wrap" style={{ justifyContent: "space-between" }}>
           <span>{rows.length} runs · {ok} OK · {fl} failed · {sk} skipped · {m4(rows.reduce((s, r) => s + r.cost_usd, 0))} spent</span>
           {(agent !== "all" || status !== "all" || trigger !== "all" || q) && <Link href="/runs">Clear filters</Link>}

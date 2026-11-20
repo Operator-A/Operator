@@ -1,4 +1,5 @@
 import { settings } from "@/core/settings";
+import { orgDate } from "@/core/tz";
 import "server-only";
 // The tool list (docs/agent-builder.md): every ability an agent built in the app can be given.
 // Read and Calculate tools are built from code the four agents already use (slice 1). Report and
@@ -14,7 +15,7 @@ import "server-only";
 //   a tool returned in the same run, or short text with no links). No tool takes a URL, an
 //   address or a recipient from the model.
 import { db } from "@/core/db";
-import { chicagoDate } from "@/core/time";
+
 import {
   agentNames, agentsIn, companyBlock, deptSpent, headBlock, draftCode, headOf, latestOutputs, leadCheck, liveAgentIds, loadOrg, monthSpendByAgent, runStats, seatOf, seatPath, teamBlock, teamOf,
   type RunStats,
@@ -78,7 +79,7 @@ const TOOLS_LIST: ToolDef[] = [
     id: "mercury_charges", label: "Charges", detail: "Settled money in and out over a window: date, merchant, amount, category. Merchant names come from outside, so they are untrusted",
     kind: "read", group: "mercury", params: [daysParam(30, 60, "How many days back.")], trusted: false, needs: MERCURY, costUsd: 0,
     run: async ({ days }) => {
-      const txns = await mercuryTransactions(chicagoDate(Number(days)), chicagoDate(0));
+      const txns = await mercuryTransactions((await orgDate(Number(days))), (await orgDate(0)));
       const shown = txns.slice(-200);
       // charges that already have a category proposal (waiting, applied or rejected), so it isn't asked twice
       const proposed = new Set<string>();
@@ -134,7 +135,7 @@ const TOOLS_LIST: ToolDef[] = [
     id: "shopify_open_orders", label: "Open orders", detail: "Open Shopify orders from the last 90 days that aren't fully shipped, by Shopify's own fulfillment status: to ship, partly shipped, on hold. Order numbers only, no customer details",
     kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
     run: async () => {
-      const c = openCounts(await openOrders(chicagoDate(90)));
+      const c = openCounts(await openOrders((await orgDate(90))));
       return { data: c, numbers: { open_orders: c.unfulfilled + c.partial + c.onHold.length, to_ship: c.unfulfilled, partly_shipped: c.partial, on_hold: c.onHold.length } };
     },
   },
@@ -142,7 +143,7 @@ const TOOLS_LIST: ToolDef[] = [
     id: "calc_daily_snapshot", label: "Daily numbers snapshot", detail: "One day's numbers in code: revenue, orders, average order, repeat rate, cash, orders by sales channel, and cost of goods and margin from the source on Settings › Daily numbers. Worked out, not saved",
     kind: "calculate", group: "calculate", params: [daysParam(1, 30, "How many days ago (1 = yesterday).")], trusted: true, needs: SHOPIFY, costUsd: 0,
     run: async ({ days }) => {
-      const s = await snapshot(chicagoDate(Number(days)), { dryRun: true });
+      const s = await snapshot((await orgDate(Number(days))), { dryRun: true });
       const numbers: Record<string, number> = { revenue_usd: s.revenue, orders: s.orders };
       if (s.aov != null) numbers.aov_usd = s.aov;
       if (s.repeat_rate != null) numbers.repeat_rate = s.repeat_rate;
@@ -194,7 +195,7 @@ const TOOLS_LIST: ToolDef[] = [
     id: "weekly_numbers", label: "Week over week", detail: "The last 7 full days against the 7 before, worked out in code: revenue, orders, average order, repeat rate and margin from the saved daily numbers, and sessions and key events from Google Analytics when it's connected, each with its change",
     kind: "read", group: "supabase", params: [], trusted: true, needs: SUPABASE, costUsd: 0,
     run: async () => {
-      const yesterday = chicagoDate(1);
+      const yesterday = await orgDate(1);
       const { data, error } = await db().from("kpi_snapshots").select("date, revenue, orders, repeat_rate, cost_of_goods, margin").gte("date", shift(yesterday, -13)).lte("date", yesterday).order("date").limit(31);
       if (error) throw new Error(error.message);
       // visits only when Google Analytics is connected; without it the lines are left out and the result says so
@@ -207,7 +208,7 @@ const TOOLS_LIST: ToolDef[] = [
     id: "report_kpi_snapshot", label: "Save yesterday's numbers", detail: "Works out yesterday's daily numbers again in code and saves them, for the morning brief and goals. Never uses the model's words",
     kind: "report", group: "supabase", params: [], trusted: true, needs: [...SHOPIFY, ...SUPABASE], costUsd: 0, codeOnly: true,
     deliver: async () => {
-      const s = await snapshot(chicagoDate(1));
+      const s = await snapshot((await orgDate(1)));
       return `saved ${s.date}: ${s.orders} orders, ${usd(s.revenue)} revenue${s.cost_of_goods != null ? `, ${usd(s.cost_of_goods)} cost of goods` : ""}`;
     },
   },

@@ -250,3 +250,19 @@ Real runs (Controls) are on by default in the cloud edition, unless DASHBOARD_CO
 in app words: "Real runs are switched off on this OPERATOR. Whoever runs it can turn them on." The env
 var's name stays in docs, comments and `dashboard/session.ts`; `check:wording` fails on any other mention
 in `app/`, `dashboard/` or `ee/`.
+
+## The business's own time zone (card 187)
+
+Each business keeps a time zone (`timeZone` in its business settings, an IANA name checked by
+`validTz` in `core/time.ts`). Setup's first message sends the browser's zone while none is set
+(`setupTimeZone`); an owner changes it any time on Settings, at the top. A business that never set one
+uses `DEFAULT_TZ` (Central). `orgTz()` in `core/tz.ts` reads it for the current business, and `Floor.tz`
+carries it to screens and client components.
+
+It decides: every time on screen (`dashboard/format.ts` helpers take the zone; `zoneLabel` names it
+beside an exact time), chain start times and "not before" waits (`firingsBetween`, `nextFirings`,
+`afterStep`), today's email cap and this month's spend (`startOf` in the gateway and department
+budgets), calendar days for goals, plans, the brief, the books and the daily numbers, Shopify order
+days, and the date an agent is told. Schedules are wall-clock times, so they show no zone name.
+Daily agent budgets (`withRun`) still reset at midnight UTC. `check:time-zone` tests the zone math and
+fails on any file outside `core/time.ts` that names Chicago or "CT".

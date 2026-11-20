@@ -6,6 +6,7 @@ import type { OrgPlan } from "@/dashboard/orgPlan";
 import type { OrgState } from "@/core/org-switch";
 import { m2, when } from "@/dashboard/format";
 import { schedWords } from "@/dashboard/schedule";
+import { zoneLabel } from "@/core/time";
 import { ActionButton } from "./client";
 import { Icon } from "./Icon";
 
@@ -13,7 +14,7 @@ type Act = () => Promise<ActionResult>;
 
 const perMonth = (v: number) => (v > 0 && v < 0.01 ? "under $0.01" : m2(v));
 
-export function OrgSwitch({ org, plan, controls, turnOn, turnOff }: { org: OrgState; plan: OrgPlan; controls: boolean; turnOn: Act; turnOff: Act }) {
+export function OrgSwitch({ org, plan, controls, turnOn, turnOff, tz }: { tz: string; org: OrgState; plan: OrgPlan; controls: boolean; turnOn: Act; turnOff: Act }) {
   const scheduled = plan.wake.filter((w) => w.firstRun);
   const first = scheduled[0];
   const total = `about ${perMonth(plan.totalMonth)} a month${plan.unknownCost.length ? ` plus ${plan.unknownCost.join(", ")} (no runs yet)` : ""}`;
@@ -26,7 +27,7 @@ export function OrgSwitch({ org, plan, controls, turnOn, turnOff }: { org: OrgSt
           <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-.01em" }}>{org.on ? "The org is on" : "The org is off"}</span>
           <span style={{ fontSize: 13.5, color: "#C3C3CB", lineHeight: 1.5 }}>
             {org.on
-              ? `${n} agent${n === 1 ? "" : "s"} in the org, ${scheduled.length} on a schedule${first ? `. Next: ${first.name}, ${when(first.firstRun!)} CT` : ""}. ${total[0].toUpperCase()}${total.slice(1)}.`
+              ? `${n} agent${n === 1 ? "" : "s"} in the org, ${scheduled.length} on a schedule${first ? `. Next: ${first.name}, ${when(first.firstRun!, tz)} ${zoneLabel(tz, first.firstRun!)}` : ""}. ${total[0].toUpperCase()}${total.slice(1)}.`
               : n
                 ? `Nothing runs on its own. Turn it on and ${n} agent${n === 1 ? "" : "s"} go on duty${scheduled.length ? `, ${scheduled.length} of them on the schedule below` : ""}; ${total}.`
                 : "Nothing runs on its own, and no agent is in the org yet."}
@@ -46,7 +47,7 @@ export function OrgSwitch({ org, plan, controls, turnOn, turnOff }: { org: OrgSt
               title: "Turn on the org?",
               body: `This is launch. ${n} agent${n === 1 ? " goes" : "s go"} on duty${plan.chainsOn.length ? ` and ${plan.chainsOn.length === 1 ? "a chain turns" : `${plan.chainsOn.length} chains turn`} on` : ""}. Each run still checks its daily and department budget. Turning it off stops everything at once.`,
               lines: [
-                ...plan.wake.map((w) => ({ k: w.name, v: w.firstRun ? `${schedWords(w.schedule)} · first ${when(w.firstRun)} · ${w.perRun == null ? "cost unknown" : `${perMonth(w.perMonth)} a month`}` : "By hand only · $0 unless you press Run" })),
+                ...plan.wake.map((w) => ({ k: w.name, v: w.firstRun ? `${schedWords(w.schedule)} · first ${when(w.firstRun, tz)} · ${w.perRun == null ? "cost unknown" : `${perMonth(w.perMonth)} a month`}` : "By hand only · $0 unless you press Run" })),
                 ...(plan.left.length ? [{ k: "Stays off", v: `${plan.left.map((x) => x.name).join(", ")} (test)` }] : []),
                 { k: "A month", v: total },
               ],
@@ -56,7 +57,7 @@ export function OrgSwitch({ org, plan, controls, turnOn, turnOff }: { org: OrgSt
           </ActionButton>
         )}
         {!org.on && !controls && <span style={{ fontSize: 12, color: "#C3C3CB" }}>Needs real runs switched on</span>}
-        {org.on && org.at && <span style={{ fontSize: 12, color: "#C3C3CB" }}>On since {when(org.at)} CT</span>}
+        {org.on && org.at && <span style={{ fontSize: 12, color: "#C3C3CB" }}>On since {when(org.at, tz)} {zoneLabel(tz, org.at)}</span>}
       </div>
     </section>
   );

@@ -2,9 +2,10 @@ import "server-only";
 // The goal measures (core/goal-rules.ts MEASURES), counted in code from our own tables, Shopify
 // (read-only), Mercury (read-only) and Klaviyo (its MCP server, read-only). A model never supplies a number here. Each read gives up
 // after a while and says why, so a slow service shows "Couldn't read" instead of hanging a page.
+import { orgDate } from "@/core/tz";
 import { round2 } from "@/core/num";
 import { db } from "@/core/db";
-import { chicagoDate, nextDay } from "@/core/time";
+import {nextDay } from "@/core/time";
 import { ordersBetween } from "@/integrations/shopify/orders";
 import { burnRate } from "@/core/money";
 import { measureOf, type MeasureKey, type Reading } from "@/core/goal-rules";
@@ -73,7 +74,7 @@ export async function ownMeasures(): Promise<{ sources: NumberSource[]; defs: Re
 
 /** Reads each measure once, however many goals use it. Unknown or not-yet-countable keys are left out. */
 export async function readMeasures(keys: readonly (string | null)[], now = new Date(), own?: Awaited<ReturnType<typeof ownMeasures>>): Promise<Record<string, MeasureRead>> {
-  const today = chicagoDate(0, now);
+  const today = await orgDate(0, now);
   const o = own ?? (keys.some((k) => k?.startsWith("n_")) ? await ownMeasures() : { sources: [], defs: [] });
   const want = [...new Set(keys)].map((k) => measureOf(k, o.defs)).filter((m) => m?.available) as { key: MeasureKey; label: string }[];
   const shared: { month?: ReturnType<typeof monthOrders> } = {};

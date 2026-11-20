@@ -31,7 +31,9 @@ export interface DayRow {
 export interface OrgDay {
   groups: { name: string; rows: DayRow[] }[];
   rows: DayRow[];
-  /** Hours shown, Central Time: from, to (to is exclusive), whole hours. */
+  /** The business's time zone (card 187): the hours and times below are in it. */
+  tz: string;
+  /** Hours shown, in that zone: from, to (to is exclusive), whole hours. */
   window: [number, number];
   totalMonth: number;
   scheduled: number;
@@ -51,6 +53,8 @@ export function orgDay(o: {
   grants: Record<string, string[]>;
   org: Org | null;
   now: number;
+  /** The business's time zone (card 187). */
+  tz: string;
 }): OrgDay {
   const inOrg = o.members.filter((m) => m.inOrg !== false);
   const base = inOrg.map((m) => {
@@ -58,7 +62,7 @@ export function orgDay(o: {
     const perRun = m.perRun ?? null;
     return {
       id: m.id, name: m.name, role: m.role, hue: m.hue ?? "#999", icon: m.icon,
-      schedule, when: schedWords(schedule), next: nextRuns(schedule, o.now, 4),
+      schedule, when: schedWords(schedule), next: nextRuns(schedule, o.now, 4, o.tz),
       perRun, perMonth: perRun == null ? 0 : perRun * runsInMonth(schedule),
       enabled: !!o.enabled[m.id], budget: o.budget[m.id] ?? 0,
       reportsToYou: (o.grants[m.id] ?? []).some((t) => REPORTS_TO_OWNER.includes(t)),
@@ -83,7 +87,7 @@ export function orgDay(o: {
   if (rest.length) groups.push({ name: "Not on the chart", rows: rest });
   const scheduled = rows.filter((r) => r.at != null);
   return {
-    groups, rows, window: [from, to],
+    groups, rows, window: [from, to], tz: o.tz,
     totalMonth: rows.reduce((s, r) => s + r.perMonth, 0),
     scheduled: scheduled.length, byHand: rows.length - scheduled.length,
     unknownCost: scheduled.filter((r) => r.perRun == null).map((r) => r.name),

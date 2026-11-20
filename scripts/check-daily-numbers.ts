@@ -56,6 +56,6 @@ assert.equal(empty.cost_of_goods, 0);
 // ---- the store reads only, and no coffee words in core
 const src = readFileSync("core/daily-numbers.ts", "utf8") + readFileSync("core/daily-numbers-rules.ts", "utf8");
 assert.doesNotMatch(src, /\bgreen|roast|coffee|\blots?\b/i, "core's daily numbers know nothing of coffee");
-assert.match(readFileSync("core/daily-numbers.ts", "utf8"), /chicagoDate\(1\)/, "an own cost number is read for yesterday only");
+assert.match(readFileSync("core/daily-numbers.ts", "utf8"), /orgDate\(1\)/, "an own cost number is read for yesterday only");
 
 console.log("check:daily-numbers ok");

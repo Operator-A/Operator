@@ -3,6 +3,7 @@ import "server-only";
 // its screens show: the active spec and its versions, the tool list the flow picks from (each tool
 // with its connection, docs/builder-flow.md), the Claude models, its standards from the memory
 // store, and its latest runs step by step.
+import { orgTz } from "@/core/tz";
 import { ownFilter } from "@/core/memory-rules";
 import { db } from "@/core/db";
 import { agentDepartment } from "@/core/org";
@@ -148,7 +149,7 @@ export async function lastTry(agentId: string, version: number): Promise<TryView
   const r = (data ?? []).find((x) => Number((x.metrics ?? {}).spec_version) === version);
   if (!r) return null;
   const m = (r.metrics ?? {}) as Record<string, number>;
-  const steps = await mapSteps(r.id);
+  const [steps, tz] = await Promise.all([mapSteps(r.id), orgTz()]);
   const failed = steps.filter((x) => x.kind === "tool" && !x.ok).length;
   const why = r.status === "running" ? "is still running"
     : r.status !== "ok" ? "failed"
@@ -157,7 +158,7 @@ export async function lastTry(agentId: string, version: number): Promise<TryView
     : m.fell_back === 1 ? "left its routine and explored instead"
     : null;
   return {
-    runId: r.id, version, at: when(r.started_at), status: r.status, summary: r.error ?? r.summary ?? "", costUsd: Number(r.cost_usd ?? 0),
+    runId: r.id, version, at: when(r.started_at, tz), status: r.status, summary: r.error ?? r.summary ?? "", costUsd: Number(r.cost_usd ?? 0),
     secs: r.ended_at ? Math.round((new Date(r.ended_at).getTime() - new Date(r.started_at).getTime()) / 1000) : null,
     steps, clean: why === null, why,
   };
@@ -193,8 +194,8 @@ export interface PlaybookView { active: PlaybookRow | null; pending: PlaybookRow
 /** Null when the playbook migration isn't applied yet. */
 async function playbookView(agentId: string): Promise<PlaybookView | null> {
   try {
-    const [all, hold] = await Promise.all([listPlaybooks(agentId), playbookHold(agentId)]);
-    const view = (p: (typeof all)[number]): PlaybookRow => ({ id: p.id, version: p.version, status: p.status, steps: p.steps.map(stepLabel), changes: p.changes, auto: p.auto, when: when(p.decidedAt ?? p.createdAt) });
+    const [all, hold, tz] = await Promise.all([listPlaybooks(agentId), playbookHold(agentId), orgTz()]);
+    const view = (p: (typeof all)[number]): PlaybookRow => ({ id: p.id, version: p.version, status: p.status, steps: p.steps.map(stepLabel), changes: p.changes, auto: p.auto, when: when(p.decidedAt ?? p.createdAt, tz) });
     const a = activePlaybook(all), q = pendingPlaybook(all);
     return { active: a && view(a), pending: q && view(q), hold: hold?.reason ?? null };
   } catch { return null; }
@@ -207,6 +208,7 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
   const versions = await listSpecVersions(agentId);
   if (!versions.length) return null;
   const since = new Date(Date.now() - 864e5).toISOString();
+  const tz = await orgTz();
   const [active, st, spent, defs, outs, playbooks] = await Promise.all([
     loadSpec(agentId), standards(agentId),
     db().from("agent_runs").select("cost_usd").eq("agent_id", agentId).gte("started_at", since),
@@ -231,8 +233,8 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
     }).sort((x, y) => x.name.localeCompare(y.name)),
     usedBy: usedByOf(agentId, defs.data ?? []),
     draft, tried,
-    today: today.data?.summary ? { at: when(today.data.started_at), summary: today.data.summary } : null,
+    today: today.data?.summary ? { at: when(today.data.started_at, tz), summary: today.data.summary } : null,
     playbooks,
-    lastOutput: mine ? { name: mine.name, summary: mine.summary, numbers: (Array.isArray(mine.numbers) ? mine.numbers : []) as { label: string; value: number; tool: string }[], at: when(mine.created_at), finished: mine.finished } : null,
+    lastOutput: mine ? { name: mine.name, summary: mine.summary, numbers: (Array.isArray(mine.numbers) ? mine.numbers : []) as { label: string; value: number; tool: string }[], at: when(mine.created_at, tz), finished: mine.finished } : null,
   };
 }

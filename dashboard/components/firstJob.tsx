@@ -5,6 +5,7 @@ import { ActionButton } from "./client";
 import { startFirstJob } from "@/dashboard/actions";
 import { monthWords, usd } from "@/core/cost-rules";
 import { hm } from "@/dashboard/format";
+import { zoneLabel } from "@/core/time";
 import { firstSentence } from "@/dashboard/desk";
 import type { FirstJobView } from "@/dashboard/firstJob";
 import type { DeptWait } from "@/core/first-job-rules";
@@ -71,13 +72,13 @@ export function FirstJobCard({ v, owner, look = "card" }: { v: FirstJobView; own
       </div>
       {going ? (
         <>
-          <span className="ink2" style={{ fontSize: 14 }}>{r ? `Started at ${hm(r.started_at)} CT. ` : "Starting. "}A run usually takes a few minutes; this card updates when it ends.</span>
+          <span className="ink2" style={{ fontSize: 14 }}>{r ? `Started at ${hm(r.started_at, v.tz)} ${zoneLabel(v.tz, r.started_at)}. ` : "Starting. "}A run usually takes a few minutes; this card updates when it ends.</span>
           <Steps steps={v.steps} />
         </>
       ) : r ? (
         <>
           <span className="ink2" style={{ fontSize: 14, textWrap: "pretty" }}>{r.status === "ok" ? firstSentence(r.summary ?? "Done.", 300) : `It didn’t finish: ${firstSentence(r.error ?? r.summary ?? "see the run", 240)}`}</span>
-          <span className="muted" style={{ fontSize: 12.5 }}>Ended at {hm(r.ended_at ?? r.started_at)} CT · {usd(r.cost_usd)}{v.approvalsPending ? ` · ${v.approvalsPending} approval${v.approvalsPending === 1 ? "" : "s"} waiting for you` : ""}</span>
+          <span className="muted" style={{ fontSize: 12.5 }}>Ended at {hm(r.ended_at ?? r.started_at, v.tz)} {zoneLabel(v.tz, r.ended_at ?? r.started_at)} · {usd(r.cost_usd)}{v.approvalsPending ? ` · ${v.approvalsPending} approval${v.approvalsPending === 1 ? "" : "s"} waiting for you` : ""}</span>
         </>
       ) : null}
       <div className="row wrap" style={{ gap: 10 }}>

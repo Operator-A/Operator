@@ -1,8 +1,9 @@
 import "server-only";
 // Burn rate and runway in plain code, from Mercury's read-only API. Shared by the tool list
 // (calc_burn_rate) and the goal measure "Months of runway" (core/measures.ts).
+import { orgDate } from "@/core/tz";
 import { round2 } from "@/core/num";
-import { chicagoDate } from "@/core/time";
+
 import { mercuryCash, mercuryTransactions } from "@/integrations/mercury";
 
 export interface Burn {
@@ -14,7 +15,7 @@ export interface Burn {
 }
 
 export async function burnRate(days: number): Promise<Burn> {
-  const [txns, cash] = await Promise.all([mercuryTransactions(chicagoDate(days), chicagoDate(0)), mercuryCash()]);
+  const [txns, cash] = await Promise.all([mercuryTransactions((await orgDate(days)), (await orgDate(0))), mercuryCash()]);
   // money moving between the business's own accounts is neither spend nor income
   const real = txns.filter((t) => !/internal|treasury/i.test(t.kind ?? ""));
   const out = real.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0);

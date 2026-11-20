@@ -12,8 +12,9 @@ import { People } from "@/dashboard/components/people";
 import { capLines } from "@/dashboard/guardrails";
 import { controlsOn } from "@/dashboard/session";
 import { ThemeToggle } from "@/dashboard/components/client";
-import { BusinessForm, CapForm, DailyNumbersForm, ProductFactsForm, SuppressForm, VendorForm, WhereForm } from "@/dashboard/components/settingsForms";
-import { saveBusinessProfile, saveDailyNumbers, saveProductFacts, saveWhereThingsGo } from "@/dashboard/orgActions";
+import { BusinessForm, CapForm, TimeZoneForm, DailyNumbersForm, ProductFactsForm, SuppressForm, VendorForm, WhereForm } from "@/dashboard/components/settingsForms";
+import { saveBusinessProfile, saveDailyNumbers, saveProductFacts, saveTimeZone, saveWhereThingsGo } from "@/dashboard/orgActions";
+import { DEFAULT_TZ } from "@/core/time";
 import { ownMeasureDefs } from "@/core/goals";
 import { settings } from "@/core/settings";
 import { NO_SETTINGS, type BusinessSettings } from "@/core/settings-rules";
@@ -28,7 +29,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const asText = (b: BusinessSettings) => ({ ownerEmail: b.ownerEmail ?? "", siteUrl: b.siteUrl ?? "", shopifyDomain: b.shopifyDomain ?? "", shopifyClientId: b.shopifyClientId ?? "", mercuryAccountIds: b.mercuryAccountIds.join(", "), notionBriefParent: b.notionBriefParent ?? "", notionBriefsDb: b.notionBriefsDb ?? "", notionLeadsParent: b.notionLeadsParent ?? "", notionBooksParent: b.notionBooksParent ?? "" });
   const ownText = asText(own);
   const audit = await listAudit(100).then((rows) => ({ rows, problem: null as string | null }), (e: unknown) => ({ rows: [], problem: e instanceof Error ? e.message : String(e) }));
-  const when = (at: string) => new Date(at).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const when = (at: string) => new Date(at).toLocaleString("en-US", { timeZone: own.timeZone ?? DEFAULT_TZ, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const facts = (d: Record<string, unknown> | null) => (d ? Object.entries(d).map(([k, v]) => `${k.replace(/_/g, " ")} ${typeof v === "string" ? v : JSON.stringify(v)}`).join(" · ") : "");
   const theme = (await cookies()).get("cr_theme")?.value === "dark" ? "dark" : "light";
   // the paid layer's cards (billing, seats) in the cloud edition; none in the open edition
@@ -38,7 +39,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
     <div className="stack" style={{ maxWidth: 760 }}>
       <h1 className="h1">Settings</h1>
       <div className="card" style={{ padding: "8px 22px", gap: 0 }}>
-        {line("Time zone", <span className="ink2">Central Time</span>, true)}
+        {line(<>Time zone<span className="muted" style={{ fontSize: 12 }}>Every time shown here, today’s email and spend limits, and when schedules start.</span></>, <TimeZoneForm initial={own.timeZone ?? DEFAULT_TZ} canEdit={me.role === "owner"} save={saveTimeZone} />, true)}
         {line("Theme", <ThemeToggle initial={theme} wide />)}
         {line(<>Controls<span className="muted" style={{ fontSize: 12 }}>Real runs, putting agents back on the crew and raising budgets. Whoever runs this OPERATOR turns them on.</span></>, <span className="pill sm" style={controlsOn() ? { background: "var(--mint-soft)", color: "var(--mint-ink)" } : { background: "var(--soft)", color: "var(--ink2)" }}>{controlsOn() ? "On" : "Off"}</span>)}
         {line(<>The org<span className="muted" style={{ fontSize: 12 }}>Turn every agent on or off at once on Crew &gt; Schedule.</span></>, <Link href="/crew?view=schedule" className="btn ghost sm">{f.org.on ? "On" : "Off"} · Open</Link>)}
@@ -76,7 +77,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         {members == null ? <span className="sub">The people migration (20261203090000_members.sql) isn’t applied yet.</span> : (
           <People
             people={members.map((m) => ({ id: m.id, email: m.email, role: m.role, you: m.id === me.id, lastSignIn: m.last_sign_in_at }))}
-            canEdit={me.role === "owner"} add={peopleAdd} setRole={peopleSetRole} remove={peopleRemove}
+            tz={f.tz} canEdit={me.role === "owner"} add={peopleAdd} setRole={peopleSetRole} remove={peopleRemove}
           />
         )}
       </div>
@@ -89,7 +90,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         {caps.log.length > 0 && (
           <details style={{ paddingTop: 10 }}>
             <summary className="sub">Recent changes</summary>
-            {caps.log.map((l, i) => <div key={i} className="sub" style={{ padding: "4px 0" }}>{l.key}: {l.from ?? "default"} to {l.to} · {l.by} · {new Date(l.at).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>)}
+            {caps.log.map((l, i) => <div key={i} className="sub" style={{ padding: "4px 0" }}>{l.key}: {l.from ?? "default"} to {l.to} · {l.by} · {new Date(l.at).toLocaleString("en-US", { timeZone: own.timeZone ?? DEFAULT_TZ, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>)}
           </details>
         )}
       </div>

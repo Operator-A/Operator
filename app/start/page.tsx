@@ -25,9 +25,10 @@ import { claudeState } from "@/dashboard/claude";
 import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
 import { extensions } from "@/core/extensions";
 import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
-import { sendSetup, setupGo, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupOtherTool, setupPlanClear, setupPlanGuide, setupSkipTool, setupStartEmpty, setupToDesk } from "@/dashboard/setupActions";
+import { sendSetup, setupTimeZone, setupGo, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupOtherTool, setupPlanClear, setupPlanGuide, setupSkipTool, setupStartEmpty, setupToDesk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
 import { billing } from "@/dashboard/cost";
+import { settings } from "@/core/settings";
 
 // First-run setup (docs/setup.md): a new business lands here instead of the Desk. One guided flow
 // (card 181): one step on screen at a time, the step kept in the setup state. The conversation with
@@ -47,7 +48,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const sp = await searchParams;
   const me = await requireSession();
   // one round for everything the step shows (card 202, docs/speed.md); setup needs which tools are set up, not the Desk's floor
-  const [setup, health, facts, state, history, biz, claude, bill] = await Promise.all([inSetup(), getHealth(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), claudeState(), billing()]);
+  const [setup, health, facts, state, history, biz, claude, bill, own] = await Promise.all([inSetup(), getHealth(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), claudeState(), billing(), settings().catch(() => null)]);
   // card 186: after Start this company, setup counts as done but /start keeps the wrap-up (credits, then the first job)
   if (!setup && !state.wrapUp) redirect("/");
   const owner = atLeast(me.role, "owner");
@@ -103,7 +104,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
         {state.stage === "business" && (
           <div key="business" className="row wrap" style={{ gap: 24, alignItems: "flex-start" }}>
             {keyed ? (
-              <SetupChat name="Avery" send={sendSetup} ready={controlsOn()} blocked={blocked} foot={Hosted ? "Setup is free. No card until your crew is ready to work." : null}
+              <SetupChat name="Avery" send={sendSetup} zone={own && !own.timeZone ? setupTimeZone : undefined} ready={controlsOn()} blocked={blocked} foot={Hosted ? "Setup is free. No card until your crew is ready to work." : null}
                 initial={(history ?? []).map((h) => ({ id: h.id, role: h.role, text: h.text, runId: h.run_id, notes: h.notes }))} />
             ) : (
               <section className="wg-glass wg-card wg-enter" style={{ flex: "999 1 520px", minWidth: 0 }} aria-labelledby="key-h">

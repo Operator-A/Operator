@@ -44,7 +44,7 @@ function VaultNote({ v }: { v: VaultState | null }) {
 
 const KEY_HINT: Partial<Record<McpId, string>> = { shopify: "shpat_…", mercury_files: "secret-token:mercury_…", klaviyo_drafts: "pk_…" };
 
-function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) {
+function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView; tz: string }) {
   const s = v.status;
   if (!s) return <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{MCP_MISSING}</span>;
   const srv = MCP_SERVERS[id];
@@ -66,14 +66,14 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
         : <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Agents may read with: {srv.readTools.join(", ")}.{srv.reportTools.length ? ` Code writes reports with: ${srv.reportTools.join(", ")}; a model never calls those.` : " Nothing here can write."} The key reaches {srv.scopes.join(", ")}, and is locked in the vault, never shown again.</span>}
       {hosted && s.connected && !s.paused && (
         <span className="muted" style={{ fontSize: 12.5 }}>
-          {s.toolsCheckedAt ? `Tools checked ${when(s.toolsCheckedAt)}: all ${s.toolsSeen.length} are there with the inputs code expects. If one changes, ${c.name} pauses until you sign in again.` : "Tools not checked yet: the next agent call checks them first."}
+          {s.toolsCheckedAt ? `Tools checked ${when(s.toolsCheckedAt, tz)}: all ${s.toolsSeen.length} are there with the inputs code expects. If one changes, ${c.name} pauses until you sign in again.` : "Tools not checked yet: the next agent call checks them first."}
         </span>
       )}
       {s.connected ? (
         <>
           {s.paused
             ? <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>Paused: {s.lastError ?? "the sign-in stopped working"}. Agents can’t reach {c.name} until you {oauth ? "sign in again" : "paste a new key"}.</span>
-            : <span style={{ fontSize: 13 }}>{oauth ? "Signed in" : "Key locked in the vault"}{s.connectedAt ? ` ${when(s.connectedAt)}` : ""}.{s.lastError ? ` Last problem: ${s.lastError}` : ""}</span>}
+            : <span style={{ fontSize: 13 }}>{oauth ? "Signed in" : "Key locked in the vault"}{s.connectedAt ? ` ${when(s.connectedAt, tz)}` : ""}.{s.lastError ? ` Last problem: ${s.lastError}` : ""}</span>}
           {!oauth && <KeyForm label={`New ${c.name} key`} save={mcpSaveKey.bind(null, id)} placeholder={KEY_HINT[id]} replace />}
           <span className="row wrap" style={{ gap: 8 }}>
             {oauth && <a className="btn outline sm" href={`/connections/${id}/connect`}>Sign in again</a>}
@@ -129,7 +129,7 @@ function McpPanel({ c: base, id, v }: { c: Connection; id: McpId; v: McpView }) 
           <span className="muted" style={{ fontSize: 12 }}>{srv.signInHint} {c.name} is asked whose key it is before it is kept.</span>
         </span>
       )}
-      <SignInLog log={v.log} />
+      <SignInLog log={v.log} tz={tz} />
     </div>
   );
 }
@@ -206,11 +206,11 @@ function Detail({ c, f, mcp, more, note }: { c: Connection; f: Floor; mcp: McpVi
       </span>
       <span className="ink2" style={{ fontSize: 13.5, lineHeight: 1.55 }}>{c.about}</span>
       {note && <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45, background: note.ok ? "var(--mint-soft)" : "var(--red-soft)", color: note.ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{note.text}</span>}
-      {c.mcp && mcp && <McpPanel c={c} id={c.mcp} v={mcp} />}
+      {c.mcp && mcp && <McpPanel c={c} id={c.mcp} v={mcp} tz={f.tz} />}
       {more.map((m) => (
         <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 6, borderTop: "1px solid var(--bd)" }}>
           <span style={{ fontSize: 15, fontWeight: 700 }}>{MCP_SERVERS[m.id].name}</span>
-          <McpPanel c={c} id={m.id} v={m.v} />
+          <McpPanel c={c} id={m.id} v={m.v} tz={f.tz} />
         </div>
       ))}
       {c.checks.length > 1 && <span className="row wrap" style={{ gap: 6 }}>{c.checks.map((k) => <span key={k.key} className="pill sm" style={{ background: f.health[k.key] ? "var(--mint-soft)" : "var(--red-soft)", color: f.health[k.key] ? "var(--mint-ink)" : "var(--red-ink)" }}>{k.label}: {f.health[k.key] ? "set up" : "not set up"}</span>)}</span>}
@@ -273,7 +273,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
           <CustomTiles servers={customs} statuses={customStatuses} sel={custom?.id ?? (adding ? "new" : null)} />
         </div>
         {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} more={more} note={note} /></div>}
-        {custom && <div className="conn-detail"><CustomDetail c={custom} status={customStatuses[custom.id] ?? null} log={customLog} controls={controlsOn()} note={note} usedBy={Object.keys(f.grants).filter((a) => f.grants[a].some((t) => serverOfToolId(t) === custom.id)).map((a) => f.agents[a]?.name ?? a)} /></div>}
+        {custom && <div className="conn-detail"><CustomDetail tz={f.tz} c={custom} status={customStatuses[custom.id] ?? null} log={customLog} controls={controlsOn()} note={note} usedBy={Object.keys(f.grants).filter((a) => f.grants[a].some((t) => serverOfToolId(t) === custom.id)).map((a) => f.agents[a]?.name ?? a)} /></div>}
         {adding && <div className="conn-detail"><AddServerCard controls={controlsOn()} known={knownServer(sp.known)} /></div>}
       </div>
       <div className="card dark" style={{ gap: 10 }}>

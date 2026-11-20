@@ -53,7 +53,7 @@ function Change({ i }: { i: ApprovalItem }) {
   if (i.tool === DRAFT_EMAIL) return <Draft i={i} />;
   if (i.tool === CAMPAIGN_DRAFT) return <Campaign i={i} />;
   const lines: [string, React.ReactNode][] = [
-    p.charge && !p.merchant ? ["Charge", p.charge] : ["Charge", `${p.merchant ?? "?"} · ${p.amount_usd != null ? m2(p.amount_usd) : "?"} · ${p.date ? md(`${p.date}T12:00:00Z`) : "?"}`],
+    p.charge && !p.merchant ? ["Charge", p.charge] : ["Charge", `${p.merchant ?? "?"} · ${p.amount_usd != null ? m2(p.amount_usd) : "?"} · ${p.date ? md(`${p.date}T12:00:00Z`, "UTC") : "?"}`],
     ...(p.receipt_path ? [["Attach receipt", i.receipt_url ? <a key="r" href={i.receipt_url} target="_blank" rel="noopener noreferrer">{p.receipt_path.split("/").pop()} (open)</a> : p.receipt_path.split("/").pop()] as [string, React.ReactNode]] : []),
     ...(p.category ? [["Set category", p.category] as [string, React.ReactNode]] : []),
     ...(p.note ? [["Set memo", p.note] as [string, React.ReactNode]] : []),
@@ -66,10 +66,10 @@ function Change({ i }: { i: ApprovalItem }) {
 }
 
 /** The department a card's agent sat in, and the lead's check (slice 4): a note, or that it wasn't checked in time. */
-function LeadBits({ i, view }: { i: ApprovalItem; view: ApprovalsView }) {
+function LeadBits({ i, view, tz }: { i: ApprovalItem; view: ApprovalsView; tz: string }) {
   const lead = i.reviewer_agent_id ? view.names[i.reviewer_agent_id] ?? i.reviewer_agent_id : null;
   if (!lead || !i.review_status) return null;
-  if (i.review_status === "waiting") return <span className="sub">{lead} checks this first. It comes to you by {i.review_due ? when(i.review_due) : "tomorrow"}; you can decide it now anyway.</span>;
+  if (i.review_status === "waiting") return <span className="sub">{lead} checks this first. It comes to you by {i.review_due ? when(i.review_due, tz) : "tomorrow"}; you can decide it now anyway.</span>;
   if (i.review_status === "skipped") return <span className="sub">{lead} didn’t check this in time, so it came straight to you.</span>;
   if (i.review_status === "noted") return (
     <div className="soft-box" style={{ flexDirection: "column", alignItems: "stretch", gap: 4, borderLeft: "3px solid var(--acc)" }}>
@@ -107,10 +107,10 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
     return (
       <div key={i.id} className="card" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22, padding: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div className="row wrap">{a && <Avatar a={a} size={32} />}<span style={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>{name} · {KIND_LABEL[i.tool] ?? "Mercury change"}</span>{view && <DeptTag i={i} view={view} />}<span className="muted" style={{ fontSize: 12 }}>{when(i.created_at)}</span></div>
+          <div className="row wrap">{a && <Avatar a={a} size={32} />}<span style={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>{name} · {KIND_LABEL[i.tool] ?? "Mercury change"}</span>{view && <DeptTag i={i} view={view} />}<span className="muted" style={{ fontSize: 12 }}>{when(i.created_at, f.tz)}</span></div>
           <span style={{ fontSize: 17, fontWeight: 600 }}>{i.title}</span>
           {i.reasoning && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{i.reasoning}</span>}
-          {view && <LeadBits i={i} view={view} />}
+          {view && <LeadBits i={i} view={view} tz={f.tz} />}
           <div className="row" style={{ gap: 8, marginTop: 6 }}>
             <ActionButton className="btn primary" action={approve.bind(null, i.id)}>Approve</ActionButton>
             <RejectButton reject={reject.bind(null, i.id)} agentName={name} rules={rules[i.agent_id] ?? noRules} />
@@ -176,7 +176,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
               {trust.scheduled.map((a) => (
                 <div key={a.id} className="row rule wrap" style={{ gap: 10, padding: "8px 0", fontSize: 13 }}>
                   <span style={{ flex: 1, minWidth: 200 }}>{a.name} · {a.what}: {a.label}</span>
-                  <span className="muted" style={{ fontSize: 12 }}>after {when(a.executeAfter)}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>after {when(a.executeAfter, f.tz)}</span>
                   <ActionButton className="btn ghost xs" action={cancelAction.bind(null, a.id, "not_now")}>Cancel</ActionButton>
                   <ActionButton className="btn ghost xs" action={cancelAction.bind(null, a.id, "wrong")} title="Cancels it and drops this kind back to Draft">Cancel, it’s wrong</ActionButton>
                 </div>
@@ -242,7 +242,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
               {view.decided.map((i) => (
                 <div key={i.id} className="row rule wrap" style={{ gap: 12, padding: "10px 0", fontSize: 13 }}>
                   <span style={{ flex: 1, minWidth: 200 }}>{i.title}{i.action_reason && <span className="muted"> · {i.action_reason}</span>}</span>
-                  <span className="muted" style={{ fontSize: 12 }}>{i.decided_at ? when(i.decided_at) : ""}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>{i.decided_at ? when(i.decided_at, f.tz) : ""}</span>
                   <Tag s={i.status === "expired" ? "expired" : i.action_status} />
                 </div>
               ))}
@@ -254,7 +254,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
             {!view.log.length && <span className="muted" style={{ fontSize: 13 }}>No actions yet.</span>}
             {view.log.map((g) => (
               <div key={g.id} className="row rule wrap" style={{ gap: 12, padding: "9px 0", fontSize: 12.5 }}>
-                <span style={{ width: 110 }} className="muted">{when(g.created_at)}</span>
+                <span style={{ width: 110 }} className="muted">{when(g.created_at, f.tz)}</span>
                 <span style={{ width: 70 }}>{f.byId[g.agent_id]?.name ?? g.agent_id}</span>
                 <span style={{ flex: 1, minWidth: 180 }}><code>{g.tool}</code> · {g.action_type}{g.reason && <span className="muted"> · {g.reason}</span>}</span>
                 <Tag s={g.status} />

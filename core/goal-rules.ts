@@ -1,4 +1,4 @@
-import { chicagoDate } from "./time";
+import { DEFAULT_TZ, localDate } from "./time";
 
 // Goals and measures (docs/company-mode.md, slice 2). Pure: no database, no network, so
 // `npm run check:goals` can test it.
@@ -131,7 +131,7 @@ const monthDays = (today: string) => { const [y, m] = today.split("-").map(Numbe
  * Where a goal stands, from what code read. `today` is the Chicago date. Everything here is plain
  * arithmetic on the reading, the target and the dates.
  */
-export function progress(g: GoalRow, reading: Reading | null, today: string, extra: readonly MeasureDef[] = []): Progress {
+export function progress(g: GoalRow, reading: Reading | null, today: string, extra: readonly MeasureDef[] = [], tz = DEFAULT_TZ): Progress {
   const m = measureOf(g.measure, extra);
   const blank = (status: GoalStatus, line: string): Progress => ({ status, value: null, pct: null, line, pace: null });
   if (!m || !m.available || g.target == null) return blank(g.state === "done" ? "done" : "no_measure", m && !m.available ? `Code can't count ${m.label.toLowerCase()} until ${m.needs} exists.` : "Pick a measure so code can count it.");
@@ -160,7 +160,7 @@ export function progress(g: GoalRow, reading: Reading | null, today: string, ext
 
   // total: reach the target by the due date, paced from where it stood when the goal was set
   const start = Math.min(g.start_value ?? 0, t);
-  const set = chicagoDate(0, new Date(g.paced_from)), due = g.due_on ?? addDays(set, 90);
+  const set = localDate(tz, 0, new Date(g.paced_from)), due = g.due_on ?? addDays(set, 90);
   const span = Math.max(1, daysBetween(set, due));
   const elapsed = Math.max(0, Math.min(span, daysBetween(set, today)));
   const line = `${fmt(v, u)} of ${fmt(t, u)}${m.noun ? ` ${m.noun}` : ""}`;

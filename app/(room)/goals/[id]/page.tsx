@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { orgTz } from "@/core/tz";
+import { localDate } from "@/core/time";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/dashboard/data";
 import { goalView } from "@/dashboard/goals";
@@ -16,7 +18,7 @@ import { listProposals, proposalsBySeat } from "@/core/proposals";
 import { listSpecVersions } from "@/core/agent-spec";
 import { modelDef } from "@/integrations/models";
 import { TOOLS } from "@/core/tools/catalog";
-import { chicagoDate } from "@/core/time";
+
 
 // A goal's page (docs/company-mode.md, slices 2 and 4): where it stands, counted in code, its pace,
 // the detail behind the number, the head's plan for the week and its latest review, how the head
@@ -25,7 +27,7 @@ import { chicagoDate } from "@/core/time";
 // a measure reads Shopify or Mercury when the page opens
 export const maxDuration = 120;
 
-const day = (iso: string) => new Date(iso.length === 10 ? `${iso}T12:00:00Z` : iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: iso.length === 10 ? "UTC" : "America/Chicago" });
+const dayIn = (tz: string) => (iso: string) => new Date(iso.length === 10 ? `${iso}T12:00:00Z` : iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: iso.length === 10 ? "UTC" : tz });
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const STAGE: Record<string, string> = { new: "New", drafted: "Drafted", contacted: "Contacted", replied: "Replied", tasting: "Tasting", won: "Won" };
 
@@ -45,7 +47,9 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
     owner.agentId ? listSpecVersions(owner.agentId).then((v) => v.find((x) => x.active)?.spec ?? null).catch(() => null) : Promise.resolve(null),
     ownMeasureDefs(),
   ]);
-  const week = weekOf(chicagoDate(0));
+  const tz = await orgTz();
+  const day = dayIn(tz);
+  const week = weekOf(localDate(tz, 0));
   const plan = plans?.find((p) => p.week_of === week) ?? null;
   const reviewed = plans?.find((p) => p.review) ?? null;
   const bySeat = pending ? proposalsBySeat(org, pending) : {};
@@ -81,7 +85,7 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="home-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", alignItems: "start" }}>
-        <PlanCard plan={plan} plans={plans} week={week} headName={headName} bySeat={bySeat} />
+        <PlanCard day={day} plan={plan} plans={plans} week={week} headName={headName} bySeat={bySeat} />
         <div className="stack" style={{ gap: 16 }}>
           <div className="card" style={{ gap: 10 }}>
             <span className="card-t">{headName ? `${headName}’s review` : "The head’s review"}{reviewed && reviewed.week_of !== week ? ` of the week of ${shortDay(reviewed.week_of)}` : ""}</span>
@@ -119,7 +123,7 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
 type Spec = NonNullable<Awaited<ReturnType<typeof listSpecVersions>>[number]["spec"]>;
 
 /** The head's plan for this week: its words and lines (a teammate's focus, a seat nobody holds yet, a job for the owner). */
-function PlanCard({ plan, plans, week, headName, bySeat }: { plan: Plan | null; plans: Plan[] | null; week: string; headName: string | null; bySeat: Record<string, { id: string; text: string }[]> }) {
+function PlanCard({ plan, plans, week, headName, bySeat, day }: { day: (iso: string) => string; plan: Plan | null; plans: Plan[] | null; week: string; headName: string | null; bySeat: Record<string, { id: string; text: string }[]> }) {
   if (plans == null) return <div className="card"><span className="sub">The plans table isn’t in Supabase yet: apply the migration 20261123090000_plans.sql.</span></div>;
   const who = headName ?? "The head";
   if (!plan) return (

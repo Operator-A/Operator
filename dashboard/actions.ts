@@ -1,6 +1,7 @@
 "use server";
 // Control Room actions. Each one checks the signed-in member's role first (asRole, docs/tenancy.md). Anything that can spend money
 // or wake an agent also needs DASHBOARD_CONTROLS=on; stopping things never does.
+import { zoneLabel } from "@/core/time";
 import { audit } from "@/core/audit";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -185,13 +186,13 @@ export async function startFirstJob(agentId: string): Promise<ActionResult> {
     const run = await startRun(tap.agentId, who.name);
     revalidatePath("/", "layout");
     const avery = plan.wake.find((w) => w.id === SETUP_AGENT);
-    return { ...run, text: `${run.text}${avery?.firstRun ? ` Avery’s first summary comes at ${when(avery.firstRun)} CT.` : ""}` };
+    return { ...run, text: `${run.text}${avery?.firstRun ? ` Avery’s first summary comes at ${when(avery.firstRun, f.tz)} ${zoneLabel(f.tz, avery.firstRun)}.` : ""}` };
   } catch (e) { return fail(e); }
 }
 
 /** Who wakes and when, for the first job's reply: only `ids` count as in the org. */
 function firstJobPlan(f: Awaited<ReturnType<typeof getFloor>>, ids: readonly string[], chains: Parameters<typeof planOrgOn>[1]) {
-  return planOrgOn(f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: ids.includes(a.id), perRun: a.perRun ?? null })), chains, Date.now());
+  return planOrgOn(f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: ids.includes(a.id), perRun: a.perRun ?? null })), chains, Date.now(), f.tz);
 }
 
 /** What turning on the org would do now: who wakes, first runs, chains, cost a month. */
@@ -199,7 +200,7 @@ async function orgPlanNow() {
   const f = await getFloor();
   const flow = await loadFlow(f.palette);
   const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, perRun: a.perRun ?? null }));
-  return { flow, plan: planOrgOn(members, flow.flow.chains, Date.now()) };
+  return { flow, tz: f.tz, plan: planOrgOn(members, flow.flow.chains, Date.now(), f.tz) };
 }
 
 export async function turnOnOrg(confirmed: boolean): Promise<ActionResult> {
@@ -210,7 +211,7 @@ export async function turnOnOrg(confirmed: boolean): Promise<ActionResult> {
     // test agents must stay off: without agents.in_org there is no way to tell them apart
     const probe = await db().from("agents").select("id, in_org").limit(1);
     if (probe.error) return fail(/in_org/.test(probe.error.message) ? "Apply the org switch migration (20261128090000_org_switch.sql) first." : probe.error.message);
-    const { flow, plan } = await orgPlanNow();
+    const { flow, plan, tz } = await orgPlanNow();
     if (!plan.wake.length) return { ok: false, text: "No agent is in the org yet." };
     const ids = plan.wake.map((w) => w.id);
     const block = await planBlock({ kind: "agent_on", agentIds: ids }); if (block) return { ok: false, text: block };
@@ -222,7 +223,7 @@ export async function turnOnOrg(confirmed: boolean): Promise<ActionResult> {
     revalidatePath("/", "layout");
     const first = plan.wake.find((w) => w.firstRun);
     await audit(me, "turn_on_org", null, { agents: ids.length });
-    return { ok: true, text: `The org is on. ${ids.length} agent${ids.length === 1 ? " is" : "s are"} on duty${first ? `; first up, ${first.name} at ${when(first.firstRun!)} CT` : ""}.` };
+    return { ok: true, text: `The org is on. ${ids.length} agent${ids.length === 1 ? " is" : "s are"} on duty${first ? `; first up, ${first.name} at ${when(first.firstRun!, tz)} ${zoneLabel(tz, first.firstRun!)}` : ""}.` };
   } catch (e) { return fail(e); }
 }
 

@@ -1,17 +1,18 @@
-// Display helpers. Every time is shown in Central Time, the only time zone so far.
-import { TZ } from "@/core/time";
+// Display helpers. Every time is shown in the business's own time zone (card 187), which the caller
+// passes: orgTz() on the server, or the tz a server page handed a client component (Floor.tz).
+const cache = new Map<string, Intl.DateTimeFormat>();
+const fmt = (tz: string, key: string, o: Intl.DateTimeFormatOptions) => {
+  const k = `${tz}|${key}`;
+  let f = cache.get(k);
+  if (!f) { f = new Intl.DateTimeFormat("en-US", { timeZone: tz, ...o }); cache.set(k, f); }
+  return f;
+};
 
-const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, ...o });
-const hmF = fmt({ hour: "numeric", minute: "2-digit" });
-const mdF = fmt({ month: "short", day: "numeric" });
-const dowF = fmt({ weekday: "short" });
-const longF = fmt({ weekday: "long", month: "short", day: "numeric" });
-
-export const hm = (t: Date | string | number) => hmF.format(new Date(t));
-export const md = (t: Date | string | number) => mdF.format(new Date(t));
-export const dow = (t: Date | string | number) => dowF.format(new Date(t));
-export const when = (t: Date | string | number) => `${md(t)}, ${hm(t)}`;
-export const longDay = (t: Date | string | number) => longF.format(new Date(t));
+export const hm = (t: Date | string | number, tz: string) => fmt(tz, "hm", { hour: "numeric", minute: "2-digit" }).format(new Date(t));
+export const md = (t: Date | string | number, tz: string) => fmt(tz, "md", { month: "short", day: "numeric" }).format(new Date(t));
+export const dow = (t: Date | string | number, tz: string) => fmt(tz, "dow", { weekday: "short" }).format(new Date(t));
+export const when = (t: Date | string | number, tz: string) => `${md(t, tz)}, ${hm(t, tz)}`;
+export const longDay = (t: Date | string | number, tz: string) => fmt(tz, "long", { weekday: "long", month: "short", day: "numeric" }).format(new Date(t));
 export const utcStr = (t: Date | string | number) => new Date(t).toISOString().slice(0, 16).replace("T", " ") + " UTC";
 
 export const m4 = (v: number) => "$" + v.toFixed(4);
@@ -36,7 +37,7 @@ export function rel(t: string | number, now = Date.now()) {
 }
 
 /** "9:12 AM" → "9:12" for tight cells. */
-export const shortHm = (t: Date | string | number) => hm(t).replace(/\s?[AP]M$/, "");
+export const shortHm = (t: Date | string | number, tz: string) => hm(t, tz).replace(/\s?[AP]M$/, "");
 
 /** "06:45" → "6:45 AM" */
 export function t12(s: string) {

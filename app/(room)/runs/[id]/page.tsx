@@ -1,3 +1,4 @@
+import { zoneLabel } from "@/core/time";
 import { cookies } from "next/headers";
 import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
@@ -34,7 +35,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
     reactable ? getRunReactions(run.id) : Promise.resolve({} as Awaited<ReturnType<typeof getRunReactions>>), reactable ? getReactRules(a.id) : null,
   ]);
   const leads = items ? items.length : null;
-  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.crew, f.health, await customMenuFor()), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps) });
+  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.crew, f.health, await customMenuFor()), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps, f.tz) });
   const chain = run.trigger === "chain" ? await getChainRuns(run.id) : null;
   const asked = run.trigger === "chat" ? await askedIn(run.id).catch(() => null) : null;
   const look = RUN_LOOK[run.status];
@@ -53,9 +54,9 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
     { label: has("web_search") ? "Web searches" : "Other", amount: rest, sub: has("web_search") ? `about ${Math.round(rest / 0.01)} at $0.01` : "", color: "var(--ink2)" },
   ];
 
-  const title = run.status === "skipped" ? `Skipped · ${when(run.started_at)}` : run.status === "failed" ? `Failed · ${when(run.started_at)}` : `${run.trigger === "manual" ? "Manual" : run.trigger === "approval" ? "Approval" : run.trigger === "chain" ? "Chain" : run.trigger === "preview" ? "Try" : run.trigger === "chat" ? "Chat" : "Scheduled"} run · ${when(run.started_at)}`;
+  const title = run.status === "skipped" ? `Skipped · ${when(run.started_at, f.tz)}` : run.status === "failed" ? `Failed · ${when(run.started_at, f.tz)}` : `${run.trigger === "manual" ? "Manual" : run.trigger === "approval" ? "Approval" : run.trigger === "chain" ? "Chain" : run.trigger === "preview" ? "Try" : run.trigger === "chat" ? "Chat" : "Scheduled"} run · ${when(run.started_at, f.tz)}`;
   const stats = [
-    ["Started", `${when(run.started_at)} CT`, utcStr(run.started_at)],
+    ["Started", `${when(run.started_at, f.tz)} ${zoneLabel(f.tz, run.started_at)}`, utcStr(run.started_at)],
     ["Duration", dur(run.started_at, run.ended_at), ""],
     ["Cost", m4(run.cost_usd), ""],
     ["Tokens", `${num(run.tokens_in)} in · ${num(run.tokens_out)} out`, ""],
@@ -127,7 +128,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
                     <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>Step {k + 1}: {who?.name ?? agentId}</span>
                     {l ? <span className="row" style={{ gap: 6, fontSize: 12 }}><span className="dot" style={{ background: l.dot }} />{l.label}</span> : <span className="muted" style={{ fontSize: 12 }}>Didn’t run</span>}
                   </span>
-                  <span className="muted" style={{ fontSize: 12 }}>{r ? `${when(r.startedAt)} · ${m4(r.costUsd)}` : "The chain stopped before this step, or it is still waiting."}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>{r ? `${when(r.startedAt, f.tz)} · ${m4(r.costUsd)}` : "The chain stopped before this step, or it is still waiting."}</span>
                   {r?.summary && <span style={{ fontSize: 12.5, lineHeight: 1.45, overflowWrap: "anywhere" }} className="ink2"><Summary text={r.summary.slice(0, 220)} /></span>}
                 </>
               );
@@ -142,7 +143,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
       {others.length > 0 && (
         <div className="row wrap" style={{ gap: 6 }}>
           <span className="sub" style={{ marginRight: 4 }}>Other runs</span>
-          {others.map((o) => <Link key={o.id} href={`/runs/${o.id}`} className="btn ghost xs" style={{ height: 32, fontSize: 12.5 }}>{when(o.started_at)}{o.status === "failed" ? " · failed" : ""}</Link>)}
+          {others.map((o) => <Link key={o.id} href={`/runs/${o.id}`} className="btn ghost xs" style={{ height: 32, fontSize: 12.5 }}>{when(o.started_at, f.tz)}{o.status === "failed" ? " · failed" : ""}</Link>)}
         </div>
       )}
 

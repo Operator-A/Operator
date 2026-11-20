@@ -1,8 +1,10 @@
 // Each business's own settings (docs/tenancy.md, slice 8.1b): where the owner's emails go, the
 // business's website, its Shopify store and Mercury accounts, and the Notion pages reports go
-// under. Each org keeps them on Settings (a `business_settings` row in policies). Before this they
+// under, and its time zone. Each org keeps them on Settings (a `business_settings` row in policies). Before this they
 // were one setting each in Vercel for the whole app; those settings now count only for the home
 // org, as its starting values, and never for another org. Pure, so check:settings can test it.
+
+import { validTz } from "@/core/time";
 
 export interface BusinessSettings {
   /** Where the brief and alerts go: always one of the org's owners' sign-in addresses. */
@@ -30,6 +32,8 @@ export interface BusinessSettings {
   costSource: CostSource;
   /** With costSource "own": the own number (its n_ key) that gives one day's cost of goods in dollars. */
   costNumber: string | null;
+  /** The business's own time zone (an IANA name like "America/Los_Angeles"; card 187). Null = DEFAULT_TZ. */
+  timeZone: string | null;
 }
 
 export type CostSource = "none" | "shopify" | "own";
@@ -41,7 +45,7 @@ export const SETTINGS_KEY = "business_settings";
 export const NO_SETTINGS: BusinessSettings = {
   ownerEmail: null, siteUrl: null, shopifyDomain: null, shopifyClientId: null, mercuryAccountIds: [],
   notionBriefParent: null, notionBriefsDb: null, notionLeadsParent: null, notionBooksParent: null,
-  productCollections: [], productFields: [], offerTerms: null, costSource: "none", costNumber: null,
+  productCollections: [], productFields: [], offerTerms: null, costSource: "none", costNumber: null, timeZone: null,
 };
 
 export const MAX_COLLECTIONS = 5, MAX_PRODUCT_FIELDS = 20, OFFER_TERMS_MAX = 1500;
@@ -117,6 +121,7 @@ export function readSettings(raw: unknown): BusinessSettings {
     productFields: productFields(r.productFields),
     offerTerms: offerTerms(r.offerTerms),
     ...costOf(r.costSource, r.costNumber),
+    timeZone: validTz(r.timeZone),
   };
 }
 
@@ -131,7 +136,7 @@ export interface SettingsEdit {
   ownerEmail: string; siteUrl: string; shopifyDomain: string; shopifyClientId: string; mercuryAccountIds: string;
   notionBriefParent: string; notionBriefsDb: string; notionLeadsParent: string; notionBooksParent: string;
   productCollections: string; productFields: string; offerTerms: string;
-  costSource: string; costNumber: string;
+  costSource: string; costNumber: string; timeZone: string;
 }
 
 /** Stored settings as Settings' text fields: what one card keeps when another card saves. */
@@ -140,7 +145,7 @@ export const editOf = (b: BusinessSettings): SettingsEdit => ({
   mercuryAccountIds: b.mercuryAccountIds.join(", "), notionBriefParent: b.notionBriefParent ?? "", notionBriefsDb: b.notionBriefsDb ?? "",
   notionLeadsParent: b.notionLeadsParent ?? "", notionBooksParent: b.notionBooksParent ?? "",
   productCollections: b.productCollections.join(", "), productFields: b.productFields.join(", "), offerTerms: b.offerTerms ?? "",
-  costSource: b.costSource, costNumber: b.costNumber ?? "",
+  costSource: b.costSource, costNumber: b.costNumber ?? "", timeZone: b.timeZone ?? "",
 });
 
 /**
@@ -167,5 +172,6 @@ export function checkSettingsEdit(e: SettingsEdit, ownerEmails: readonly string[
   if (text(e.offerTerms) && !s.offerTerms) return { problem: "Offer terms are plain text; any link in them must start with https://." };
   if (e.costSource && !COST_SOURCES.includes(e.costSource as CostSource)) return { problem: "Pick where cost of goods comes from." };
   if (e.costSource === "own" && s.costSource !== "own") return { problem: "Pick the number from your own tool that gives a day’s cost of goods." };
+  if (text(e.timeZone) && !s.timeZone) return { problem: "Pick a time zone from the list, like America/New_York." };
   return { settings: s };
 }

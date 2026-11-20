@@ -5,6 +5,7 @@ import "server-only";
 // agent), a tool grant becomes a draft version that still needs Try it and Go live, a new tool opens
 // Find a tool (use a connection, add a server, or ask for a connector), a retirement takes an agent off duty and opens its seat. Every check runs again
 // at the tap, against the chart and the tool list as they are then.
+import { orgDate } from "@/core/tz";
 import { db } from "@/core/db";
 import { createBuiltAgent, draftOf, listSpecVersions, readSpec, saveSpecVersion } from "@/core/agent-spec";
 import { teach } from "@/core/memory";
@@ -12,7 +13,7 @@ import { addSeat, agentNames, below, headOf, liveAgentIds, loadOrg, removeSeat, 
 import { TOOLS } from "@/core/tools/catalog";
 import { createGoal, editGoal, getGoal, GOALS_MISSING, listGoals, ownMeasureDefs, setGoalState, type Goal } from "@/core/goals";
 import { MAX_GOALS_PER_DEPT, planGoal, type GoalInput } from "@/core/goal-rules";
-import { chicagoDate } from "@/core/time";
+
 import { hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, type ProposalPlan } from "@/core/proposal-rules";
 
 export type ProposalState = "pending" | "accepted" | "declined" | "built" | "failed";
@@ -66,7 +67,7 @@ async function goalCheck(p: Extract<ProposalPlan, { kind: "goal" }>, deptId: str
     target: p.target ?? (measure === goal?.measure ? goal?.target : null) ?? undefined,
     dueOn: p.dueOn ?? goal?.due_on ?? null,
   };
-  const got = planGoal(input, chicagoDate(0), await ownMeasureDefs());
+  const got = planGoal(input, (await orgDate(0)), await ownMeasureDefs());
   if ("error" in got) return { problem: got.error.replace(/\.$/, "") };
   return { goal, input };
 }

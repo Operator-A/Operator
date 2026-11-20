@@ -10,7 +10,8 @@ import { cleanMessage } from "@/core/chat-rules";
 import { withActor } from "@/core/actor";
 import { audit } from "@/core/audit";
 import { installTemplates } from "@/core/install";
-import { saveSettingsFields } from "@/core/settings";
+import { saveSettingsFields, settings } from "@/core/settings";
+import { validTz } from "@/core/time";
 import { askFor } from "@/core/connector-requests";
 import { TOOL_CATEGORIES, isCategory, routeUnlisted } from "@/core/tools-step-rules";
 import { asRole } from "./data";
@@ -173,6 +174,23 @@ export async function ideaStart(): Promise<ActionResult> {
 }
 
 /** Step 2 (card 152): the Shopify store's address, saved with the business's other settings before its key is pasted. */
+/**
+ * Step 1 (card 187): the founder's browser says its time zone with the first message, and it becomes the
+ * business's, only while none is set (Settings can change it any time; this never overwrites that).
+ */
+export async function setupTimeZone(tz: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const zone = validTz(tz);
+  if (!zone) return { ok: false, text: "That isn’t a time zone." };
+  try {
+    if ((await settings()).timeZone) return { ok: true, text: "Already set." };
+    const r = await saveSettingsFields({ timeZone: zone }, ["timeZone"], () => 64);
+    if ("problem" in r) return { ok: false, text: r.problem };
+    await audit(me, "save_time_zone", null, { time_zone: zone, from: "setup" });
+    return done("Saved.");
+  } catch (e) { return fail(e); }
+}
+
 export async function setupShopifyStore(domain: string): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   const d = String(domain ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");

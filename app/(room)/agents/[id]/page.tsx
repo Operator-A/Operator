@@ -1,3 +1,4 @@
+import { zoneLabel } from "@/core/time";
 import { cookies } from "next/headers";
 import { needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
@@ -101,7 +102,7 @@ export default async function AgentPage({ params, searchParams }: { params: Prom
 
       {tab === "memory" && <Memory a={a} f={f} domains={pipeline?.domains} mem={mem} />}
 
-      {tab === "runs" && <RunTable runs={runs.slice(0, 200)} showAgent={false} foot={`${runs.length} runs in the last 60 days · ${m4(runs.reduce((s, r) => s + r.cost_usd, 0))} spent`} />}
+      {tab === "runs" && <RunTable tz={f.tz} runs={runs.slice(0, 200)} showAgent={false} foot={`${runs.length} runs in the last 60 days · ${m4(runs.reduce((s, r) => s + r.cost_usd, 0))} spent`} />}
 
     </>
   );
@@ -182,7 +183,7 @@ function Stats({ a, f, pipelineTotal, books }: { a: CrewMember; f: Floor; pipeli
       : ["Runs that finished", String(ok), "last 60 days"],
     ["Skipped while off duty", String(sk), "logged at $0"],
     ["30-day spend", m4(spend30), `of ${m2(b * 30)} budget`],
-    ["Last real run", last ? md(last.started_at) : "—", last ? `${hm(last.started_at)} CT · ${dur(last.started_at, last.ended_at)} · ${m4(last.cost_usd)}` : "none yet"],
+    ["Last real run", last ? md(last.started_at, f.tz) : "—", last ? `${hm(last.started_at, f.tz)} ${zoneLabel(f.tz)} · ${dur(last.started_at, last.ended_at)} · ${m4(last.cost_usd)}` : "none yet"],
   ];
   return (
     <div className="card stats" style={{ padding: "20px 8px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", rowGap: 16 }}>
@@ -214,7 +215,7 @@ function BooksCard({ books }: { books: Books | null }) {
       {books.waiting.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column" }}>
           <span className="sub" style={{ marginBottom: 4 }}>Waiting on a photo</span>
-          {books.waiting.map((w) => <div key={`${w.date}-${w.merchant}-${w.amount_usd}`} className="row rule" style={{ justifyContent: "space-between", padding: "8px 0", fontSize: 13 }}><span>{md(`${w.date}T12:00:00Z`)} · {w.merchant}</span><b style={{ fontWeight: 600 }}>{m2(w.amount_usd)}</b></div>)}
+          {books.waiting.map((w) => <div key={`${w.date}-${w.merchant}-${w.amount_usd}`} className="row rule" style={{ justifyContent: "space-between", padding: "8px 0", fontSize: 13 }}><span>{md(`${w.date}T12:00:00Z`, "UTC")} · {w.merchant}</span><b style={{ fontWeight: 600 }}>{m2(w.amount_usd)}</b></div>)}
         </div>
       )}
       <span className="sub">{books.proposals ? <><Link href="/approvals">Review proposals in Approvals</Link>. </> : null}Nothing goes to Mercury until you approve it. Record keeping, not tax advice.</span>
@@ -254,8 +255,8 @@ function Journal({ a, f, mem, reactions }: { a: CrewMember; f: Floor; mem: Await
   const items = [
     ...real.map((r) => ({ key: r.id, t: Date.parse(r.started_at), icon: r.status === "failed" ? "circle-alert" : "play", color: r.status === "failed" ? "var(--red)" : r.status === "running" ? "var(--acc)" : "var(--mint)", title: r.status === "failed" ? "Run failed" : r.status === "running" ? "Working now" : `Real run · ${r.trigger === "cron" ? "on schedule" : "manual"}`, text: r.error ?? r.summary, meta: `${dur(r.started_at, r.ended_at)} · ${m4(r.cost_usd)}`, href: `/runs/${r.id}` })),
     ...reactions.map((r) => ({ key: `re-${r.id}`, t: Date.parse(r.created_at), icon: r.verdict === "good" ? "thumbs-up" : "thumbs-down", color: r.verdict === "good" ? "var(--mint)" : "var(--yel)", title: `You said ${r.verdict === "good" ? "good" : "not this"}${r.item_label ? ` to ${r.item_label}` : r.approval_id ? " on an approval card" : " to a run"}`, text: r.text ?? (r.verdict === "good" ? "Counts on its scorecard." : "No words, so no rule."), meta: r.memory_id ? "Saved as a rule in your words" : "A signal only", href: r.run_id ? `/runs/${r.run_id}#react` : "/approvals" })),
-    ...taught.filter((r) => !reactions.some((x) => x.memory_id === r.id)).map((r) => ({ key: r.id, t: Date.parse(r.created_at), icon: r.grp === "lesson" ? "brain" : "pencil", color: GROUP_COLOR[r.grp], title: r.grp === "lesson" ? "Lesson kept" : r.grp === "standing_order" ? "Standing order from you" : "Note from you", text: r.text, meta: keepWords(r), href: `/agents/${a.id}?tab=memory` })),
-    ...(skipped.length ? [{ key: "skipped", t: Date.parse(skipped[0].started_at), icon: "clock", color: "var(--mut2)", title: `${skipped.length} runs skipped while off duty`, text: "Every skipped run is logged at $0.", meta: `Latest ${when(skipped[0].started_at)}`, href: `/runs?agent=${a.id}&status=skipped` }] : []),
+    ...taught.filter((r) => !reactions.some((x) => x.memory_id === r.id)).map((r) => ({ key: r.id, t: Date.parse(r.created_at), icon: r.grp === "lesson" ? "brain" : "pencil", color: GROUP_COLOR[r.grp], title: r.grp === "lesson" ? "Lesson kept" : r.grp === "standing_order" ? "Standing order from you" : "Note from you", text: r.text, meta: keepWords(r, f.tz), href: `/agents/${a.id}?tab=memory` })),
+    ...(skipped.length ? [{ key: "skipped", t: Date.parse(skipped[0].started_at), icon: "clock", color: "var(--mut2)", title: `${skipped.length} runs skipped while off duty`, text: "Every skipped run is logged at $0.", meta: `Latest ${when(skipped[0].started_at, f.tz)}`, href: `/runs?agent=${a.id}&status=skipped` }] : []),
   ].sort((x, y) => y.t - x.t);
   return (
     <div className="card">
@@ -265,7 +266,7 @@ function Journal({ a, f, mem, reactions }: { a: CrewMember; f: Floor; mem: Await
           <div key={j.key} className="rule" style={{ display: "grid", gridTemplateColumns: "32px minmax(0,1fr) auto", gap: 12, padding: "12px 0" }}>
             <span style={{ width: 32, height: 32, borderRadius: 999, background: "var(--soft)", display: "grid", placeItems: "center", position: "relative" }}><Icon name={j.icon} size={14} /><span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 999, background: j.color, border: "2px solid var(--card)" }} /></span>
             <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{j.title}</span><span style={{ fontSize: 13, lineHeight: 1.45, overflowWrap: "anywhere" }} className="ink2"><Summary text={j.text} /></span><span className="muted" style={{ fontSize: 11.5 }}>{j.meta}</span></span>
-            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}><span className="muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>{when(j.t)}</span><Link href={j.href} className="btn outline xs">{j.key === "skipped" ? "See all" : j.href.includes("tab=memory") ? "Memory" : j.href === "/approvals" ? "Approvals" : "Replay"}</Link></span>
+            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}><span className="muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>{when(j.t, f.tz)}</span><Link href={j.href} className="btn outline xs">{j.key === "skipped" ? "See all" : j.href.includes("tab=memory") ? "Memory" : j.href === "/approvals" ? "Approvals" : "Replay"}</Link></span>
           </div>
         ))}
         <div className="rule" style={{ display: "grid", gridTemplateColumns: "32px minmax(0,1fr)", gap: 12, padding: "12px 0" }}>
@@ -280,13 +281,13 @@ function Journal({ a, f, mem, reactions }: { a: CrewMember; f: Floor; mem: Await
 const GROUP_COLOR: Record<string, string> = { shared: "var(--mint)", crew: "var(--mut2)", department: "var(--ink2)", standing_order: "var(--acc)", pages: "var(--acc-soft)", lesson: "var(--yel)", note: "var(--pink)", focus: "var(--acc)", working: "var(--peach)" };
 const GROUP_NAME: Record<string, string> = { shared: "Shared", crew: "Rules for everyone", department: "Department rules", standing_order: "Standing orders", lesson: "Lessons", note: "Your notes", focus: "Focus from its head", working: "Working memory", pages: "Notion pages" };
 
-function keepWords(r: MemoryRow) {
-  if (r.grp === "working") return `Left by the agent · ${when(r.created_at)}`;
+function keepWords(r: MemoryRow, tz: string) {
+  if (r.grp === "working") return `Left by the agent · ${when(r.created_at, tz)}`;
   const by = r.source === "approval" ? "From an approval" : r.grp === "focus" ? "Its head's plan" : r.source === "agent" ? "Agent" : r.source_tag?.startsWith("run:") ? "Your reaction to a run" : r.source_tag?.startsWith("approval:") ? "Your reason for a Reject" : "You";
-  const life = r.keep === "next_run" ? "forgets after the next run" : (r.keep === "days_30" || r.keep === "days_7") && r.expires_at ? `forgets ${md(r.expires_at)}` : "kept until you forget it";
-  return `${by} · ${when(r.created_at)} · ${life}`;
+  const life = r.keep === "next_run" ? "forgets after the next run" : (r.keep === "days_30" || r.keep === "days_7") && r.expires_at ? `forgets ${md(r.expires_at, tz)}` : "kept until you forget it";
+  return `${by} · ${when(r.created_at, tz)} · ${life}`;
 }
-const toLine = (r: MemoryRow, pages: PageLoad[] = []): LineView => {
+const toLine = (r: MemoryRow, tz: string, pages: PageLoad[] = []): LineView => {
   const p = r.notion_page_id ? pages.find((x) => x.memoryId === r.id) : undefined;
   const page = r.notion_page_id ? {
     title: p?.title ?? "Notion page",
@@ -294,7 +295,7 @@ const toLine = (r: MemoryRow, pages: PageLoad[] = []): LineView => {
     note: !p ? "read on each run" : p.problem ? p.problem : `read each run, ${num(p.tokens)} tokens${p.cut ? ", cut to fit" : ""}`,
     bad: !!p?.problem,
   } : undefined;
-  return { id: r.id, text: r.text, meta: keepWords(r), data: r.trust === "data", page };
+  return { id: r.id, text: r.text, meta: keepWords(r, tz), data: r.trust === "data", page };
 };
 
 const EVENT_WORDS: Record<string, string> = { added: "Taught", edited: "Edited", forgotten: "Forgot", expired: "Expired", rewritten: "Working memory rewritten", proposed: "Lesson proposed", kept: "Kept", discarded: "Discarded" };
@@ -331,7 +332,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
   const editable = !!tab;
   const proposed = (tab?.rows ?? []).filter((r) => r.grp === "lesson" && r.state === "proposed" && r.agent_id === a.id);
   const lines = (g: string, opts: { edit?: boolean } = { edit: true }) => mine(g).map((r) => (
-    <MemoryLine key={r.id} line={toLine(r, tab?.pages)} color={GROUP_COLOR[g]} edit={editable && opts.edit ? editMemoryLine.bind(null, r.id) : undefined} forget={editable && opts.edit ? forgetMemoryLine.bind(null, r.id) : undefined} />
+    <MemoryLine key={r.id} line={toLine(r, f.tz, tab?.pages)} color={GROUP_COLOR[g]} edit={editable && opts.edit ? editMemoryLine.bind(null, r.id) : undefined} forget={editable && opts.edit ? forgetMemoryLine.bind(null, r.id) : undefined} />
   ));
   const load = tab?.load ?? null;
   const groups: { n: number; title: string; color: string; meta: string; body: React.ReactNode }[] = [
@@ -347,7 +348,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
     { n: 3, title: "Lessons", color: "var(--yel)", meta: "Proposed when the agent above it sends back one of its drafts. Nothing sticks until you tap Keep.", body: (
       <>
         {proposed.map((r) => (
-          <MemoryLine key={r.id} line={{ ...toLine(r), meta: `Proposed · ${when(r.created_at)} · waiting for your Keep` }} color="var(--yel)"
+          <MemoryLine key={r.id} line={{ ...toLine(r, f.tz), meta: `Proposed · ${when(r.created_at, f.tz)} · waiting for your Keep` }} color="var(--yel)"
             edit={editMemoryLine.bind(null, r.id)} keep={keepLessonLine.bind(null, r.id, false)} keepCrew={keepLessonLine.bind(null, r.id, true)} discard={discardLessonLine.bind(null, r.id)} />
         ))}
         {lines("lesson")}
@@ -433,7 +434,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
             <div className="card-h"><span className="card-t">Timeline</span><span className="muted" style={{ fontSize: 12 }}>Newest first</span></div>
             {(tab?.events ?? []).slice(0, 15).map((e) => (
               <div key={e.id} className="rule" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "10px 0" }}>
-                <span className="row" style={{ gap: 8, fontSize: 13, fontWeight: 600 }}>{EVENT_WORDS[e.kind] ?? e.kind}{e.agent_id === null && <span className="tag">{e.department_id ? "DEPARTMENT" : "CREW"}</span>}<span style={{ flex: 1 }} /><span className="muted" style={{ fontSize: 11.5, fontWeight: 400 }}>{when(e.at)}</span></span>
+                <span className="row" style={{ gap: 8, fontSize: 13, fontWeight: 600 }}>{EVENT_WORDS[e.kind] ?? e.kind}{e.agent_id === null && <span className="tag">{e.department_id ? "DEPARTMENT" : "CREW"}</span>}<span style={{ flex: 1 }} /><span className="muted" style={{ fontSize: 11.5, fontWeight: 400 }}>{when(e.at, f.tz)}</span></span>
                 {e.before && e.kind !== "added" && <span style={{ fontSize: 12.5, lineHeight: 1.45, textDecoration: e.kind === "edited" || e.kind === "rewritten" ? "line-through" : undefined, whiteSpace: "pre-line" }} className="muted">{e.before}</span>}
                 {e.after && <span style={{ fontSize: 12.5, lineHeight: 1.45, whiteSpace: "pre-line" }} className="ink2">{e.after}</span>}
                 <span className="muted" style={{ fontSize: 11 }}>{e.by}</span>

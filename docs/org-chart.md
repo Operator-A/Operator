@@ -39,7 +39,7 @@ The owner, Nov 13: agents organised like a company, with departments, heads, lea
 
 ## Slice 2: Department budgets and rules
 
-**What the owner sees.** Each department card on Crew > Org chart shows what its agents spent on AI this Chicago month, against its monthly budget when it has one ("$6.42 of $15.00 this month", a bar that turns yellow at 80% and red with RUNS PAUSED at the budget), and how many department rules it has (tap to read them). Edit chart, then Edit on a department, sets:
+**What the owner sees.** Each department card on Crew > Org chart shows what its agents spent on AI this month (the business's time zone), against its monthly budget when it has one ("$6.42 of $15.00 this month", a bar that turns yellow at 80% and red with RUNS PAUSED at the budget), and how many department rules it has (tap to read them). Edit chart, then Edit on a department, sets:
 
 - **Monthly AI budget.** Shared by every agent seated in the department, on top of each agent's own daily budget. Blank means no department budget. Up to $500 (`DEPT_BUDGET_CEILING` in `core/org-rules.ts`, held by the migration too).
 - **Emails a day.** For the department's agents together, never above the company cap (`policies.max_emails_per_day`). Blank means the company cap. No agent can send email yet; this is the fence the email action type will pass.
