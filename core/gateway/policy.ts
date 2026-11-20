@@ -3,6 +3,8 @@
 // and a memo on a transaction that already exists, only for CFO and Bookkeeper, and only
 // after an approver approves (Draft tier). Nothing here can create, cancel or move money.
 
+import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-rules";
+
 export type Tier = "Report" | "Draft" | "Act";
 
 export const ANNOTATE = "mercury.annotate_transaction";
@@ -12,6 +14,12 @@ export const ANNOTATE = "mercury.annotate_transaction";
  * lead's row when it makes the draft. A first email to someone is always Draft and never promoted.
  */
 export const DRAFT_EMAIL = "gmail.create_draft";
+/**
+ * A draft email campaign in the business's Klaviyo, to one of its own lists (card 159b). The owner
+ * sends it from Klaviyo: nothing in the app can send or schedule a campaign. The list is the target,
+ * picked from the business's Klaviyo lists by code and checked again right before the write.
+ */
+export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
 
 /** Every write tool the gateway knows. A tool not listed here is refused. */
 export const TOOLS = {
@@ -28,6 +36,13 @@ export const TOOLS = {
     fields: ["subject", "body"],
     // first contact with a person who has never heard from the business: Draft for good (CLAUDE.md)
     promotable: false,
+  },
+  [CAMPAIGN_DRAFT]: {
+    agents: ["campaign_writer"],
+    tier: "Draft" as Tier,
+    fields: CAMPAIGN_FIELDS,
+    // a draft to people who signed up to the list, never sent by the app: it may earn trust (28 of 30 unedited)
+    promotable: true,
   },
 } as const;
 export type ToolName = keyof typeof TOOLS;
@@ -69,6 +84,11 @@ export function refuseDraft(args: Record<string, unknown>): string | null {
   return null;
 }
 
+/** Whether a campaign may go to this list: it must be one of the business's own Klaviyo lists, as Klaviyo lists them now. */
+export function refuseCampaignTo(listId: string, lists: readonly { id: string }[]): string | null {
+  return lists.some((l) => l.id === listId) ? null : "That list isn't one of the business's Klaviyo lists.";
+}
+
 /** Whether the business may draft an email to this lead: an address on the row, not suppressed, not a lead the owner closed. */
 export function refuseDraftTo(lead: { email: string | null; stage: string } | null, suppressed: Set<string>): string | null {
   if (!lead) return "That lead isn't on the leads list.";
@@ -85,6 +105,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (!def) return `Unknown write tool "${tool}".`;
   if (!(def.agents as readonly string[]).includes(agentId)) return `${agentId} may not use ${tool}.`;
   if (tool === DRAFT_EMAIL) return UUID.test(target) ? refuseDraft(args) : "The target is not a lead on the leads list.";
+  if (tool === CAMPAIGN_DRAFT) return listIdOk(target) ? refuseCampaign(args) : "The target is not a Klaviyo list id.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";
   const extra = Object.keys(args).filter((k) => !(def.fields as readonly string[]).includes(k));
   if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. Only receipt, category and memo can be written.`;

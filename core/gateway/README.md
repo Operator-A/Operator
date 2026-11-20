@@ -40,6 +40,26 @@ approval-only for good. The owner still sends each draft from Gmail.
   only, through `callWriteTool("gmail", "gmail_create_draft")`), `DASHBOARD_CONTROLS=on` and Rowan on duty; at most
   `policies.max_gmail_drafts_per_run` (10) per apply. The lead moves from new to drafted.
 
+## `klaviyo.campaign_draft` (card 159b)
+
+A draft email campaign in the business's Klaviyo, to one of its own lists. Only `campaign_writer`.
+Draft tier, `promotable: true` (a list of people who signed up, and the app never sends it). The owner
+sends each campaign from Klaviyo: nothing in the app can send, schedule, cancel or delete one.
+
+- The proposal holds only `subject` (at most 50 characters), `preview` (at most 90) and `body` (at
+  most 3,000, plain text). No links, no Klaviyo template tags, no control characters
+  (`refuseCampaign` in `core/klaviyo-draft-rules.ts`). The target is the Klaviyo list id, which the
+  model names only by a pick code from an Email lists result.
+- The list must be on the business's Klaviyo lists, read by code through the read-only sign-in, when
+  proposed and again when applied (`refuseCampaignTo`); the drafts server reads it once more on its own
+  key right before the write.
+- Applying needs the gateway's own "Klaviyo campaign drafts" key (Connections, Klaviyo; a private key
+  with campaigns:write, templates:write and lists:read only, refused when it can read profiles, flows or
+  metrics), through `callWriteTool("klaviyo_drafts", "klaviyo_create_draft")`, with
+  `DASHBOARD_CONTROLS=on` and the Campaign writer on duty; at most `policies.max_campaign_drafts_per_run`
+  (3) per apply. The server makes a template (the body, escaped, plus Klaviyo's unsubscribe tag added by
+  code) and a draft campaign, and returns their ids.
+
 ## `mercury.annotate_transaction`
 
 Receipt attachment, category and memo on a Mercury transaction that already exists. Only

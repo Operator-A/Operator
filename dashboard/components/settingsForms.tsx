@@ -213,12 +213,12 @@ export function ProductFactsForm({ initial, canEdit, save }: { initial: Record<P
   );
   return (
     <div className="stack" style={{ gap: 10 }}>
-      {label("Shopify collections", "Up to 5 collection handles, separated by commas, like our-coffees. Only active, in-stock products in them are read.",
-        <input className="input" aria-label="Shopify collections" value={f.productCollections} maxLength={600} disabled={!canEdit} placeholder="our-coffees, wholesale" onChange={(e) => setF({ ...f, productCollections: e.target.value })} />)}
+      {label("Shopify collections", "Up to 5 collection handles, separated by commas, like best-sellers. Only active, in-stock products in them are read.",
+        <input className="input" aria-label="Shopify collections" value={f.productCollections} maxLength={600} disabled={!canEdit} placeholder="best-sellers, for-business" onChange={(e) => setF({ ...f, productCollections: e.target.value })} />)}
       {label("Product fields", "Up to 20 metafields written namespace.key, like custom.origin. Leave out costs and anything you wouldn’t put in an email.",
         <input className="input" aria-label="Product fields" value={f.productFields} maxLength={1000} disabled={!canEdit} placeholder="custom.origin, custom.process" onChange={(e) => setF({ ...f, productFields: e.target.value })} />)}
       {label("Offer terms", "Your own words on what you offer: minimums, sizes, prices, terms, the page to send people to. Plain text; links must start with https://.",
-        <textarea className="input" rows={6} aria-label="Offer terms" value={f.offerTerms} maxLength={1500} disabled={!canEdit} placeholder={"Minimum order 5 lb.\nBags: 12 oz, 2 lb, 5 lb.\nMore at https://example.com/wholesale"} onChange={(e) => setF({ ...f, offerTerms: e.target.value })} />)}
+        <textarea className="input" rows={6} aria-label="Offer terms" value={f.offerTerms} maxLength={1500} disabled={!canEdit} placeholder={"Minimum order 12 units.\nCase sizes: 6, 12, 24.\nMore at https://example.com/for-business"} onChange={(e) => setF({ ...f, offerTerms: e.target.value })} />)}
       <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
         <button className="btn dark sm" disabled={busy || !canEdit || !changed} title={canEdit ? "Agents use the new facts from their next run" : "Owners only"} onClick={() => run(() => save(f))}>{busy ? "Saving…" : "Save"}</button>
       </div>

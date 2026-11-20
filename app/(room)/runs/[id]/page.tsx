@@ -168,7 +168,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
           <span className="card-t">Summary</span>
           <span style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}><Summary text={run.summary ?? (run.status === "running" ? "Working now…" : "No summary.")} /></span>
           {run.error && <div style={{ padding: "12px 14px", borderRadius: 14, background: "var(--red-soft)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, color: "var(--red-ink)", overflowWrap: "anywhere" }}>{run.error}</div>}
-          {leads != null && <div className="row wrap" style={{ gap: 6 }}><span className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{leads} leads in wholesale_leads</span></div>}
+          {leads != null && <div className="row wrap" style={{ gap: 6 }}><span className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{leads} leads on the leads list</span></div>}
           <div className="row wrap"><DryRun action={dryRun.bind(null, a.id)} /></div>
         </div>
         <div className="card dashed" style={{ padding: "40px 28px", alignItems: "center", textAlign: "center", gap: 8 }}>

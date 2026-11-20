@@ -50,25 +50,32 @@ for (const [what, list] of [["department", ids((t) => t.departments.map((d) => d
 
 // ---- picks
 const by = (id: string) => all.find((t) => t.id === id)!;
-const order = ["finance", "chief-of-staff", "prospecting", "email-marketing"];
+const order = ["finance", "chief-of-staff", "prospecting", "email-marketing", "store-analytics"];
 const everything = mergeTemplates(order.map(by));
-assert.deepEqual(crewProblems(everything), [], "all four install together");
+assert.deepEqual(crewProblems(everything), [], "all five install together");
 const morning = (everything.flow.chains as { key: string; steps: { agent: string }[] }[]).find((c) => c.key === "morning")!;
 assert.deepEqual(morning.steps.map((s) => s.agent), ["cfo", "chief_of_staff"], "the morning chain: the numbers, then the brief");
 const briefOnly = mergeTemplates([by("chief-of-staff")]);
 assert.deepEqual((briefOnly.flow.chains as { steps: { agent: string }[] }[]).flatMap((c) => c.steps.map((s) => s.agent)), ["chief_of_staff"]);
 const noBrief = mergeTemplates([by("finance"), by("prospecting")]);
 assert.ok((noBrief.flow.chains as { steps: { agent: string }[] }[]).every((c) => c.steps.every((s) => s.agent !== "chief_of_staff")), "a step for an agent not installed is dropped");
-for (let mask = 1; mask < 16; mask++) {
+for (let mask = 1; mask < 1 << order.length; mask++) {
   const pick = order.filter((_, i) => mask & (1 << i)).map(by);
   assert.deepEqual(crewProblems(mergeTemplates(pick)), [], `pick ${pick.map((t) => t.id).join("+")} installs`);
 }
 // everything installs switched off
-const rows = installRows("finance+chief-of-staff+prospecting+email-marketing", everything);
+const rows = installRows(order.join("+"), everything);
 assert.ok(rows.agents.every((a) => a.enabled === false), "every agent off duty");
 assert.ok(rows.agent_playbooks.every((p) => p.status === "proposed"), "every playbook waits for the owner");
 assert.ok((rows.crew_flow[0].flow as { chains: { on: boolean }[] }).chains.every((c) => !c.on), "every chain off");
-assert.equal(rows.departments.length, 3);
+assert.equal(rows.departments.length, 4);
+const toolsOf = (id: string) => ((everything.specs as Record<string, { tools?: string[] }>)[id]?.tools ?? []);
+// card 159: the first-version departments, each with a head; the store analytics head reads the week in code
+for (const id of ["finance", "prospecting", "email_marketing", "store_analytics"]) assert.ok(everything.departments.some((d) => d.id === id), `${id} is offered`);
+assert.ok(toolsOf("analytics_head").includes("weekly_numbers"), "the store analytics head reads Week over week");
+assert.deepEqual(toolsOf("campaign_writer").filter((t) => TOOLS[t]?.kind === "action"), ["klaviyo_campaign_draft"], "card 159b: the Campaign writer's one action is a Klaviyo draft for approval");
+assert.ok(TOOLS.klaviyo_campaign_draft.agents?.includes("campaign_writer") && TOOLS.klaviyo_campaign_draft.params.some((p) => p.type === "pick" && p.name === "list"), "the list is a pick from Email lists, never typed by the model");
+assert.ok(toolsOf("campaign_writer").includes("product_facts"), "the Campaign writer claims only Product facts");
 // the gateway's action types still match the agents that use them
 for (const id of ["cfo", "bookkeeper", "wholesale_hunter"]) assert.ok(everything.agents.some((a) => a.id === id), `${id} keeps its id: the gateway's policy names it`);
 // a template that names a tool core doesn't have is refused

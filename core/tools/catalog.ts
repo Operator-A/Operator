@@ -30,7 +30,8 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
 import { draftsToCheck, leadReview, propose } from "@/core/gateway";
 import { proposeLesson } from "@/core/memory";
 import { reactionTally } from "@/core/reactions";
@@ -43,6 +44,7 @@ import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Pick, ReportInput, ToolDef } from "./types";
 import { ANALYTICS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
 import { snapshot } from "@/core/daily-numbers";
+import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
 import { deliverBrief } from "@/core/brief";
 import { openCounts } from "@/core/brief/rules";
 import { openOrders } from "@/integrations/shopify/orders";
@@ -161,6 +163,20 @@ const TOOLS_LIST: ToolDef[] = [
     },
   },
   {
+    // card 159: the store analytics head's weekly read, every change worked out in code
+    id: "weekly_numbers", label: "Week over week", detail: "The last 7 full days against the 7 before, worked out in code: revenue, orders, average order, repeat rate and margin from the saved daily numbers, and sessions and key events from Google Analytics when it's connected, each with its change",
+    kind: "read", group: "supabase", params: [], trusted: true, needs: SUPABASE, costUsd: 0,
+    run: async () => {
+      const yesterday = chicagoDate(1);
+      const { data, error } = await db().from("kpi_snapshots").select("date, revenue, orders, repeat_rate, cost_of_goods, margin").gte("date", shift(yesterday, -13)).lte("date", yesterday).order("date").limit(31);
+      if (error) throw new Error(error.message);
+      // visits only when Google Analytics is connected; without it the lines are left out and the result says so
+      const visits = await ga4Overview("last_30_days").then((o) => o.days, () => null);
+      const w = weekOverWeek((data ?? []) as DayRow[], visits, yesterday);
+      return { data: w, numbers: weekNumbers(w) };
+    },
+  },
+  {
     id: "report_kpi_snapshot", label: "Save yesterday's numbers", detail: "Works out yesterday's daily numbers again in code and saves them, for the morning brief and goals. Never uses the model's words",
     kind: "report", group: "supabase", params: [], trusted: true, needs: [...SHOPIFY, ...SUPABASE], costUsd: 0, codeOnly: true,
     deliver: async () => {
@@ -174,14 +190,20 @@ const TOOLS_LIST: ToolDef[] = [
     deliver: async (o, ctx) => deliverBrief(o.summary, ctx.runId ?? null),
   },
 
-  // ---- Wholesale (slice 7): who is already on the leads list
+  // ---- Leads (slice 7): who is already on the leads list
   // Klaviyo over its MCP server (company mode slice 6): read tools only, each one a named server
   // tool in core/mcp-rules.ts. Counts and rates are added up in code from the raw reply. Names in
   // Klaviyo are the business's own, but the reply comes from outside, so it is shown as untrusted data.
   {
-    id: "klaviyo_lists", label: "Email lists", detail: "Every list in the business's Klaviyo: its id and name. Use an id with Email list size",
+    id: "klaviyo_lists", label: "Email lists", detail: "Every list in the business's Klaviyo: its id and name. Use an id with Email list size, or a pick code with Draft a Klaviyo campaign",
     kind: "read", group: "klaviyo", params: [], trusted: false, needs: KLAVIYO, costUsd: 0,
-    run: async () => { const lists = await klaviyoLists(); return { data: { lists }, numbers: { lists: lists.length } }; },
+    run: async () => {
+      const lists = await klaviyoLists();
+      // the list a campaign goes to is named by pick code: its id comes from Klaviyo here, never from the model
+      const picks: Record<string, Pick> = {};
+      const rows = lists.slice(0, 200).map((l, i) => { picks[`l${i + 1}`] = { kind: "list", id: l.id, label: l.name.slice(0, 80) || l.id }; return { pick: `l${i + 1}`, ...l }; });
+      return { data: { lists: rows }, numbers: { lists: lists.length }, picks };
+    },
   },
   {
     id: "klaviyo_list_size", label: "Email list size", detail: "How many profiles are on one Klaviyo list, counted by Klaviyo and read in code",
@@ -231,7 +253,7 @@ const TOOLS_LIST: ToolDef[] = [
     run: async (p) => { const r = await ga4Channels(String(p.period) as Ga4Period, Number(p.limit ?? 10)); return { data: r, numbers: { sessions_listed: r.sessions_listed } }; },
   },
   {
-    id: "leads_list", label: "Leads list", detail: "Businesses already on the wholesale leads list (skip these), newest first, with stage and whether there is an email. Leads with an email carry a pick, so a draft can name one. Names and addresses came from the web, so they are untrusted",
+    id: "leads_list", label: "Leads list", detail: "Businesses already on the leads list (skip these), newest first, with stage and whether there is an email. Leads with an email carry a pick, so a draft can name one. Names and addresses came from the web, so they are untrusted",
     kind: "read", group: "supabase", params: [], trusted: false, needs: SUPABASE, costUsd: 0,
     run: async () => {
       const { data, error } = await db().from("wholesale_leads").select("id, business, domain, city, stage, email, fit_score, created_at").order("created_at", { ascending: false }).limit(300);
@@ -484,7 +506,7 @@ const TOOLS_LIST: ToolDef[] = [
     },
   },
   {
-    id: "wholesale_leads_recent", label: "Rowan's leads", detail: "Wholesale leads from a window: business, city, kind, fit score and stage. Found on the web, so untrusted",
+    id: "wholesale_leads_recent", label: "Recent leads", detail: "Leads found in a window: business, city, kind, fit score and stage. Found on the web, so untrusted",
     kind: "read", group: "supabase", params: [daysParam(14, 90, "How many days back.")], trusted: false, needs: SUPABASE, costUsd: 0,
     run: async ({ days }) => {
       const since = new Date(Date.now() - Number(days) * 864e5).toISOString();
@@ -621,7 +643,7 @@ const TOOLS_LIST: ToolDef[] = [
       const parent = await notionConnected() ? (ctx.reportPage?.id ?? (await settings().then((b) => b.notionLeadsParent ?? b.notionBriefParent))) : undefined;
       let url = "";
       if (parent && saved.length) {
-        url = await notionPage(`Wholesale leads · ${o.date}`, [
+        url = await notionPage(`Leads · ${o.date}`, [
           h2(`${saved.length} new lead${saved.length === 1 ? "" : "s"}`),
           para(drafting ? "First emails with an address wait for you as draft cards in the Control Room (Approvals). Approving puts the draft in Gmail; you send it there." : "Copy each first email from here."),
           ...saved.flatMap(({ row: r }) => [
@@ -680,6 +702,25 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, DRAFT_EMAIL, lead.id, args);
       if (refused) return { problem: refused };
       return { gatewayTool: DRAFT_EMAIL, target: lead.id, args, actionType: "email_draft", title: lead.label, preview: { to: lead.label, subject: args.subject, body: args.body, why: input.why } };
+    },
+  },
+  {
+    id: "klaviyo_campaign_draft", label: "Draft a Klaviyo campaign", detail: "Stages one email campaign to one of the business's Klaviyo lists, for the owner to approve. Approving makes it a draft in Klaviyo; the owner sends it from Klaviyo. Nothing here can send or schedule a campaign. Claims about products come only from Product facts",
+    kind: "action", group: "klaviyo", trusted: true, needs: KLAVIYO, costUsd: 0,
+    agents: GATEWAY_TOOLS[CAMPAIGN_DRAFT].agents,
+    params: [
+      { name: "list", type: "pick", kind: "list", description: "The list it goes to, from an Email lists result." },
+      { name: "subject", type: "text", maxLength: CAMPAIGN_LIMITS.subject, description: "The subject line." },
+      { name: "preview", type: "text", maxLength: CAMPAIGN_LIMITS.preview, description: "The preview text shown after the subject in the inbox." },
+      { name: "body", type: "text", maxLength: CAMPAIGN_LIMITS.body, multiline: true, description: "The email, plain text, paragraphs split by a blank line. No links; code adds the unsubscribe line." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why this campaign now, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const list = input.list as Pick;
+      const args = { subject: String(input.subject), preview: String(input.preview), body: String(input.body) };
+      const refused = refuseProposal(ctx.agentId, CAMPAIGN_DRAFT, list.id, args);
+      if (refused) return { problem: refused };
+      return { gatewayTool: CAMPAIGN_DRAFT, target: list.id, args, actionType: "campaign_draft", title: `${list.label}: ${args.subject}`, preview: { list: list.label, subject: args.subject, preview_text: args.preview, body: args.body, why: input.why } };
     },
   },
 ];

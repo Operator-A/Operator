@@ -32,11 +32,12 @@ assert.ok(needs.has("ANALYTICS_CONNECTED"), "the Analytics tools need the Analyt
 
 // which tiles each department needs comes from its tools
 assert.deepEqual(tilesFor(tpl("finance"), needsOf), ["shopify", "mercury"]);
-assert.deepEqual(tilesFor(tpl("email-marketing"), needsOf), ["klaviyo"]);
+assert.deepEqual(tilesFor(tpl("email-marketing"), needsOf), ["shopify", "klaviyo"], "the Campaign writer reads Product facts");
+assert.deepEqual(tilesFor(tpl("store-analytics"), needsOf), ["analytics"], "Week over week reads saved numbers; the visits need Google Analytics");
 assert.deepEqual(tilesFor(tpl("prospecting"), needsOf), ["shopify", "gmail"]);
-assert.deepEqual(neededBy([tpl("finance"), tpl("email-marketing")], needsOf), { shopify: ["Finance"], mercury: ["Finance"], klaviyo: ["Email marketing"] });
+assert.deepEqual(neededBy([tpl("finance"), tpl("email-marketing")], needsOf), { shopify: ["Finance", "Email marketing"], mercury: ["Finance"], klaviyo: ["Email marketing"] });
 assert.deepEqual(waitingOn(tpl("finance"), needsOf, new Set(["shopify"])), ["mercury"]);
-assert.deepEqual(waitingOn(tpl("email-marketing"), needsOf, new Set(["klaviyo"])), []);
+assert.deepEqual(waitingOn(tpl("email-marketing"), needsOf, new Set(["klaviyo"])), ["shopify"], "the Campaign writer still waits on Shopify");
 
 // Connect from setup comes back to setup; nothing else is a place
 assert.equal(backTarget("start", "mercury"), "/start#step-2");

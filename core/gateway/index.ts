@@ -12,16 +12,18 @@ import { hasMercury, mercuryCategories, mercuryTransaction } from "@/integration
 import { callWriteTool, mcpStatus } from "@/integrations/mcp";
 import { chicagoDate, offsetOn } from "@/core/time";
 import { hasGmail } from "@/integrations/gmail";
-import { ANNOTATE, CAP_KEYS, DRAFT_EMAIL, MAX_RECEIPT_BYTES, RECEIPT_TYPES, TOOLS, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { klaviyoLists } from "@/integrations/klaviyo";
+import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
+import { ANNOTATE, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, refuseCampaignTo, MAX_RECEIPT_BYTES, RECEIPT_TYPES, TOOLS, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, DRAFT_EMAIL } from "./policy";
+export { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL } from "./policy";
 
 export interface Proposal {
   agentId: string;
   runId?: string | null;
   tool: ToolName;
   target: string;
-  args: AnnotateArgs | DraftArgs;
+  args: AnnotateArgs | DraftArgs | CampaignArgs;
   actionType: string;
   title: string;
   reasoning?: string;
@@ -37,7 +39,7 @@ async function numPolicy(key: string, d: number) {
 /** Queue an action for approval, or record it as refused. Returns what happened. */
 export async function propose(p: Proposal): Promise<{ status: "queued" | "refused" | "duplicate"; reason?: string; actionId?: string }> {
   const memoMax = await numPolicy("mercury_memo_max_chars", 200);
-  const refused = refuseProposal(p.agentId, p.tool, p.target, p.args as Record<string, unknown>, memoMax) ?? (p.tool === DRAFT_EMAIL ? await refuseLead(p.target) : null);
+  const refused = refuseProposal(p.agentId, p.tool, p.target, p.args as Record<string, unknown>, memoMax) ?? (p.tool === DRAFT_EMAIL ? await refuseLead(p.target) : p.tool === CAMPAIGN_DRAFT ? await refuseList(p.target) : null);
   const base = { agent_id: p.agentId, run_id: p.runId ?? null, tool: p.tool, action_type: p.actionType, target: p.target, args_json: p.args };
   if (refused) {
     await db().from("agent_actions").insert({ ...base, status: "refused", reason: refused });
@@ -75,6 +77,13 @@ async function leadAndSuppressed(leadId: string) {
 async function refuseLead(leadId: string) {
   const { lead, suppressed } = await leadAndSuppressed(leadId);
   return refuseDraftTo(lead, suppressed);
+}
+
+// ---- Klaviyo campaign drafts: the list is always one of the business's own, read by code
+
+/** Why a campaign to this list can't be proposed: it isn't on the business's Klaviyo lists right now. */
+async function refuseList(listId: string) {
+  try { return refuseCampaignTo(listId, await klaviyoLists()); } catch (e) { return `Klaviyo's lists couldn't be read to check the list: ${e instanceof Error ? e.message.slice(0, 160) : String(e)}`; }
 }
 
 // ---- The Bookkeeper's proposals (expense_docs.proposal_*) become actions
@@ -224,7 +233,7 @@ export async function writeBlocker(): Promise<string | null> {
 }
 
 /** A gateway sign-in is connected and not paused. */
-async function ready(id: "mercury_write" | "mercury_files"): Promise<boolean> {
+async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts"): Promise<boolean> {
   const s = await mcpStatus(id);
   return !!s?.connected && !s.paused;
 }
@@ -319,7 +328,7 @@ export async function applyApproved(ids?: string[]) {
   // an apply that died mid-way: mark it failed; a retry checks again first, so nothing is written twice
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -377,6 +386,48 @@ async function applyDraft(a: ActionRow, runId: string) {
     const draftId = await createDraft(to, args.subject, args.body);
     await done({ status: "applied", result_json: { gmail_draft_id: draftId, to }, diff_json: { before: { stage: lead!.stage }, after: { stage: lead!.stage === "new" ? "drafted" : lead!.stage } } });
     await db().from("wholesale_leads").update({ gmail_draft_id: draftId, draft_subject: args.subject, draft_body: args.body, ...(lead!.stage === "new" ? { stage: "drafted" } : {}) }).eq("id", lead!.id);
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
+/** Approved Klaviyo campaigns: made as drafts in Klaviyo on the gateway's own key, at most max_campaign_drafts_per_run per agent. */
+async function applyCampaigns(ids?: string[]) {
+  const rows = await approvedOf(CAMPAIGN_DRAFT, ids);
+  if (!rows.length) return null;
+  if (!(await ready("klaviyo_drafts"))) return { ok: true, text: "Approved, not in Klaviyo yet: the Klaviyo campaign drafts key isn't connected (Connections, Klaviyo)." };
+  const cap = await numPolicy("max_campaign_drafts_per_run", 3);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyCampaign(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway made ${n.applied} approved Klaviyo campaign draft${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}. The owner sends them from Klaviyo.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved campaigns are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyCampaign(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as CampaignArgs;
+    // the allow-list and the list again, at execution time: a row may have been edited, a list deleted
+    const no = refuseProposal(a.agent_id, CAMPAIGN_DRAFT, a.target, args as unknown as Record<string, unknown>) ?? (await refuseList(a.target));
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const out = (await callWriteTool("klaviyo_drafts", "klaviyo_create_draft", { listId: a.target, subject: args.subject, preview: args.preview, body: args.body })) as { campaignId?: unknown; templateId?: unknown; listName?: unknown };
+    if (typeof out?.campaignId !== "string" || !out.campaignId) throw new Error("Klaviyo didn't return a campaign id");
+    await done({ status: "applied", result_json: { klaviyo_campaign_id: out.campaignId, klaviyo_template_id: out.templateId ?? null, list: out.listName ?? null, sent: false } });
     return "applied" as const;
   } catch (e) {
     await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });

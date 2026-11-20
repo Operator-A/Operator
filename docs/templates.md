@@ -16,10 +16,24 @@ measures, planned agents and a whole business's crew); that mechanism is gone.
 | `finance.json` | Finance | CFO (head), Bookkeeper | Morning numbers, books on weekdays | Months of runway |
 | `chief-of-staff.json` | (company seat) | Chief of Staff | The morning brief, after the numbers | |
 | `prospecting.json` | Prospecting | Head of prospecting, Lead finder (by hand) | | Accounts won |
-| `email-marketing.json` | Email marketing | Head of email marketing (Klaviyo reads), with open seats under it | | Email list size |
+| `email-marketing.json` | Email marketing | Head of email marketing (Klaviyo reads), Campaign writer (by hand), open seats | | Email list size |
+| `store-analytics.json` | Store analytics | Head of store analytics, an open Site and conversion seat | Week in numbers, Mondays | Revenue this month |
 
-These follow the first-version departments in the product definition (finance, prospecting, email
-marketing; store analytics comes with card 159). First-run setup (`docs/setup.md`) offers them on
+These are the first-version departments in the product definition (card 159): finance, prospecting,
+email marketing and store analytics, for any store.
+
+- **Store analytics.** The head reads **Week over week** (`weekly_numbers`): the last 7 full days
+  against the 7 before, from the saved daily numbers and, when Google Analytics is connected, its visits
+  by day, with every change worked out in code (`core/weekly-numbers-rules.ts`, `check:weekly-numbers`).
+  Missing days or no Google Analytics are said, never guessed. Then Site visits, Where visits come from
+  and Top pages explain the move.
+- **Campaign writer.** Drafts one campaign a run (audience from the business's own Klaviyo lists,
+  subject, preview text, body under 150 words) that claims only what Product facts says. It stages the
+  campaign with Draft a Klaviyo campaign (`klaviyo_campaign_draft`, card 159b): the list is a pick code
+  from Email lists, never typed by the model. An approver sees the exact list, subject, preview text and
+  body on an approval card; approving makes a draft in Klaviyo, and the owner sends it from there.
+- **Prospecting.** No one trade's words in core (`check:business` fails on them); tool ids like
+  `wholesale_leads_recent` and the `wholesale_won` measure key stay, because stored setups and goals name them. First-run setup (`docs/setup.md`) offers them on
 step 3 as the company Avery proposes from her interview (card 153): the departments she leans toward are on the chart, the rest under Also available.
 
 ## Installing

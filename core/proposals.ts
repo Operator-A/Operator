@@ -24,7 +24,6 @@ export interface Proposal {
 }
 /** A plan with names resolved against the chart when it was filed (checked again at the tap). */
 export type Resolved = ProposalPlan & { seatId?: string | null; parentSeatId?: string | null; agentId?: string | null; goalId?: string | null; deptId?: string | null };
-type GoalPlanR = Extract<Resolved, { kind: "goal" }>;
 
 export const PROPOSALS_MISSING = "The proposals table isn’t in Supabase yet: apply the migration 20261122090000_proposals.sql.";
 const COLS = "id, kind, title, source, from_agent, department_id, run_id, payload, why, state, outcome, result_ref, decided_at, created_at";

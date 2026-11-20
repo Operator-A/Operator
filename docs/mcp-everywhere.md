@@ -275,3 +275,29 @@ client in `GMAIL_CLIENT_ID`. Turn on **Google Analytics Data API** and **Google 
 platform > Data access.
 
 No migration.
+
+## Klaviyo campaign drafts on our own server (card 159b)
+
+Klaviyo's hosted MCP server stays read-only for agents (`read-only=true`). The one write the Campaign
+writer needs, a draft campaign, runs on our own small server in the app, on a separate key only the
+gateway uses.
+
+- **Profile** `klaviyo_drafts` (`core/mcp-rules.ts`): a pasted key, no read tools, one write tool
+  `klaviyo_create_draft` that becomes the gateway action type `klaviyo.campaign_draft` (Draft).
+- **The key:** a Klaviyo private key (`pk_…`) with Campaigns Full Access, Templates Full Access and
+  Lists Read Access. Before it is kept, the server checks Klaviyo accepts it for lists and that it can't
+  read profiles, flows or metrics; a key that can is refused as more than the profile needs. Klaviyo has
+  no draft-only scope, so the guarantee that nothing is sent is in code: the server has no send job,
+  schedule, cancel or delete call, and `check:mcp` fails if one appears.
+- **The tool:** checks its input again (`checkDraftArgs`), reads the list on its key (a list that isn't
+  there is refused), creates a template from the approved body (escaped, with Klaviyo's unsubscribe tag
+  added by code), creates a draft campaign to that list with the approved subject and preview text, and
+  attaches the template. Klaviyo API revision pinned to 2024-10-15. Requests never follow redirects; a
+  401 pauses the key until the owner pastes a new one.
+- **Files:** `integrations/klaviyo-drafts-server.ts` is the only file that calls Klaviyo's REST API, and
+  only `integrations/mcp.ts` imports it (lint and `check:mcp`).
+
+**Setting it up:** in Klaviyo, open **Settings > API keys > Create Private API Key**. Name it
+"Campaign drafts", pick **Custom Key**, set **Campaigns** to Full Access, **Templates** to Full Access and
+**Lists** to Read Access, leave everything else at No Access, and tap **Create**. In the Control Room,
+open **Connections > Klaviyo**, paste the key under **Klaviyo campaign drafts** and tap **Save**.

@@ -1,5 +1,5 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { DRAFT_EMAIL, TOOLS, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { CAMPAIGN_DRAFT, DRAFT_EMAIL, TOOLS, refuseCampaignTo, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -48,6 +48,19 @@ t("draft refused with a link", refuseProposal("wholesale_hunter", DRAFT_EMAIL, l
 t("draft refused on a non-lead target", refuseProposal("wholesale_hunter", DRAFT_EMAIL, "ana@fleet.coffee", draft) !== null);
 t("draft refused with a two-line subject", refuseProposal("wholesale_hunter", DRAFT_EMAIL, lead, { ...draft, subject: "a\nb" }) !== null);
 t("first emails never promoted", TOOLS[DRAFT_EMAIL].tier === "Draft" && TOOLS[DRAFT_EMAIL].promotable === false);
+// Klaviyo campaign drafts (card 159b): only the Campaign writer, a Klaviyo list id, subject, preview and body only, no links or tags
+const camp = { subject: "New this week", preview: "Two picks for the weekend", body: "Hi,\n\nTwo things are back in stock.\n\nSam" };
+t("campaign ok for the Campaign writer", refuseProposal("campaign_writer", CAMPAIGN_DRAFT, "XZRviM", camp) === null);
+t("campaign refused for Rowan", refuseProposal("wholesale_hunter", CAMPAIGN_DRAFT, "XZRviM", camp) !== null);
+t("campaign refused on a non-list target", refuseProposal("campaign_writer", CAMPAIGN_DRAFT, "../lists", camp) !== null);
+t("campaign refused with an extra field", refuseProposal("campaign_writer", CAMPAIGN_DRAFT, "XZRviM", { ...camp, send_at: "now" }) !== null);
+t("campaign refused with a link", refuseProposal("campaign_writer", CAMPAIGN_DRAFT, "XZRviM", { ...camp, body: "shop www.evil.example" }) !== null);
+t("campaign refused with a template tag", refuseProposal("campaign_writer", CAMPAIGN_DRAFT, "XZRviM", { ...camp, body: "Hi {{ first_name }}" }) !== null);
+t("campaign refused with a long subject", refuseProposal("campaign_writer", CAMPAIGN_DRAFT, "XZRviM", { ...camp, subject: "x".repeat(51) }) !== null);
+t("campaign refused with a long preview", refuseProposal("campaign_writer", CAMPAIGN_DRAFT, "XZRviM", { ...camp, preview: "x".repeat(91) }) !== null);
+t("campaign refused without preview", refuseProposal("campaign_writer", CAMPAIGN_DRAFT, "XZRviM", { ...camp, preview: " " }) !== null);
+t("campaign starts at Draft", TOOLS[CAMPAIGN_DRAFT].tier === "Draft");
+t("campaign list must be the business's own", refuseCampaignTo("XZRviM", [{ id: "XZRviM" }]) === null && refuseCampaignTo("Other1", [{ id: "XZRviM" }]) !== null);
 t("lead with address ok", refuseDraftTo({ email: "Ana@Fleet.coffee", stage: "new" }, new Set()) === null);
 t("lead without address refused", refuseDraftTo({ email: null, stage: "new" }, new Set()) !== null);
 t("suppressed lead refused", refuseDraftTo({ email: "ana@fleet.coffee", stage: "new" }, new Set(["ana@fleet.coffee"])) !== null);

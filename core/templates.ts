@@ -7,8 +7,9 @@ import finance from "@/templates/finance.json";
 import chiefOfStaff from "@/templates/chief-of-staff.json";
 import prospecting from "@/templates/prospecting.json";
 import emailMarketing from "@/templates/email-marketing.json";
+import storeAnalytics from "@/templates/store-analytics.json";
 
-const FILES: unknown[] = [finance, chiefOfStaff, prospecting, emailMarketing];
+const FILES: unknown[] = [finance, chiefOfStaff, prospecting, emailMarketing, storeAnalytics];
 
 for (const f of FILES) {
   const p = templateProblems(f);
