@@ -8,7 +8,7 @@ import { checkSignup, codeHash, newCode, normalCode, slugFor } from "./signup-ru
 import { formEncode, ourStatus, rowFromSubscription, trialEndFor, validSignature } from "./stripe-rules";
 import { PLAN, monthlyUsd, planBlockFor, planState, planWords, type Subscription } from "./plan-rules";
 import type { PlanAsk } from "../core/extension-types";
-import { MIN_BALANCE_USD, PACKS_USD, balanceOf, creditBlock, creditFromSession, creditWords, isPack, mayUsePooledKey, runCharge, usdWords } from "./credit-rules";
+import { MIN_BALANCE_USD, PACKS_USD, balanceOf, creditBlock, creditFromSession, creditWords, isPack, mayUsePooledKey, packProblem, packReturn, runCharge, usdWords } from "./credit-rules";
 import { billingFor } from "../core/cost-rules";
 
 const now = Date.parse("2026-12-01T12:00:00Z");
@@ -203,5 +203,19 @@ assert.match(creditWords({ billing: "own_key", balance: 3 }), /your own Claude k
   assert.ok(claude.indexOf("if (own) return") < claude.indexOf("await pooledKey()"), "a business's own key is used before the hosted one");
   assert.match(claude, /if \(edition\(\) === "open"\) throw new Error\(NO_CLAUDE_KEY\)/, "the open edition never asks for a hosted key");
 }
+
+// where Stripe comes back to after a pack (card 162): a fixed list, never an address from the form
+assert.deepEqual(packReturn("start"), { place: "start", success: "/start?claude=hosted&credits=added#step-1", cancel: "/start?claude=hosted#step-1" });
+assert.equal(packReturn("connections").success, "/connections?credits=added#claude");
+assert.equal(packReturn("settings").success, "/settings?credits=added#billing");
+for (const bad of [null, undefined, "", "https://evil.example", "//evil.example", "/start", "START", ["start"]]) assert.equal(packReturn(bad).place, "settings", `${String(bad)} comes back to Settings`);
+for (const p of ["start", "connections", "settings"] as const) {
+  const r = packReturn(p);
+  for (const u of [r.success, r.cancel, packProblem(p, "x")]) assert.match(u, /^\/(start|connections|settings)[?#]/, "a path on this app, never another host");
+}
+assert.equal(packProblem("start", "a&b#c"), "/start?claude=hosted&credits_problem=a%26b%23c#step-1", "the problem is encoded");
+assert.ok(packProblem("connections", "x".repeat(500)).length < 260, "the problem is cut");
+assert.match(readFileSync("ee/billing-actions.ts", "utf8"), /packReturn\(form\.get\("back"\)\)/, "buyCredits reads the return place through the allowlist");
+assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+HostedClaude,$/m, "the cloud edition fills the HostedClaude slot");
 
 console.log("check:ee ok (credits, plan, trial, grace, comped, Stripe signatures and rows, sign-up codes)");

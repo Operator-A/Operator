@@ -17,6 +17,23 @@ or with an agent the owner built, never goes. Setup ends when the owner starts t
 (`setupInstall`) or taps Start empty (`setupStartEmpty`); both set `done` in the `setup` row of
 `policies`.
 
+## How Avery thinks (card 162)
+
+Before the conversation opens, step 1 asks how agents think. The cloud edition offers two options,
+OPERATOR's Claude first:
+
+- **Use OPERATOR's Claude.** Nothing to set up. Runs use the hosted key and are paid from prepaid
+  credits at the model price plus 20% (card 128 slice 4). The panel comes from the `HostedClaude`
+  slot: the balance and, for an owner, Buy $10 / $25 / $50 on Stripe Checkout, which comes back to
+  `/start` (a fixed return place, `packReturn`). The conversation opens once the balance reaches
+  $0.50.
+- **Use your own Claude key.** Paste a key from the Claude Console; Anthropic bills it directly.
+
+The open edition has no hosted Claude, so it shows only the key. The rules are in
+`core/claude-choice-rules.ts` (`npm run check:claude-choice`): a key of the business's own always
+comes first, as in runs, and a paused key is never skipped for credits. Connections > Claude shows the
+same choice later.
+
 ## The conversation
 
 The first message installs the Chief of Staff template (`ensureAvery`), off duty like every agent.

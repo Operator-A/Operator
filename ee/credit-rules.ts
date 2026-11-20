@@ -6,6 +6,7 @@
 // Credits only pay for the model. They never change what the crew may do: caps, budgets, approval
 // cards and the hard rules are the same on credits and on a business's own key.
 import { CREDITS_MARGIN, type Billing } from "@/core/cost-rules";
+import { RETURN_PLACES, type ReturnPlace } from "@/core/extension-types";
 
 /** The packs a business can buy, in dollars, and the balance below which credit runs pause. */
 export const PACKS_USD = [10, 25, 50] as const;
@@ -70,4 +71,23 @@ export function creditWords(o: { billing: Billing; balance: number }): string {
   if (o.billing === "own_key") return "Runs use your own Claude key, billed by Anthropic. Credits are only used if you remove it.";
   const low = o.balance < MIN_BALANCE_USD;
   return `Claude credits: ${usdWords(o.balance)}. Each run is charged its model cost plus ${Math.round((CREDITS_MARGIN - 1) * 100)}%.${low ? " Runs are paused until you buy credits." : ""}`;
+}
+
+/**
+ * Where Stripe Checkout comes back to after a pack (card 162): a page from the fixed list, never an
+ * address from the form. Anything else comes back to Settings > Billing.
+ */
+export function packReturn(raw: unknown): { place: ReturnPlace; success: string; cancel: string } {
+  const place: ReturnPlace = (RETURN_PLACES as readonly unknown[]).includes(raw) ? (raw as ReturnPlace) : "settings";
+  if (place === "start") return { place, success: "/start?claude=hosted&credits=added#step-1", cancel: "/start?claude=hosted#step-1" };
+  if (place === "connections") return { place, success: "/connections?credits=added#claude", cancel: "/connections#claude" };
+  return { place, success: "/settings?credits=added#billing", cancel: "/settings#billing" };
+}
+
+/** The page a failed pack purchase goes back to, with the problem shown there (cut to 200 characters). */
+export function packProblem(place: ReturnPlace, problem: string): string {
+  const q = `credits_problem=${encodeURIComponent(problem.slice(0, 200))}`;
+  if (place === "start") return `/start?claude=hosted&${q}#step-1`;
+  if (place === "connections") return `/connections?${q}#claude`;
+  return `/settings?billing_problem=${encodeURIComponent(problem.slice(0, 200))}#billing`;
 }

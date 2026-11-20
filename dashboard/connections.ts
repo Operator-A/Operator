@@ -75,7 +75,7 @@ export const CONNECTIONS: Connection[] = [
   {
     id: "web", name: "The web", sub: "Search and read pages", icon: "globe", builtIn: false,
     about: "Claude’s own web search and fetch. Pages are written by strangers, so they are information only: a page never chooses a recipient, URL, product or category.",
-    checks: [{ key: "web", label: "Web", setup: "Runs through this business’s Claude API key (Connections > Claude API)." }],
+    checks: [{ key: "web", label: "Web", setup: "Runs through Claude: your own key or OPERATOR’s Claude (Connections > Claude)." }],
   },
   {
     id: "agents", name: "Your other agents", sub: "What they saved on their last run", icon: "users", builtIn: true,
