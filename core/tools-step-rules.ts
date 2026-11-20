@@ -126,12 +126,31 @@ export const waitingOn = (t: TemplateTools, needsOf: (toolId: string) => readonl
  */
 export const CATEGORY_IDS = ["store", "site", "money", "list", "inbox"] as const;
 export type CategoryId = (typeof CATEGORY_IDS)[number];
-export interface ToolCategory { id: CategoryId; area: string; question: string; value: string; ready: string; tiles: readonly ToolTileId[] }
+/** A tool Avery walks a founder into when they have none for the part (card 183): the founder creates the account and accepts its terms. */
+export interface Starter { tile: ToolTileId; name: string; promise: string; steps: readonly string[] }
+export interface ToolCategory { id: CategoryId; area: string; question: string; value: string; ready: string; tiles: readonly ToolTileId[]; starter?: Starter }
 export const TOOL_CATEGORIES: readonly ToolCategory[] = [
   { id: "store", area: "Store", question: "Where do you sell?", value: "Your agents read orders, products and stock, and tell you what sold in plain words.", ready: "Your agents can see your orders, products and stock.", tiles: ["shopify"] },
-  { id: "site", area: "Website", question: "How do you track your website?", value: "Know where visitors come from and where they drop off.", ready: "Visits and conversions go into your summaries.", tiles: ["analytics"] },
+  { id: "site", area: "Website", question: "How do you track your website?", value: "Know where visitors come from and where they drop off.", ready: "Visits and conversions go into your summaries.", tiles: ["analytics"],
+    starter: { tile: "analytics", name: "Google Analytics", promise: "It’s free. You create the property, I show you each tap, then you connect it here.", steps: [
+      "Open analytics.google.com and sign in with the Google account you use for the business.",
+      "Tap Start measuring. Type the business’s name as the account name, then tap Next.",
+      "Type a property name (your store’s name), pick your time zone and currency, then tap Next.",
+      "Pick your industry and size, tap Next, pick what you want to measure, then tap Create. Google shows its terms: read them and accept them yourself.",
+      "Choose Web, type your store’s address, and tap Create stream.",
+      "In Shopify, open Sales channels > Google & YouTube (add the app if it isn’t there), sign in with the same Google account and pick the property you just made.",
+      "Come back here and tap Connect Google Analytics.",
+    ] } },
   { id: "money", area: "Books", question: "Where does the money live?", value: "Your bookkeeper categorizes every charge and matches the receipts.", ready: "Your books can start from your real transactions.", tiles: ["mercury"] },
-  { id: "list", area: "Email marketing", question: "What do you use for email marketing?", value: "Campaigns get drafted from what sold best. You press send.", ready: "Your lists and past campaigns are in reach.", tiles: ["klaviyo"] },
+  { id: "list", area: "Email marketing", question: "What do you use for email marketing?", value: "Campaigns get drafted from what sold best. You press send.", ready: "Your lists and past campaigns are in reach.", tiles: ["klaviyo"],
+    starter: { tile: "klaviyo", name: "Klaviyo", promise: "The free plan needs no card. It’s your account, I show you each tap, then you connect it here.", steps: [
+      "Open klaviyo.com and tap Sign up.",
+      "Type your email, your business’s name and your store’s address, and choose a password. Klaviyo shows its terms: read them and accept them yourself.",
+      "Open the email Klaviyo sends you and tap the button to confirm your address.",
+      "When Klaviyo asks about your store, choose Shopify and follow its steps so your customers and orders come across.",
+      "Stay on the free plan: you don’t need to add a card.",
+      "Come back here and tap Connect Klaviyo.",
+    ] } },
   { id: "inbox", area: "Inbox", question: "What do you use for email?", value: "Receipts get matched from your inbox, and emails you approve wait in your Drafts.", ready: "Receipts can be matched from your inbox.", tiles: ["gmail"] },
 ];
 export const isCategory = (c: unknown): c is CategoryId => typeof c === "string" && (CATEGORY_IDS as readonly string[]).includes(c);
@@ -150,14 +169,63 @@ export function readSkipped(raw: unknown): CategoryId[] {
   return Array.isArray(raw) ? CATEGORY_IDS.filter((c) => raw.includes(c)) : [];
 }
 
-export type CategoryState = "connected" | "skipped" | "open";
-export function categoryState(c: ToolCategory, connected: ReadonlySet<ToolTileId>, skipped: readonly CategoryId[]): CategoryState {
-  return c.tiles.some((t) => connected.has(t)) ? "connected" : skipped.includes(c.id) ? "skipped" : "open";
+/**
+ * What the founder chose for a part they can't connect today (card 183): Avery guides them into the
+ * part's starter tool after setup, or the part starts from an export of a tool that has no connection.
+ * The tool's name is the founder's typed text: checked, shown, and never used to choose anything.
+ */
+export type CategoryPlan = { kind: "guide" } | { kind: "export"; tool: string };
+export type Plans = Partial<Record<CategoryId, CategoryPlan>>;
+export function readPlans(raw: unknown): Plans {
+  const r = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const out: Plans = {};
+  for (const c of TOOL_CATEGORIES) {
+    const p = r[c.id] as { kind?: unknown; tool?: unknown } | null | undefined;
+    if (!p || typeof p !== "object") continue;
+    if (p.kind === "guide" && c.starter) out[c.id] = { kind: "guide" };
+    if (p.kind === "export" && typeof p.tool === "string") { const n = checkServiceName(p.tool); if (!("problem" in n)) out[c.id] = { kind: "export", tool: n.name }; }
+  }
+  return out;
 }
 
-/** The question on screen: the one asked for, else the first still open, else none (every part is connected or skipped). */
-export function currentCategory(order: readonly ToolCategory[], connected: ReadonlySet<ToolTileId>, skipped: readonly CategoryId[], asked: unknown): ToolCategory | null {
-  return order.find((c) => c.id === asked) ?? order.find((c) => categoryState(c, connected, skipped) === "open") ?? null;
+export type CategoryState = "connected" | "guide" | "export" | "skipped" | "open";
+/** A connected tool wins, then what the founder planned for the part, then a skip. */
+export function categoryState(c: ToolCategory, connected: ReadonlySet<ToolTileId>, skipped: readonly CategoryId[], plans: Plans = {}): CategoryState {
+  return c.tiles.some((t) => connected.has(t)) ? "connected" : plans[c.id]?.kind ?? (skipped.includes(c.id) ? "skipped" : "open");
+}
+
+/** The question on screen: the one asked for, else the first still open, else none (every part has an answer). */
+export function currentCategory(order: readonly ToolCategory[], connected: ReadonlySet<ToolTileId>, skipped: readonly CategoryId[], asked: unknown, plans: Plans = {}): ToolCategory | null {
+  return order.find((c) => c.id === asked) ?? order.find((c) => categoryState(c, connected, skipped, plans) === "open") ?? null;
+}
+
+/** What a department waiting on a tool is told on Your company, by tool name: the plan for the tool's part. */
+export function planNotes(plans: Plans): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const c of TOOL_CATEGORIES) {
+    const p = plans[c.id];
+    if (!p) continue;
+    for (const id of c.tiles) out[TILE_BY_ID[id].name] = p.kind === "guide" ? `Avery sets up ${c.starter?.name ?? TILE_BY_ID[id].name} with you after setup, then it starts working.` : `Starts from an export of ${p.tool} until it has a connection.`;
+  }
+  return out;
+}
+
+/**
+ * What is left to finish after setup, for the Desk: a guided part until its tool is connected, an export
+ * part until a file with that tool's name is uploaded. `exportKeys` are the service keys of uploaded exports.
+ */
+export type FollowUp =
+  | { cat: CategoryId; area: string; kind: "guide"; starter: Starter }
+  | { cat: CategoryId; area: string; kind: "export"; tool: string };
+export function followUps(plans: Plans, connected: ReadonlySet<ToolTileId>, exportKeys: ReadonlySet<string>): FollowUp[] {
+  const out: FollowUp[] = [];
+  for (const c of TOOL_CATEGORIES) {
+    const p = plans[c.id];
+    if (!p || c.tiles.some((t) => connected.has(t))) continue;
+    if (p.kind === "guide" && c.starter) out.push({ cat: c.id, area: c.area, kind: "guide", starter: c.starter });
+    if (p.kind === "export") { const n = checkServiceName(p.tool); if (!("problem" in n) && !exportKeys.has(n.key)) out.push({ cat: c.id, area: c.area, kind: "export", tool: n.name }); }
+  }
+  return out;
 }
 
 /**

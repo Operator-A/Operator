@@ -9,7 +9,7 @@ import type { SetupAnswer } from "@/core/setup";
 import type { ActionResult } from "@/dashboard/actions";
 import { FACT_TOPICS, TOPIC_WORDS, type Fact, type FactTopic } from "@/core/setup-rules";
 import { BILLING_WORDS, costDetail, monthWords, usd } from "@/core/cost-rules";
-import { companyTotals, type CompanyAgent, type CompanyDept } from "@/core/company-rules";
+import { companyTotals, waitLine, type CompanyAgent, type CompanyDept } from "@/core/company-rules";
 import { Toast } from "./client";
 import { Icon } from "./Icon";
 
@@ -205,14 +205,15 @@ export function StoreForm({ initial, save }: { initial: string; save: (domain: s
   );
 }
 
-/** Step 2: "A tool that isn't listed?" Code says where it goes; the answer stays on the page, with a link when there is one. */
-export function UnlistedTool({ ask }: { ask: (name: string) => Promise<ActionResult & { href?: string }> }) {
+/** Step 2: "Something else?" Code says where it goes; the answer stays on the page with a link, or the page moves on when the part now starts from an export. */
+export function UnlistedTool({ ask }: { ask: (name: string) => Promise<ActionResult & { href?: string; follow?: boolean }> }) {
+  const router = useRouter();
   const [v, setV] = useState("");
   const [r, setR] = useState<(ActionResult & { href?: string }) | null>(null);
   const [busy, start] = useTransition();
   return (
     <div className="stack" style={{ gap: 8 }}>
-      <form className="row wrap" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); start(async () => { const a = await ask(v); setR(a); if (a.ok) setV(""); }); }}>
+      <form className="row wrap" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); start(async () => { const a = await ask(v); setR(a); if (a.ok) setV(""); if (a.ok && a.follow && a.href) router.push(a.href); }); }}>
         <input id="unlisted-tool" className="input" style={{ flex: "1 1 220px", minWidth: 0 }} maxLength={60} value={v} onChange={(e) => setV(e.target.value)} placeholder="Square, QuickBooks, PostHog…" aria-label="The tool’s name" />
         <button className="btn outline sm" disabled={busy || !v.trim()}>{busy ? "Checking…" : "Tell Avery"}</button>
       </form>
@@ -268,7 +269,7 @@ export function CompanyChart({ owner, company, depts, initial, install, back }: 
                   {d.fit && <span className="pill sm">{d.fit === "strong" ? "Avery: strong fit" : "Avery: likely"}</span>}
                   <button className="btn ghost sm" type="button" onClick={() => setPicked((p) => p.filter((x) => x !== d.id))}>Leave out</button>
                 </span>
-                {d.waitsOn.length > 0 && <span className="sub">Waits on {d.waitsOn.join(" and ")}: it starts working once that’s connected.</span>}
+                {d.waitsOn.length > 0 && <span className="sub">{waitLine(d.waitsOn, d.waitNotes)}</span>}
                 {d.agents.map(agentCard)}
                 {d.openSeats.length > 0 && <span className="muted" style={{ fontSize: 12.5 }}>Open seats: {d.openSeats.join(", ")}</span>}
               </div>
