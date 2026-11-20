@@ -498,3 +498,11 @@ export function scrubSecrets(text: string, secrets: readonly (string | null | un
 /** What the sign-in log records. Never a token value. */
 export const MCP_EVENTS = ["connected", "refreshed", "refresh_failed", "refused", "revoked", "revoke_failed", "disconnected", "resealed", "tools_changed", "tools_checked", "added", "tool_on", "tool_off", "paused", "resumed", "tools_accepted"] as const;
 export type McpEvent = (typeof MCP_EVENTS)[number];
+
+/** A connection row as the status query reads it (card 202): never the sealed secret. */
+export interface StatusRow { id: string; settings: Record<string, string> | null; connected_at: string | null; last_error: string | null; paused_at: string | null; tools_seen: Record<string, string> | null; tools_checked_at: string | null }
+
+/** Every signed-in connection's status by id, from one query's rows (only rows with a saved sign-in are read). */
+export function statusMap(rows: readonly StatusRow[]): Record<string, { connected: boolean; paused: boolean; connectedAt: string | null; lastError: string | null; settings: Record<string, string>; toolsCheckedAt: string | null; toolsSeen: string[] }> {
+  return Object.fromEntries(rows.map((r) => [r.id, { connected: true, paused: !!r.paused_at, connectedAt: r.connected_at ?? null, lastError: r.last_error ?? null, settings: r.settings ?? {}, toolsCheckedAt: r.tools_checked_at ?? null, toolsSeen: Object.keys(r.tools_seen ?? {}) }]));
+}

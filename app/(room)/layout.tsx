@@ -22,8 +22,12 @@ import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 export const maxDuration = 120;
 
 export default async function RoomLayout({ children }: { children: React.ReactNode }) {
-  const floor = await getFloor();
-  const jar = await cookies();
+  // one round for everything the frame shows (card 202, docs/speed.md); a bad session still redirects before anything is drawn
+  const [floor, jar, history, org, biz, me, draft] = await Promise.all([
+    getFloor(), cookies(), chatHistory(30).catch(() => null), loadOrg().catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), requireSession(),
+    // card 156: the department draft Avery is filling in, at the top of her panel
+    currentDraftView().catch(() => null),
+  ]);
   const theme = jar.get("cr_theme")?.value === "dark" ? "dark" : "light";
   const open = needs(floor, floor.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
   const notSetUp = CONNECTIONS.filter((c) => !c.builtIn && !isSetUp(c, floor.health)).length;
@@ -38,11 +42,8 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   // card 158: the badge counts only the four kinds that interrupt (dashboard/needs-rules.ts)
   const waiting = interruptCount(open);
   // Avery's chat: whoever holds the company seat, with the conversation so far
-  const [history, org, biz, me] = await Promise.all([chatHistory(30).catch(() => null), loadOrg().catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), requireSession()]);
   const frontId = org ? companySeat(org)?.agentId ?? null : null;
-  // card 156: the department draft Avery is filling in, at the top of her panel
-  const draft = await currentDraftView().catch(() => null);
-  const frontName = frontId ? (await agentNames([frontId]))[frontId] ?? "Avery" : "Avery";
+  const frontName = frontId ? floor.byId[frontId]?.name ?? (await agentNames([frontId]))[frontId] ?? "Avery" : "Avery";
   // six places (docs/builder-flow.md, slice 5): Settings sits apart at the bottom of the sidebar
   const nav = [
     { href: "/", match: "/", icon: "layout-dashboard", label: "Desk" },

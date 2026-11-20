@@ -7,7 +7,6 @@
 // every agent in it follows. The server checks every change. Company mode slice 2: each department
 // card leads with its goals (docs/company-mode.md).
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { DEPT_BUDGET_CEILING, LEAD_REVIEW_HOURS, deptBudgetChange, deptEmailChange } from "@/core/org-rules";
 import { MAX_GOALS_PER_DEPT } from "@/core/goal-rules";
@@ -40,7 +39,6 @@ export interface OrgActions {
 type Open = { kind: "seat"; seat: SeatView; head: boolean; company: boolean } | { kind: "dept"; dept: DeptView } | null;
 
 export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgActions; controls: boolean }) {
-  const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState<Open>(null);
   const [toast, setToast] = useState<ActionResult | null>(null);
@@ -52,7 +50,7 @@ export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgAct
   const run = (f: () => Promise<ActionResult>, after?: (r: ActionResult) => void) => start(async () => {
     let r: ActionResult;
     try { r = await f(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setToast(r); if (r.ok) after?.(r); router.refresh();
+    setToast(r); if (r.ok) after?.(r);
   });
   const pick = (seat: SeatView, head = false, company = false) => setOpen({ kind: "seat", seat, head, company });
 

@@ -2,7 +2,6 @@
 // Settings > People (docs/tenancy.md, slice 2). Owners see the controls; everyone else sees the
 // list. The server checks the role again on every change.
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/dashboard/actions";
 import { ROLES, ROLE_LABELS, ROLE_WORDS, type Role } from "@/core/roles";
 import { Toast } from "./client";
@@ -15,11 +14,10 @@ export function People({ people, canEdit, add, setRole, remove }: { people: Pers
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
   const [email, setEmail] = useState(""), [role, setNewRole] = useState<Role>("approver");
-  const router = useRouter();
   const run = (f: () => Promise<ActionResult>, then?: () => void) => start(async () => {
     let r: ActionResult;
     try { r = await f(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setToast(r); if (r.ok) then?.(); router.refresh();
+    setToast(r); if (r.ok) then?.();
   });
   return (
     <div className="stack" style={{ gap: 0 }}>

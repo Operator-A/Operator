@@ -28,7 +28,7 @@ export function MarkSeen({ agentId, at }: { agentId: string; at: number }) {
     if ((seen[agentId] ?? 0) >= at) return;
     seen[agentId] = at;
     document.cookie = `${SEEN_COOKIE}=${encodeURIComponent(JSON.stringify(seen))}; path=/; max-age=31536000; samesite=lax`;
-    router.refresh();
+    router.refresh(); // refresh-ok: no server action ran; the badge reads the cookie just written
   }, [agentId, at, router]);
   return null;
 }
@@ -135,7 +135,7 @@ export function ActionButton({ action, confirm, className, children, disabled, t
       try { res = await action(); } catch (e) { res = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
       setToast(res);
       const href = (res as { href?: unknown }).href;
-      if (follow && res.ok && typeof href === "string" && href.startsWith("/") && !href.startsWith("//")) router.push(href); else router.refresh();
+      if (follow && res.ok && typeof href === "string" && href.startsWith("/") && !href.startsWith("//")) router.push(href);
     });
   };
   return (
@@ -217,7 +217,7 @@ export function LiveRefresher({ runs }: { runs: RecentRun[] }) {
   }
   useEffect(() => {
     if (!anyLive) return;
-    const h = setInterval(() => { if (document.visibilityState === "visible") router.refresh(); }, 4000);
+    const h = setInterval(() => { if (document.visibilityState === "visible") router.refresh(); }, 4000); // refresh-ok: polls while a run is live, no action involved
     return () => clearInterval(h);
   }, [anyLive, router]);
   useEffect(() => { if (!done) return; const h = setTimeout(() => setDone(null), 10000); return () => clearTimeout(h); }, [done]);

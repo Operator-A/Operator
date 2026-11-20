@@ -16,7 +16,7 @@ import { db } from "@/core/db";
 import { env } from "@/core/env";
 import {
   GOOGLE_AUTH, MCP_IDS, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, isMcpId, authorizeUrl, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, checkedTools, isHosted, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
-  type AuthServer, type McpEvent, type McpId, type Tokens,
+  type AuthServer, type McpEvent, type McpId, type Tokens, statusMap, type StatusRow,
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
 import { orgId } from "@/core/tenancy";
@@ -179,6 +179,16 @@ export async function mcpStatus(id: string): Promise<McpStatus | null> {
     const r = await row(id);
     return { connected: !!r?.secret, paused: !!r?.paused_at, connectedAt: r?.connected_at ?? null, lastError: r?.last_error ?? null, settings: r?.settings ?? {}, toolsCheckedAt: r?.tools_checked_at ?? null, toolsSeen: Object.keys(r?.tools_seen ?? {}) };
   } catch { return null; }
+}
+
+/**
+ * Every signed-in connection's status in one query (card 202, docs/speed.md), for pages that show what is
+ * set up. Reads no secret: a row counts as connected when it holds a sign-in. A server missing here is not connected.
+ */
+export async function mcpStatuses(): Promise<Record<string, McpStatus>> {
+  const { data, error } = await db().from("mcp_connections").select("id, settings, connected_at, last_error, paused_at, tools_seen, tools_checked_at").not("secret", "is", null);
+  if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
+  return statusMap((data ?? []) as StatusRow[]);
 }
 
 export async function saveMcpSetting(id: McpId, name: string, value: string | null) {

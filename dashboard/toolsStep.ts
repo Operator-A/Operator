@@ -3,7 +3,8 @@ import "server-only";
 // departments need it. The rules are in core/tools-step-rules.ts; this reads the business's state.
 import { TEMPLATES } from "@/core/templates";
 import { TOOLS } from "@/core/tools/catalog";
-import { mcpStatus } from "@/integrations/mcp";
+import { mcpStatuses, type McpStatus } from "@/integrations/mcp";
+import { orgId } from "@/core/tenancy";
 import { mercuryOrgName } from "@/integrations/mercury";
 import { ga4PropertyList } from "@/integrations/ga4";
 import { settings } from "@/core/settings";
@@ -32,20 +33,35 @@ const toolsOfTemplate = (id: string): TemplateTools | null => {
 };
 const needsOf = (toolId: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[toolId]?.needs ?? [];
 
+/** Every connection's status in one query (card 202, docs/speed.md), not one per tile. */
+const statuses = async (): Promise<(id: string) => McpStatus | null> => { const all = await mcpStatuses().catch(() => ({} as Record<string, McpStatus>)); return (id) => all[id] ?? null; };
+
+// the Mercury account's name is a call to Mercury itself: kept a few minutes per business, so a setup click doesn't wait on it
+const MERCURY_NAME_MS = 10 * 6e4;
+const mercuryNames = new Map<string, { name: string | null; at: number }>();
+async function mercuryName(): Promise<string | null> {
+  const org = await orgId();
+  const hit = mercuryNames.get(org);
+  if (hit && Date.now() - hit.at < MERCURY_NAME_MS) return hit.name;
+  const name = await mercuryOrgName().catch(() => null);
+  if (name) mercuryNames.set(org, { name, at: Date.now() });
+  return name;
+}
+
 export async function toolsStep(picked: readonly string[], health: Record<IntegrationId, boolean>): Promise<{ tiles: TileView[]; shopifyDomain: string; connected: Set<ToolTileId> }> {
   const chosen = picked.map(toolsOfTemplate).filter((t): t is TemplateTools => !!t);
   const need = neededBy(chosen, needsOf);
-  const s = await settings();
+  const [s, mcpStatus] = await Promise.all([settings(), statuses()]);
   const tiles = await Promise.all(TOOL_TILES.map(async (tile): Promise<TileView> => {
-    const alsoSt = tile.also ? await mcpStatus(tile.also.mcp) : null;
+    const alsoSt = tile.also ? mcpStatus(tile.also.mcp) : null;
     const base = { tile, neededBy: need[tile.id] ?? [], permissions: permissionsOf(tile), problem: null, who: null, pick: null, also: tile.also ? { connected: !!alsoSt?.connected && !alsoSt.paused } : null };
     if (!tile.mcp) return { ...base, state: "coming" };
-    const st = await mcpStatus(tile.mcp);
+    const st = mcpStatus(tile.mcp);
     if (st?.paused) return { ...base, state: "paused", problem: st.lastError };
     if (tile.id === "analytics" && st?.connected && !st.settings.propertyId) return { ...base, state: "not", pick: await ga4PropertyList().catch(() => []) };
     const on = !!st?.connected && health[tile.mcp as IntegrationId] !== false;
     if (!on) return { ...base, state: "not" };
-    const who = tile.id === "mercury" ? await mercuryOrgName().catch(() => null) : tile.id === "gmail" ? st?.settings.mailbox ?? null : tile.id === "shopify" ? s.shopifyDomain : tile.id === "analytics" ? st?.settings.propertyName ?? null : null;
+    const who = tile.id === "mercury" ? await mercuryName() : tile.id === "gmail" ? st?.settings.mailbox ?? null : tile.id === "shopify" ? s.shopifyDomain : tile.id === "analytics" ? st?.settings.propertyName ?? null : null;
     return { ...base, state: "connected", who };
   }));
   return { tiles, shopifyDomain: s.shopifyDomain ?? "", connected: new Set(tiles.filter((t) => t.state === "connected").map((t) => t.tile.id)) };
@@ -61,12 +77,13 @@ export function waitingByTemplate(connected: ReadonlySet<ToolTileId>): Record<st
 
 /** The tiles connected now, without the who and the property list (the Desk's first job, card 154). */
 export async function connectedTiles(health: Record<IntegrationId, boolean>): Promise<Set<ToolTileId>> {
-  const on = await Promise.all(TOOL_TILES.map(async (tile) => {
+  const mcpStatus = await statuses();
+  const on = TOOL_TILES.map((tile) => {
     if (!tile.mcp) return null;
-    const st = await mcpStatus(tile.mcp);
+    const st = mcpStatus(tile.mcp);
     if (!st?.connected || st.paused || health[tile.mcp as IntegrationId] === false) return null;
     if (tile.id === "analytics" && !st.settings.propertyId) return null;
     return tile.id;
-  }));
+  });
   return new Set(on.filter((x): x is ToolTileId => !!x));
 }

@@ -31,7 +31,6 @@ export function GoalForm({ depts, dept, initial, save, cancelHref, own = [] }: {
     try { r = await save(d, f); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Couldn’t save that." }; }
     setToast(r);
     if (r.ok && r.id) router.push(`/goals/${r.id}`);
-    else if (r.ok) router.refresh();
   });
   const unit = m?.unit === "usd" ? "Dollars" : m?.unit === "days" ? "Days" : m?.unit === "months" ? "Months" : "Number";
   return (

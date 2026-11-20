@@ -1,7 +1,6 @@
 "use client";
 // Find a tool (card 160, docs/exports.md): upload a CSV export for a tool with no connection. The
 // server checks the name, the file and every limit again before anything is kept.
-import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { Toast } from "./client";
@@ -15,7 +14,6 @@ export function ExportForm({ upload, name: startName, maxMb }: { upload: (form: 
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
-  const router = useRouter();
   const tooBig = !!file && file.size > maxMb * 1_000_000;
   const go = () => start(async () => {
     const form = new FormData();
@@ -26,7 +24,6 @@ export function ExportForm({ upload, name: startName, maxMb }: { upload: (form: 
     try { r = await upload(form); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
     setToast(r);
     if (r.ok) { setFile(null); if (fileRef.current) fileRef.current.value = ""; if (!startName) setName(""); }
-    router.refresh();
   });
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

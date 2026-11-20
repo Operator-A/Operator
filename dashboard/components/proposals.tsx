@@ -1,7 +1,6 @@
 "use client";
 // Not now… on a proposal (docs/company-mode.md, slice 3): asks why. Words become a 30-day note for
 // the head that asked, so it doesn't propose the same thing again next run.
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { Toast } from "./client";
@@ -13,11 +12,10 @@ export function NotNowButton({ decline, headName }: { decline: (reason: string) 
   const [text, setText] = useState("");
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
-  const router = useRouter();
   const go = () => start(async () => {
     let r: ActionResult;
     try { r = await decline(text); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setOpen(false); setText(""); setToast(r); router.refresh();
+    setOpen(false); setText(""); setToast(r);
   });
   return (
     <>

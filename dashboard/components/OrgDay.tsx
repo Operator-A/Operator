@@ -5,7 +5,6 @@
 // on the server; this only shows them and sends the owner's choices to the server actions, which check
 // everything again.
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/dashboard/actions";
 import { DAY_RUNS, DAY_WORDS, DAYS, type AgentTime, type Days } from "@/core/flow-rules";
 import type { DayRow, OrgDay as Day } from "@/dashboard/orgDay";
@@ -30,7 +29,6 @@ function Av({ r, size = 36 }: { r: DayRow; size?: number }) {
 }
 
 export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; controls: boolean; orgOn: boolean; setTime: SetTime; setOn: SetOn }) {
-  const router = useRouter();
   const [busy, start] = useTransition();
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [confirm, setConfirm] = useState<{ c: Confirm; go: () => Promise<ActionResult> } | null>(null);
@@ -39,7 +37,7 @@ export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; con
   const run = (go: () => Promise<ActionResult>) => start(async () => {
     let res: ActionResult;
     try { res = await go(); } catch (e) { res = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setToast(res); setConfirm(null); if (res.ok) setEdit(null); router.refresh();
+    setToast(res); setConfirm(null); if (res.ok) setEdit(null);
   });
 
   const toHand = (r: DayRow) => setConfirm({

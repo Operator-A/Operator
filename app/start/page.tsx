@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getFloor, requireSession } from "@/dashboard/data";
+import { getHealth, requireSession } from "@/dashboard/data";
 import { atLeast } from "@/core/roles";
 import { chatHistory } from "@/core/avery-chat";
 import { loadBusiness } from "@/core/business";
@@ -41,8 +41,9 @@ const LIGHT: Record<Stage, [string, string, string]> = {
 export default async function Setup({ searchParams }: { searchParams: Promise<{ c?: string; q?: string; connected?: string; problem?: string; claude?: string; credits?: string; credits_problem?: string }> }) {
   const sp = await searchParams;
   const me = await requireSession();
-  if (!(await inSetup())) redirect("/");
-  const [floor, facts, state, history, biz, claude] = await Promise.all([getFloor(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), claudeState()]);
+  // one round for everything the step shows (card 202, docs/speed.md); setup needs which tools are set up, not the Desk's floor
+  const [setup, health, facts, state, history, biz, claude, bill] = await Promise.all([inSetup(), getHealth(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), claudeState(), billing()]);
+  if (!setup) redirect("/");
   const owner = atLeast(me.role, "owner");
   // own key or OPERATOR's hosted Claude on credits (card 162): either one opens the conversation
   const keyed = claudeReady(claude);
@@ -51,9 +52,9 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const templates = departmentTemplates();
   const leaning = state.leaning.map((l) => ({ ...l, name: templates.find((t) => t.id === l.id)?.name ?? l.id }));
   const blocked = controlsOn() ? null : "Avery can’t answer here yet: real runs are switched off for this OPERATOR. Whoever runs it turns them on.";
-  const { tiles, shopifyDomain, connected } = await toolsStep(state.leaning.map((l) => l.id), floor.health);
+  const { tiles, shopifyDomain, connected } = await toolsStep(state.leaning.map((l) => l.id), health);
   const open = tiles.find((t) => t.tile.id === sp.c) ?? null;
-  const chart = companyChart(state.leaning, connected, await billing(), planNotes(state.plans));
+  const chart = companyChart(state.leaning, connected, bill, planNotes(state.plans));
   const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected && open ? { ok: true, text: `${open.tile.name} is connected.` } : null;
   // the tools step (card 182): one question per part of the company, the ones a leaned-toward department needs first
   const order = orderCategories(new Set(tiles.filter((t) => t.neededBy.length).map((t) => t.tile.id)));

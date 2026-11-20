@@ -1,7 +1,6 @@
 "use client";
 // Find a tool (docs/custom-servers.md, slice 3): the ask for a built-in connector. Words only; the
 // server checks them again and counts the ask on that service's request.
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { Toast } from "./client";
@@ -14,13 +13,11 @@ export function AskForm({ ask, what: startWhat, proposalId }: { ask: (name: stri
   const [what, setWhat] = useState(startWhat ?? "");
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
-  const router = useRouter();
   const go = () => start(async () => {
     let r: ActionResult;
     try { r = await ask(name, what, proposalId); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
     setToast(r);
     if (r.ok) setName("");
-    router.refresh();
   });
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

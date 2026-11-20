@@ -683,3 +683,15 @@ button.wg-opt { width: 100%; font: inherit; text-align: left; cursor: pointer; }
   .wg-node > .row { flex-wrap: wrap-reverse !important; }
 }
 @media (prefers-reduced-motion: reduce) { .wg-node, .wg-opt { transition: none; } .wg-node::after { animation: none; } .wg-node.now { transform: none; } }
+
+/* Loading frame (card 201, app/(room)/loading.tsx): soft blocks in the main column while the next page renders. */
+.skel-page { display: flex; flex-direction: column; gap: 16px; animation: skelIn .2s ease-out .08s both; }
+.skel { background: var(--soft); border-radius: 14px; animation: skelPulse 1.4s ease-in-out infinite; }
+.skel-title { height: 30px; width: 34%; border-radius: 10px; }
+.skel-line { height: 14px; border-radius: 7px; }
+.skel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 6px; }
+.skel-card { height: 120px; border-radius: 22px; }
+.skel-card.tall { height: 240px; }
+@keyframes skelPulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+@keyframes skelIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .skel, .skel-page { animation: none; } }

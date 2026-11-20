@@ -6,7 +6,6 @@
 // The palette, the checks and every guardrail live on the server (core/flow.ts), which checks
 // the flow again on save; a chain never turns an agent on.
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { ActionResult, ChainPreviewStep } from "@/dashboard/actions";
@@ -97,7 +96,6 @@ const COL = 300, ROW = 150;
 type Sel = { key: string; step: number | "start" } | null;
 
 export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewActions }) {
-  const router = useRouter();
   const [draft, setDraft] = useState<Flow>(d.flow);
   const [sel, setSel] = useState<Sel>(d.flow.chains[0] ? { key: d.flow.chains[0].key, step: "start" } : null);
   const [note, setNote] = useState("");
@@ -159,7 +157,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
   const run = (f: () => Promise<ActionResult>, after?: (r: ActionResult) => void) => start(async () => {
     let r: ActionResult;
     try { r = await f(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setToast(r); after?.(r); router.refresh();
+    setToast(r); after?.(r);
   });
   const save = () => {
     const go = (confirmed: boolean) => run(() => actions.save(draft, note, confirmed), (r) => { if (r.ok) { writeDraft(null); setNote(""); } });
