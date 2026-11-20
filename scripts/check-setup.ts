@@ -224,6 +224,8 @@ assert.deepEqual(topics, [...FACT_TOPICS], "business_facts.topic allows exactly 
   assert.match(parts, /scrollTo\(\{ top: el\.scrollHeight \}\)/, "the setup chat scrolls to its newest message");
   assert.match(parts, /aria-label="Setup steps"[^>]*position: "sticky"/, "Back and Next stay on screen");
   assert.match(parts, /runs only when you press Run/, "a department with no schedule says it runs when you press Run");
+  const finder = JSON.parse(read("templates/prospecting.json")).specs.wholesale_hunter as { tools: string[] };
+  for (const t of ["web_search", "web_fetch"]) assert.ok(finder.tools.includes(t), `the lead finder can ${t === "web_search" ? "search the web" : "read a page"}: its directive says to`);
   for (const f of ["prospecting", "email-marketing"]) assert.doesNotMatch(read(`templates/${f}.json`), /"Head of (sales|marketing):/, `${f}: the head's mandate names its own department`);
 }
 

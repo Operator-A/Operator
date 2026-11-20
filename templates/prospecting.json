@@ -65,6 +65,8 @@
       "tools": [
         "product_facts",
         "leads_list",
+        "web_search",
+        "web_fetch",
         "report_leads",
         "gmail_draft_lead"
       ],
