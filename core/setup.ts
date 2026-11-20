@@ -20,7 +20,7 @@ import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
 import { MAX_REPLY } from "@/core/chat-rules";
 import {
   FACT_TOPICS, FITS, IDEA_LIMITS, MAX_FACTS_PER_MESSAGE, MAX_LEANING, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
-  cleanFact, factProblem, ideaOffer, isStage, readIdea, isTopic, needsSetup, readLeaning, readSetupState, setupDirective, setupPrompt, stateFor,
+  cleanFact, coverage, factProblem, ideaOffer, SETUP_EFFORT, SETUP_MODEL, isStage, readIdea, isTopic, needsSetup, readLeaning, readSetupState, setupDirective, setupPrompt, stateFor,
   type DeptIdea, type Fact, type FactState, type Leaning, type SetupState, type Stage,
 } from "@/core/setup-rules";
 
@@ -144,7 +144,7 @@ function saveFactTool(held: { topic: string; text: string }[], have: number): To
     id: "save_fact", label: "Save a fact", detail: "Saves one thing you learned about the business, as a topic and one short line. The founder sees it at once and can correct it",
     kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
     params: [
-      { name: "topic", type: "enum", options: [...FACT_TOPICS], description: "business: its name and kind. sells: what it sells. customers: who buys. channels: where it sells. goals: what the founder wants. hand_off: jobs the founder wants taken off their plate. other: anything else worth knowing." },
+      { name: "topic", type: "enum", options: [...FACT_TOPICS], description: "business: its name and kind. sells: what it sells and how it makes money. customers: who buys. channels: where it sells and how customers find it. goals: what the founder wants this year. hand_off: where the founder's week goes and the jobs they want taken off their plate. other: anything else worth knowing." },
       { name: "text", type: "text", maxLength: 160, description: "One short plain line." },
     ],
     collect: (input, rows) => {
@@ -236,13 +236,16 @@ export async function askSetup(message: string, siteRaw: string): Promise<SetupA
   const history = (await chatHistory(12)) ?? [];
   const kept = await keepChat({ role: "owner", text: site ? `${message}\n\n(My site: ${site})` : message });
   const heldFacts: { topic: string; text: string }[] = [], heldLean: Leaning[] = [], heldIdea: { idea: Omit<DeptIdea, "want" | "started"> | null } = { idea: null };
-  const tools = [saveFactTool(heldFacts, facts.length), leanTool(heldLean), ideaTool(heldIdea), ...(site ? [siteTool(new URL(site).hostname)] : [])];
+  // the interview comes first (card 192): leaning and ideas are offered only once code counts enough of it
+  const ready = coverage(facts).ready;
+  const tools = [saveFactTool(heldFacts, facts.length), ...(ready ? [leanTool(heldLean), ideaTool(heldIdea)] : []), ...(site ? [siteTool(new URL(site).hostname)] : [])];
   const base = loaded.spec;
   const spec: AgentSpec = {
     ...base,
     directive: setupDirective(base.name, facts, departmentTemplates()),
     goodResult: "A short plain reply, at most about 90 words, ending with a question or the next step.",
-    effort: "low",
+    model: SETUP_MODEL,
+    effort: SETUP_EFFORT,
     tools: tools.map((t) => t.id),
     limits: { maxSteps: Math.min(base.limits.maxSteps, 6), maxCostUsd: base.limits.maxCostUsd },
     outputName: "setup reply",

@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { SetupAnswer } from "@/core/setup";
 import type { ActionResult } from "@/dashboard/actions";
-import { FACT_TOPICS, TOPIC_WORDS, type Fact, type FactTopic } from "@/core/setup-rules";
+import { AREAS_TO_DESIGN, AREA_WORDS, FACT_TOPICS, INTERVIEW_AREAS, TOPIC_WORDS, coverage, type Fact, type FactTopic } from "@/core/setup-rules";
 import { BILLING_WORDS, usd } from "@/core/cost-rules";
 import { DEPT_STATUS_WORDS, companyTotals, deptMonth, deptStatus, waitLine, type CompanyAgent, type CompanyDept } from "@/core/company-rules";
 import { Toast } from "./client";
@@ -152,6 +152,24 @@ function FactRow({ f, edit, confirm, remove }: { f: Fact; edit: (id: string, tex
       )}
       <Toast t={t} onDone={() => setT(null)} />
     </li>
+  );
+}
+
+/** What Avery still needs to learn (card 192), counted in code from the facts on the right. */
+export function Coverage({ facts }: { facts: Fact[] }) {
+  const c = coverage(facts);
+  return (
+    <div className="wg-glass wg-card" style={{ gap: 10 }} aria-label="What Avery needs to know">
+      <h2 className="wg-eyebrow">What Avery needs to know</h2>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0 }} className="stack">
+        {INTERVIEW_AREAS.map((a) => {
+          const ok = c.covered.includes(a);
+          return <li key={a} className="row" style={{ justifyContent: "space-between", gap: 8, fontSize: 14 }}><span>{AREA_WORDS[a]}</span><span style={{ color: ok ? "var(--mint-ink)" : "var(--ink2)", fontWeight: ok ? 600 : 400 }}>{ok ? "Covered" : "Not yet"}</span></li>;
+        })}
+      </ul>
+      <div aria-hidden style={{ height: 6, borderRadius: 999, background: "var(--soft)", overflow: "hidden" }}><div style={{ width: `${Math.round((c.covered.length / INTERVIEW_AREAS.length) * 100)}%`, height: "100%", background: "var(--acc)" }} /></div>
+      <span className="sub">{c.ready ? "Avery knows enough to sketch your company." : `Avery sketches your company once ${AREAS_TO_DESIGN} of these are covered, including your week.`}</span>
+    </div>
   );
 }
 

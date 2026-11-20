@@ -8,7 +8,7 @@ import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 import { FACTS_MISSING, departmentTemplates, inSetup, listFacts, setupState } from "@/core/setup";
 import { TEMPLATE_FIT } from "@/dashboard/setup";
 import { SETUP_AGENT, STAGES, STAGE_WORDS, nextStage, prevStage, shownStage, stageProgress, wrapScreen, type Stage } from "@/core/setup-rules";
-import { SetupChat, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
+import { SetupChat, Coverage, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
 import { Icon } from "@/dashboard/components/Icon";
 import { SignOutButton } from "@/dashboard/components/signOut";
 import { toolsStep, type TileView } from "@/dashboard/toolsStep";
@@ -115,6 +115,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
             )}
             {keyed && talked && (
               <aside className="stack wg-enter" style={{ gap: 16, flex: "1 1 300px" }} aria-label="What Avery has learned">
+                {facts && <Coverage facts={facts} />}
                 {facts ? <FactsPanel facts={facts} add={setupAddFact} edit={setupEditFact} confirm={setupConfirmFact} remove={setupRemoveFact} /> : <div className="wg-glass wg-card sub">{FACTS_MISSING}</div>}
                 <div className="wg-glass wg-card" style={{ gap: 10 }}>
                   <h2 className="wg-eyebrow">Departments I’m thinking of</h2>

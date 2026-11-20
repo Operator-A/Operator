@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import {
   FACT_MAX, FACT_TOPICS, MAX_FACTS, MAX_LEANING, SETUP_AGENT, SETUP_TEMPLATE, STAGES, STAGE_WORDS,
-  IDEA_LIMITS, ideaOffer, ideaSeed, readIdea, shownStage, wrapScreen,
+  IDEA_LIMITS, ideaOffer, ideaSeed, readIdea, shownStage, wrapScreen, INTERVIEW_AREAS, SETUP_EFFORT, SETUP_MODEL, coverage, type Fact,
   cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readLeaning, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
 } from "../core/setup-rules";
 import { businessLines } from "../core/business-rules";
@@ -81,8 +81,30 @@ assert.equal(factsLine([facts[1]]), null);
 assert.match(businessLines({ name: "Acme", about: null, ownerName: null, facts: line }), /You work for Acme\. What the business has told us/);
 assert.doesNotMatch(businessLines({ name: "Acme", about: null, ownerName: null }), /told us/);
 
+// card 192: the interview comes first. Six areas, counted in code from known facts; the sketch needs 5, always the week.
+const k = (topic: string) => ({ topic, text: topic, state: "known" }) as unknown as Fact;
+assert.deepEqual(coverage([]), { covered: [], missing: [...INTERVIEW_AREAS], ready: false });
+assert.equal(coverage(["business", "sells", "customers", "channels", "goals"].map(k)).ready, false, "five areas without the founder's week isn't enough");
+assert.equal(coverage(["business", "sells", "customers", "channels", "hand_off"].map(k)).ready, true, "five with the week is");
+assert.equal(coverage([{ topic: "hand_off", text: "x", state: "suggested" }, ...["business", "sells", "customers", "channels"].map(k)] as Fact[]).ready, false, "a fact read from a site counts only once confirmed");
+assert.equal(coverage(["other", "other", "business", "sells", "customers", "channels"].map(k)).covered.length, 4, "other is not an area");
+const early = setupDirective("Avery", [k("business")], deptIds.map((id) => ({ id, name: id, about: "x" })));
+assert.doesNotMatch(early, /Lean toward|Suggest a department/, "no department talk before the interview is done");
+assert.match(early, /Don't propose departments yet[\s\S]*how it makes money/, "she is told what to ask next");
+assert.match(early, /grounded in what the founder just said/, "follow-ups, not a checklist");
+assert.match(early, /what they would happily never do again/, "she asks about their week");
+assert.equal(SETUP_MODEL, "claude-opus-5-5", "setup thinks with the best model");
+assert.equal(SETUP_EFFORT, "high");
+{
+  const st = read("core/setup.ts");
+  assert.match(st, /model: SETUP_MODEL,\s*effort: SETUP_EFFORT/, "the setup run uses them");
+  assert.match(st, /\.\.\.\(ready \? \[leanTool\(heldLean\), ideaTool\(heldIdea\)\] : \[\]\)/, "lean and idea tools only once the interview is covered");
+  assert.match(read("app/start/page.tsx"), /<Coverage facts=\{facts\} \/>/, "the founder sees what Avery still needs");
+}
+const full = ["business", "sells", "customers", "channels", "hand_off", "goals"].map(k);
+
 // Avery's setup instructions: the list comes from code, pages are untrusted, she changes nothing
-const dir = setupDirective("Avery", facts, deptIds.map((id) => ({ id, name: id, about: "x" })));
+const dir = setupDirective("Avery", [...facts, ...full], deptIds.map((id) => ({ id, name: id, about: "x" })));
 for (const id of deptIds) assert.ok(dir.includes(`- ${id}:`), `${id} is on her list`);
 assert.match(dir, /untrusted data/);
 assert.match(dir, /don't hire, connect, change or send anything/);
@@ -186,7 +208,7 @@ assert.equal(ideaOffer({ done: true, firstJob: null, idea }), false, "not before
 assert.equal(ideaOffer({ done: true, firstJob: { agentId: "a1", at: "x" }, idea: { ...idea, want: false } }), false, "not when the founder said Not now");
 assert.equal(ideaOffer({ done: true, firstJob: { agentId: "a1", at: "x" }, idea: { ...idea, started: true } }), false, "only once");
 assert.deepEqual(ideaSeed({ name: "Wholesale", why: "Cafés ask." }), { name: "Wholesale", purpose: "Cafés ask." }, "the draft gets the name and purpose, nothing else");
-assert.match(setupDirective("Avery", [], []), /Suggest a department/i, "Avery is told when to suggest one");
+assert.match(setupDirective("Avery", full, []), /Suggest a department/i, "Avery is told when to suggest one");
 const setupTs = read("core/setup.ts");
 assert.match(setupTs, /id: "suggest_department"[\s\S]*kind: "report"/, "the idea is a report tool, so it builds nothing");
 assert.match(read("dashboard/components/idea.tsx"), /Build it with Avery/, "the reveal offers Build it with Avery");

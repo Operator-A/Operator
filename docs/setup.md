@@ -65,6 +65,20 @@ departments; her daily budget still applies. Sending a message needs an approver
 `DASHBOARD_CONTROLS=on`, like her chat, because each one is a real model call. Both sides are kept in
 the chat history, and each reply links to its run.
 
+### The interview comes first (card 192)
+
+Setup runs think with `SETUP_MODEL` (Opus 5.5) at `SETUP_EFFORT` high, whatever model her saved
+spec names; they stay free up to `SETUP_FREE_USD`. The directive tells her to interview: one or two
+follow-ups grounded in the founder's last answer, never a checklist, and always ask where the week
+goes and what the founder would never do again.
+
+Six interview areas are fact topics (`INTERVIEW_AREAS`: business, sells, customers, channels,
+hand_off, goals). `coverage(facts)` counts the areas with a known fact; a fact read from a site counts
+only once confirmed. Until at least `AREAS_TO_DESIGN` (5) are covered, and always the founder's week
+(`hand_off`), the run gets no Lean toward departments or Suggest a department tool, and the
+directive names what to ask next. The founder sees the same count in "What Avery needs to know"
+above the facts panel.
+
 For these runs she has a setup directive (`setupDirective`) and only these tools:
 
 | Tool | What it does |
