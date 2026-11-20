@@ -10,6 +10,8 @@ import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, sav
 import { isCustomId } from "@/core/custom-mcp-rules";
 import { knownByAddress } from "@/core/connector-rules";
 import { askFor, closeRequest } from "@/core/connector-requests";
+import { removeExport, switchExports, uploadExport } from "@/core/exports";
+import { EXPORT_LIMITS } from "@/core/export-rules";
 import { controlsOn } from "./session";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import { ga4PropertyList } from "@/integrations/ga4";
@@ -115,7 +117,10 @@ export async function customAdd(name: string, url: string, auth: string): Promis
   try {
     const id = await addCustomServer({ name: String(name ?? ""), url: String(url ?? ""), auth: String(auth ?? "") });
     // adding a server counts as an ask for that service, so the most wanted get built in (never stops the add)
-    await askFor({ name: knownByAddress(String(url))?.name ?? String(name), what: "Added its server by address on Connections.", by: me.email }).catch(() => undefined);
+    const service = knownByAddress(String(url))?.name ?? String(name);
+    await askFor({ name: service, what: "Added its server by address on Connections.", by: me.email }).catch(() => undefined);
+    // a server for a tool with an uploaded export: the export switches over and uploads stop (card 160)
+    await switchExports(service);
     revalidatePath("/", "layout");
     await audit(me, "custom_add", id);
     return { ok: true, text: auth === "oauth" ? "Added. Tick the scopes it should ask for, then connect." : "Added. Paste its key to connect.", id };
@@ -218,4 +223,32 @@ export async function connectorClose(id: string, why: string): Promise<ActionRes
   const { no } = await asRole("owner"); if (no) return no;
   if (why !== "ready" && why !== "not_needed") return { ok: false, text: "Unknown choice." };
   try { return done(await closeRequest(String(id), why)); } catch (e) { return fail(e); }
+}
+
+/**
+ * An uploaded export (card 160): a CSV for a tool with no connection, read by agents through Uploaded
+ * export. Also asks for a real connection to that tool. Owner only, audited.
+ */
+export async function exportUpload(form: FormData): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.size) return { ok: false, text: "Pick a CSV file." };
+  if (file.size > EXPORT_LIMITS.bytes) return { ok: false, text: `The file is over ${EXPORT_LIMITS.bytes / 1_000_000} MB.` };
+  if (!/\.csv$/i.test(file.name) && !/csv|text\/plain/.test(file.type)) return { ok: false, text: "Upload a .csv file." };
+  try {
+    const r = await uploadExport({ name: form.get("name"), text: await file.text(), bytes: file.size, fresh: form.get("fresh") ?? undefined, by: me.email });
+    await audit(me, "upload_export", r.key);
+    const asked = r.created ? await askFor({ name: r.name, what: "Uploaded an export because it has no connection.", by: me.email }).then(() => " A connection to it is asked for too.", () => "") : "";
+    return done(`${r.name}: ${r.rows} row${r.rows === 1 ? "" : "s"} ready for agents that have Uploaded export.${asked}`);
+  } catch (e) { return fail(e); }
+}
+
+/** Removes an uploaded export and its rows. Owner only, audited. */
+export async function exportRemove(id: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    const name = await removeExport(String(id));
+    await audit(me, "remove_export", String(id));
+    return done(`${name}: export removed. Agents can’t read it any more.`);
+  } catch (e) { return fail(e); }
 }

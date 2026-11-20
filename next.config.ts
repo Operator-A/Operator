@@ -10,6 +10,8 @@ if (cloud && !existsSync("ee/index.ts")) throw new Error("OPERATOR_EDITION=cloud
 const nextConfig: NextConfig = {
   ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   ...(cloud ? { turbopack: { resolveAlias: { "operator-extensions": "./ee/index.ts" } } } : {}),
+  // an uploaded export may be up to 1 MB (core/export-rules.ts EXPORT_LIMITS), plus the form around it
+  experimental: { serverActions: { bodySizeLimit: "2mb" } },
 };
 
 export default nextConfig;

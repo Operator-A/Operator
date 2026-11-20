@@ -2,10 +2,13 @@ import Link from "next/link";
 import { getFloor } from "@/dashboard/data";
 import { CONNECTIONS, isSetUp, toolsOf } from "@/dashboard/connections";
 import { listCustomServers, mcpStatus } from "@/integrations/mcp";
-import { KNOWN_SERVERS, knownByAddress, knownServer } from "@/core/connector-rules";
+import { KNOWN_SERVERS, knownByAddress, knownServer, serviceKey } from "@/core/connector-rules";
+import { EXPORTS_MISSING, listExports } from "@/core/exports";
+import { EXPORT_LIMITS } from "@/core/export-rules";
 import { REQUESTS_MISSING, listRequests } from "@/core/connector-requests";
 import { getProposal } from "@/core/proposals";
-import { connectorAsk, connectorClose } from "@/dashboard/connectionActions";
+import { connectorAsk, connectorClose, exportRemove, exportUpload } from "@/dashboard/connectionActions";
+import { ExportForm } from "@/dashboard/components/ExportForm";
 import { ActionButton } from "@/dashboard/components/client";
 import { AskForm } from "@/dashboard/components/AskForm";
 import { Icon } from "@/dashboard/components/Icon";
@@ -22,11 +25,13 @@ const pill = (bg: string, fg: string) => ({ background: bg, color: fg });
 export default async function FindATool({ searchParams }: { searchParams: Promise<{ for?: string; agent?: string }> }) {
   const f = await getFloor(); // checks the login
   const sp = await searchParams;
-  const [proposal, customs, requests] = await Promise.all([
+  const [proposal, customs, requests, exports] = await Promise.all([
     sp.for ? getProposal(sp.for).catch(() => null) : Promise.resolve(null),
     listCustomServers().catch(() => []),
     listRequests(),
+    listExports(),
   ]);
+  const exportKeys = new Set((exports ?? []).filter((e) => e.state === "active").map((e) => e.service_key));
   const forWhat = proposal?.payload.kind === "new_tool" ? proposal.payload.what : null;
   const agent = sp.agent && f.agents[sp.agent] ? f.agents[sp.agent] : null;
   const toolsStep = agent ? `/build/${agent.id}?edit=1&step=connections` : null;
@@ -44,7 +49,7 @@ export default async function FindATool({ searchParams }: { searchParams: Promis
       <div className="stack" style={{ gap: 8 }}>
         <span className="sub"><Link href="/connections">Connections</Link> › Find a tool</span>
         <h1 className="h1">Find a tool</h1>
-        <span className="sub">Three ways to get an agent something to read: a connection you already have, a server you add by its address, or an ask for a built-in connector. Nothing here gives a tool to an agent: you do that on the builder’s Tools step.</span>
+        <span className="sub">Ways to get an agent something to read: a connection you already have, a server you add by its address, an ask for a built-in connector, or an export you upload until it’s connected. Nothing here gives a tool to an agent: you do that on the builder’s Tools step.</span>
       </div>
 
       {(forWhat || agent) && (
@@ -107,6 +112,26 @@ export default async function FindATool({ searchParams }: { searchParams: Promis
           : <span className="soft-box" style={{ fontSize: 12.5 }}>{REQUESTS_MISSING}</span>}
       </div>
 
+      <span className="card-t" id="exports">4 · Upload an export until it’s connected</span>
+      <div className="card" style={{ gap: 10 }}>
+        <span className="sub">No connection yet? Export a CSV from the tool (or the spreadsheet you keep) and upload it here. Agents you give Uploaded export on the Tools step read it; numbers are worked out in code, and the rows never choose who to email, a link, a product or a category. Uploading again replaces the rows. Once the tool is connected, uploads stop.</span>
+        {exports ? <ExportForm upload={exportUpload} maxMb={EXPORT_LIMITS.bytes / 1_000_000} /> : <span className="soft-box" style={{ fontSize: 12.5 }}>{EXPORTS_MISSING}</span>}
+        {(exports ?? []).map((e) => (
+          <div key={e.id} className="row wrap rule" style={{ gap: 10, padding: "8px 0", alignItems: "center" }}>
+            <span style={{ flex: "1 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+              <span className="row wrap" style={{ gap: 8 }}>
+                <b style={{ fontSize: 14, fontWeight: 600 }}>{e.name}</b>
+                {e.state === "switched" ? <span className="pill sm" style={pill("var(--mint-soft)", "var(--mint-ink)")}>Connected; uploads stopped</span>
+                  : e.stale ? <span className="pill sm" style={pill("var(--yel-soft, var(--soft))", "var(--ink)")}>Stale: {e.days} days old</span>
+                  : <span className="pill sm" style={pill("var(--soft)", "var(--ink2)")}>Fresh for {e.fresh_days - e.days} more day{e.fresh_days - e.days === 1 ? "" : "s"}</span>}
+              </span>
+              <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{e.row_count} rows · {e.columns.map((c) => c.name).join(", ").slice(0, 160)} · uploaded {when(e.uploaded_at)}</span>
+            </span>
+            <ActionButton className="btn outline sm" action={exportRemove.bind(null, e.id)} confirm={{ title: `Remove the ${e.name} export?`, body: "Its rows are deleted here. Agents can’t read it any more. You can upload it again.", confirmLabel: "Remove", kind: "dark" }}>Remove</ActionButton>
+          </div>
+        ))}
+      </div>
+
       <span className="card-t" id="requests">Asked for</span>
       {!requests?.length ? <span className="sub">Nothing asked for yet.</span> : requests.map((r) => {
         const k = knownServer(r.name);
@@ -121,7 +146,7 @@ export default async function FindATool({ searchParams }: { searchParams: Promis
             <span className="row wrap" style={{ gap: 8, alignItems: "center" }}>
               <span className="muted" style={{ fontSize: 12, flex: 1 }}>Last asked {when(r.last_asked_at)}</span>
               {r.board_url && <a href={r.board_url} target="_blank" rel="noreferrer" className="btn outline sm">Card</a>}
-              {r.state === "open" && k?.builtIn && <ActionButton className="btn dark sm" action={connectorClose.bind(null, r.id, "ready")}>A built-in connector is ready</ActionButton>}
+              {r.state === "open" && (k?.builtIn || exportKeys.has(serviceKey(r.name))) && <ActionButton className="btn dark sm" action={connectorClose.bind(null, r.id, "ready")} confirm={exportKeys.has(serviceKey(r.name)) ? { title: `Is ${r.name} connected now?`, body: "Its uploaded export switches over and uploads stop. Agents read it through its connection.", confirmLabel: "It’s connected", kind: "dark" } : undefined}>{k?.builtIn ? "A built-in connector is ready" : "It’s connected now"}</ActionButton>}
               {r.state === "open" && <ActionButton className="btn outline sm" action={connectorClose.bind(null, r.id, "not_needed")} confirm={{ title: `Close the ${r.name} request?`, body: "Its Build Board card moves to Done. A new ask opens it again.", confirmLabel: "Close it", kind: "dark" }}>Close</ActionButton>}
             </span>
           </div>
