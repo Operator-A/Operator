@@ -6,7 +6,7 @@ import { controlsOn } from "@/dashboard/session";
 import { ActionButton } from "@/dashboard/components/client";
 import { RejectButton } from "@/dashboard/components/react";
 import { Avatar, Empty } from "@/dashboard/components/ui";
-import { DRAFT_EMAIL, writeBlocker } from "@/core/gateway";
+import { CAMPAIGN_DRAFT, DRAFT_EMAIL, writeBlocker } from "@/core/gateway";
 
 // Applying a batch calls Mercury once or twice per change.
 export const maxDuration = 300;
@@ -33,9 +33,24 @@ function Draft({ i }: { i: ApprovalItem }) {
   );
 }
 
+/** A Klaviyo campaign (the Campaign writer): the list, subject, preview text and exact body. Approving makes a draft in Klaviyo; the owner sends it there. */
+function Campaign({ i }: { i: ApprovalItem }) {
+  const p = i.preview;
+  return (
+    <div style={{ borderRadius: 16, background: "var(--soft)", padding: "6px 16px" }}>
+      {([["List", p.list ?? "?"], ["Subject", p.subject ?? "?"], ["Preview text", p.preview_text ?? "?"]] as [string, string][]).map(([k, v], n) => <div key={k} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13 }}><span className="muted">{k}</span><span style={{ fontWeight: 500, textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>{v}</span></div>)}
+      <div className="rule" style={{ padding: "10px 0", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{p.body ?? ""}</div>
+      <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Code adds an unsubscribe line. Approving makes a draft in Klaviyo; you send it from there.</div>
+    </div>
+  );
+}
+
+const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft" };
+
 function Change({ i }: { i: ApprovalItem }) {
   const p = i.preview;
   if (i.tool === DRAFT_EMAIL) return <Draft i={i} />;
+  if (i.tool === CAMPAIGN_DRAFT) return <Campaign i={i} />;
   const lines: [string, React.ReactNode][] = [
     p.charge && !p.merchant ? ["Charge", p.charge] : ["Charge", `${p.merchant ?? "?"} · ${p.amount_usd != null ? m2(p.amount_usd) : "?"} · ${p.date ? md(`${p.date}T12:00:00Z`) : "?"}`],
     ...(p.receipt_path ? [["Attach receipt", i.receipt_url ? <a key="r" href={i.receipt_url} target="_blank" rel="noopener noreferrer">{p.receipt_path.split("/").pop()} (open)</a> : p.receipt_path.split("/").pop()] as [string, React.ReactNode]] : []),
@@ -91,7 +106,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
     return (
       <div key={i.id} className="card" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22, padding: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div className="row wrap">{a && <Avatar a={a} size={32} />}<span style={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>{name} · {i.tool === DRAFT_EMAIL ? "Gmail draft" : "Mercury change"}</span>{view && <DeptTag i={i} view={view} />}<span className="muted" style={{ fontSize: 12 }}>{when(i.created_at)}</span></div>
+          <div className="row wrap">{a && <Avatar a={a} size={32} />}<span style={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>{name} · {KIND_LABEL[i.tool] ?? "Mercury change"}</span>{view && <DeptTag i={i} view={view} />}<span className="muted" style={{ fontSize: 12 }}>{when(i.created_at)}</span></div>
           <span style={{ fontSize: 17, fontWeight: 600 }}>{i.title}</span>
           {i.reasoning && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{i.reasoning}</span>}
           {view && <LeadBits i={i} view={view} />}

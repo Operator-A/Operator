@@ -73,7 +73,8 @@ const toolsOf = (id: string) => ((everything.specs as Record<string, { tools?: s
 // card 159: the first-version departments, each with a head; the store analytics head reads the week in code
 for (const id of ["finance", "prospecting", "email_marketing", "store_analytics"]) assert.ok(everything.departments.some((d) => d.id === id), `${id} is offered`);
 assert.ok(toolsOf("analytics_head").includes("weekly_numbers"), "the store analytics head reads Week over week");
-assert.ok(toolsOf("campaign_writer").length > 0 && toolsOf("campaign_writer").every((t) => !t.startsWith("gmail_") && !t.startsWith("klaviyo_create")), "the Campaign writer only reads: its draft is words until 159b");
+assert.deepEqual(toolsOf("campaign_writer").filter((t) => TOOLS[t]?.kind === "action"), ["klaviyo_campaign_draft"], "card 159b: the Campaign writer's one action is a Klaviyo draft for approval");
+assert.ok(TOOLS.klaviyo_campaign_draft.agents?.includes("campaign_writer") && TOOLS.klaviyo_campaign_draft.params.some((p) => p.type === "pick" && p.name === "list"), "the list is a pick from Email lists, never typed by the model");
 assert.ok(toolsOf("campaign_writer").includes("product_facts"), "the Campaign writer claims only Product facts");
 // the gateway's action types still match the agents that use them
 for (const id of ["cfo", "bookkeeper", "wholesale_hunter"]) assert.ok(everything.agents.some((a) => a.id === id), `${id} keeps its id: the gateway's policy names it`);

@@ -103,6 +103,22 @@ export const MCP_SERVERS = {
     writeTools: [{ tool: "mercury_attach_receipt", actionType: "mercury_annotate" }],
     signInHint: "Paste the Custom token you made for receipts (secret-token:mercury_…). Only the gateway uses it, after you approve.",
   },
+  klaviyo_drafts: {
+    id: "klaviyo_drafts",
+    name: "Klaviyo campaign drafts",
+    // Our own small server (integrations/klaviyo-drafts-server.ts, card 159b): Klaviyo's hosted server
+    // stays read-only for agents. Its key is a Klaviyo private key with campaigns:write, templates:write
+    // and lists:read (refused when it can also read profiles, flows or metrics), pasted on Connections
+    // into the vault; only the gateway uses it, after you approve. It makes a draft and never sends:
+    // the server has no send, schedule or delete code, so you send every campaign from Klaviyo.
+    auth: "token",
+    url: "https://a.klaviyo.com/api",
+    readTools: [],
+    reportTools: [],
+    scopes: ["a Klaviyo private key with campaigns:write, templates:write and lists:read only, used only to make a draft campaign"],
+    writeTools: [{ tool: "klaviyo_create_draft", actionType: "klaviyo.campaign_draft" }],
+    signInHint: "In Klaviyo: Settings, API keys, Create Private API Key, name it Campaign drafts, pick Custom Key, then Campaigns Full Access, Templates Full Access and Lists Read Access, nothing else. Paste it here (pk_…). Only the gateway uses it, after you approve; you send from Klaviyo.",
+  },
   notion: {
     id: "notion",
     name: "Notion",

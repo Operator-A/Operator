@@ -156,6 +156,8 @@ export function health(): Record<IntegrationId, boolean> {
     mercury_write: false,
     // the gateway's receipt-file key, pasted on Connections into the vault
     mercury_files: false,
+    // the gateway's Klaviyo campaign drafts key, pasted on Connections into the vault
+    klaviyo_drafts: false,
     vault: vaultReady(),
     // signed in on Connections, and a property picked: getFloor reads mcp_connections
     ga4: false,
@@ -336,7 +338,7 @@ export interface ApprovalItem {
   status: string;
   created_at: string;
   decided_at: string | null;
-  preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null; charge?: string; to?: string; subject?: string; body?: string; why?: string };
+  preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null; charge?: string; to?: string; subject?: string; body?: string; list?: string; preview_text?: string; why?: string };
   /** The gateway tool: a Mercury change or a Gmail draft. */
   tool: string;
   /** A 10-minute signed link to the receipt file, so the owner can check it before approving. */

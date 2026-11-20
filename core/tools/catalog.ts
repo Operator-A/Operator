@@ -30,7 +30,8 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
 import { draftsToCheck, leadReview, propose } from "@/core/gateway";
 import { proposeLesson } from "@/core/memory";
 import { reactionTally } from "@/core/reactions";
@@ -194,9 +195,15 @@ const TOOLS_LIST: ToolDef[] = [
   // tool in core/mcp-rules.ts. Counts and rates are added up in code from the raw reply. Names in
   // Klaviyo are the business's own, but the reply comes from outside, so it is shown as untrusted data.
   {
-    id: "klaviyo_lists", label: "Email lists", detail: "Every list in the business's Klaviyo: its id and name. Use an id with Email list size",
+    id: "klaviyo_lists", label: "Email lists", detail: "Every list in the business's Klaviyo: its id and name. Use an id with Email list size, or a pick code with Draft a Klaviyo campaign",
     kind: "read", group: "klaviyo", params: [], trusted: false, needs: KLAVIYO, costUsd: 0,
-    run: async () => { const lists = await klaviyoLists(); return { data: { lists }, numbers: { lists: lists.length } }; },
+    run: async () => {
+      const lists = await klaviyoLists();
+      // the list a campaign goes to is named by pick code: its id comes from Klaviyo here, never from the model
+      const picks: Record<string, Pick> = {};
+      const rows = lists.slice(0, 200).map((l, i) => { picks[`l${i + 1}`] = { kind: "list", id: l.id, label: l.name.slice(0, 80) || l.id }; return { pick: `l${i + 1}`, ...l }; });
+      return { data: { lists: rows }, numbers: { lists: lists.length }, picks };
+    },
   },
   {
     id: "klaviyo_list_size", label: "Email list size", detail: "How many profiles are on one Klaviyo list, counted by Klaviyo and read in code",
@@ -695,6 +702,25 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, DRAFT_EMAIL, lead.id, args);
       if (refused) return { problem: refused };
       return { gatewayTool: DRAFT_EMAIL, target: lead.id, args, actionType: "email_draft", title: lead.label, preview: { to: lead.label, subject: args.subject, body: args.body, why: input.why } };
+    },
+  },
+  {
+    id: "klaviyo_campaign_draft", label: "Draft a Klaviyo campaign", detail: "Stages one email campaign to one of the business's Klaviyo lists, for the owner to approve. Approving makes it a draft in Klaviyo; the owner sends it from Klaviyo. Nothing here can send or schedule a campaign. Claims about products come only from Product facts",
+    kind: "action", group: "klaviyo", trusted: true, needs: KLAVIYO, costUsd: 0,
+    agents: GATEWAY_TOOLS[CAMPAIGN_DRAFT].agents,
+    params: [
+      { name: "list", type: "pick", kind: "list", description: "The list it goes to, from an Email lists result." },
+      { name: "subject", type: "text", maxLength: CAMPAIGN_LIMITS.subject, description: "The subject line." },
+      { name: "preview", type: "text", maxLength: CAMPAIGN_LIMITS.preview, description: "The preview text shown after the subject in the inbox." },
+      { name: "body", type: "text", maxLength: CAMPAIGN_LIMITS.body, multiline: true, description: "The email, plain text, paragraphs split by a blank line. No links; code adds the unsubscribe line." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why this campaign now, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const list = input.list as Pick;
+      const args = { subject: String(input.subject), preview: String(input.preview), body: String(input.body) };
+      const refused = refuseProposal(ctx.agentId, CAMPAIGN_DRAFT, list.id, args);
+      if (refused) return { problem: refused };
+      return { gatewayTool: CAMPAIGN_DRAFT, target: list.id, args, actionType: "campaign_draft", title: `${list.label}: ${args.subject}`, preview: { list: list.label, subject: args.subject, preview_text: args.preview, body: args.body, why: input.why } };
     },
   },
 ];

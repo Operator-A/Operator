@@ -28,9 +28,10 @@ email marketing and store analytics, for any store.
   Missing days or no Google Analytics are said, never guessed. Then Site visits, Where visits come from
   and Top pages explain the move.
 - **Campaign writer.** Drafts one campaign a run (audience from the business's own Klaviyo lists,
-  subject, preview text, body under 150 words) that claims only what Product facts says. Its draft is
-  its result, words the owner pastes into Klaviyo; it reads only. A Klaviyo draft action type for the
-  owner's approval is card 159b, built only once the owner approves it.
+  subject, preview text, body under 150 words) that claims only what Product facts says. It stages the
+  campaign with Draft a Klaviyo campaign (`klaviyo_campaign_draft`, card 159b): the list is a pick code
+  from Email lists, never typed by the model. An approver sees the exact list, subject, preview text and
+  body on an approval card; approving makes a draft in Klaviyo, and the owner sends it from there.
 - **Prospecting.** No one trade's words in core (`check:business` fails on them); tool ids like
   `wholesale_leads_recent` and the `wholesale_won` measure key stay, because stored setups and goals name them. First-run setup (`docs/setup.md`) offers them on
 step 3 as the company Avery proposes from her interview (card 153): the departments she leans toward are on the chart, the rest under Also available.

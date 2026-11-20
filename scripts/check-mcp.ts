@@ -10,6 +10,7 @@ import { SHOPIFY_DOCS, SHOPIFY_QUERIES, WHO, assertReadOnly, shopifyKeyKind, sho
 import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
 import { GA4_TOOLS, checkGa4Args, dateRange, rate, readChannels, readOverview, readProperties, readTopPages, reportBodies } from "../core/ga4-rules";
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
+import { CAMPAIGN_LIMITS, campaignHtml, campaignText, checkDraftArgs, looksLikeKlaviyoKey } from "../core/klaviyo-draft-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { envWrapper, isBound, keyIdOf, newDataKey, open, seal, vaultKey } from "../core/vault";
 import * as C from "../core/custom-mcp-rules";
@@ -230,6 +231,33 @@ assert.ok(!mayWrite("mercury", "updateTransaction"), "the agents' read sign-in h
 assert.deepEqual(checkedTools("mercury_write"), ["updateTransaction"], "the tool check watches the write tool too");
 for (const srv of Object.values(MCP_SERVERS) as McpServer[]) for (const sc of srv.scopes) assert.ok(!/transfers|transactions:request|reimbursements|budgets|receipts/.test(sc), `${srv.id} never asks for ${sc}`);
 
+// ---- Klaviyo campaign drafts on our own server, key in the vault (card 159b): drafts only, never a send
+assert.equal(MCP_SERVERS.klaviyo_drafts.auth, "token");
+assert.deepEqual(MCP_SERVERS.klaviyo_drafts.readTools, [], "the drafts key reads nothing for agents");
+assert.deepEqual(checkedTools("klaviyo_drafts"), ["klaviyo_create_draft"], "one tool, watched by the tool check");
+assert.ok(mayWrite("klaviyo_drafts", "klaviyo_create_draft") && !mayCall("klaviyo_drafts", "klaviyo_create_draft") && !mayReport("klaviyo_drafts", "klaviyo_create_draft"), "only the gateway's callWriteTool reaches it");
+for (const bad of ["send_campaign", "schedule_campaign_message", "create_campaign_send_job", "delete_campaign"]) assert.ok(!mayWrite("klaviyo_drafts", bad) && !mayWrite("klaviyo", bad), `never ${bad}`);
+assert.ok(looksLikeKlaviyoKey("pk_" + "a1B2".repeat(8)) && !looksLikeKlaviyoKey("pk_short") && !looksLikeKlaviyoKey("sk_" + "a".repeat(30)) && !looksLikeKlaviyoKey("pk_" + "a".repeat(20) + " x"));
+const okCamp = { listId: "XZRviM", subject: "Back in stock", preview: "Two favourites return", body: "Hi,\n\nThey're back.\n\nSam" };
+const cd = checkDraftArgs(okCamp);
+assert.ok(!("problem" in cd) && cd.listId === "XZRviM");
+for (const [args, why] of [
+  [{ ...okCamp, listId: "../lists" }, /listId/],
+  [{ ...okCamp, subject: "x".repeat(CAMPAIGN_LIMITS.subject + 1) }, /subject/],
+  [{ ...okCamp, body: "go to https://evil.example" }, /links/],
+  [{ ...okCamp, to: "a@b.com" }, /allow-list/],
+] as [Record<string, unknown>, RegExp][]) { const r = checkDraftArgs(args); assert.ok("problem" in r && why.test(r.problem), JSON.stringify(args)); }
+const html = campaignHtml("Hi <b>you</b>\n\nLine two\nmore");
+assert.match(html, /<p>Hi &lt;b&gt;you&lt;\/b&gt;<\/p><p>Line two<br>more<\/p>/, "the body is escaped, one paragraph per block");
+assert.match(html, /\{% unsubscribe 'Unsubscribe' %\}/, "code adds the unsubscribe line");
+assert.match(campaignText("Hi"), /\{% unsubscribe_url %\}$/);
+const kds = readFileSync("integrations/klaviyo-drafts-server.ts", "utf8").split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+assert.doesNotMatch(kds, /send-job|send_job|campaign-send|schedul(e|ing)-?\w*\(|send_strategy|"DELETE"|method: "(DELETE|PATCH)"|cancel/i, "no send, schedule, cancel, change or delete call on the drafts server");
+assert.equal((kds.match(/fetch\(/g) ?? []).length, 2, "two fetch calls: one GET, one POST");
+assert.equal((kds.match(/redirect: "error"/g) ?? []).length, 2, "neither follows a redirect");
+assert.match(kds, /const list = await get\(key, `lists\/\$\{a\.listId\}`\);/, "the list is read on the key right before the write");
+assert.match(kds, /if \(r\.ok\) throw new Error\(`the key can also use/, "a key that reaches more than the profile is refused");
+
 // ---- Receipt files on our own server, key in the vault (slice 8)
 assert.equal(MCP_SERVERS.mercury_files.auth, "token");
 assert.deepEqual(MCP_SERVERS.mercury_files.readTools, [], "the receipt key reads nothing for agents");
@@ -414,6 +442,7 @@ assert.deepEqual(importers("ga4-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("shopify-api"), ["integrations/shopify-server.ts"]);
 assert.deepEqual(importers("shopify-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mercury-files-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("klaviyo-drafts-server"), ["integrations/mcp.ts"]);
 // no direct GraphQL path from agents: only our Shopify server posts to Shopify's API
 const gqlPosters = ["core", "agents", "templates", "dashboard", "app", "integrations"].flatMap(files).filter((f) => /graphql\.json|admin\/oauth\/access_token/.test(readFileSync(f, "utf8")));
 assert.deepEqual(gqlPosters, ["integrations/shopify-api.ts"]);

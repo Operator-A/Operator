@@ -58,9 +58,9 @@ export const CONNECTIONS: Connection[] = [
     checks: [{ key: "notion", label: "Workspace", setup: "Paste the integration’s key below, and pick the briefs page (shared with the integration) on Settings > Where things go, with the briefs database too for brief rows. Set NOTION_BUILD_BOARD_DB_ID for a Build Board card when you say yes to a new tool." }],
   },
   {
-    id: "klaviyo", name: "Klaviyo", sub: "Email lists, campaigns, flows", icon: "send", builtIn: false, mcp: "klaviyo",
-    about: "Klaviyo’s own MCP server, called by our runner with the server’s read-only switch on. Code may call only the read tools named in code (lists, a list’s size, campaign and flow results); nothing here can change Klaviyo. Counts and rates are added up in code.",
-    checks: [{ key: "klaviyo", label: "Account", setup: "Tap Connect and sign in to Klaviyo as an Owner, Admin or Manager. Klaviyo signs in with its own page, so there is no key to paste." }],
+    id: "klaviyo", name: "Klaviyo", sub: "Email lists, campaigns, flows", icon: "send", builtIn: false, mcp: "klaviyo", mcpMore: ["klaviyo_drafts"],
+    about: "Klaviyo’s own MCP server, called by our runner with the server’s read-only switch on. Code may call only the read tools named in code (lists, a list’s size, campaign and flow results); that sign-in can’t change Klaviyo. Counts and rates are added up in code. After you approve a campaign, the gateway makes it a draft in Klaviyo with a separate private key, locked in the vault, that only it uses. Nothing in the app can send or schedule a campaign: you send it from Klaviyo.",
+    checks: [{ key: "klaviyo", label: "Account", setup: "Tap Connect and sign in to Klaviyo as an Owner, Admin or Manager. Klaviyo signs in with its own page, so there is no key to paste. For campaign drafts, also paste a key under Klaviyo campaign drafts." }],
   },
   {
     id: "analytics", name: "Google Analytics", sub: "Visits, pages, channels", icon: "chart-line", builtIn: false, mcp: "ga4",
