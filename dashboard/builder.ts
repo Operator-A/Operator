@@ -3,6 +3,7 @@ import "server-only";
 // its screens show: the active spec and its versions, the tool list the flow picks from (each tool
 // with its connection, docs/builder-flow.md), the Claude models, its standards from the memory
 // store, and its latest runs step by step.
+import { ownFilter } from "@/core/memory-rules";
 import { db } from "@/core/db";
 import { agentDepartment } from "@/core/org";
 import { BUDGET_CEILING, EFFORTS, RUN_LIMITS, draftOf, listSpecVersions, loadSpec, readSpec, type AgentSpec, type SpecVersion } from "@/core/agent-spec";
@@ -163,9 +164,9 @@ export async function lastTry(agentId: string, version: number): Promise<TryView
 }
 
 async function standards(agentId: string): Promise<Standard[]> {
-  // its own standing orders, crew rules, and its department's rules (docs/org-chart.md, slice 2)
+  // its own standing orders, rules for everyone, and its department's rules (docs/org-chart.md, slice 2)
   const dept = (await agentDepartment(agentId).catch(() => null))?.dept.id;
-  const { data, error } = await db().from("agent_memory").select("id, grp, text, notion_page_id, agent_id").or(`agent_id.eq.${agentId},grp.eq.crew${dept ? `,department_id.eq.${dept}` : ""}`).eq("state", "kept").in("grp", ["standing_order", "crew", "department"]).order("created_at", { ascending: true }).limit(100);
+  const { data, error } = await db().from("agent_memory").select("id, grp, text, notion_page_id, agent_id").or(ownFilter(agentId, dept ?? null)).eq("state", "kept").in("grp", ["standing_order", "crew", "department"]).order("created_at", { ascending: true }).limit(100);
   if (error) return [];
   return (data ?? []).map((r) => ({ id: r.id, grp: r.grp, text: r.text, notionPageId: r.notion_page_id }));
 }
