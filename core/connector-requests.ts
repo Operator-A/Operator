@@ -7,6 +7,7 @@ import "server-only";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { h2, li, notionConnected, notionPageId, notionRow, notionUpdateRow, prop } from "@/integrations/notion";
+import { switchExports } from "@/core/exports";
 import { REQUEST_CARD, checkServiceName, checkWhat, knownServer, requestCard, requestCardName, withAsk, type Ask } from "@/core/connector-rules";
 
 export interface ConnectorRequest {
@@ -91,10 +92,12 @@ export async function closeRequest(id: string, why: "ready" | "not_needed"): Pro
   const { data, error } = await db().from("connector_requests").update({ state: "closed", outcome, closed_at: new Date().toISOString() }).eq("id", id).eq("state", "open").select("board_url, name");
   if (error) throw new Error(error.message);
   if (!data?.length) throw new Error("That request isn’t open any more.");
+  // a real connection: the tool's uploaded export switches over and uploads stop (card 160)
+  const switched = why === "ready" && (await switchExports(data[0].name)) ? " Its uploaded export switched over: uploads have stopped." : "";
   const page = notionPageId(data[0].board_url ?? "");
   if (page && (await notionConnected())) {
     const moved = await notionUpdateRow(page, { Status: prop.status("Done") }).then(() => true, () => false);
-    if (!moved) return `${data[0].name}: ${outcome} Move its Build Board card to Done by hand.`;
+    if (!moved) return `${data[0].name}: ${outcome}${switched} Move its Build Board card to Done by hand.`;
   }
-  return `${data[0].name}: ${outcome}`;
+  return `${data[0].name}: ${outcome}${switched}`;
 }

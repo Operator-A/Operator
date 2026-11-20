@@ -45,6 +45,7 @@
     "check:memory-reach": "npx --yes tsx --conditions=react-server scripts/check-memory-reach.ts",
     "check:interrupts": "npx --yes tsx --conditions=react-server scripts/check-interrupts.ts",
     "check:weekly-numbers": "npx --yes tsx scripts/check-weekly-numbers.ts",
+    "check:exports": "npx --yes tsx --conditions=react-server scripts/check-exports.ts",
     "check:first-job": "npx --yes tsx --conditions=react-server scripts/check-first-job.ts",
     "check:tools-step": "npx --yes tsx --conditions=react-server scripts/check-tools-step.ts",
     "check:ee": "npx --yes tsx ee/check.ts",

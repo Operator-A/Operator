@@ -32,6 +32,8 @@ import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as 
 import { emailOwner } from "@/integrations/email";
 import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
+import { READ_ROWS, ageOf, columnNumbers, staleNote } from "@/core/export-rules";
+import { listExports, readExport } from "@/core/exports";
 import { draftsToCheck, leadReview, propose } from "@/core/gateway";
 import { proposeLesson } from "@/core/memory";
 import { reactionTally } from "@/core/reactions";
@@ -41,7 +43,7 @@ import { klaviyoListSize, klaviyoLists, klaviyoReport } from "@/integrations/kla
 import { ga4Channels, ga4Overview, ga4TopPages } from "@/integrations/ga4";
 import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
-import type { Pick, ReportInput, ToolDef } from "./types";
+import type { Pick, ReportInput, ToolDef, ToolResult } from "./types";
 import { ANALYTICS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
@@ -160,6 +162,31 @@ const TOOLS_LIST: ToolDef[] = [
       const numbers: Record<string, number> = { snapshots: data?.length ?? 0 };
       if (latest) { numbers.latest_revenue_usd = Number(latest.revenue); numbers.latest_orders = Number(latest.orders); }
       return { data: data ?? [], numbers };
+    },
+  },
+  {
+    // card 160: a CSV the owner uploaded for a tool with no connection. Untrusted: its rows never choose
+    // a recipient, URL, product or category. Every number is worked out in code over all the rows.
+    id: "export_rows", label: "Uploaded export", detail: "A CSV export the owner uploaded for a tool that has no connection (for example a log kept in a spreadsheet): its columns, the latest rows, and per-column count, sum, average, min and max worked out in code. Says when the export is stale. With no source, lists the exports",
+    kind: "read", group: "supabase", trusted: false, needs: SUPABASE, costUsd: 0,
+    params: [
+      { name: "source", type: "text", maxLength: 60, optional: true, description: "The tool's name as the exports list shows it. Leave out to list the exports." },
+      { name: "last", type: "int", min: 1, max: READ_ROWS.max, default: READ_ROWS.start, description: "How many of the latest rows to read (the file's last rows)." },
+    ],
+    run: async (p): Promise<ToolResult> => {
+      if (!p.source) {
+        const all = (await listExports()) ?? [];
+        return { data: { exports: all.map((e) => ({ source: e.name, rows: e.row_count, columns: e.columns.map((c) => c.name), age_days: e.days, stale: e.stale, connected: e.state === "switched" })) }, numbers: { exports: all.length, stale_exports: all.filter((e) => e.stale && e.state === "active").length } };
+      }
+      const e = await readExport(String(p.source));
+      if (!e) return { data: { problem: `No export named ${String(p.source).slice(0, 60)}. Read the exports list first (leave source out).` } };
+      if (e.state === "switched") return { data: { source: e.name, note: `${e.name} has a real connection now. Read it through its connection's tools; this export is no longer updated.` } };
+      const age = ageOf(e.uploaded_at, e.fresh_days);
+      const rows = e.rows.slice(-Math.min(READ_ROWS.max, Math.max(1, Number(p.last) || READ_ROWS.start)));
+      return {
+        data: { source: e.name, columns: e.columns, rows, shown: rows.length, of: e.row_count, uploaded: e.uploaded_at.slice(0, 10), age_days: age.days, fresh_days: e.fresh_days, stale: age.stale, ...(age.stale ? { note: staleNote(e.name, age.days) } : {}) },
+        numbers: { ...columnNumbers(e.columns, e.rows), export_age_days: age.days },
+      };
     },
   },
   {

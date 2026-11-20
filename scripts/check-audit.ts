@@ -6,6 +6,8 @@ import { readFileSync } from "node:fs";
 import { migration } from "./lib/schema";
 
 const AUDITED = [
+  // uploaded exports (card 160)
+  "exportUpload", "exportRemove",
   // approvals and the gateway
   "approve", "reject", "approveAll", "retryAction",
   // the org switch, duty, schedules and real runs (they spend money)
