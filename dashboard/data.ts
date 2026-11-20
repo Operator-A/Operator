@@ -82,6 +82,12 @@ export interface RunMemory {
 }
 export interface AgentRow { id: string; name: string; model: string; enabled: boolean; daily_budget_usd: number }
 
+/** The gateway tool behind an approval card, from its embedded action row. */
+const toolOfCard = (a: unknown): string => {
+  const row = (Array.isArray(a) ? a[0] : a) as { tool?: unknown } | null | undefined;
+  return typeof row?.tool === "string" ? row.tool : "";
+};
+
 export interface Floor {
   ok: boolean;
   problem?: string;
@@ -97,6 +103,9 @@ export interface Floor {
   approvalsPending: number | null;
   /** Proposals from heads waiting on the owner (company mode slice 3); null when the proposals table isn't there yet. */
   proposalsPending: number | null;
+  /** Card 158: the gateway tool of each approval waiting on the owner, and the kind of each pending proposal (dashboard/needs-rules.ts). */
+  approvalTools: string[];
+  proposalKinds: string[];
   /** Person's jobs from this week's head plans that the owner hasn't marked done (slice 4). */
   jobsForYou: { planId: string; head: string | null; title: string; href: string }[];
   /** Proposed lessons waiting for the owner's Keep, per agent; empty until the memory tables exist. */
@@ -158,7 +167,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   await requireSession();
   const h = health();
   const now = Date.now();
-  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, org: { on: false, at: null, by: null, known: false } };
+  const empty: Floor = { ok: false, now, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, org: { on: false, at: null, by: null, known: false } };
   if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
   const since = new Date(now - 60 * 864e5).toISOString();
   const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, mcp, orgSwitch] = await Promise.all([
@@ -170,9 +179,9 @@ export const getFloor = cache(async (): Promise<Floor> => {
     db().from("agent_runs").select(RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
     // drafts still with their lead (slice 4) aren't waiting on the owner yet; the older shape until that migration is applied
-    db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending").or("review_status.is.null,review_status.neq.waiting")
-      .then((x) => (x.error ? db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending") : x)),
-    db().from("proposals").select("id", { count: "exact", head: true }).eq("state", "pending"),
+    db().from("approvals").select("id, agent_actions(tool)", { count: "exact" }).eq("status", "pending").or("review_status.is.null,review_status.neq.waiting").limit(500)
+      .then((x) => (x.error ? db().from("approvals").select("id, agent_actions(tool)", { count: "exact" }).eq("status", "pending").limit(500) : x)),
+    db().from("proposals").select("kind", { count: "exact" }).eq("state", "pending").limit(500),
     openJobsThisWeek().catch(() => []),
     proposedLessons(),
     db().from("agent_defs").select("agent_id, version, spec").eq("active", true),
@@ -215,7 +224,9 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const tools = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, { label: t.label, kind: t.kind }]));
   const seatTitle = (id: string) => org?.seats.find((x) => x.holder === "agent" && x.agentId === id)?.title ?? null;
   const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, cost: runCostOf(costSpecs[x.id], realCost(runs, x.id)), seatTitle: seatTitle(x.id), chains })));
-  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0, jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette, org: orgSwitch };
+  return { ok: true, now, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0,
+    approvalTools: ap.error ? [] : (ap.data ?? []).map((x) => toolOfCard(x.agent_actions)), proposalKinds: pp.error ? [] : (pp.data ?? []).map((x) => String(x.kind)),
+    jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette, org: orgSwitch };
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

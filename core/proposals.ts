@@ -10,6 +10,9 @@ import { createBuiltAgent, draftOf, listSpecVersions, readSpec, saveSpecVersion 
 import { teach } from "@/core/memory";
 import { addSeat, agentNames, below, headOf, liveAgentIds, loadOrg, removeSeat, seatOf, setHolder, unseat, type Org, type Seat } from "@/core/org";
 import { TOOLS } from "@/core/tools/catalog";
+import { createGoal, editGoal, getGoal, GOALS_MISSING, listGoals, ownMeasureDefs, setGoalState, type Goal } from "@/core/goals";
+import { MAX_GOALS_PER_DEPT, planGoal, type GoalInput } from "@/core/goal-rules";
+import { chicagoDate } from "@/core/time";
 import { hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, type ProposalPlan } from "@/core/proposal-rules";
 
 export type ProposalState = "pending" | "accepted" | "declined" | "built" | "failed";
@@ -20,7 +23,8 @@ export interface Proposal {
   decided_at: string | null; created_at: string;
 }
 /** A plan with names resolved against the chart when it was filed (checked again at the tap). */
-export type Resolved = ProposalPlan & { seatId?: string | null; parentSeatId?: string | null; agentId?: string | null };
+export type Resolved = ProposalPlan & { seatId?: string | null; parentSeatId?: string | null; agentId?: string | null; goalId?: string | null; deptId?: string | null };
+type GoalPlanR = Extract<Resolved, { kind: "goal" }>;
 
 export const PROPOSALS_MISSING = "The proposals table isn’t in Supabase yet: apply the migration 20261122090000_proposals.sql.";
 const COLS = "id, kind, title, source, from_agent, department_id, run_id, payload, why, state, outcome, result_ref, decided_at, created_at";
@@ -38,6 +42,35 @@ export function proposerSeat(org: Org, agentId: string): Seat | null {
 
 /** Seats a proposal may touch: the proposer's department (every department for the company seat). */
 const scope = (org: Org, seat: Seat | null) => org.seats.filter((s) => s.departmentId != null && (!seat?.departmentId || s.departmentId === seat.departmentId));
+
+/**
+ * Card 158: a goal proposal against the department's goals as they are now: the goal it changes or
+ * drops, and the goal as it would be, checked by planGoal like the Goals page. Run when it is filed,
+ * on the proposal page and again at the owner's yes.
+ */
+async function goalCheck(p: Extract<ProposalPlan, { kind: "goal" }>, deptId: string, goalId: string | null = null): Promise<{ goal: Goal | null; input: GoalInput | null } | { problem: string }> {
+  const open = await listGoals([deptId]);
+  if (open == null) return { problem: GOALS_MISSING };
+  let goal: Goal | null = null;
+  if (p.change !== "new") {
+    goal = goalId ? await getGoal(goalId) : open.find((g) => same(g.title, p.goal ?? "")) ?? null;
+    if (!goal || goal.state === "dropped" || goal.department_id !== deptId) return { problem: `there is no goal called “${p.goal}” in that department` };
+    if (p.change === "drop") return { goal, input: null };
+  } else {
+    if (open.length >= MAX_GOALS_PER_DEPT) return { problem: `that department already has ${MAX_GOALS_PER_DEPT} goals; propose dropping one first` };
+    if (open.some((g) => same(g.title, p.title ?? ""))) return { problem: `that department already has a goal called “${p.title}”` };
+  }
+  const measure = p.measure === "none" ? null : p.measure ?? goal?.measure ?? null;
+  const input: GoalInput = {
+    title: p.title ?? goal?.title, measure,
+    // a new measure needs its own target; the old one would be in the wrong unit
+    target: p.target ?? (measure === goal?.measure ? goal?.target : null) ?? undefined,
+    dueOn: p.dueOn ?? goal?.due_on ?? null,
+  };
+  const got = planGoal(input, chicagoDate(0), await ownMeasureDefs());
+  if ("error" in got) return { problem: got.error.replace(/\.$/, "") };
+  return { goal, input };
+}
 
 /**
  * Resolves names in a plan to seats and agents on the chart, within the proposer's reach. `seat`
@@ -76,6 +109,14 @@ async function resolve(org: Org, plan: ProposalPlan, seat: Seat | null, deptId: 
     if (!s) return { problem: `there is no seat called “${plan.seat}” in your department` };
     if (s.parentId == null) return { problem: "a department's head seat can't be closed this way" };
     return { r: { ...plan, seatId: s.id }, dept: s.departmentId };
+  }
+  if (plan.kind === "goal") {
+    // a head reaches only its own department; Avery (the company seat), the owner and Claude name one
+    const dept = seat?.departmentId ?? deptId;
+    if (!dept || !org.departments.some((d) => d.id === dept)) return { problem: "department must name the department the goal is for" };
+    const c = await goalCheck(plan, dept);
+    if ("problem" in c) return c;
+    return { r: { ...plan, goalId: c.goal?.id ?? null, deptId: dept }, dept };
   }
   return { r: plan, dept: seat?.departmentId ?? deptId };
 }
@@ -194,6 +235,26 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
       await close(id, "accepted", r.text, r.deptId);
       return { text: r.text, href: "/crew" };
     }
+    if (p.kind === "goal") {
+      // card 158: through the Goals page's own paths, checked again against the goals as they are now
+      const dept = p.deptId ?? pr.department_id;
+      if (!dept) throw new Error("That proposal names no department.");
+      const c = await goalCheck(p, dept, p.goalId ?? null);
+      if ("problem" in c) throw new Error(`${c.problem[0].toUpperCase()}${c.problem.slice(1)}.`);
+      if (p.change === "new") {
+        const gid = await createGoal(dept, c.input!);
+        await close(id, "accepted", `Goal set: ${p.title}.`, gid);
+        return { text: `Goal set: ${p.title}. Its head plans around it from the next run.`, href: `/goals/${gid}` };
+      }
+      if (p.change === "drop") {
+        await setGoalState(c.goal!.id, "dropped");
+        await close(id, "accepted", `Dropped: ${c.goal!.title}.`, c.goal!.id);
+        return { text: `Dropped: ${c.goal!.title}.`, href: "/" };
+      }
+      await editGoal(c.goal!.id, c.input!);
+      await close(id, "accepted", `Goal changed: ${c.goal!.title}.`, c.goal!.id);
+      return { text: "Goal changed.", href: `/goals/${c.goal!.id}` };
+    }
     if (p.kind === "new_tool") {
       // a yes hands out nothing: the owner picks how on Find a tool, where an ask for a connector is counted
       await close(id, "accepted", "Sent to Find a tool.");
@@ -296,6 +357,15 @@ export async function proposalChecks(pr: Proposal, org: Org): Promise<Check[]> {
       ...(problems.length ? problems.map((text) => ({ ok: false, text })) : [{ ok: true, text: `No ${p.draft.name} department yet, every name is free, and every tool is a read tool on the list` }]),
       ...(asks.length ? [{ ok: true, text: `No connection for ${asks.join(", ")}: a request is logged when you approve` }] : []),
       { ok: true, text: "Every agent starts off duty with no actions; each one’s first run drafts its playbook for you to approve" },
+    ];
+  }
+  if (p.kind === "goal") {
+    const dept = p.deptId ?? pr.department_id;
+    const name = org.departments.find((d) => d.id === dept)?.name ?? "its department";
+    const c = dept ? await goalCheck(p, dept, p.goalId ?? null) : { problem: "it names no department" };
+    return [
+      "problem" in c ? { ok: false, text: c.problem } : { ok: true, text: p.change === "new" ? `${name} has room for another goal, and the measure and target pass the Goals page's checks` : p.change === "drop" ? `“${c.goal?.title}” is a goal in ${name}` : `“${c.goal?.title}” is a goal in ${name}, and the change passes the Goals page's checks` },
+      { ok: true, text: "Numbers are counted in code from the measure, never by a model; you can still edit goals by hand on Goals" },
     ];
   }
   return [{ ok: true, text: "A yes hands out nothing: it opens Find a tool, where you pick a connection, add a server, or ask for a connector" }];

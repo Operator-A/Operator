@@ -131,10 +131,13 @@ export async function goalProgress(agentId: string) {
     if (detail && "funnel" in detail) for (const [s, n] of Object.entries(detail.funnel)) numbers[`${k}_${s}`] = n;
     return {
       key: k, department: depts.find((d) => d.id === g.department_id)?.name ?? g.department_id, goal: g.title,
-      measure: m ? m.label : null, measuredHow: m?.how ?? null, status: STATUS_WORDS[p.status], progress: p.line, pace: p.pace,
+      measure: m ? m.label : null, measureKey: m?.key ?? null, measuredHow: m?.how ?? null, status: STATUS_WORDS[p.status], progress: p.line, pace: p.pace,
       dueOn: g.due_on, paused: g.state === "paused",
     };
   });
   numbers.goals_behind = rows.filter((r) => r.progress.status === "behind" || r.progress.status === "missed").length;
-  return { data: { scope: seat.departmentId ? "your department" : "every department", goals: data, note: data.length ? undefined : "No goals set yet. The owner sets them on Crew." }, numbers };
+  return { data: { scope: seat.departmentId ? "your department" : "every department", goals: data,
+    // card 158: the measures a goal proposal may use, by key
+    measures: defs.filter((m) => m.available).map((m) => ({ key: m.key, label: m.label })),
+    note: data.length ? undefined : "No goals set yet. The owner sets them on Crew." }, numbers };
 }

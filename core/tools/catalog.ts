@@ -377,10 +377,10 @@ const TOOLS_LIST: ToolDef[] = [
   // the chart when saved and again at the owner's tap. A proposal does nothing until they say yes, and can
   // never hand out an action.
   {
-    id: "propose", label: "Propose to the owner", detail: "Hands the owner a proposal to decide: hire an agent for a seat in its department, give a teammate a read tool, build a new tool, or retire an agent or close a seat. Saved after a run that finishes; nothing happens until the owner says yes, and it can't hand out actions",
+    id: "propose", label: "Propose to the owner", detail: "Hands the owner a proposal to decide: hire an agent for a seat in its department, give a teammate a read tool, build a new tool, retire an agent or close a seat, or set, change or drop one of its department's goals. Saved after a run that finishes; nothing happens until the owner says yes, and it can't hand out actions",
     kind: "report", group: "agents", trusted: false, needs: SUPABASE, costUsd: 0, seat: "head",
     params: [
-      { name: "kind", type: "enum", options: ["hire", "grant_tool", "new_tool", "retire"], description: "hire: a new agent for a seat. grant_tool: one read tool for a teammate. new_tool: something no tool reads yet. retire: take a teammate off duty, or close an empty seat." },
+      { name: "kind", type: "enum", options: ["hire", "grant_tool", "new_tool", "retire", "goal"], description: "hire: a new agent for a seat. grant_tool: one read tool for a teammate. new_tool: something no tool reads yet. retire: take a teammate off duty, or close an empty seat. goal: a new department goal, a change to one, or dropping one (your own working targets aren't goals; put them in your summary)." },
       { name: "why", type: "text", maxLength: 600, description: "Why, in a sentence or two, with the numbers your tools gave you." },
       { name: "name", type: "text", maxLength: 30, optional: true, description: "hire: a short first name for the new agent, starting with a capital." },
       { name: "seat", type: "text", maxLength: 60, optional: true, description: "hire: the open seat it fills, or a new seat's name (it goes under you). retire: the empty seat to close." },
@@ -391,6 +391,12 @@ const TOOLS_LIST: ToolDef[] = [
       { name: "tools", type: "text", maxLength: 300, optional: true, description: "hire: the read tool ids it needs, comma separated (at most 8). grant_tool: the one tool id." },
       { name: "brain", type: "enum", options: ["quick", "thinking"], default: "quick", description: "hire: quick (Haiku) for most jobs; thinking (Sonnet) only when the job needs judgment." },
       { name: "what", type: "text", maxLength: 300, optional: true, description: "new_tool: what it needs to read, and from where." },
+      { name: "change", type: "enum", options: ["new", "change", "drop"], default: "new", description: "goal: new, change or drop." },
+      { name: "goal", type: "text", maxLength: 120, optional: true, description: "goal (change or drop): the goal's title as goal_progress gives it." },
+      { name: "title", type: "text", maxLength: 120, optional: true, description: "goal (new, or a new wording): what the goal is, in a few words." },
+      { name: "measure", type: "text", maxLength: 60, optional: true, description: "goal: a measure key from goal_progress's list, or none for a goal in words only. Code counts it." },
+      { name: "target", type: "text", maxLength: 30, optional: true, description: "goal: the number to reach, with a measure." },
+      { name: "due_on", type: "text", maxLength: 10, optional: true, description: "goal: the date to reach it by, like 2027-03-31." },
     ],
     collect: (input, held) => {
       if (held.length >= 3) return { problem: "at most 3 proposals in one run" };

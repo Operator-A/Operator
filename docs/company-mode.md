@@ -159,9 +159,9 @@ the tools and the measures share one copy), `integrations/shopify/orders.ts` `or
 
 **What the owner sees.**
 
-- **Needs you** says "2 proposals from your heads" and opens **Proposals** (`/proposals`). The
-  Approvals item in the sidebar counts proposals too, and the Approvals page leads with a card for
-  them when any wait.
+- Hires, new departments and goal changes show on the Desk in **Needs you**; tool grants, new tools
+  and retirements wait under Avery's summary (card 158, "What interrupts you" below). Both open
+  **Proposals** (`/proposals`), and the Approvals page leads with a card for them when any wait.
 - **Proposals** (`/proposals`): Waiting on you, a link to the tools asked for on **Find a tool**,
   and Decided lately with what each yes or no did. (The Build list and Mark built were replaced by
   Find a tool in custom servers slice 3, `docs/custom-servers.md`.)
@@ -300,9 +300,9 @@ has its own place.
 **What the owner sees.**
 
 - **The Desk** is home (`/`, "Desk" in the sidebar). A greeting and one line counted in code ("Two
-  goals on track, one behind, one can't be measured yet. Three proposals need you."), the goal
+  goals on track, one behind. Three things need you; two wait for Avery's summary."), the goal
   tiles, each with its head's latest word (the first sentence of the head's own report), then
-  **Needs you**: proposals first as cards with Review, then everything else, grouped by department.
+  **Needs you** and **Waiting for Avery's summary** (card 158, "What interrupts you" below).
 - **Avery's chat on every screen.** On a wide screen it's a dark panel beside the page: open by
   default on the Desk, a tab to open it elsewhere (the browser remembers open or closed). On a phone
   it's a bar at the bottom ("Ask Avery, or tell her something") that opens a full sheet. Starters:
@@ -399,6 +399,40 @@ Propose says so.
 **Code.** `core/department-rules.ts` (pure), `core/departments.ts`, `dashboard/department.ts`,
 `dashboard/components/department.tsx`, the two tools in `core/avery-chat.ts`, `proposeDepartment` and
 `discardDepartmentDraft` in `dashboard/proposalActions.ts`. **Checks:** `npm run check:department`.
+
+## What interrupts you (card 158)
+
+The founder is asked about four things only. Everything else waits for the chief of staff's summary.
+
+- **Needs you** on the Desk holds only these, each with its label:
+  - **First time**: an approval card from an action type that hasn't earned trust. Until trust levels
+    (card 7) are built, every action type is Draft, so every approval card is here.
+  - **Spends money**: an approval from a tool that moves money (`MONEY_TOOLS`). None is built; the day
+    one is, its cards land here every time, however much trust its action type has earned.
+  - **New agent**: a hire or a new department proposal, with its job and month.
+  - **Goal change**: a goal proposal (below).
+- **Waiting for Avery's summary** is a quieter card under it: the chief of staff's latest summary,
+  then everything else, grouped by department and one tap away: failed or stuck runs, reached
+  budgets, connections to make, lessons to review, receipt photos, jobs for you in a head's plan, and
+  proposals to grant a read tool, build a new tool or retire an agent (decided on Proposals as before).
+- The greeting line and the Approvals badge in the menu count only the four.
+
+**The goal-change proposal** (kind `goal`). A head (Propose to the owner) or Avery (File a proposal,
+naming the department) proposes a new goal, a change to a goal's words, measure, target or date, or
+dropping one. A head reaches only its own department. Code checks it like the Goals page (`planGoal`:
+the measure is on the picker, a target needs a measure, at most 3 goals a department), when it is
+filed, on its page, and again at the owner's yes, which goes through `createGoal`, `editGoal` or
+`setGoalState`. The owner still edits goals by hand on Goals. An agent's own working targets are not
+goals: they go in its summary. `goal_progress` lists the measure keys a proposal may use.
+
+**How it holds.** `interruptKind` in `dashboard/needs-rules.ts` (pure) is the only place that puts
+something in Needs you: every item in `needs()` says where it came from, and anything it doesn't name
+waits for the summary. Safety rules don't change: a first email to a new person stays Draft forever,
+money stays inside the caps, and only an approver's tap counts.
+
+**Code.** `dashboard/needs-rules.ts`, `dashboard/needs.ts` (`split`, `interruptCount`), the Desk
+(`app/(room)/page.tsx`), the goal kind in `core/proposal-rules.ts` and `core/proposals.ts`, migration
+`20261222090000_goal_proposals.sql`. **Checks:** `npm run check:interrupts`.
 
 ## Slice 6: MCP connections, Klaviyo first
 

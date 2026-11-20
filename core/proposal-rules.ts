@@ -8,10 +8,10 @@
 import type { DeptDraft } from "@/core/department-rules";
 
 /** What a head (or Avery's File a proposal) may file. */
-export const PROPOSAL_KINDS = ["hire", "grant_tool", "new_tool", "retire"] as const;
+export const PROPOSAL_KINDS = ["hire", "grant_tool", "new_tool", "retire", "goal"] as const;
 /** Every kind a proposal can be: a new department is filed only by an owner, from Avery's draft (card 156). */
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number] | "department";
-export const KIND_WORDS: Record<ProposalKind, string> = { hire: "Hire", grant_tool: "Grant a tool", new_tool: "New tool", retire: "Retire", department: "New department" };
+export const KIND_WORDS: Record<ProposalKind, string> = { hire: "Hire", grant_tool: "Grant a tool", new_tool: "New tool", retire: "Retire", department: "New department", goal: "Goal change" };
 
 export type Brain = "quick" | "thinking";
 /** Claude models only (owner's call, Nov 12). Specialists stay quick unless the job needs judgment (decision 5). */
@@ -29,7 +29,16 @@ export type ProposalPlan =
   | { kind: "new_tool"; what: string }
   | { kind: "retire"; agent: string | null; seat: string | null }
   /** Card 156: the department draft as the owner proposed it (core/department-rules.ts). */
-  | { kind: "department"; draft: DeptDraft };
+  | { kind: "department"; draft: DeptDraft }
+  /**
+   * Card 158: a new goal for a department, a change to one, or dropping one. `goal` names the goal it
+   * changes or drops; the rest is the goal as it would be. The measure, target and date are checked
+   * by planGoal on the server (it knows the business's own measures), again at the owner's yes.
+   */
+  | { kind: "goal"; change: GoalChange; goal: string | null; title: string | null; measure: string | null; target: string | null; dueOn: string | null };
+
+export const GOAL_CHANGES = ["new", "change", "drop"] as const;
+export type GoalChange = (typeof GOAL_CHANGES)[number];
 
 export interface ToolInfo { kind: string; label: string }
 /** The tool list as planProposal reads it. */
@@ -39,6 +48,7 @@ export const toolInfoOf = (tools: Readonly<Record<string, { id: string; kind: st
 const one = (v: unknown, max: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 const many = (v: unknown, max: number) => String(v ?? "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, max);
 const NAME = /^[A-Z][a-zA-Z'-]{1,29}$/;
+const LINK = /https?:\/\/|www\./i;
 
 /** Splits "a, b c" into tool ids, in order, without repeats. */
 export const toolIds = (v: unknown) => [...new Set(String(v ?? "").split(/[\s,]+/).map((s) => s.trim()).filter(Boolean))];
@@ -49,7 +59,7 @@ export const toolIds = (v: unknown) => [...new Set(String(v ?? "").split(/[\s,]+
  */
 export function planProposal(input: Record<string, unknown>, tools: Record<string, ToolInfo>): { plan: ProposalPlan; why: string } | { problem: string } {
   const kind = String(input.kind ?? "") as (typeof PROPOSAL_KINDS)[number];
-  if (!PROPOSAL_KINDS.includes(kind)) return { problem: "kind must be hire, grant_tool, new_tool or retire" };
+  if (!PROPOSAL_KINDS.includes(kind)) return { problem: "kind must be hire, grant_tool, new_tool, retire or goal" };
   const why = many(input.why, 600);
   if (why.length < 10) return { problem: "say why in a sentence or two" };
   const checkTool = (id: string): string | null => {
@@ -91,6 +101,24 @@ export function planProposal(input: Record<string, unknown>, tools: Record<strin
     if (what.length < 10) return { problem: "what must say what it needs to read and from where" };
     return { plan: { kind, what }, why };
   }
+  if (kind === "goal") {
+    const change = String(input.change ?? "") as GoalChange;
+    if (!GOAL_CHANGES.includes(change)) return { problem: "change must be new, change or drop" };
+    const goal = one(input.goal, 120) || null;
+    const title = one(input.title, 120) || null;
+    const measure = one(input.measure, 60) || null;
+    const target = one(input.target, 30) || null;
+    const dueOn = one(input.due_on, 10) || null;
+    if ([goal, title].some((t) => t && LINK.test(t))) return { problem: "a goal can't hold a link" };
+    if (change === "new" && !title) return { problem: "a new goal needs a title" };
+    if (change !== "new" && !goal) return { problem: `goal must name the goal to ${change}, by its title` };
+    if (change === "change" && !title && !measure && !target && !dueOn) return { problem: "say what changes: the title, measure, target or due_on" };
+    if (target && !measure && change === "new") return { problem: "a target needs a measure" };
+    if (dueOn && !/^\d{4}-\d{2}-\d{2}$/.test(dueOn)) return { problem: "due_on is a date like 2027-03-31" };
+    return change === "drop"
+      ? { plan: { kind, change, goal, title: null, measure: null, target: null, dueOn: null }, why }
+      : { plan: { kind, change, goal: change === "new" ? null : goal, title, measure, target, dueOn }, why };
+  }
   const agent = one(input.agent, 40) || null, seat = one(input.seat, 60) || null;
   if (!agent && !seat) return { problem: "retire needs the agent's name or the seat to close" };
   return { plan: { kind: "retire", agent, seat }, why };
@@ -104,6 +132,7 @@ export function proposalTitle(p: ProposalPlan, labelOf: (toolId: string) => stri
     case "new_tool": return `New tool: ${p.what.length > 80 ? `${p.what.slice(0, 79)}…` : p.what}`;
     case "retire": return p.agent ? `Retire ${p.agent}` : `Close the ${p.seat} seat`;
     case "department": return `New department: ${p.draft.name}`;
+    case "goal": return p.change === "new" ? `New goal: ${p.title}` : p.change === "drop" ? `Drop goal: ${p.goal}` : `Change goal: ${p.goal}`;
   }
 }
 

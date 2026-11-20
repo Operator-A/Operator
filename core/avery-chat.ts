@@ -153,11 +153,11 @@ function saveRuleTool(message: string, reach: ChatReach, companyId: string): Too
 function fileProposalTool(reach: ChatReach): ToolDef {
   const base = TOOLS.propose;
   return {
-    id: "file_proposal", label: "File a proposal", detail: "Files a proposal for an owner to decide on Proposals: hire an agent, give an agent a read tool, build a new tool, or retire an agent or close a seat. Nothing happens until an owner says yes",
+    id: "file_proposal", label: "File a proposal", detail: "Files a proposal for an owner to decide on Proposals: hire an agent, give an agent a read tool, build a new tool, retire an agent or close a seat, or set, change or drop a department's goal. Nothing happens until an owner says yes",
     kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
     params: [
       ...base.params,
-      { name: "department", type: "text", maxLength: 60, optional: true, description: "hire for a new seat: the department it joins (it goes under that department's head)." },
+      { name: "department", type: "text", maxLength: 60, optional: true, description: "hire for a new seat: the department it joins (it goes under that department's head). goal: the department the goal is for." },
     ],
     collect: (input, held) => {
       if (held.length >= MAX_FILED) return { problem: `at most ${MAX_FILED} proposals from one message` };
