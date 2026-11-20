@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { TEMPLATES } from "../core/templates";
 import { TOOLS } from "../core/tools/catalog";
 import { SETUP_AGENT, SETUP_TEMPLATE, readSetupState } from "../core/setup-rules";
-import { DONE_FOR_MS, deptWaits, firstJobChains, firstJobPhase, missingTiles, pickFirstJob, readFirstJobTap, type JobRun } from "../core/first-job-rules";
+import { DONE_FOR_MS, deptWaits, firstJobChains, firstJobPhase, laterWords, missingTiles, pickFirstJob, readFirstJobTap, runnableSteps, type JobRun } from "../core/first-job-rules";
 import { mergeTemplates } from "../core/template-rules";
 import { planOrgOn } from "../dashboard/orgPlan";
 import type { Chain } from "../core/flow-rules";
@@ -14,8 +14,14 @@ const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { ne
 const kindOf = (id: string) => (TOOLS as Record<string, { kind?: string }>)[id]?.kind;
 const allAgents = TEMPLATES.flatMap((t) => t.agents.map((a) => a.id));
 const installed = new Set(allAgents);
-const pending = new Set(allAgents);
-const pick = (connected: ToolTileId[], o: { installed?: Set<string>; pending?: Set<string> } = {}) =>
+// each agent's first playbook: its spec's read and calculate tools, in order (what install proposes)
+const playbookOf = (id: string) => {
+  const t = TEMPLATES.find((x) => x.agents.some((a) => a.id === id))!;
+  return ((t.specs as Record<string, { tools?: string[] }>)[id]?.tools ?? []).filter((x) => ["read", "calculate"].includes(kindOf(x) ?? ""));
+};
+const pendingOf = (ids: readonly string[]) => new Map(ids.map((id) => [id, playbookOf(id)]));
+const pending = pendingOf(allAgents);
+const pick = (connected: ToolTileId[], o: { installed?: Set<string>; pending?: Map<string, string[]> } = {}) =>
   pickFirstJob(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: o.installed ?? installed, pending: o.pending ?? pending, connected: new Set(connected), needsOf, kindOf });
 
 // a bank connected: the Bookkeeper, whose job ends in approval cards
@@ -25,19 +31,50 @@ assert.equal(bank?.proposes, true);
 assert.equal(bank?.templateId, "finance");
 assert.ok(bank?.job.length, "the job is the template's mandate");
 // workers before heads: the CFO is ready too, but the Bookkeeper's work comes back as approvals
-assert.equal(pick(["mercury"], { pending: new Set(["cfo", "bookkeeper"]) })?.agentId, "bookkeeper");
+assert.equal(pick(["mercury"], { pending: pendingOf(["cfo", "bookkeeper"]) })?.agentId, "bookkeeper");
 // a playbook already approved isn't a first job any more
-assert.equal(pick(["mercury"], { pending: new Set(allAgents.filter((a) => a !== "bookkeeper")) })?.agentId !== "bookkeeper", true);
-// no bank, Shopify and Gmail connected: the Wholesale Hunter (it drafts emails for approval)
-assert.equal(pick(["shopify", "gmail"])?.agentId, "wholesale_hunter");
-assert.notEqual(pick(["gmail"])?.agentId, "wholesale_hunter", "it reads product facts from Shopify, so Gmail alone isn't enough");
-// nothing connected: an agent whose tools need nothing may still go; with every department needing a tool, none
+assert.equal(pick(["mercury"], { pending: pendingOf(allAgents.filter((a) => a !== "bookkeeper")) })?.agentId !== "bookkeeper", true);
+// Shopify and Gmail connected: the Wholesale Hunter (it drafts emails for approval), with nothing to add later
+const sg = pick(["shopify", "gmail"]);
+assert.equal(sg?.agentId, "wholesale_hunter");
+assert.deepEqual(sg?.later, []);
+assert.deepEqual(sg?.keep, playbookOf("wholesale_hunter").map((_, i) => i), "every step can run");
+
+// card 189: one tool is enough. Gmail alone: it starts on the leads list and drafts, without Shopify's product facts
+const g = pick(["gmail"]);
+assert.equal(g?.agentId, "wholesale_hunter");
+assert.equal(g?.proposes, true);
+assert.deepEqual(g?.later, ["Shopify"]);
+assert.ok(g && g.keep.length > 0 && g.keep.length < playbookOf("wholesale_hunter").length, "only the steps that can run");
+for (const i of g!.keep) assert.equal(missingTiles([playbookOf("wholesale_hunter")[i]], needsOf, new Set(["gmail"])).length, 0, "a kept step never waits on a tool");
+// nothing connected: still a first job, from the steps that need no tool; it changes nothing until Gmail is connected
 const none = pick([]);
-assert.ok(none === null || missingTiles((TEMPLATES.find((t) => t.id === none.templateId)!.specs as Record<string, { tools?: string[] }>)[none.agentId].tools ?? [], needsOf, new Set()).length === 0, "a pick never waits on a tool");
+assert.equal(none?.agentId, "wholesale_hunter", "the Lead finder starts from the web and its leads list");
+assert.equal(none?.proposes, false, "its drafts wait on Gmail");
+assert.deepEqual(none?.later, ["Shopify", "Gmail"]);
+// an agent with no step that can run is never the pick
+// (the playbooks a fresh business got on 2026-11-20)
+const fresh = new Map([["bookkeeper", ["mercury_charges", "mercury_categories"]], ["cfo", ["calc_burn_rate", "calc_daily_snapshot"]], ["campaign_writer", ["klaviyo_campaigns", "product_facts"]], ["wholesale_hunter", ["product_facts", "leads_list"]]]);
+assert.equal(pick([], { pending: new Map([...fresh].filter(([k]) => k !== "wholesale_hunter")) }), null, "Mercury, Shopify and Klaviyo all missing: nothing ready");
+assert.deepEqual(pick([], { pending: fresh })?.keep, [1], "the fresh Lead finder starts on its leads list");
+// a worker missing a tool still goes before a head that has every tool
+assert.notEqual(pick([])?.agentId, "sales_head");
 // never the Chief of Staff, even when she's the only one ready
 for (const c of [[], ["mercury"], ["shopify"], ["gmail", "klaviyo", "shopify", "mercury", "analytics"]] as ToolTileId[][]) assert.notEqual(pick(c)?.agentId, SETUP_AGENT);
+assert.equal(pick([], { pending: pendingOf([SETUP_AGENT]) }), null);
 // only installed departments
-assert.equal(pick(["mercury"], { installed: new Set([SETUP_AGENT, "sales_head", "wholesale_hunter"]) }), null, "finance not installed and Gmail not connected: nothing ready");
+assert.equal(pick(["mercury"], { installed: new Set([SETUP_AGENT, "cfo"]), pending: pendingOf(["cfo"]) })?.agentId, "cfo");
+assert.equal(pick(["mercury"], { installed: new Set([SETUP_AGENT]) }), null, "only Avery installed: nothing ready");
+
+// the steps that can run: a step needing only the app's data always can
+assert.deepEqual(runnableSteps(["mercury_charges", "leads_list", "product_facts"], needsOf, new Set(["mercury"])), [0, 1]);
+assert.deepEqual(runnableSteps(["product_facts"], needsOf, new Set()), []);
+assert.match(laterWords(["Shopify", "Gmail"]), /^It starts without Shopify and Gmail; connect them later/);
+assert.equal(laterWords([]), "");
+// the tap approves only those steps, for the job's agent and Avery
+const act = readFileSync("dashboard/actions.ts", "utf8");
+assert.match(act, /runnableSteps\(p\.steps\.map\(\(s\) => s\.tool\), needsOf, pick\.connected\)/, "startFirstJob keeps only runnable steps");
+assert.doesNotMatch(act, /approvePlaybook\(id, p\.id, p\.steps\.map\(\(_, i\) => i\)\)/, "never every step blindly");
 
 // the other departments: what each waits on, the first job's department left out, Avery's never listed
 const waits = deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed, connected: new Set(["mercury"]), needsOf }, "finance");

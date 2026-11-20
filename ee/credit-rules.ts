@@ -17,6 +17,18 @@ const r6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
 export const isPack = (v: unknown): v is Pack => (PACKS_USD as readonly number[]).includes(Number(v)) && String(Number(v)) === String(v).trim();
 
+/**
+ * Stripe's tax code for a pack: AI as a service, cloud based, business use. The hosted edition sells
+ * through Stripe Managed Payments, which refuses a line item without an eligible tax code.
+ */
+export const CREDITS_TAX_CODE = "txcd_10105002";
+
+/** The one line of a pack's Checkout page: the pack's price in cents, its name and its tax code. */
+export const packLineItem = (pack: Pack) => ({
+  quantity: 1,
+  price_data: { currency: "usd", unit_amount: pack * 100, product_data: { name: `OPERATOR Claude credits ($${pack})`, tax_code: CREDITS_TAX_CODE } },
+});
+
 /** What a run costs on credits: its cost from the price list (worked out in code) times the margin. */
 export const runCharge = (costUsd: number): number => (Number.isFinite(costUsd) && costUsd > 0 ? r6(costUsd * CREDITS_MARGIN) : 0);
 
@@ -55,14 +67,15 @@ export const mayUsePooledKey = (o: { balance: number; planBlocked: boolean; keyS
   o.keySet && !o.planBlocked && (o.balance >= MIN_BALANCE_USD || (o.setupFreeLeft ?? 0) > 0);
 
 /** A Stripe Checkout session that paid for a pack, from the signed webhook. */
-export interface PaidSession { mode?: unknown; payment_status?: unknown; amount_total?: unknown; currency?: unknown; metadata?: Record<string, unknown> | null; id?: unknown; client_reference_id?: unknown }
+export interface PaidSession { mode?: unknown; payment_status?: unknown; amount_subtotal?: unknown; amount_total?: unknown; currency?: unknown; metadata?: Record<string, unknown> | null; id?: unknown; client_reference_id?: unknown }
 const SESSION = /^cs_(test|live)_[A-Za-z0-9]{6,200}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * The credit a paid Checkout session adds, or why it adds none. It must be a paid one-time payment we
- * started ourselves (kind "credits"), for one of our packs, in dollars, with the amount charged exactly
- * the pack: the pack named in metadata alone never decides how much is added.
+ * started ourselves (kind "credits"), for one of our packs, in dollars, with the amount before tax
+ * exactly the pack and the total no less: the pack named in metadata alone never decides how much is
+ * added. Stripe Managed Payments may add sales tax on top, which the business pays and we never credit.
  */
 export function creditFromSession(s: PaidSession): { org: string; session: string; usd: Pack } | { skip: string } {
   if (s.mode !== "payment") return { skip: "not a one-time payment" };
@@ -73,7 +86,7 @@ export function creditFromSession(s: PaidSession): { org: string; session: strin
   if (typeof s.id !== "string" || !SESSION.test(s.id)) return { skip: "no session id" };
   if (s.currency !== "usd") return { skip: "not in dollars" };
   const pack = Number(s.metadata?.pack);
-  if (!isPack(pack) || s.amount_total !== pack * 100) return { skip: "the amount isn’t one of the packs" };
+  if (!isPack(pack) || s.amount_subtotal !== pack * 100 || typeof s.amount_total !== "number" || s.amount_total < s.amount_subtotal) return { skip: "the amount isn’t one of the packs" };
   return { org, session: s.id, usd: pack };
 }
 

@@ -185,16 +185,22 @@ founder who leaves early. The founder's call (Nov 19): agents start only after t
 approves each first playbook, and this card makes that one tap for the first one.
 
 - **The pick, in code** (`pickFirstJob`): an installed department agent, never the Chief of Staff, with
-  a first playbook waiting and every tool it needs connected. Ranked: a job that ends in an approval
-  card (an `action` tool) first, then templates in order, workers before heads, then seat order. With a
-  bank connected that is the Bookkeeper. With nothing ready, the card says so and links to Connections.
+  a first playbook waiting and at least one of its steps able to run now (`runnableSteps`: every tool the
+  step needs is connected; the app's own data needs none). The founder's call (Nov 20, card 189): one
+  tool, or none, is enough, so a founder without Shopify still gets a first job. Ranked: a job that ends
+  in an approval card (an `action` tool that is connected) first, then workers before heads, then an
+  agent with every tool before one missing some, then templates in order, then seat order. With a bank
+  connected that is the Bookkeeper; with nothing connected, the Lead finder. The card lists only the
+  steps that can run and says which tools it starts without. With nothing ready, the card says so and
+  links to Connections.
 - **The offer** shows the agent, its job, the playbook steps, the cost (`docs/usage.md`) and what comes
   back. **Approve and start** (`startFirstJob`, owner only, Controls on) checks the pick again, then
-  approves that agent's first playbook and Avery's, puts those two on duty, turns on only their chains
+  approves that agent's first playbook and Avery's with only the steps that can run (a step whose tool
+  isn't connected would fail the run and put the agent on hold), puts those two on duty, turns on only their chains
   and the org switch, and starts the first run now through `withRun` (the daily budget applies). Every
   other agent stays off duty with its playbook waiting.
 - **Running, then done**: the steps and a pulse while the run goes, then its summary, its cost and the
-  approvals waiting, for a day. Avery's summary of the day comes at 7:00 CT.
+  approvals waiting, for a day. Avery's summary of the day comes at 7:00 in the business's time zone.
 - **Your other departments**: each says what it waits on, or that it's ready once its playbook is
   approved on Crew.
 

@@ -8,7 +8,7 @@ import { checkSignup, codeHash, newCode, normalCode, slugFor } from "./signup-ru
 import { formEncode, ourStatus, rowFromSubscription, trialEndFor, validSignature } from "./stripe-rules";
 import { PLAN, monthlyUsd, planBlockFor, planState, planWords, type Subscription } from "./plan-rules";
 import type { PlanAsk } from "../core/extension-types";
-import { MIN_BALANCE_USD, PACKS_USD, balanceOf, creditBlock, creditFromSession, creditWords, isPack, mayUsePooledKey, packProblem, packReturn, runCharge, SETUP_FREE_USD, setupFreeLeft, setupRunCharge, usdWords } from "./credit-rules";
+import { CREDITS_TAX_CODE, MIN_BALANCE_USD, PACKS_USD, packLineItem, balanceOf, creditBlock, creditFromSession, creditWords, isPack, mayUsePooledKey, packProblem, packReturn, runCharge, SETUP_FREE_USD, setupFreeLeft, setupRunCharge, usdWords } from "./credit-rules";
 import { billingFor } from "../core/cost-rules";
 
 const now = Date.parse("2026-12-01T12:00:00Z");
@@ -168,12 +168,22 @@ assert.ok(mayUsePooledKey({ balance: 0.5, planBlocked: false, keySet: true }));
 assert.ok(!mayUsePooledKey({ balance: 0.49, planBlocked: false, keySet: true }), "not under the minimum");
 assert.ok(!mayUsePooledKey({ balance: 50, planBlocked: true, keySet: true }), "not when the plan pauses runs");
 assert.ok(!mayUsePooledKey({ balance: 50, planBlocked: false, keySet: false }), "not when the deployment has no key");
+{
+  const line = packLineItem(25);
+  assert.equal(line.quantity, 1);
+  assert.deepEqual(line.price_data, { currency: "usd", unit_amount: 2500, product_data: { name: "OPERATOR Claude credits ($25)", tax_code: "txcd_10105002" } }, "a pack line carries its price and an AI-as-a-service tax code (Managed Payments refuses a line without one)");
+  assert.equal(CREDITS_TAX_CODE, "txcd_10105002");
+  assert.match(readFileSync("ee/credits.ts", "utf8"), /line_items: \{ 0: packLineItem\(pack\) \}/, "the checkout uses packLineItem");
+}
 assert.ok(isPack(25) && isPack("10") && !isPack(11) && !isPack("10.0") && !isPack(" 1e1") && !isPack(null));
 {
   const org = "0e1a7c4e-0002-4000-8000-000000000002";
-  const paid = { id: "cs_test_a1B2c3D4e5", mode: "payment", payment_status: "paid", amount_total: 2500, currency: "usd", client_reference_id: org, metadata: { org_id: org, kind: "credits", pack: "25" } };
+  const paid = { id: "cs_test_a1B2c3D4e5", mode: "payment", payment_status: "paid", amount_subtotal: 2500, amount_total: 2500, currency: "usd", client_reference_id: org, metadata: { org_id: org, kind: "credits", pack: "25" } };
   assert.deepEqual(creditFromSession(paid), { org, session: "cs_test_a1B2c3D4e5", usd: 25 });
-  assert.ok("skip" in creditFromSession({ ...paid, amount_total: 1000 }), "the pack named must be the amount charged");
+  assert.ok("skip" in creditFromSession({ ...paid, amount_subtotal: 1000, amount_total: 1000 }), "the pack named must be the amount charged");
+  assert.deepEqual(creditFromSession({ ...paid, amount_total: 2706 }), { org, session: "cs_test_a1B2c3D4e5", usd: 25 }, "sales tax on top is paid, never credited");
+  assert.ok("skip" in creditFromSession({ ...paid, amount_total: 2400 }), "a total under the pack adds nothing");
+  assert.ok("skip" in creditFromSession({ ...paid, amount_subtotal: undefined }), "no subtotal, no credit");
   assert.ok("skip" in creditFromSession({ ...paid, metadata: { ...paid.metadata, pack: "100" }, amount_total: 10000 }), "only our packs");
   assert.ok("skip" in creditFromSession({ ...paid, payment_status: "unpaid" }), "not before it's paid");
   assert.ok("skip" in creditFromSession({ ...paid, mode: "subscription" }), "the plan's checkout is not credits");

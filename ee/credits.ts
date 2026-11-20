@@ -12,7 +12,7 @@ import type { Billing } from "@/core/cost-rules";
 import { stripe } from "./stripe";
 import { currentPlan } from "./plan";
 import { planBlockFor } from "./plan-rules";
-import { balanceOf, creditFromSession, isPack, packReturn, mayUsePooledKey, runCharge, setupFreeLeft, setupRunCharge, type PaidSession } from "./credit-rules";
+import { balanceOf, creditFromSession, isPack, packLineItem, packReturn, mayUsePooledKey, runCharge, setupFreeLeft, setupRunCharge, type PaidSession } from "./credit-rules";
 
 export const LEDGER_MISSING = "The credits migration (20261224090000_ee_credit_ledger.sql) isn’t applied yet.";
 const missing = (m: string) => (/ee_credit_ledger|relation|schema cache/.test(m) ? LEDGER_MISSING : m);
@@ -79,7 +79,7 @@ export async function creditCheckoutUrl(pack: unknown, base: string, back?: unkn
   const ret = packReturn(back);
   const s = await stripe<{ url?: string }>("POST", "/v1/checkout/sessions", {
     mode: "payment",
-    line_items: { 0: { quantity: 1, price_data: { currency: "usd", unit_amount: pack * 100, product_data: { name: `OPERATOR Claude credits ($${pack})` } } } },
+    line_items: { 0: packLineItem(pack) },
     client_reference_id: org,
     metadata: { org_id: org, kind: "credits", pack: String(pack) },
     payment_intent_data: { metadata: { org_id: org, kind: "credits", pack: String(pack) } },

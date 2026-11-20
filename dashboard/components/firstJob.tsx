@@ -8,7 +8,7 @@ import { hm } from "@/dashboard/format";
 import { zoneLabel } from "@/core/time";
 import { firstSentence } from "@/dashboard/desk";
 import type { FirstJobView } from "@/dashboard/firstJob";
-import type { DeptWait } from "@/core/first-job-rules";
+import { laterWords, type DeptWait } from "@/core/first-job-rules";
 
 function Waits({ waits }: { waits: DeptWait[] }) {
   if (!waits.length) return null;
@@ -45,6 +45,7 @@ export function FirstJobCard({ v, owner, look = "card" }: { v: FirstJobView; own
             </span>
             <span className="sub">Its first playbook, the steps every run follows:</span>
             <Steps steps={j.steps} />
+            {j.later.length > 0 && <span className="ink2" style={{ fontSize: 13 }}>{laterWords(j.later)}</span>}
             <span className="muted" style={{ fontSize: 12.5 }}>
               {j.cost ? `${j.cost.perRun != null && j.cost.runsPerMonth ? `About ${usd(j.cost.perRun)} a run · ` : ""}${monthWords(j.cost)}` : "Cost shows after its first run."}
               {j.proposes ? " · Anything it wants to change comes back as an approval card for you to tap. Nothing changes until you do." : " · It reads and reports; it changes nothing."}

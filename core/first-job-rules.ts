@@ -13,8 +13,12 @@ export interface FirstJob {
   dept: string;
   /** The template's mandate: the job it does. */
   job: string;
-  /** Its job ends in an approval card (it has an action tool). */
+  /** Its job ends in an approval card (it has an action tool whose tool is connected). */
   proposes: boolean;
+  /** The first playbook's steps that can run now (indices): the tap approves only these (card 189). */
+  keep: number[];
+  /** Tools the rest of its playbook and actions wait on, by name: it starts without them. */
+  later: string[];
 }
 
 export interface DeptWait {
@@ -28,8 +32,8 @@ export interface PickInput {
   setupTemplate: string;
   /** Agent ids installed in this business. */
   installed: ReadonlySet<string>;
-  /** Agents with a proposed playbook waiting for approval. */
-  pending: ReadonlySet<string>;
+  /** Agents with a proposed playbook waiting for approval, and that playbook's step tools in order. */
+  pending: ReadonlyMap<string, readonly string[]>;
   connected: ReadonlySet<ToolTileId>;
   /** A tool's `needs` settings (core/tools/catalog.ts). */
   needsOf: (toolId: string) => readonly string[];
@@ -40,6 +44,15 @@ export interface PickInput {
 type Spec = { mandate?: string; tools?: string[] };
 const specOf = (t: Template, id: string): Spec => ((t.specs as Record<string, Spec>)[id] ?? {});
 
+/**
+ * The steps of a playbook that can run now (indices): every tile the step's tool needs is connected.
+ * A step needing only the app's own data, or nothing, always can. A step that can't would fail and put
+ * the agent on hold, so a first playbook is approved with only these (card 189).
+ */
+export function runnableSteps(stepTools: readonly string[], needsOf: PickInput["needsOf"], connected: ReadonlySet<ToolTileId>): number[] {
+  return stepTools.flatMap((id, i) => (missingTiles([id], needsOf, connected).length ? [] : [i]));
+}
+
 /** The tiles a list of tools needs that aren't connected, in tile order. */
 export function missingTiles(tools: readonly string[], needsOf: PickInput["needsOf"], connected: ReadonlySet<ToolTileId>): ToolTileId[] {
   const want = new Set(tools.flatMap((id) => needsOf(id).map((n) => NEED_TILE[n]).filter(Boolean)));
@@ -48,8 +61,10 @@ export function missingTiles(tools: readonly string[], needsOf: PickInput["needs
 
 /**
  * The first job: an installed department agent (never the Chief of Staff) with a first playbook waiting
- * and every tool it needs connected. Ranked: a job that ends in an approval card first, then templates in
- * order, workers before heads, then seat order. Null when no agent is ready.
+ * and at least one of its steps able to run now (card 189: one tool, or none, is enough; it starts
+ * without the rest). Ranked: a job that ends in an approval card first (its action's tool connected),
+ * then workers before heads, then an agent with every tool over one missing some, then templates in
+ * order, then seat order. Null when no agent has a step that can run.
  */
 export function pickFirstJob(templates: readonly Template[], p: PickInput): FirstJob | null {
   const cands: { j: FirstJob; rank: number[] }[] = [];
@@ -57,22 +72,29 @@ export function pickFirstJob(templates: readonly Template[], p: PickInput): Firs
     if (t.id === p.setupTemplate) return;
     const dept = t.departments[0]?.name ?? t.name;
     t.seats.forEach((s, si) => {
-      if (s.holder !== "agent" || !s.agent || !p.installed.has(s.agent) || !p.pending.has(s.agent)) return;
+      const steps = s.agent ? p.pending.get(s.agent) : undefined;
+      if (s.holder !== "agent" || !s.agent || !p.installed.has(s.agent) || !steps) return;
       const a = t.agents.find((x) => x.id === s.agent);
       if (!a) return;
+      const keep = runnableSteps(steps, p.needsOf, p.connected);
+      if (!keep.length) return;
       const spec = specOf(t, a.id);
       const tools = spec.tools ?? [];
-      if (missingTiles(tools, p.needsOf, p.connected).length) return;
-      const proposes = tools.some((id) => p.kindOf(id) === "action");
+      const actions = tools.filter((id) => p.kindOf(id) === "action");
+      const proposes = actions.some((id) => !missingTiles([id], p.needsOf, p.connected).length);
+      const later = missingTiles([...steps, ...actions], p.needsOf, p.connected).map((id) => TOOL_TILES.find((x) => x.id === id)!.name);
       cands.push({
-        j: { agentId: a.id, name: a.name, role: a.role || s.title, templateId: t.id, dept, job: spec.mandate?.trim() || s.sub || s.title, proposes },
-        rank: [proposes ? 0 : 1, ti, s.parent == null ? 1 : 0, si],
+        j: { agentId: a.id, name: a.name, role: a.role || s.title, templateId: t.id, dept, job: spec.mandate?.trim() || s.sub || s.title, proposes, keep, later },
+        rank: [proposes ? 0 : 1, s.parent == null ? 1 : 0, later.length ? 1 : 0, ti, si],
       });
     });
   });
   cands.sort((x, y) => x.rank.reduce((d, v, i) => d || v - y.rank[i], 0));
   return cands[0]?.j ?? null;
 }
+
+/** "Starts without Shopify and Gmail." for a first job that waits on nothing it needs now. */
+export const laterWords = (later: readonly string[]) => (later.length ? `It starts without ${later.join(" and ")}; connect ${later.length === 1 ? "it" : "them"} later to add what ${later.length === 1 ? "it reads" : "they read"}.` : "");
 
 /** Every installed department but the first job's, with the tools it still waits on. */
 export function deptWaits(templates: readonly Template[], p: Pick<PickInput, "setupTemplate" | "installed" | "connected" | "needsOf">, skip: string | null): DeptWait[] {
