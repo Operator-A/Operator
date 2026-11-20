@@ -172,7 +172,10 @@ export async function startFirstJob(agentId: string): Promise<ActionResult> {
     if ("problem" in tap) return { ok: false, text: tap.problem };
     const who = f.byId[tap.agentId];
     if (!who) return { ok: false, text: "Unknown agent." };
-    const ids = [tap.agentId, ...(f.agents[SETUP_AGENT] ? [SETUP_AGENT] : [])];
+    // card 194: a designed department's agent has no playbook yet, so it stays off duty and makes one try
+    // that drafts its routine; only Avery goes on duty with it (card 188: never without an approved playbook)
+    const isTry = pick.job!.kind === "try";
+    const ids = [...(isTry ? [] : [tap.agentId]), ...(f.agents[SETUP_AGENT] ? [SETUP_AGENT] : [])];
     const block = await planBlock({ kind: "agent_on", agentIds: ids }); if (block) return { ok: false, text: block };
     // each first playbook, as the founder, with only the steps that can run now (card 189): the card
     // showed them, and a step whose tool isn't connected would fail the run and put the agent on hold
@@ -181,7 +184,7 @@ export async function startFirstJob(agentId: string): Promise<ActionResult> {
       const keep = p ? runnableSteps(p.steps.map((s) => s.tool), needsOf, pick.connected) : [];
       if (p && keep.length) await withActor(me.email, () => approvePlaybook(id, p.id, keep));
     }
-    const { error } = await db().from("agents").update({ enabled: true }).in("id", ids);
+    const { error } = ids.length ? await db().from("agents").update({ enabled: true }).in("id", ids) : { error: null };
     if (error) return fail(error.message);
     // only these two wake: their chains come on, every other agent's stay off
     const flow = await loadFlow(f.palette);
@@ -189,9 +192,9 @@ export async function startFirstJob(agentId: string): Promise<ActionResult> {
     if (turned.on.length) await saveFlowVersion({ chains: turned.chains }, `First job: ${turned.on.join(", ")} on`, me.email, flow.version);
     const plan = firstJobPlan(f, ids, turned.chains);
     await setOrg(true, me.email);
-    await markFirstJob(tap.agentId);
-    await audit(me, "start_first_job", tap.agentId, { onDuty: ids });
-    const run = await startRun(tap.agentId, who.name);
+    await markFirstJob(tap.agentId, isTry ? "try" : "playbook");
+    await audit(me, "start_first_job", tap.agentId, { onDuty: ids, kind: isTry ? "try" : "playbook" });
+    const run = isTry ? await startTry(tap.agentId, who.name) : await startRun(tap.agentId, who.name);
     revalidatePath("/", "layout");
     const avery = plan.wake.find((w) => w.id === SETUP_AGENT);
     return { ...run, text: `${run.text}${avery?.firstRun ? ` Avery’s first summary comes at ${when(avery.firstRun, f.tz)} ${zoneLabel(f.tz, avery.firstRun)}.` : ""}` };
@@ -717,11 +720,30 @@ export async function tryBuilt(agentId: string, fresh = false): Promise<ActionRe
   const { me, no } = await asRole("owner"); if (no) return no;
   if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A try makes real model calls.` };
   try {
-    await builtAgent(agentId);
-    const versions = await listSpecVersions(agentId);
-    const target = draftOf(versions) ?? versions.find((v) => v.active);
-    if (!target) return { ok: false, text: "That agent has no saved version." };
-    if (target.problems.length) return { ok: false, text: `v${target.version} asks for something code doesn’t offer: ${target.problems.join("; ")}.` };
+    const t = await tryTarget(agentId);
+    if (typeof t === "string") return { ok: false, text: t };
+    const { res, note, rid, version } = await tryOnce(agentId, t, fresh);
+    revalidatePath("/", "layout");
+    await audit(me, "try_agent", agentId, { version, cost_usd: res.costUsd ?? 0 });
+    return { ok: res.status === "ok", text: `Try of v${version} done ($${(res.costUsd ?? 0).toFixed(4)}).${note}`, runId: rid ?? undefined };
+  } catch (e) { revalidatePath("/", "layout"); return fail(e); }
+}
+
+/** The version a try runs: the draft, else the live one. A string says why there is none. */
+async function tryTarget(agentId: string) {
+  await builtAgent(agentId);
+  const versions = await listSpecVersions(agentId);
+  const target = draftOf(versions) ?? versions.find((v) => v.active);
+  if (!target) return "That agent has no saved version.";
+  if (target.problems.length) return `v${target.version} asks for something code doesn’t offer: ${target.problems.join("; ")}.`;
+  return target;
+}
+
+/**
+ * One try (trigger preview): sends nothing, queues nothing, saves no output for other agents; afterwards
+ * code drafts or updates the routine. `started` is called once the run is logged.
+ */
+async function tryOnce(agentId: string, target: Exclude<Awaited<ReturnType<typeof tryTarget>>, string>, fresh: boolean, started: () => void = () => {}) {
     let block = "";
     try { block = (await loadMemory(agentId)).block; } catch { /* a try without memory is fine */ }
     let playbook: { version: number; steps: PlaybookStep[] } | undefined;
@@ -729,17 +751,30 @@ export async function tryBuilt(agentId: string, fresh = false): Promise<ActionRe
     let got: Awaited<ReturnType<typeof runExplore>> | null = null;
     let rid: string | null = null;
     const res = await withRun(agentId, "preview", async (runId) => {
-      rid = runId;
+      rid = runId; started();
       const r = await runExplore(target.spec, { agentId, runId, memoryBlock: block, playbook, trying: true });
       got = r;
       return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd, metrics: { ...r.metrics, spec_version: target.version } };
     });
     let note = "";
     if (got) { try { note = ` ${await afterRun(agentId, rid, got)}`; } catch (e) { note = ` (Routine not updated: ${e instanceof Error ? e.message : String(e)})`; } }
-    revalidatePath("/", "layout");
-    await audit(me, "try_agent", agentId, { version: target.version, cost_usd: res.costUsd ?? 0 });
-    return { ok: res.status === "ok", text: `Try of v${target.version} done ($${(res.costUsd ?? 0).toFixed(4)}).${note}`, runId: rid ?? undefined };
-  } catch (e) { revalidatePath("/", "layout"); return fail(e); }
+    return { res, note, rid: rid as string | null, version: target.version };
+}
+
+/** A first try (card 194) in the background, like startRun: it answers once the run is logged. */
+async function startTry(agentId: string, name: string): Promise<ActionResult> {
+  const t = await tryTarget(agentId);
+  if (typeof t === "string") return { ok: false, text: t };
+  let markStarted: () => void = () => {};
+  const started = new Promise<null>((resolve) => { markStarted = () => resolve(null); });
+  const org = await orgId();
+  const run = withOrg(org, () => tryOnce(agentId, t, true, markStarted))
+    .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} first try failed`, err); return { err }; });
+  after(run);
+  const first = await Promise.race([started, run]);
+  if (first === null) return { ok: true, text: `${name} is on a first try: it reads, sends nothing, and drafts the routine you approve.` };
+  if ("err" in first) return fail(first.err);
+  return { ok: first.res.res.status === "ok", text: `${name}: ${first.res.res.summary}${first.res.note}` };
 }
 
 /**
