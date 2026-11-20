@@ -69,7 +69,7 @@ export function numberSources(servers: readonly CustomServer[]): NumberSource[] 
     : []));
 }
 
-/** A number as the brief shows it: "Orders to roast: 4", "Green cost: $1,234", "Cover: 21 days". */
+/** A number as the brief shows it: "Orders to pack: 4", "Material cost: $1,234", "Cover: 21 days". */
 export function numberText(n: Pick<GoalNumber, "label" | "unit">, value: number): string {
   const v = n.unit === "usd" ? `$${Math.round(value).toLocaleString("en-US")}` : n.unit === "count" ? Math.round(value).toLocaleString("en-US") : `${Math.round(value * 10) / 10} ${n.unit}`;
   return `${n.label}: ${v}`;

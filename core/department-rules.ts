@@ -235,7 +235,7 @@ export function sourceState(service: string, w: { tiles: readonly { name: string
   return { state: "ask" };
 }
 
-/** The proposal's title: "New department: Roasting". */
+/** The proposal's title: "New department: Operations". */
 export const departmentTitle = (d: Pick<DeptDraft, "name">) => `New department: ${d.name}`;
 
 /** Every person the department would create, head first. */

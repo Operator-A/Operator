@@ -42,4 +42,16 @@ for (const f of walk(".")) {
 }
 assert.deepEqual(hits, [], `the repo names a business; say "the owner" or "the business", or keep it out of the repo:\n${hits.join("\n")}`);
 
+// card 159: core is for any store, so no one trade's words in what agents or owners read; ids like
+// wholesale_leads stay (stored data names them), and the icon set and the .coffee domain ending are fine
+const TRADE = /wholesale(?!_)|\bcoffees?\b|\broast(ing|er|s)?\b|\bgreen (cost|lots?|coffee)\b/i;
+const tradeHits: string[] = [];
+for (const dir of ["core", "dashboard", "app", "integrations", "templates"]) {
+  for (const f of walk(dir)) {
+    if (f === "dashboard/components/Icon.tsx" || f === "core/pointer.ts") continue;
+    readFileSync(f, "utf8").split("\n").forEach((line, i) => { if (TRADE.test(line)) tradeHits.push(`${f}:${i + 1}: ${line.trim().slice(0, 100)}`); });
+  }
+}
+assert.deepEqual(tradeHits, [], `core names one trade; say it for any store:\n${tradeHits.join("\n")}`);
+
 console.log("check:business ok");

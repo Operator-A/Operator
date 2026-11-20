@@ -160,7 +160,7 @@ export function checkSettingsEdit(e: SettingsEdit, ownerEmails: readonly string[
   }
   const asked = (k: "productCollections" | "productFields") => listOf(e[k]);
   if (asked("productCollections").length > MAX_COLLECTIONS) return { problem: `At most ${MAX_COLLECTIONS} collections.` };
-  if (asked("productCollections").length !== s.productCollections.length) return { problem: "Collections are Shopify collection handles, like our-coffees, separated by commas." };
+  if (asked("productCollections").length !== s.productCollections.length) return { problem: "Collections are Shopify collection handles, like best-sellers, separated by commas." };
   if (asked("productFields").length > MAX_PRODUCT_FIELDS) return { problem: `At most ${MAX_PRODUCT_FIELDS} product fields.` };
   if (asked("productFields").length !== s.productFields.length) return { problem: "Product fields are metafields written namespace.key, like custom.origin, separated by commas." };
   if (text(e.offerTerms).length > OFFER_TERMS_MAX) return { problem: `Offer terms are at most ${OFFER_TERMS_MAX} characters.` };

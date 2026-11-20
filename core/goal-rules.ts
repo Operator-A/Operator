@@ -36,7 +36,7 @@ export interface MeasureDef {
 }
 
 const CORE_MEASURES: readonly MeasureDef[] = [
-  { key: "wholesale_won", label: "Wholesale accounts won", how: "leads at stage Won in the leads list.", unit: "count", shape: "total", noun: "won", available: true, hint: "sales" },
+  { key: "wholesale_won", label: "Accounts won", how: "leads at stage Won in the leads list.", unit: "count", shape: "total", noun: "won", available: true, hint: "sales" },
   { key: "revenue_month", label: "Revenue this month", how: "every order this month in Shopify (all channels, cancelled orders left out), added up.", unit: "usd", shape: "month", available: true, hint: "finance" },
   { key: "orders_month", label: "Orders this month", how: "orders this month in Shopify (all channels, cancelled orders left out).", unit: "count", shape: "month", noun: "orders", available: true, hint: "sales" },
   { key: "runway_months", label: "Months of runway", how: "cash in Mercury divided by the net burn per 30 days over the last 90 days.", unit: "months", shape: "floor", available: true, hint: "finance" },
@@ -67,7 +67,7 @@ const validDate = (d: string) => DATE.test(d) && new Date(`${d}T12:00:00Z`).toIS
  */
 export function planGoal(input: GoalInput, today: string, extra: readonly MeasureDef[] = []): { plan: GoalPlan } | { error: string } {
   const title = String(input.title ?? "").replace(/\s+/g, " ").trim();
-  if (title.length < 3) return { error: "Say what the goal is, like “Land 5 wholesale accounts by Mar 31”." };
+  if (title.length < 3) return { error: "Say what the goal is, like “Land 5 new accounts by Mar 31”." };
   if (title.length > MAX_GOAL_TITLE) return { error: `Keep the goal to ${MAX_GOAL_TITLE} characters.` };
   if (/https?:\/\/|www\./i.test(title)) return { error: "A goal can't hold a link." };
   const raw = input.measure == null || input.measure === "" ? null : String(input.measure);

@@ -22,7 +22,7 @@ import { builderMenu, customMenuFor, mapFor } from "@/dashboard/builder";
 import { AgentTabs, Avatar, LockList, Pill, Summary } from "@/dashboard/components/ui";
 import { loadOrg, reportsTo, seatOf, seatPath } from "@/core/org";
 
-// A real Wholesale Hunter run takes a few minutes. realRun returns at once and finishes the run in after(),
+// A real Lead finder run takes a few minutes. realRun returns at once and finishes the run in after(),
 // which lives as long as this page's function allows.
 export const maxDuration = 300;
 
@@ -177,7 +177,7 @@ function Stats({ a, f, pipelineTotal, books }: { a: CrewMember; f: Floor; pipeli
   const b = f.agents[a.id]?.daily_budget_usd ?? 0;
   const stats: [string, string, string][] = [
     ["Runs", String(runs.length), `${ok} OK · ${fl} failed · ${sk} skipped`],
-    pipelineTotal !== undefined ? ["Leads in pipeline", pipelineTotal == null ? "—" : String(pipelineTotal), "in wholesale_leads"]
+    pipelineTotal !== undefined ? ["Leads in pipeline", pipelineTotal == null ? "—" : String(pipelineTotal), "on the leads list"]
       : books !== undefined ? ["Receipt coverage", books?.coverage == null ? "—" : `${books.coverage}%`, books ? `${books.total} charges in expense_docs · target 95%` : "expense_docs not there yet"]
       : ["Runs that finished", String(ok), "last 60 days"],
     ["Skipped while off duty", String(sk), "logged at $0"],
@@ -361,7 +361,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
       <>{lines("working")}{!mine("working").length && <span className="muted" style={{ fontSize: 13 }}>{`${a.name} doesn’t leave itself working memory. Anything it should keep, tell it with Not this on a run.`}</span>}</>
     ) },
     (f.grants[a.id] ?? []).includes("report_leads")
-      ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Businesses already in the pipeline, by domain. Real, from wholesale_leads.", body: <div className="row wrap" style={{ gap: 6 }}>{(domains ?? []).slice(0, 60).map((c) => <span key={c} className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{c}</span>)}{!domains?.length && <span className="muted" style={{ fontSize: 13 }}>No leads yet.</span>}</div> }
+      ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Businesses already in the pipeline, by domain. Real, from the leads list.", body: <div className="row wrap" style={{ gap: 6 }}>{(domains ?? []).slice(0, 60).map((c) => <span key={c} className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{c}</span>)}{!domains?.length && <span className="muted" style={{ fontSize: 13 }}>No leads yet.</span>}</div> }
       : (f.grants[a.id] ?? []).includes("report_books_sync")
         ? { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Worked out from expense_docs each run", body: <span className="ink2" style={{ fontSize: 13, lineHeight: 1.45 }}>Charges it has already handled, receipts already searched for (up to 3 times each) and categories already suggested are skipped. Nothing here is stored as memory.</span> }
         : { n: 6, title: "Don’t repeat", color: "var(--ink2)", meta: "Worked out from its own tables each run", body: <span className="muted" style={{ fontSize: 13 }}>Nothing to avoid. Each run starts from what its tools read today.</span> },

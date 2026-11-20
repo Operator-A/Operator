@@ -42,7 +42,7 @@ assert.equal(pick(["mercury"], { installed: new Set([SETUP_AGENT, "sales_head", 
 // the other departments: what each waits on, the first job's department left out, Avery's never listed
 const waits = deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed, connected: new Set(["mercury"]), needsOf }, "finance");
 assert.ok(!waits.some((w) => w.templateId === "finance" || w.templateId === SETUP_TEMPLATE));
-assert.deepEqual(waits.find((w) => w.templateId === "email-marketing")?.waitsOn, ["Klaviyo"]);
+assert.deepEqual(waits.find((w) => w.templateId === "email-marketing")?.waitsOn, ["Shopify", "Klaviyo"], "the Campaign writer reads Product facts from Shopify");
 assert.ok(waits.find((w) => w.templateId === "prospecting")?.waitsOn.includes("Gmail"));
 assert.deepEqual(deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: new Set([SETUP_AGENT, "cfo", "bookkeeper"]), connected: new Set(), needsOf }, null).map((w) => w.templateId), ["finance"], "only installed departments");
 

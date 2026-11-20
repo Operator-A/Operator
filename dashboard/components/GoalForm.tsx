@@ -42,7 +42,7 @@ export function GoalForm({ depts, dept, initial, save, cancelHref, own = [] }: {
         </label>
       )}
       <label className="bf-field"><span className="bf-k">The goal, in your words</span>
-        <input className="input" value={f.title} maxLength={120} disabled={busy} onChange={(e) => set("title", e.target.value)} placeholder="Land 5 wholesale accounts by Mar 31" />
+        <input className="input" value={f.title} maxLength={120} disabled={busy} onChange={(e) => set("title", e.target.value)} placeholder="Land 5 new accounts by Mar 31" />
       </label>
       <label className="bf-field"><span className="bf-k">How code measures it</span>
         <select className="input" value={f.measure} disabled={busy} onChange={(e) => setF({ ...f, measure: e.target.value, target: "", dueOn: measureOf(e.target.value, own)?.shape === "month" ? "" : f.dueOn })}>

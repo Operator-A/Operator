@@ -221,7 +221,7 @@ function departmentDraftTool(): ToolDef {
       { name: "target", type: "text", maxLength: 20, optional: true, description: "goal: the number the person said, only with a measure." },
       { name: "service", type: "text", maxLength: 60, optional: true, description: "source: the service's name (Shopify, Cropster, their own server's name). Never an address. remove: the service." },
       { name: "what", type: "text", maxLength: 200, optional: true, description: "source: what the department reads there." },
-      { name: "seat", type: "text", maxLength: 60, optional: true, description: "head or agent: the seat's title, like Head of roasting or Cover watcher." },
+      { name: "seat", type: "text", maxLength: 60, optional: true, description: "head or agent: the seat's title, like Head of operations or Cover watcher." },
       { name: "job", type: "text", maxLength: 200, optional: true, description: "head or agent: what it does, in one sentence." },
       { name: "each_run", type: "text", maxLength: 1500, optional: true, multiline: true, description: "head or agent: what it does on each run, step by step." },
       { name: "good_result", type: "text", maxLength: 400, optional: true, description: "head or agent: what a good result looks like." },
