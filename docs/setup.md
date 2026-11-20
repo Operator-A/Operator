@@ -75,7 +75,7 @@ goes and what the founder would never do again.
 Six interview areas are fact topics (`INTERVIEW_AREAS`: business, sells, customers, channels,
 hand_off, goals). `coverage(facts)` counts the areas with a known fact; a fact read from a site counts
 only once confirmed. Until at least `AREAS_TO_DESIGN` (5) are covered, and always the founder's week
-(`hand_off`), the run gets no Lean toward departments or Suggest a department tool, and the
+(`hand_off`), the run gets no Design a department tool, and the
 directive names what to ask next. The founder sees the same count in "What Avery needs to know"
 above the facts panel.
 
@@ -84,7 +84,7 @@ For these runs she has a setup directive (`setupDirective`) and only these tools
 | Tool | What it does |
 | --- | --- |
 | Save a fact | Hands code one fact: a topic from `FACT_TOPICS` and one short line (at most 160 characters, 8 per message, 40 in all) |
-| Lean toward departments | Hands code one department template id from the list, as `strong` or `likely`, at most 4 |
+| Design a department | Only once the interview is covered: hands code one part of one department in her sketch (below) |
 | Read a web page | Only when the founder gave a site: Claude's own fetch, allowed on that one host, at most 2 pages |
 
 The tools change nothing. Code saves what they hand it, and only after a run that finished:
@@ -92,8 +92,8 @@ The tools change nothing. Code saves what they hand it, and only after a run tha
 - **Facts** go in `business_facts`. When the run read a web page, every fact it saves is
   `suggested` (`stateFor`). It waits on the panel for the founder to Confirm, Edit or Remove it.
   Facts from the conversation alone, and facts the founder types, are `known`.
-- **Leaning** replaces the list in the `setup` row, after `readLeaning` checks each id against the
-  department templates.
+- **The sketch** replaces `designs` in the `setup` row, after `applyDesign` checks every part
+  (`core/design-rules.ts`).
 - The lines under her reply come from code and say what it actually saved.
 
 The site address is checked like a custom server's (`checkAddress`: a public https host). The page
@@ -113,7 +113,7 @@ property, the panel asks which one agents report on.
   (under it on a phone): open, being asked, connected with the account's name, or left for later.
   Tapping a box goes to its question. Which one is on screen is worked out in code
   (`currentCategory`): the one asked for (`?q=`, or the tool in `?c=`), else the first still open.
-- **The order.** Parts that a department Avery leans toward needs come first (`orderCategories`);
+- **The order.** Parts that a department in Avery's sketch needs come first (`orderCategories`);
   the box says "Needed for Finance" from the tools' `needs` (`SHOPIFY_CONNECTED` and so on,
   `NEED_TILE`). Nobody types it.
 - **Skip for now** is saved (`skipped` in the setup state, `setupSkipTool`), so the next question
@@ -154,9 +154,9 @@ Step 3 (cards 153, 184) is "Meet your company": an org chart drawn in code (`cor
 `dashboard/company.ts`) and revealed in sequence.
 
 - **The founder** at the top, then the Chief of Staff in the company seat, then a glass card per
-  department template Avery leans toward, strong or likely, each appearing a moment after the last
-  (all at once with reduced motion). The model only named template ids in the conversation
-  (`readLeaning`); it never writes the chart, a job, a tool or a number.
+  department in Avery's sketch (below), each appearing a moment after the last (all at once with
+  reduced motion). The model only hands code checked parts (`applyDesign`); it never writes the
+  chart, a cost or a number.
 - **Each department card** shows its agents (name and role), the head's job (the template's
   mandate), the tools its agents use (labels from the tool list) and what it adds to the month
   (`deptMonth`, summed in code from each agent's estimate, `docs/usage.md`). An agent with no
@@ -169,27 +169,46 @@ Step 3 (cards 153, 184) is "Meet your company": an org chart drawn in code (`cor
 - **Leave out** takes a department off the chart; **Also available** lists the rest, each with
   **Add**.
 - **Start this company** installs exactly what's on the chart: `setupInstall` checks the picks
-  against the chart (`readPick`: known department ids only, in template order) before
-  `installTemplates`. **Change something** goes back to the tools questions. **Start empty instead**
+  against the chart (`readPick`: known department ids only, in chart order) before `startCompany`. **Change something** goes back to the tools questions. **Start empty instead**
   is a quiet link beside them.
 
 Every agent still installs off duty with its playbook proposed, and every action stays at Draft.
 
-### Avery's idea (card 185)
+### Avery designs the company (card 193)
 
-Once in setup, and only from what the founder said in the chat (a web page alone is never the reason),
-Avery may suggest one department outside the template list with `suggest_department`: a name, a line on
-why it fits, and up to four role titles. It is a report tool and builds nothing. Code checks it
-(`readIdea` in `core/setup-rules.ts`): a name that starts with a letter, under 40 characters, a reason
-under 200, no links or addresses, and never a department already on the list. It is kept in the setup
-state as `idea` only after a run that finishes.
+Once the interview is covered, Avery sketches up to `MAX_DESIGNS` (4) departments for this business
+with Design a department, a report tool that builds nothing. Each call names the department (`dept`)
+and one part; code checks it (`applyDesign` in `core/design-rules.ts`, pure, tested by
+`npm run check:setup`) and keeps the sketch in the setup state as `designs` only after a run that
+finishes. The lines under her reply say what was sketched or refused.
 
-The reveal draws it beside the chart in a dashed box, "Avery's idea, from our chat", with **Build it with
-Avery** and **Not now** (`setupIdeaWant`, owner only). It is never installed with the company. When the
-founder kept it, the Desk shows "Next: your X department" after the first job has started (`ideaOffer`).
-**Start with Avery** (`ideaStart`, audited) opens a department draft with the idea's name and purpose
-(`seedDraft`, only when no draft is open), and Avery's chat walks the rest of the department interview as
-usual: nothing is hired until the owner approves the proposal.
+- **about** creates a department or changes its purpose, reason or name. A new one needs a purpose,
+  a reason (the founder's own words it answers, at least 10 characters, under 200, no links or
+  addresses) and a kit or none.
+- **A kit** is a department template she starts from, under the name she gives it (Money desk, not
+  Finance). It brings its own people and goals, and each kit appears at most once.
+- **Bespoke** (kit none) is a department draft built with the same checks as one drafted in the chat
+  (`applyPart`, card 156): **head** and up to two narrow **agent**s with read and calculate tools
+  only, then **goal**s measured in code or kept in words; **remove** takes one off. A person's name
+  is free across the whole sketch, kits' agents included.
+- **drop** takes a department off the sketch.
+
+The directive lists the kits, the read tools and measures she may use, and her sketch so far, and
+tells her to name departments for this business, in the founder's words, and to use a kit only when it
+truly fits. There is no fixed list to lean toward: the leaning the tools step and the chart use is
+derived in code (`leaningOf`: each kit in the sketch is a strong fit).
+
+On step 3, Avery's sketch comes first in her order, then the remaining templates under **Also
+available**. Each card shows "You said: …" with the reason; a bespoke one says "Designed for you by
+Avery", its people come from the draft, and its cost is per run until a playbook is approved.
+**Start this company** (`startCompany`) refuses a bespoke department with a gap (`designGaps`: a head
+and at least one goal) before writing anything, installs the picked kits and renames their departments
+to Avery's names, then builds each bespoke department with `buildDepartment`, everyone off duty, each
+first run drafting its playbook for approval.
+
+**What it replaces.** The fixed list of four templates and Lean toward departments (`readLeaning`),
+and Avery's one-off idea (card 185: `suggest_department`, `readIdea`, the reveal's dashed idea box, the
+Desk's IdeaCard, `ideaStart` and `seedDraft`).
 
 ## First job
 
@@ -250,7 +269,7 @@ from Shopify data (`docs/product-facts.md`).
 
 ## Code
 
-- `core/setup-rules.ts` (pure, tested by `npm run check:setup`)
+- `core/setup-rules.ts`, `core/design-rules.ts` (pure, tested by `npm run check:setup`)
 - `core/setup.ts` (state, facts, `askSetup`)
 - `dashboard/setupActions.ts` (the actions, each checking the role again)
 - `core/tools-step-rules.ts` (pure, tested by `npm run check:tools-step`), `dashboard/toolsStep.ts`

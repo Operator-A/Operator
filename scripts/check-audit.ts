@@ -23,7 +23,7 @@ const AUDITED = [
   // the business's own words, which every agent is told
   "saveBusinessProfile", "saveWhereThingsGo", "saveProductFacts", "saveDailyNumbers", "saveTimeZone",
   // first-run setup: facts every agent is told, and installing departments
-  "setupAddFact", "setupEditFact", "setupConfirmFact", "setupRemoveFact", "setupInstall", "setupStartEmpty", "setupShopifyStore", "setupTimeZone", "ideaStart",
+  "setupAddFact", "setupEditFact", "setupConfirmFact", "setupRemoveFact", "setupInstall", "setupStartEmpty", "setupShopifyStore", "setupTimeZone",
   // the org chart: budgets, email caps, who holds a seat, drafts routing
   "orgSetDeptBudget", "orgSetDeptEmails", "placeAgent", "orgSetHolder", "orgSetLeadChecks",
   // proposals change an agent's spec or routine
@@ -40,7 +40,6 @@ const NOT_AUDITED: Record<string, string> = {
   setupPlanGuide: "marks a setup part for guided steps later; creates and connects nothing",
   setupPlanClear: "takes back a setup part's plan; connects nothing",
   setupToDesk: "leaves the setup wrap-up for the Desk; changes nothing else",
-  setupIdeaWant: "keeps or drops Avery's department idea for later; builds nothing",
   previewChain: "dry runs only",
   dryRunBuilt: "dry run only",
   applyWaiting: "applies approvals already audited",

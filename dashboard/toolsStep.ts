@@ -48,8 +48,9 @@ async function mercuryName(): Promise<string | null> {
   return name;
 }
 
-export async function toolsStep(picked: readonly string[], health: Record<IntegrationId, boolean>): Promise<{ tiles: TileView[]; shopifyDomain: string; connected: Set<ToolTileId> }> {
-  const chosen = picked.map(toolsOfTemplate).filter((t): t is TemplateTools => !!t);
+export async function toolsStep(picked: readonly string[], health: Record<IntegrationId, boolean>, extra: readonly TemplateTools[] = []): Promise<{ tiles: TileView[]; shopifyDomain: string; connected: Set<ToolTileId> }> {
+  // the kits Avery sketched, and her bespoke departments' tools (card 193), ask for the same tiles
+  const chosen = [...picked.map(toolsOfTemplate).filter((t): t is TemplateTools => !!t), ...extra];
   const need = neededBy(chosen, needsOf);
   const [s, mcpStatus] = await Promise.all([settings(), statuses()]);
   const tiles = await Promise.all(TOOL_TILES.map(async (tile): Promise<TileView> => {
@@ -68,6 +69,9 @@ export async function toolsStep(picked: readonly string[], health: Record<Integr
 }
 
 /** On step 3: the tools each department still waits on, by template id. */
+/** The tiles a bespoke department (card 193) still waits on, by name. */
+export const waitingForTools = (t: TemplateTools, connected: ReadonlySet<ToolTileId>): string[] => waitingOn(t, needsOf, connected).map((id) => TOOL_TILES.find((x) => x.id === id)!.name);
+
 export function waitingByTemplate(connected: ReadonlySet<ToolTileId>): Record<string, string[]> {
   return Object.fromEntries(TEMPLATES.map((t) => {
     const tt = toolsOfTemplate(t.id)!;

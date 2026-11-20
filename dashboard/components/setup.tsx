@@ -252,11 +252,9 @@ export function UnlistedTool({ ask }: { ask: (name: string) => Promise<ActionRes
  * in sequence. The founder can leave a department out or add one; Start this company installs exactly
  * what's on the chart. Statuses and month totals are worked out in code (core/company-rules.ts).
  */
-export function CompanyChart({ owner, company, depts, initial, install, back, empty, idea }: {
+export function CompanyChart({ owner, company, depts, initial, install, back, empty }: {
   owner: string; company: CompanyAgent[]; depts: CompanyDept[]; initial: string[];
   install: (ids: string[]) => Promise<ActionResult & { href?: string }>; back: () => Promise<ActionResult>; empty?: React.ReactNode;
-  /** Avery's department idea (card 185), drawn beside the chart; not part of the company. */
-  idea?: React.ReactNode;
 }) {
   const router = useRouter();
   const [picked, setPicked] = useState<string[]>(initial);
@@ -293,6 +291,8 @@ export function CompanyChart({ owner, company, depts, initial, install, back, em
                 <span className="wg-eyebrow" style={{ fontSize: 11, minWidth: 0 }}>{d.name}</span>
                 <span className="pill sm" style={{ background: STATUS_COLORS[st][0], color: STATUS_COLORS[st][1], flex: "none" }}>{DEPT_STATUS_WORDS[st]}</span>
               </span>
+              {d.reason && <span className="soft-box" style={{ fontSize: 13, lineHeight: 1.45 }}>You said: “{d.reason}”</span>}
+              {d.kind === "bespoke" && <span className="muted" style={{ fontSize: 12 }}>Designed for you by Avery</span>}
               {d.agents.map((a) => (
                 <span key={a.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                   <b style={{ fontSize: 15.5 }}>{a.name}</b>
@@ -310,7 +310,6 @@ export function CompanyChart({ owner, company, depts, initial, install, back, em
           );
         })}
       </div>
-      {idea}
 
       <div className="wg-glass wg-card wg-pop" style={{ width: "100%", animationDelay: `${1.1 + on.length * 0.18}s` }}>
         <div className="stack" style={{ gap: 2 }} aria-live="polite">

@@ -40,12 +40,6 @@ async function saveDraft(d: DeptDraft | null): Promise<void> {
 
 export const discardDraft = () => saveDraft(null);
 
-/** Start with Avery (card 185): begins a draft with the idea's name and purpose, only when no draft is open. */
-export async function seedDraft(seed: { name: string; purpose: string }): Promise<boolean> {
-  if (await loadDraft()) return false;
-  await saveDraft({ ...EMPTY_DRAFT, name: seed.name, purpose: seed.purpose, updatedAt: new Date().toISOString() });
-  return true;
-}
 
 /** What the checks read now: the tool list, every measure, the chart's departments and the agents' names. */
 export async function draftCtx(org?: Org | null): Promise<DraftCtx> {
@@ -134,6 +128,14 @@ const personSpec = (p: DraftPerson) => readSpec(hireSpec({ kind: "hire", ...p })
  * still missing. Stops at the first failure and says what was done before it.
  */
 export async function acceptDepartment(d: DeptDraft, proposalId: string, by: string): Promise<{ text: string; deptId: string }> {
+  return buildDepartment(d, `proposal ${proposalId}`, by, proposalId);
+}
+
+/**
+ * Creates a checked draft's department (card 156 acceptDepartment; card 193 setup's Start this company).
+ * `note` is what each agent's first version says it came from; sources are asked for only on a proposal.
+ */
+export async function buildDepartment(d: DeptDraft, note: string, by: string, proposalId: string | null): Promise<{ text: string; deptId: string }> {
   const problems = await departmentProblems(d);
   if (problems.length) throw new Error(problems.join(" "));
   const done: string[] = [];
@@ -146,13 +148,13 @@ export async function acceptDepartment(d: DeptDraft, proposalId: string, by: str
     if (!head) throw new Error("its head seat isn’t on the chart");
     if (d.head) {
       if (d.head.seat && d.head.seat !== "Head") await editSeat(head.id, d.head.seat, d.head.job.slice(0, 120));
-      const id = await createBuiltAgent(personSpec(d.head), `proposal ${proposalId}`);
+      const id = await createBuiltAgent(personSpec(d.head), note);
       await setHolder(head.id, "agent", id);
       done.push(`${d.head.name} as head`);
     }
     for (const a of d.agents) {
       const seat = await addSeat(head.id, a.seat, a.job.slice(0, 120));
-      const id = await createBuiltAgent(personSpec(a), `proposal ${proposalId}`);
+      const id = await createBuiltAgent(personSpec(a), note);
       await setHolder(seat, "agent", id);
       done.push(a.name);
     }
@@ -161,9 +163,9 @@ export async function acceptDepartment(d: DeptDraft, proposalId: string, by: str
       done.push(`goal “${g.title}”`);
     }
     const asked: string[] = [];
-    for (const s of await sourcesNow(d)) {
+    for (const s of proposalId ? await sourcesNow(d) : []) {
       if (s.state.state !== "ask") continue;
-      await askFor({ name: s.service, what: `${d.name}: ${s.what}`, by, proposalId });
+      await askFor({ name: s.service, what: `${d.name}: ${s.what}`, by, proposalId: proposalId! });
       asked.push(s.service);
     }
     if (asked.length) done.push(`asked for ${asked.join(", ")}`);
