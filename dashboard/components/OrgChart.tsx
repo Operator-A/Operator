@@ -333,7 +333,7 @@ function LimitForm({ label, help, now, unit, check, save, busy, run, controls, c
         </span>
         <span className="sub">{"refuse" in ch && val !== (now == null ? "" : String(now)) ? ch.refuse : help}</span>
       </label>
-      <button type="button" className="btn outline sm" disabled={busy || "refuse" in ch || (looser && !controls)} title={looser && !controls ? "Raising needs DASHBOARD_CONTROLS=on" : undefined}
+      <button type="button" className="btn outline sm" disabled={busy || "refuse" in ch || (looser && !controls)} title={looser && !controls ? "Raising needs real runs switched on for this OPERATOR" : undefined}
         onClick={() => (looser ? setConfirm(confirmFor(next)) : run(() => save(val, false)))}>
         {looser && !controls ? "Raising needs Controls on" : "Save"}
       </button>

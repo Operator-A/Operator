@@ -106,7 +106,7 @@ export async function klaviyoPickList(listId: string): Promise<ActionResult> {
 // tool on need Controls on; turning a tool off, pausing and removing never do, so the owner can
 // always stop a server. None of these grants a tool to an agent: that stays a builder step.
 
-const CONTROLS_OFF: ActionResult = { ok: false, text: "Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to add or change custom servers." };
+const CONTROLS_OFF: ActionResult = { ok: false, text: "Real runs are switched off on this OPERATOR, so custom servers can’t be added or changed yet." };
 const unknown: ActionResult = { ok: false, text: "Unknown server." };
 
 /** Adds a server by address, all tools off. The text carries its id for the page to open. */

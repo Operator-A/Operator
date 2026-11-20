@@ -51,6 +51,7 @@
     "check:tools-step": "npx --yes tsx --conditions=react-server scripts/check-tools-step.ts",
     "check:claude-choice": "npx --yes tsx scripts/check-claude-choice.ts",
     "check:speed": "npx --yes tsx scripts/check-speed.ts",
+    "check:wording": "npx --yes tsx scripts/check-wording.ts",
     "check:ee": "npx --yes tsx ee/check.ts",
     "check:all": "node scripts/check-all.mjs",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",

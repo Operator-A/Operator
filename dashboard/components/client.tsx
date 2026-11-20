@@ -188,12 +188,12 @@ export function BudgetForm({ current, save, controls }: { current: number; save:
       </div>
       <div>
         <ActionButton className="btn dark sm" disabled={!(n >= 0) || n === current || blocked} action={() => save(n)}
-          title={blocked ? "Raising a budget needs DASHBOARD_CONTROLS=on" : undefined}
+          title={blocked ? "Raising a budget needs real runs switched on for this OPERATOR" : undefined}
           confirm={{ title: "Change the daily budget?", body: "Runs after the budget is reached are skipped for the rest of the UTC day.", lines: [{ k: "Now", v: `$${current.toFixed(2)} a day` }, { k: "New", v: `$${(n || 0).toFixed(2)} a day` }], confirmLabel: "Save budget" }}>
           Save budget
         </ActionButton>
       </div>
-      {blocked && <span className="sub">Raising a budget needs DASHBOARD_CONTROLS=on. Lowering it always works.</span>}
+      {blocked && <span className="sub">Raising a budget waits until real runs are switched on for this OPERATOR. Lowering it always works.</span>}
     </div>
   );
 }

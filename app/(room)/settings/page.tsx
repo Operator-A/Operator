@@ -40,7 +40,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       <div className="card" style={{ padding: "8px 22px", gap: 0 }}>
         {line("Time zone", <span className="ink2">Central Time</span>, true)}
         {line("Theme", <ThemeToggle initial={theme} wide />)}
-        {line(<>Controls<span className="muted" style={{ fontSize: 12 }}>Real runs, putting agents back on the crew and raising budgets. Set DASHBOARD_CONTROLS=on in Vercel to allow them.</span></>, <span className="pill sm" style={controlsOn() ? { background: "var(--mint-soft)", color: "var(--mint-ink)" } : { background: "var(--soft)", color: "var(--ink2)" }}>{controlsOn() ? "On" : "Off"}</span>)}
+        {line(<>Controls<span className="muted" style={{ fontSize: 12 }}>Real runs, putting agents back on the crew and raising budgets. Whoever runs this OPERATOR turns them on.</span></>, <span className="pill sm" style={controlsOn() ? { background: "var(--mint-soft)", color: "var(--mint-ink)" } : { background: "var(--soft)", color: "var(--ink2)" }}>{controlsOn() ? "On" : "Off"}</span>)}
         {line(<>The org<span className="muted" style={{ fontSize: 12 }}>Turn every agent on or off at once on Crew &gt; Schedule.</span></>, <Link href="/crew?view=schedule" className="btn ghost sm">{f.org.on ? "On" : "Off"} · Open</Link>)}
         {(() => { const lock = dbLock(); return line(<>Database lock<span className="muted" style={{ fontSize: 12 }}>{lock.on ? "The database itself only lets this business’s rows through, on top of the app’s own checks." : lock.problem ?? "Off: the app’s own checks keep each business to its rows. Turn on with SUPABASE_SIGNING_KEY and SUPABASE_PUBLISHABLE_KEY in Vercel (docs/tenancy.md, slice 2b)."}</span></>, <span className="pill sm" style={lock.on ? { background: "var(--mint-soft)", color: "var(--mint-ink)" } : { background: "var(--soft)", color: "var(--ink2)" }}>{lock.on ? "On" : "Off"}</span>); })()}
         {line(<>Signed in as {me.email}<span className="muted" style={{ fontSize: 12 }}>{ROLE_LABELS[me.role]}: {ROLE_WORDS[me.role]}</span></>, <form action={signOut}><button className="btn ghost sm">Sign out</button></form>)}
@@ -83,7 +83,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 
       <div className="card" style={{ padding: "16px 22px", gap: 0 }}>
         <span className="card-t">Money and email caps</span>
-        <span className="sub" style={{ paddingBottom: 6 }}>Every agent, enforced in code by the gateway. Lowering a cap applies right away. Raising needs a confirm{controlsOn() ? "" : " and DASHBOARD_CONTROLS=on"}, and stops at the limit in code. Trust levels aren’t editable here.</span>
+        <span className="sub" style={{ paddingBottom: 6 }}>Every agent, enforced in code by the gateway. Lowering a cap applies right away. Raising needs a confirm{controlsOn() ? "" : ", and real runs switched on for this OPERATOR"}, and stops at the limit in code. Trust levels aren’t editable here.</span>
         {caps.problem && <span className="sub">{/policy_log|relation/.test(caps.problem) ? "The caps migration (20261112230000_caps_and_vendors.sql) isn’t applied yet." : caps.problem}</span>}
         {caps.caps?.map((c) => <CapForm key={`${c.key}:${c.value}`} c={c} controls={controlsOn()} save={setCap} />)}
         {caps.log.length > 0 && (

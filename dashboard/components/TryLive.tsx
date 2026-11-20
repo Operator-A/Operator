@@ -111,7 +111,7 @@ export function TryLive(p: TryLiveProps) {
   };
 
   const onBack = (r: VersionRow) => {
-    if (r.looser.length && !p.controls) { setToast({ ok: false, text: `Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to allow this: ${r.looser.join("; ")}.` }); return; }
+    if (r.looser.length && !p.controls) { setToast({ ok: false, text: `Real runs are switched off on this OPERATOR, so this can’t be saved yet: ${r.looser.join("; ")}.` }); return; }
     if (r.looser.length) setConfirm({ c: { title: `Go back to v${r.version}?`, body: "It lets a run do or spend more than the live version.", lines: r.looser.map((x) => ({ k: "Change", v: x })), confirmLabel: `Use v${r.version}`, kind: "dark" }, go: () => act(() => p.goBack(r.version, true)) });
     else act(() => p.goBack(r.version, false));
   };
@@ -137,7 +137,7 @@ export function TryLive(p: TryLiveProps) {
         <div className="row wrap" style={{ gap: 8 }}>
           <button type="button" className="btn dark" disabled={busy || !p.controls} onClick={() => onTry(false)}><Icon name="play" size={15} />{trying ? `Trying… ${secs}s` : p.tried?.version === v ? "Try again" : "Try it"}</button>
           {p.routine.active && <button type="button" className="btn outline" disabled={busy || !p.controls} onClick={() => onTry(true)}>Try fresh</button>}
-          {!p.controls && <span className="sub">A try spends money, so it needs DASHBOARD_CONTROLS=on in Vercel.</span>}
+          {!p.controls && <span className="sub">A try spends money, so it waits until real runs are switched on for this OPERATOR.</span>}
         </div>
 
         {trying && (

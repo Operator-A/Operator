@@ -41,7 +41,7 @@ export function OrgSwitch({ org, plan, controls, turnOn, turnOff }: { org: OrgSt
           </ActionButton>
         ) : (
           <ActionButton className="btn primary" action={turnOn} disabled={!controls || !n}
-            title={!controls ? "Controls are off. Set DASHBOARD_CONTROLS=on in Vercel to allow this." : undefined}
+            title={!controls ? "Real runs are switched off on this OPERATOR. Whoever runs it can turn them on." : undefined}
             confirm={{
               title: "Turn on the org?",
               body: `This is launch. ${n} agent${n === 1 ? " goes" : "s go"} on duty${plan.chainsOn.length ? ` and ${plan.chainsOn.length === 1 ? "a chain turns" : `${plan.chainsOn.length} chains turn`} on` : ""}. Each run still checks its daily and department budget. Turning it off stops everything at once.`,
@@ -55,7 +55,7 @@ export function OrgSwitch({ org, plan, controls, turnOn, turnOff }: { org: OrgSt
             Turn on the org
           </ActionButton>
         )}
-        {!org.on && !controls && <span style={{ fontSize: 12, color: "#C3C3CB" }}>Needs DASHBOARD_CONTROLS=on</span>}
+        {!org.on && !controls && <span style={{ fontSize: 12, color: "#C3C3CB" }}>Needs real runs switched on</span>}
         {org.on && org.at && <span style={{ fontSize: 12, color: "#C3C3CB" }}>On since {when(org.at)} CT</span>}
       </div>
     </section>
