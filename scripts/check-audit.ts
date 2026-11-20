@@ -37,8 +37,6 @@ const NOT_AUDITED: Record<string, string> = {
   dryRun: "reads only, no model, nothing logged",
   setupGo: "which step of setup is on screen; changes nothing else",
   setupSkipTool: "which setup question is left for later; connects nothing",
-  setupPlanGuide: "marks a setup part for guided steps later; creates and connects nothing",
-  setupPlanClear: "takes back a setup part's plan; connects nothing",
   previewChain: "dry runs only",
   dryRunBuilt: "dry run only",
   applyWaiting: "applies approvals already audited",
@@ -68,7 +66,7 @@ const NOT_AUDITED: Record<string, string> = {
   proposalCreate: "only a suggestion; accepting it is audited",
   sendToAvery: "a chat message, kept in the chat",
   sendSetup: "a setup message, kept in the chat; withRun logs the run",
-  setupOtherTool: "a request for a connector and a note that the part starts from an export, no access",
+  setupToolAsk: "a request for a connector, no access",
 };
 
 const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupActions.ts"];

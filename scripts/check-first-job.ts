@@ -47,7 +47,7 @@ assert.ok(waits.find((w) => w.templateId === "prospecting")?.waitsOn.includes("G
 assert.deepEqual(deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: new Set([SETUP_AGENT, "cfo", "bookkeeper"]), connected: new Set(), needsOf }, null).map((w) => w.templateId), ["finance"], "only installed departments");
 
 // setup state: offer and firstJob read safely
-assert.deepEqual(readSetupState({ done: true, offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z" } }, []), { done: true, stage: "business", skipped: [], plans: {}, leaning: [], offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z" } });
+assert.deepEqual(readSetupState({ done: true, offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z" } }, []), { done: true, stage: "business", skipped: [], leaning: [], offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z" } });
 assert.equal(readSetupState({ firstJob: { agentId: "Bad Id!", at: "2026-11-19" } }, []).firstJob, null);
 assert.equal(readSetupState({ firstJob: { agentId: "bookkeeper", at: "not a date" } }, []).firstJob, null);
 assert.equal(readSetupState({ offer: "yes" }, []).offer, false, "only true offers");

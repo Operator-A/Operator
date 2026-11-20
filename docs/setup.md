@@ -103,7 +103,7 @@ property, the panel asks which one agents report on.
   the box says "Needed for Finance" from the tools' `needs` (`SHOPIFY_CONNECTED` and so on,
   `NEED_TILE`). Nobody types it.
 - **Skip for now** is saved (`skipped` in the setup state, `setupSkipTool`), so the next question
-  comes up and the box says Later. When every part is connected, planned or skipped, the card says so and Next
+  comes up and the box says Later. When every part is connected or skipped, the card says so and Next
   reads "Show me my company".
 - **The panel.** Numbered steps, then what each permission is for (from the profile's scopes,
   `SCOPE_WORDS`), then the Connect button or, for Shopify, the store's address and the read-only key.
@@ -112,27 +112,12 @@ property, the panel asks which one agents report on.
   takes only `start` and keeps it in its own short-lived cookie; the callback returns to
   `/start?c=<the tool>` (the question that tool answers, on the saved step) only when that cookie says so. Anything else returns to Connections, so it can't
   become an open redirect.
-- **Something else?** The founder types the tool's name and code routes it (`routeUnlisted`,
-  `setupOtherTool`): a tile opens, a built-in opens on Connections, a known server opens Add a server
-  with its address filled in. Anything else becomes a connection request (`askFor`) and the part is
-  marked **Export for now** with the tool's name. No model call, and nothing is connected.
-- **Nothing yet** (card 183). Website and Email marketing each have a starter tool (`starter` on the
-  category: Google Analytics, Klaviyo). Tapping Nothing yet marks the part **Avery sets it up**
-  (`setupPlanGuide`) and setup carries on. Nothing is created: no agent signs up for a service or
-  accepts its terms. The founder creates the account from the steps on the Desk after setup.
-- **Plans** are saved as `plans` in the setup state (`readPlans`: only real parts, a guide only where
-  there is a starter, the tool's name checked as a service name). A connected tool wins over a plan,
-  a plan over a skip (`categoryState`). Tapping a planned part shows what was chosen and **Change my
-  answer** (`setupPlanClear`). The tool's name is the founder's typed text: it is shown, never used
-  to choose a recipient, URL, product or category.
-- **Left for later.** Step 3 shows the tools each department still waits on (`waitLine`), and for a
-  planned part what happens instead: "Avery sets up Klaviyo with you after setup" or "Starts from an
-  export of Mailchimp". It installs anyway and starts working once they're connected.
-- **Finish setting up, on the Desk** (`followUps`, `dashboard/followUps.ts`). After setup the owner's
-  Desk lists each planned part: for a guide, the click-by-click steps to create the account and a
-  button to the normal Connect; for an export, a link to Connections > Find a tool > Upload an export
-  (`docs/exports.md`). A part leaves the card when its tool is connected, when an export with that
-  name is uploaded, or when the owner taps Not now.
+- **A tool that isn't listed?** The founder types its name and code routes it (`routeUnlisted`): a
+  tile opens, a built-in opens on Connections, a known server opens Add a server with its address
+  filled in, and anything else becomes a connection request (`askFor`). No model call, and nothing is
+  connected.
+- **Left for later.** Step 3 shows the tools each department still waits on. It installs anyway and
+  starts working once they're connected.
 
 ## Your company
 

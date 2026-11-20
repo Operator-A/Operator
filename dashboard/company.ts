@@ -22,11 +22,11 @@ export const costsFor = (bill: Billing) => (t: Template, agentId: string, runsPe
 export interface CompanyChartData { company: CompanyAgent[]; depts: CompanyDept[] }
 
 /** The chart: the company seat (the Chief of Staff) and a branch per department template. */
-export function companyChart(leaning: readonly Leaning[], connected: ReadonlySet<ToolTileId>, bill: Billing, waitNotes: Readonly<Record<string, string>> = {}): CompanyChartData {
+export function companyChart(leaning: readonly Leaning[], connected: ReadonlySet<ToolTileId>, bill: Billing): CompanyChartData {
   const costOf = costsFor(bill);
   const setup = TEMPLATES.find((t) => t.id === SETUP_TEMPLATE);
   return {
     company: setup ? agentsOf(setup, { toolLabel, costOf }) : [],
-    depts: companyDepts(TEMPLATES, { leaning, setupTemplate: SETUP_TEMPLATE, toolLabel, costOf, waitsOn: waitingByTemplate(connected), waitNotes }),
+    depts: companyDepts(TEMPLATES, { leaning, setupTemplate: SETUP_TEMPLATE, toolLabel, costOf, waitsOn: waitingByTemplate(connected) }),
   };
 }

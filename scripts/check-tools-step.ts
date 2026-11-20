@@ -5,8 +5,7 @@ import { MCP_SERVERS } from "../core/mcp-rules";
 import { TEMPLATES } from "../core/templates";
 import { TOOLS } from "../core/tools/catalog";
 import { readSetupState } from "../core/setup-rules";
-import { waitLine } from "../core/company-rules";
-import { CATEGORY_IDS, NEED_TILE, SCOPE_WORDS, TOOL_CATEGORIES, TOOL_TILES, backTarget, categoryOfTile, categoryState, currentCategory, followUps, orderCategories, planNotes, readPlans, readSkipped, tileOfMcp, type Plans, type ToolTileId, neededBy, permissionsOf, routeUnlisted, tilesFor, waitingOn, type TemplateTools } from "../core/tools-step-rules";
+import { CATEGORY_IDS, NEED_TILE, SCOPE_WORDS, TOOL_CATEGORIES, TOOL_TILES, backTarget, categoryOfTile, categoryState, currentCategory, orderCategories, readSkipped, tileOfMcp, type ToolTileId, neededBy, permissionsOf, routeUnlisted, tilesFor, waitingOn, type TemplateTools } from "../core/tools-step-rules";
 
 const read = (f: string) => readFileSync(f, "utf8");
 const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[id]?.needs ?? [];
@@ -91,49 +90,6 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   assert.match(page, /isCategory\(sp\.q\) \? sp\.q : categoryOfTile\(sp\.c\)/, "the page only takes a category from the list");
 }
 
-// no tool yet, or one we don't connect (card 183)
-{
-  const starters = TOOL_CATEGORIES.filter((c) => c.starter);
-  assert.deepEqual(starters.map((c) => c.id), ["site", "list"], "a starter where we have a default tool");
-  for (const c of starters) {
-    assert.ok(c.tiles.includes(c.starter!.tile), `${c.id}: the starter is one of the part's own tools`);
-    assert.ok(c.starter!.steps.length >= 4 && c.starter!.steps.at(-1)!.includes(`Connect ${c.starter!.name}`), `${c.id}: steps end at the normal connect`);
-    assert.match(c.starter!.steps.join(" "), /accept them yourself/, `${c.id}: the founder accepts the service's terms, no agent does`);
-  }
-  // stored plans: only real parts, a guide only where there is a starter, a checked tool name
-  assert.deepEqual(readPlans({ list: { kind: "guide" }, money: { kind: "guide" }, nope: { kind: "guide" }, inbox: { kind: "export", tool: "  Outlook " }, store: { kind: "export", tool: "https://evil.example" }, site: { kind: "other" } }),
-    { list: { kind: "guide" }, inbox: { kind: "export", tool: "Outlook" } });
-  assert.deepEqual(readPlans(["list"]), {});
-  assert.deepEqual(readPlans(null), {});
-  assert.deepEqual(readSetupState({ plans: { list: { kind: "guide" }, x: 1 } }, []).plans, { list: { kind: "guide" } }, "the saved state keeps its plans");
-  // state: connected wins, then the plan, then a skip
-  const list = TOOL_CATEGORIES.find((c) => c.id === "list")!;
-  const plans: Plans = { list: { kind: "guide" }, money: { kind: "export", tool: "Chase" } };
-  assert.equal(categoryState(list, new Set(), ["list"], plans), "guide");
-  assert.equal(categoryState(list, new Set(["klaviyo"] as const), [], plans), "connected");
-  assert.equal(categoryState(TOOL_CATEGORIES.find((c) => c.id === "money")!, new Set(), [], plans), "export");
-  assert.equal(categoryState(list, new Set(), ["list"]), "skipped");
-  // a planned part isn't asked again
-  const order = orderCategories(new Set());
-  assert.equal(currentCategory(order, new Set(["shopify", "analytics"] as const), [], undefined, plans)?.id, "inbox");
-  assert.equal(currentCategory(order, new Set(), [], "list", plans)?.id, "list", "but it shows when tapped");
-  // Your company: a waiting department says the plan
-  const notes = planNotes(plans);
-  assert.match(notes.Klaviyo, /^Avery sets up Klaviyo with you after setup/);
-  assert.match(notes.Mercury, /^Starts from an export of Chase/);
-  assert.equal(waitLine(["Shopify", "Klaviyo"], notes), `Waits on Shopify: it starts working once that’s connected. ${notes.Klaviyo}`);
-  assert.equal(waitLine(["Shopify", "Gmail"], {}), "Waits on Shopify and Gmail: it starts working once that’s connected.");
-  // the Desk: a part leaves once connected, or once its export is uploaded
-  assert.deepEqual(followUps(plans, new Set(), new Set()).map((f) => [f.cat, f.kind]), [["money", "export"], ["list", "guide"]]);
-  assert.deepEqual(followUps(plans, new Set(["klaviyo"] as const), new Set()).map((f) => f.cat), ["money"]);
-  assert.deepEqual(followUps(plans, new Set(), new Set(["chase"])).map((f) => f.cat), ["list"]);
-  assert.deepEqual(followUps({}, new Set(), new Set()), []);
-  const acts = read("dashboard/setupActions.ts");
-  assert.match(acts, /export async function setupPlanGuide[\s\S]{0,140}asRole\("approver"\)[\s\S]{0,80}isCategory\(cat\)[\s\S]{0,200}starter/, "Nothing yet checks the role, the category, then that the part has a starter");
-  assert.match(acts, /export async function setupPlanClear[\s\S]{0,140}asRole\("approver"\)[\s\S]{0,80}isCategory\(cat\)/, "taking a plan back checks the role, then the category");
-  assert.match(read("app/(room)/page.tsx"), /<FollowUpsCard items=\{finish\} owner=\{owner\} \/>/, "the Desk shows what setup left to finish");
-}
-
 // a tool that isn't listed: a tile, a built-in, a known server, or a request; never a link or a model
 assert.deepEqual(routeUnlisted("Shopify"), { kind: "tile", id: "shopify", name: "Shopify" });
 assert.deepEqual(routeUnlisted("gmail"), { kind: "tile", id: "gmail", name: "Gmail" });
@@ -144,9 +100,8 @@ assert.deepEqual(routeUnlisted("Google Analytics"), { kind: "tile", id: "analyti
 assert.match((routeUnlisted("https://evil.example") as { problem: string }).problem, /no link/);
 assert.match((routeUnlisted("  ") as { problem: string }).problem, /Name the service/);
 const actions = read("dashboard/setupActions.ts");
-assert.match(actions, /export async function setupOtherTool[\s\S]{0,140}asRole\("owner"\)[\s\S]{0,80}isCategory\(cat\)[\s\S]*?routeUnlisted\(/, "the action checks the role and the category, then routes in code");
-assert.doesNotMatch(actions.slice(actions.indexOf("export async function setupOtherTool")), /askSetup|runExplore/, "no model call");
-assert.ok(!actions.includes("setupToolAsk"), "the old action is gone");
+assert.match(actions, /export async function setupToolAsk[\s\S]*?routeUnlisted\(/, "the action routes in code");
+assert.doesNotMatch(actions.slice(actions.indexOf("export async function setupToolAsk")), /askSetup|runExplore/, "no model call");
 
 // Avery may recommend a tool, as advice only
 assert.match(read("core/setup-rules.ts"), /that is advice only, the founder connects it/);

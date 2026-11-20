@@ -33,14 +33,6 @@ export interface CompanyDept {
   openSeats: string[];
   /** Tools it still waits on (names), from the tools step. */
   waitsOn: string[];
-  /** What the founder planned for a tool it waits on (card 183), by tool name: a full sentence. */
-  waitNotes: Record<string, string>;
-}
-
-/** The line under a department that waits on tools: plain ones wait for a connection, planned ones say the plan. */
-export function waitLine(waitsOn: readonly string[], notes: Readonly<Record<string, string>>): string {
-  const plain = waitsOn.filter((n) => !notes[n]);
-  return [plain.length ? `Waits on ${plain.join(" and ")}: it starts working once that’s connected.` : null, ...waitsOn.filter((n) => notes[n]).map((n) => notes[n])].filter(Boolean).join(" ");
 }
 
 /** Runs a month for one agent on a template's routines: its first scheduled chain, the step's own days first. By hand only is 0. */
@@ -65,7 +57,6 @@ export function companyDepts(templates: readonly Template[], o: {
   toolLabel: (id: string) => string;
   costOf: (template: Template, agentId: string, runsPerMonth: number) => MonthCost;
   waitsOn: Readonly<Record<string, readonly string[]>>;
-  waitNotes?: Readonly<Record<string, string>>;
 }): CompanyDept[] {
   return templates.filter((t) => t.id !== o.setupTemplate).map((t) => ({
     id: t.id, name: t.name, about: t.about,
@@ -73,7 +64,6 @@ export function companyDepts(templates: readonly Template[], o: {
     agents: agentsOf(t, o),
     openSeats: t.seats.filter((s) => s.holder === "open").map((s) => s.title),
     waitsOn: [...(o.waitsOn[t.id] ?? [])],
-    waitNotes: Object.fromEntries((o.waitsOn[t.id] ?? []).filter((n) => o.waitNotes?.[n]).map((n) => [n, o.waitNotes![n]])),
   }));
 }
 

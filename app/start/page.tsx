@@ -11,7 +11,7 @@ import { STAGES, STAGE_WORDS, nextStage, prevStage, stageProgress, type Stage } 
 import { SetupChat, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
 import { Icon } from "@/dashboard/components/Icon";
 import { toolsStep, type TileView } from "@/dashboard/toolsStep";
-import { categoryOfTile, categoryState, currentCategory, isCategory, orderCategories, planNotes, type CategoryId, type Plans, type ToolCategory } from "@/core/tools-step-rules";
+import { categoryOfTile, categoryState, currentCategory, isCategory, orderCategories, type CategoryId, type ToolCategory } from "@/core/tools-step-rules";
 import { KeyForm, ActionButton } from "@/dashboard/components/client";
 import { companyChart } from "@/dashboard/company";
 import { initialPick } from "@/core/company-rules";
@@ -20,7 +20,7 @@ import { claudeState } from "@/dashboard/claude";
 import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
 import { extensions } from "@/core/extensions";
 import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
-import { sendSetup, setupGo, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupOtherTool, setupPlanClear, setupPlanGuide, setupSkipTool, setupStartEmpty } from "@/dashboard/setupActions";
+import { sendSetup, setupGo, setupAddFact, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupSkipTool, setupStartEmpty, setupToolAsk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
 import { billing } from "@/dashboard/cost";
 
@@ -53,16 +53,14 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const blocked = controlsOn() ? null : "Avery can’t answer here yet: real runs are switched off for this OPERATOR. Whoever runs it turns them on.";
   const { tiles, shopifyDomain, connected } = await toolsStep(state.leaning.map((l) => l.id), floor.health);
   const open = tiles.find((t) => t.tile.id === sp.c) ?? null;
-  const chart = companyChart(state.leaning, connected, await billing(), planNotes(state.plans));
+  const chart = companyChart(state.leaning, connected, await billing());
   const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected && open ? { ok: true, text: `${open.tile.name} is connected.` } : null;
   // the tools step (card 182): one question per part of the company, the ones a leaned-toward department needs first
   const order = orderCategories(new Set(tiles.filter((t) => t.neededBy.length).map((t) => t.tile.id)));
-  const stateOf = (c: ToolCategory) => categoryState(c, connected, state.skipped, state.plans);
-  const cat = currentCategory(order, connected, state.skipped, isCategory(sp.q) ? sp.q : categoryOfTile(sp.c), state.plans);
-  const catState = cat ? stateOf(cat) : null;
-  const catPlan = cat ? state.plans[cat.id] ?? null : null;
+  const cat = currentCategory(order, connected, state.skipped, isCategory(sp.q) ? sp.q : categoryOfTile(sp.c));
+  const catState = cat ? categoryState(cat, connected, state.skipped) : null;
   const catTile = cat ? tiles.find((t) => cat.tiles.includes(t.tile.id) && t.state === "connected") ?? null : null;
-  const allAsked = !order.some((c) => stateOf(c) === "open");
+  const allAsked = !order.some((c) => categoryState(c, connected, state.skipped) === "open");
   const stage = state.stage, at = STAGES.indexOf(stage);
   const talked = (history ?? []).length > 0;
   const back = prevStage(stage), next = nextStage(stage);
@@ -120,7 +118,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
 
         {state.stage === "tools" && (
           <div key="tools" className="wg-stage">
-            <div className="wg-col l">{order.slice(0, 2).map((c, i) => <PartBox key={c.id} c={c} i={i} now={cat?.id === c.id} tiles={tiles} skipped={state.skipped} plans={state.plans} />)}</div>
+            <div className="wg-col l">{order.slice(0, 2).map((c, i) => <PartBox key={c.id} c={c} i={i} now={cat?.id === c.id} tiles={tiles} skipped={state.skipped} />)}</div>
             <div className="wg-center stack" style={{ gap: 12 }}>
               {note && !note.ok && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{note.text}</span>}
               {!cat ? (
@@ -143,17 +141,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
                           {owner && <div><a className="btn outline sm" href={`/connections/${catTile.tile.also.mcp}/connect?from=start`}>Connect {catTile.tile.also.label}</a></div>}
                         </div>
                       )}
-                      <div><Link className="btn dark" href="/start">{allAsked ? "Done" : "Next"}</Link></div>
-                    </>
-                  ) : catPlan && !open ? (
-                    <>
-                      <span className="pill sm" style={{ alignSelf: "flex-start", background: "#E4E7FF", color: "#2A2F86" }}>{catPlan.kind === "guide" ? "Avery sets it up" : "Export for now"}</span>
-                      <h1 id="tools-h" className="wg-h1" style={{ fontSize: 28 }}>{catPlan.kind === "guide" ? `No problem. I’ll set up ${cat.starter?.name} with you.` : `I’ll work from an export of ${catPlan.tool}.`}</h1>
-                      <span className="wg-lead">{catPlan.kind === "guide" ? `${cat.starter?.promise} The steps wait on your Desk right after setup.` : `There’s no direct line to ${catPlan.tool} yet, so it’s on our build list. After setup your Desk shows where to upload a file from it, and your team starts from that.`}</span>
-                      <div className="row wrap" style={{ gap: 10 }}>
-                        <Link className="btn dark" href="/start">{allAsked ? "Done" : "Next"}</Link>
-                        <ActionButton className="btn outline sm" action={setupPlanClear.bind(null, cat.id)} follow>Change my answer</ActionButton>
-                      </div>
+                      <div><Link className="btn dark" href="/start">{order.some((c) => categoryState(c, connected, state.skipped) === "open") ? "Next" : "Done"}</Link></div>
                     </>
                   ) : open && cat.tiles.includes(open.tile.id) ? (
                     <>
@@ -171,29 +159,23 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
                             <span className="ink2" style={{ fontSize: 13 }}>{t.state === "paused" ? "Paused: reconnect" : t.state === "coming" ? "Coming soon" : "Connect, read-only"}</span>
                           </Link>
                         ))}
-                        {cat.starter && (
-                          <ActionButton className="wg-opt" action={setupPlanGuide.bind(null, cat.id)} follow>
-                            <b style={{ fontSize: 16 }}>Nothing yet</b>
-                            <span className="ink2" style={{ fontSize: 13 }}>I’ll set up {cat.starter.name} with you</span>
-                          </ActionButton>
-                        )}
                       </div>
                       <details>
                         <summary className="ink2" style={{ fontSize: 14, cursor: "pointer" }}>Something else?</summary>
                         <div className="stack" style={{ gap: 8, paddingTop: 10 }}>
-                          <span className="sub">Tell Avery its name. If it has a connection she points you to it; if not, this part starts from an export and the tool goes on our build list.</span>
-                          {owner ? <UnlistedTool ask={setupOtherTool.bind(null, cat.id)} /> : <span className="sub">An owner of this business connects tools.</span>}
+                          <span className="sub">Tell Avery its name. If it has its own server you can add it by address; if not, it goes on the list of connections to build.</span>
+                          {owner ? <UnlistedTool ask={setupToolAsk} /> : <span className="sub">An owner of this business connects tools.</span>}
                         </div>
                       </details>
                       {catState === "open"
                         ? <div><ActionButton className="btn outline sm" action={setupSkipTool.bind(null, cat.id)} follow>Skip for now</ActionButton></div>
-                        : catState === "skipped" ? <span className="sub">Left for later. It starts working the day you connect it.</span> : null}
+                        : <span className="sub">Left for later. It starts working the day you connect it.</span>}
                     </>
                   )}
                 </section>
               )}
             </div>
-            <div className="wg-col r">{order.slice(2).map((c, i) => <PartBox key={c.id} c={c} i={i + 2} now={cat?.id === c.id} tiles={tiles} skipped={state.skipped} plans={state.plans} />)}</div>
+            <div className="wg-col r">{order.slice(2).map((c, i) => <PartBox key={c.id} c={c} i={i + 2} now={cat?.id === c.id} tiles={tiles} skipped={state.skipped} />)}</div>
           </div>
         )}
 
@@ -242,25 +224,20 @@ const STATE_WORD: Record<TileView["state"], { text: string; bg: string; fg: stri
   coming: { text: "Coming next", bg: "var(--soft)", fg: "var(--mut)" },
 };
 
-/** One part of the company beside the question (cards 182, 183): open, being asked, connected, planned, or left for later. */
-function PartBox({ c, i, now, tiles, skipped, plans }: { c: ToolCategory; i: number; now: boolean; tiles: TileView[]; skipped: readonly CategoryId[]; plans: Plans }) {
+/** One part of the company beside the question (card 182): open, being asked, connected, or left for later. */
+function PartBox({ c, i, now, tiles, skipped }: { c: ToolCategory; i: number; now: boolean; tiles: TileView[]; skipped: readonly CategoryId[] }) {
   const mine = tiles.filter((t) => c.tiles.includes(t.tile.id));
   const on = mine.find((t) => t.state === "connected");
-  const plan = on ? undefined : plans[c.id];
   const needed = [...new Set(mine.flatMap((t) => t.neededBy))];
-  const st = on ? "on" : now ? "now" : plan ? "plan" : skipped.includes(c.id) ? "skip" : "wait";
-  const pill = { on: ["Connected", "var(--mint-soft)", "var(--mint-ink)"], now: ["Now", "#E4E7FF", "#2A2F86"], plan: [plan?.kind === "guide" ? "Avery sets it up" : "Export for now", "#E4E7FF", "#2A2F86"], skip: ["Later", "var(--soft)", "var(--ink2)"], wait: ["Open", "var(--soft)", "var(--ink2)"] }[st];
-  const line = on ? `${c.area}. ${on.who ?? c.ready}`
-    : plan?.kind === "guide" ? `${c.starter?.name}: the steps wait on your Desk.`
-    : plan?.kind === "export" ? `Starts from an export of ${plan.tool}.`
-    : st === "skip" ? "Starts the day you connect it." : needed.length ? `Needed for ${needed.join(", ")}` : c.question;
+  const st = on ? "on" : now ? "now" : skipped.includes(c.id) ? "skip" : "wait";
+  const pill = { on: ["Connected", "var(--mint-soft)", "var(--mint-ink)"], now: ["Now", "#E4E7FF", "#2A2F86"], skip: ["Later", "var(--soft)", "var(--ink2)"], wait: ["Open", "var(--soft)", "var(--ink2)"] }[st];
   return (
     <Link href={`/start?q=${c.id}`} scroll={false} aria-current={now ? "step" : undefined} className={`wg-glass wg-node wg-pop ${st}`} style={{ animationDelay: `${0.1 + i * 0.12}s` }}>
       <span className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "nowrap" }}>
         <b style={{ fontSize: 16, letterSpacing: "-.01em" }}>{on ? on.tile.name : c.area}</b>
         <span className="pill sm" style={{ background: pill[1], color: pill[2], flex: "none" }}>{pill[0]}</span>
       </span>
-      <span className="ink2" style={{ fontSize: 13, lineHeight: 1.45 }}>{line}</span>
+      <span className="ink2" style={{ fontSize: 13, lineHeight: 1.45 }}>{on ? `${c.area}. ${on.who ?? c.ready}` : st === "skip" ? "Starts the day you connect it." : needed.length ? `Needed for ${needed.join(", ")}` : c.question}</span>
     </Link>
   );
 }
