@@ -136,7 +136,7 @@ async function main() {
   // specs: actions only for agents the gateway names; a Notion report needs a page; both count as reaching further
   assert.ok(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["mercury_propose_annotation"] }, "b_green").problems.some((p) => /gateway lets only/.test(p)));
   assert.deepEqual(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["mercury_propose_annotation"] }, "bookkeeper").problems, []);
-  // card 210: a granted action is open to any agent; a named one only to its agents
+  // card 250: a granted action is open to any agent; a named one only to its agents
   assert.ok(actionOpenTo({ agents: "granted" }, "b_any_agent") && actionOpenTo({ agents: "granted" }, null));
   assert.ok(!actionOpenTo({ agents: ["cfo"] }, "b_any_agent") && actionOpenTo({ agents: ["cfo"] }, "cfo") && !actionOpenTo({}, "cfo"));
   assert.ok(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["report_notion_page"] }).problems.some((p) => /no page to write under/.test(p)));

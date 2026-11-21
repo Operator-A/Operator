@@ -82,7 +82,7 @@ export async function propose(p: Proposal): Promise<{ status: "queued" | "schedu
   return { status: "queued", actionId: action.id };
 }
 
-// ---- Granted actions (card 210): any agent an approver gave the action's tool on the Tools step
+// ---- Granted actions (card 250): any agent an approver gave the action's tool on the Tools step
 
 const isGranted = (tool: string) => (TOOLS[tool as ToolName] as ActionDef | undefined)?.agents === "granted";
 

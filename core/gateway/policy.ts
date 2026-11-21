@@ -23,7 +23,7 @@ export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
 
 /**
  * Who may propose an action type. A list names the only agents, by id (today's three action types;
- * Mercury writes are CFO and Bookkeeper by hard rule). "granted" (card 210): any agent whose active
+ * Mercury writes are CFO and Bookkeeper by hard rule). "granted" (card 250): any agent whose active
  * saved spec holds the action's catalog tool (`grant`), which only an approver gives, on the builder's
  * Tools step. A template, a proposal or one of Avery's designs never hands one out. The gateway checks
  * the grant when the action is proposed and again right before it is applied.
