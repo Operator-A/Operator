@@ -611,7 +611,7 @@ export async function createBuilt(draft: unknown, seatId?: string | null): Promi
     const { spec, problems: p0 } = readSpec(draft);
     const problems = [...p0, ...(await customGone(spec))];
     if (problems.length) return { ok: false, text: `Not created. This draft asks for something code doesn’t offer: ${problems.join("; ")}.` };
-    // a granted action (card 210) is the owner's to give here; an action that names its agents isn't
+    // a granted action (card 250) is the owner's to give here; an action that names its agents isn't
     if (spec.tools.some((t) => TOOLS[t]?.kind === "action" && TOOLS[t]?.agents !== "granted")) return { ok: false, text: "Not created. A new agent can’t ask for that action: code names which agents may." };
     const id = await createBuiltAgent(spec, me.email);
     let seated = "";

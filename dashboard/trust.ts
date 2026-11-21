@@ -5,8 +5,9 @@ import "server-only";
 import { db } from "@/core/db";
 import { agentNames } from "@/core/org";
 import { loadCaps } from "@/core/gateway";
-import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS } from "@/core/gateway/policy";
+import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, type ActionDef } from "@/core/gateway/policy";
 import { listTrust, standingOf, TRUST_MISSING } from "@/core/trust";
+import { loadSpec } from "@/core/agent-spec";
 import { LEVEL_WORDS, offerWords, standingWords, type Level } from "@/core/trust-rules";
 
 /** What each write tool is called on a promotion card ("Quinn's receipt and category changes"). */
@@ -26,7 +27,10 @@ export async function trustView(): Promise<TrustView> {
   const undoMinutes = (await loadCaps()).undo_window_minutes.value;
   const { data: agents } = await db().from("agents").select("id");
   const have = new Set((agents ?? []).map((a) => a.id as string));
-  const pairs = Object.entries(TOOLS).flatMap(([tool, t]) => (t.agents as readonly string[]).filter((a) => have.has(a)).map((agentId) => ({ agentId, tool })));
+  // a granted action type (card 250): the agents whose active spec holds its tool; else the agents it names
+  const specTools = new Map(await Promise.all([...have].map(async (id) => [id, (await loadSpec(id).catch(() => null))?.spec.tools ?? []] as const)));
+  const holders = (t: ActionDef) => (t.agents === "granted" ? [...have].filter((a) => !!t.grant && specTools.get(a)?.includes(t.grant)) : t.agents.filter((a) => have.has(a)));
+  const pairs = Object.entries(TOOLS).flatMap(([tool, t]) => holders(t as ActionDef).map((agentId) => ({ agentId, tool })));
   const names = await agentNames([...new Set(pairs.map((p) => p.agentId))]);
   const rows = await listTrust();
   const rowOf = (a: string, t: string) => rows.find((r) => r.agent_id === a && r.tool === t) ?? null;

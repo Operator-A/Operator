@@ -26,7 +26,7 @@ run that finishes calls `propose` here, with the run id. The gateway's checks ar
 Quinn's proposals: `refuseProposal` (allow-list of agents and fields), then the live re-check in
 `applyOne` before any write. The runner never imports a write integration.
 
-## Who may propose an action (card 210)
+## Who may propose an action (card 250)
 
 Each entry in `TOOLS` says who may propose it (`agents`):
 
