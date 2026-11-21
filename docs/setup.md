@@ -124,11 +124,22 @@ that connect, their steps and what each permission is for are still `TOOL_TILES`
 - **A listed tool that doesn't connect yet** is saved as a fact and as the part's plan (`uses`), and
   goes on our build list as a connection request (`askFor`). It starts working the day it connects.
 - **Something else** routes the typed name in code as before (`routeUnlisted`, `setupOtherTool`):
-  a tile opens, a built-in or known server opens on Connections, anything else is a request and the
-  part starts from an export. The name is also saved as the answer's fact.
+  a tile opens, a built-in or known server opens on Connections, anything else is saved like a listed
+  tool that doesn't connect yet (`uses`, card 196) and goes on our build list. The name is also saved
+  as the answer's fact.
+- **Where a tool would connect** (a part with a tile, like Bank with Mercury), a `uses` answer means that
+  part's departments start from an export until it connects (`planKinds`, `planNotes`, `followUps`).
+  Older `export` plans read the same way. A part where nothing connects yet (bookings, books) only
+  records the tool. The panel says "On our build list" either way.
 - **None yet** is saved as a fact. A part with a starter tool (email marketing, website traffic)
   becomes **Avery sets it up** after setup (card 183); any other is plan `none`.
 - **Skip for now** saves only the skip; the part stays in Your tools to tap later.
+- **What Avery is told** (card 196): each part's state, and for a part where nothing connects yet,
+  that the card only records the tool, so she never promises a connection there. She never asks which
+  tool in words alone; when the founder already named one for an open part, she still shows its card so
+  they confirm it with a tap; an "only if it fits" part fits once the founder names it (Instagram means
+  social). A fact that stops mid-sentence is refused (`factProblem`), and a department's reason keeps
+  one pair of quote marks (`unquote`, `saidLine`).
 - **Your tools**, beside the chat (`partsShown`): every core part, and any other once Avery asked
   about it or it has an answer. Tapping one opens its card (`?q=`), even when answered, with **Change
   my answer** (`setupPlanClear`).
@@ -156,8 +167,8 @@ that connect, their steps and what each permission is for are still `TOOL_TILES`
   `/start?c=<the tool>` (the conversation, with that tool's card showing it connected) only when that cookie says so. Anything else returns to Connections, so it can't
   become an open redirect.
 - **Plans** are saved as `plans` in the setup state (`readPlans`: only real parts, a guide only where
-  there is a starter, an export's name checked as a service name, a `uses` tool only from the part's
-  own list). A connected tool wins over a plan,
+  there is a starter, an export's or `uses` name checked as a service name, never a tool that connects
+  on the part's own list). A connected tool wins over a plan,
   a plan over a skip (`categoryState`). Tapping a planned part shows what was chosen and **Change my
   answer** (`setupPlanClear`). The tool's name is the founder's typed text: it is shown, never used
   to choose a recipient, URL, product or category.

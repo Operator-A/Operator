@@ -9,6 +9,7 @@ import type { SetupAnswer } from "@/core/setup";
 import type { ActionResult } from "@/dashboard/actions";
 import { AREAS_TO_DESIGN, AREA_WORDS, FACT_TOPICS, INTERVIEW_AREAS, TOPIC_WORDS, coverage, type Fact, type FactTopic } from "@/core/setup-rules";
 import { BILLING_WORDS, usd } from "@/core/cost-rules";
+import { saidLine } from "@/core/design-rules";
 import { DEPT_STATUS_WORDS, companyTotals, deptMonth, deptStatus, waitLine, type CompanyAgent, type CompanyDept } from "@/core/company-rules";
 import { Toast } from "./client";
 import { Icon } from "./Icon";
@@ -308,7 +309,7 @@ export function CompanyChart({ owner, company, depts, initial, install, back, em
                 <span className="wg-eyebrow" style={{ fontSize: 11, minWidth: 0 }}>{d.name}</span>
                 <span className="pill sm" style={{ background: STATUS_COLORS[st][0], color: STATUS_COLORS[st][1], flex: "none" }}>{DEPT_STATUS_WORDS[st]}</span>
               </span>
-              {d.reason && <span className="soft-box" style={{ fontSize: 13, lineHeight: 1.45 }}>You said: “{d.reason}”</span>}
+              {d.reason && <span className="soft-box" style={{ fontSize: 13, lineHeight: 1.45 }}>You said: {saidLine(d.reason)}</span>}
               {d.kind === "bespoke" && <span className="muted" style={{ fontSize: 12 }}>Designed for you by Avery</span>}
               {d.agents.map((a) => (
                 <span key={a.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>

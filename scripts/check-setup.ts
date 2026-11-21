@@ -6,7 +6,7 @@ import {
   shownStage, wrapScreen, INTERVIEW_AREAS, SETUP_EFFORT, SETUP_MODEL, coverage, leaningOf, type Fact,
   cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
 } from "../core/setup-rules";
-import { MAX_DESIGNS, REASON_MAX, applyDesign, designGaps, designKey, pickId, readDesigns, type Design, type Kit } from "../core/design-rules";
+import { MAX_DESIGNS, REASON_MAX, applyDesign, saidLine, unquote, designGaps, designKey, pickId, readDesigns, type Design, type Kit } from "../core/design-rules";
 import { peopleOf, type DraftCtx } from "../core/department-rules";
 import { TOOLS } from "../core/tools/catalog";
 import { MEASURES } from "../core/goal-rules";
@@ -27,6 +27,11 @@ assert.equal(factProblem("sells", "Coffee blends", 0), null);
 assert.match(factProblem("price", "x", 0)!, /topic/);
 assert.match(factProblem("sells", "   ", 0)!, /needs words/);
 assert.match(factProblem("sells", "x".repeat(FACT_MAX + 5), 0)!, /at most/);
+// card 196: a fact cut off mid-sentence is refused, so Avery sends the whole line
+assert.match(factProblem("goals", "Greg doesn't know whether the van pays for itself and wants to", 0)!, /stops mid-sentence/);
+for (const end of ["and", "or", "the", "a", "of", "for", "with", "because"]) assert.ok(factProblem("other", `Something about ${end}`, 0), `ends on "${end}"`);
+assert.equal(factProblem("goals", "Wants to know whether the van pays", 0), null, "a whole line is fine");
+assert.equal(factProblem("sells", "Sells a monthly membership", 0), null);
 assert.match(factProblem("sells", "ok", MAX_FACTS)!, /at most 40 facts/);
 assert.equal(cleanFact("  Sells   coffee.\n "), "Sells coffee");
 assert.equal(cleanFact("a\u0000b"), "a b", "control characters go");
@@ -208,6 +213,12 @@ assert.doesNotMatch(read("dashboard/components/setup.tsx"), /role="tree"/, "the 
   let ds = yes([], { part: "about", dept: "Money desk", purpose: "Keeps the books and the cash in view.", reason: "You said the books eat your Sundays.", kit: "finance" }).designs;
   assert.deepEqual(ds[0], { key: "money-desk", name: "Money desk", purpose: "Keeps the books and the cash in view.", reason: "You said the books eat your Sundays.", kit: "finance", draft: null });
   assert.deepEqual(designGaps(ds[0]), [], "a kit brings its own people and goals");
+  // card 196: one pair of quote marks on the card, never two
+  assert.equal(yes([], { part: "about", dept: "Van and books", purpose: "Shows whether the van pays.", reason: "\u201C\"Mostly evenings.\"\u201D", kit: "none" }).designs[0].reason, "Mostly evenings.", "outer quote marks are dropped when saved");
+  assert.equal(saidLine("Mostly evenings."), "\u201CMostly evenings.\u201D");
+  assert.equal(saidLine("\"Mostly evenings.\" Greg does the books late."), "\"Mostly evenings.\" Greg does the books late.", "a reason that quotes inside shows as it is");
+  assert.equal(unquote("'It's late'"), "It's late");
+  assert.match(read("dashboard/components/setup.tsx"), /You said: \{saidLine\(d\.reason\)\}/, "the card shows the reason through saidLine");
   no(ds, { part: "about", dept: "Cash", purpose: "x", reason: "You said so, twice.", kit: "finance" }, /already in the sketch/);
   no(ds, { part: "about", dept: "Astro", purpose: "x", reason: "You said so, twice.", kit: "astrology" }, /isn't a starting kit/);
   no(ds, { part: "head", dept: "Money desk", ...person("Tess") }, /starts from a kit/);
