@@ -55,6 +55,7 @@
     "check:signout": "npx --yes tsx scripts/check-signout.ts",
     "check:time-zone": "npx --yes tsx scripts/check-time-zone.ts",
     "check:on-duty": "npx --yes tsx scripts/check-on-duty.ts",
+    "check:brain": "npx --yes tsx scripts/check-brain.ts",
     "check:ee": "npx --yes tsx ee/check.ts",
     "check:all": "node scripts/check-all.mjs",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",
@@ -80,6 +81,7 @@
     "server-only": "^0.0.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.15",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
