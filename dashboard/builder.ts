@@ -20,7 +20,7 @@ import { CUSTOM_WARNING } from "@/core/custom-mcp-rules";
 import { health } from "@/dashboard/data";
 import type { IntegrationId } from "@/dashboard/crew";
 
-export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; conn: ConnId | CustomConnId; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | null; seat: "team" | "company" | "head" | null }
+export interface BuildTool { id: string; label: string; detail: string; kind: string; group: string; conn: ConnId | CustomConnId; trusted: boolean; connected: boolean; needs: string[]; grantable: boolean; agents: string[] | "granted" | null; seat: "team" | "company" | "head" | null }
 /** A connection as the flow shows it: plain data, set up or not (no values of keys). */
 export interface FlowConn { id: ConnId | CustomConnId; name: string; sub: string; icon: string; builtIn: boolean; about: string; setUp: boolean; custom?: boolean }
 /** Servers the owner added and their turned-on tools, as the builder offers them (docs/custom-servers.md, slice 2). */
@@ -74,9 +74,9 @@ export async function customMenuFor(): Promise<CustomMenu> {
 /** The pick-lists the builder offers, all from code, plus the tools turned on on servers the owner added (`custom`). */
 /** What the builder offers. `crew` names the agents (the Floor's roster) where a rule names one by id. */
 export function builderMenu(crew: readonly { id: string; name: string }[] = [], h: Record<IntegrationId, boolean> = health(), custom: CustomMenu = { tools: [], conns: [] }) {
-  const SETTING: Record<string, unknown> = { ...SETTINGS, OWNER_EMAIL: h.email, SHOPIFY_CONNECTED: h.shopify, KLAVIYO_CONNECTED: h.klaviyo, NOTION_CONNECTED: h.notion, MERCURY_CONNECTED: h.mercury, GMAIL_CONNECTED: h.gmail, ANALYTICS_CONNECTED: h.ga4 };
+  const SETTING: Record<string, unknown> = { ...SETTINGS, OWNER_EMAIL: h.email, SHOPIFY_CONNECTED: h.shopify, KLAVIYO_CONNECTED: h.klaviyo, NOTION_CONNECTED: h.notion, MERCURY_CONNECTED: h.mercury, GMAIL_CONNECTED: h.gmail, ANALYTICS_CONNECTED: h.ga4, CALENDAR_CONNECTED: h.calendar, CALENDAR_HOLDS_CONNECTED: h.calendar_holds };
   return {
-    tools: [...TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents ? [...t.agents] : null, seat: t.seat ?? null })), ...custom.tools],
+    tools: [...TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents === "granted" ? "granted" : t.agents ? [...t.agents] : null, seat: t.seat ?? null })), ...custom.tools],
     agentNames: Object.fromEntries(crew.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,
     models: MODEL_LIST.filter((m) => m.route === "anthropic").map((m): BuildModel => ({ id: m.id, label: m.label, in: m.in, out: m.out })),
     efforts: [...EFFORTS],

@@ -53,7 +53,7 @@ export const blankSpec = (menu: BuilderMenu, name = "New agent"): AgentSpec => {
 
 /** Why the gateway won't let this agent ask for an action, or null when it may. */
 export function blockedFor(t: Tool, agentId: string | null, menu: BuilderMenu): string | null {
-  if (!t.agents) return null;
+  if (!t.agents || t.agents === "granted") return null;
   if (agentId && t.agents.includes(agentId)) return null;
   return `Only ${t.agents.map((a) => menu.agentNames[a] ?? a).join(" and ")} may ask for this. That rule is in code.`;
 }

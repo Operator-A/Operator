@@ -6,7 +6,7 @@ import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import type { FactTopic } from "@/core/setup-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -69,6 +69,15 @@ export const TOOL_TILES: readonly ToolTile[] = [
       "Back here, if the account sees more than one property, tap Use this one next to the business’s site.",
     ],
   },
+  {
+    id: "calendar", name: "Google Calendar", gives: "Your week and free time", icon: "calendar", mcp: "calendar",
+    steps: [
+      "Tap Connect Google Calendar below. Google’s own sign-in page opens.",
+      "Pick the Google account whose calendar the business runs on.",
+      "Google shows one box, to see your calendar events. Leave it ticked and tap Continue.",
+    ],
+    also: { mcp: "calendar_holds", label: "Calendar holds", why: "An agent you give holds to can block time for you, as a private event with no guests. Only the gateway uses this second sign-in, after you approve, and it never invites or emails anyone." },
+  },
 ];
 
 export const TILE_BY_ID = Object.fromEntries(TOOL_TILES.map((t) => [t.id, t])) as Record<ToolTileId, ToolTile>;
@@ -84,6 +93,8 @@ export const SCOPE_WORDS: Record<string, string> = {
   offline_access: "stay signed in, so morning runs work while you sleep",
   "https://www.googleapis.com/auth/gmail.readonly": "search and read email. Google refuses it anything that drafts, sends, labels or deletes",
   "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
+  "https://www.googleapis.com/auth/calendar.events.readonly": "see the events on your calendars. It can’t change, add or delete anything",
+  "https://www.googleapis.com/auth/calendar.events": "add a private hold you approved to your calendar. Our server has no code to change or delete an event, or to invite anyone",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
   "the read-only app’s read scopes (a key with any write scope is refused)": "read orders, products and stock. A key that can change anything is refused",
 };
@@ -97,7 +108,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -170,8 +181,8 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
       "Stay on the free plan: you don’t need to add a card.",
       "Come back here and tap Connect Klaviyo.",
     ] } }),
-  part({ id: "inbox", area: "Inbox and calendar", core: true, topic: "other", learns: "receipts, threads and your week", question: "What do you use for email?", value: "Receipts get matched from your inbox, and emails you approve wait in your Drafts.", ready: "Receipts can be matched from your inbox.",
-    tools: [{ name: "Gmail", tile: "gmail" }, { name: "Outlook" }, { name: "Google Calendar" }] }),
+  part({ id: "inbox", area: "Inbox and calendar", core: true, topic: "other", learns: "receipts, threads and your week", question: "What do you use for email?", value: "Receipts get matched from your inbox, and emails you approve wait in your Drafts.", ready: "Your agents can read your inbox and your week.",
+    tools: [{ name: "Gmail", tile: "gmail" }, { name: "Google Calendar", tile: "calendar" }, { name: "Outlook" }] }),
   part({ id: "site", area: "Website traffic", core: true, topic: "channels", learns: "visits, pages and where people drop off", question: "How do you track your website?", value: "Know where visitors come from and where they drop off.", ready: "Visits and conversions go into your summaries.",
     tools: [{ name: "Google Analytics", tile: "analytics" }, { name: "Plausible" }],
     starter: { tile: "analytics", name: "Google Analytics", promise: "It’s free. You create the property, I show you each tap, then you connect it here.", steps: [
