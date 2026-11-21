@@ -32,6 +32,8 @@ async function check() {
     gmail_read: await hasGmailRead(),
     ga4: await localReady("ga4"),
     stripe: await localReady("stripe"),
+    calendar: await localReady("calendar"),
+    calendar_holds: await localReady("calendar_holds"),
   };
   let agents: { id: string; enabled: boolean }[] | string = "not checked";
   if (set.supabase) {

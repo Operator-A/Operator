@@ -5,7 +5,7 @@
 import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "stripe";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -69,6 +69,15 @@ export const TOOL_TILES: readonly ToolTile[] = [
     ],
   },
   {
+    id: "calendar", name: "Google Calendar", gives: "Your week and free time", icon: "calendar", mcp: "calendar",
+    steps: [
+      "Tap Connect Google Calendar below. Google’s own sign-in page opens.",
+      "Pick the Google account whose calendar the business runs on.",
+      "Google shows one box, to see your calendar events. Leave it ticked and tap Continue.",
+    ],
+    also: { mcp: "calendar_holds", label: "Calendar holds", why: "An agent you give holds to can block time for you, as a private event with no guests. Only the gateway uses this second sign-in, after you approve, and it never invites or emails anyone." },
+  },
+  {
     id: "stripe", name: "Stripe", gives: "Payments, subscriptions and open invoices", icon: "credit-card", mcp: "stripe",
     steps: [
       "In Stripe, open Developers > API keys (on the Stripe dashboard, bottom left).",
@@ -94,6 +103,8 @@ export const SCOPE_WORDS: Record<string, string> = {
   offline_access: "stay signed in, so morning runs work while you sleep",
   "https://www.googleapis.com/auth/gmail.readonly": "search and read email. Google refuses it anything that drafts, sends, labels or deletes",
   "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
+  "https://www.googleapis.com/auth/calendar.events.readonly": "see the events on your calendars. It can’t change, add or delete anything",
+  "https://www.googleapis.com/auth/calendar.events": "add a private hold you approved to your calendar. Our server has no code to change or delete an event, or to invite anyone",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
   "a Stripe restricted key with Read on Balance, Balance transaction sources, Subscriptions, Invoices and Customers, and None on everything else (a key that can change anything is refused)": "see your balance, payments, subscriptions, open invoices and customers. A key that can change anything is refused",
   "a Stripe restricted key with Write on Invoices and Invoice items, Read on Customers, and None on everything else, used only to make a draft invoice": "make a draft invoice you approved. It can’t finalize, send, charge or refund",
@@ -109,7 +120,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", STRIPE_CONNECTED: "stripe",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", STRIPE_CONNECTED: "stripe",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -137,7 +148,7 @@ export const waitingOn = (t: TemplateTools, needsOf: (toolId: string) => readonl
  * line on what connecting it gets the founder, the tools that answer it today, and the line shown once
  * one is connected. Nobody types which department a category feeds: that comes from the tiles' needs.
  */
-export const CATEGORY_IDS = ["store", "site", "money", "list", "inbox"] as const;
+export const CATEGORY_IDS = ["store", "site", "money", "list", "inbox", "calendar"] as const;
 export type CategoryId = (typeof CATEGORY_IDS)[number];
 /** A tool Avery walks a founder into when they have none for the part (card 183): the founder creates the account and accepts its terms. */
 export interface Starter { tile: ToolTileId; name: string; promise: string; steps: readonly string[] }
@@ -165,6 +176,7 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
       "Come back here and tap Connect Klaviyo.",
     ] } },
   { id: "inbox", area: "Inbox", question: "What do you use for email?", value: "Receipts get matched from your inbox, and emails you approve wait in your Drafts.", ready: "Receipts can be matched from your inbox.", tiles: ["gmail"] },
+  { id: "calendar", area: "Calendar", question: "What calendar do you run your days on?", value: "Agents see your week and find free time, and can hold time you approve.", ready: "Your agents can see your week and your free time.", tiles: ["calendar"] },
 ];
 export const isCategory = (c: unknown): c is CategoryId => typeof c === "string" && (CATEGORY_IDS as readonly string[]).includes(c);
 export const categoryOfTile = (tile: unknown): CategoryId | null => TOOL_CATEGORIES.find((c) => (c.tiles as readonly unknown[]).includes(tile))?.id ?? null;

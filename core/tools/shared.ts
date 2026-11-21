@@ -7,5 +7,7 @@ export const SHOPIFY = ["SHOPIFY_CONNECTED"], MERCURY = ["MERCURY_CONNECTED"], N
 export const KLAVIYO = ["KLAVIYO_CONNECTED"];
 export const ANALYTICS = ["ANALYTICS_CONNECTED"];
 export const STRIPE = ["STRIPE_CONNECTED"];
+export const CALENDAR = ["CALENDAR_CONNECTED"];
+export const CALENDAR_HOLDS = ["CALENDAR_HOLDS_CONNECTED"];
 export const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
 export const daysParam = (def: number, max: number, what: string): Param => ({ name: "days", type: "int", min: 1, max, default: def, description: what });
