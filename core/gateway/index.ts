@@ -18,9 +18,10 @@ import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
 import { refuseTags, shopifyTarget } from "@/core/shopify-actions";
 import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
-import { ANNOTATE, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { refuseHold } from "@/core/calendar-rules";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS } from "./policy";
 
 export interface Proposal {
   agentId: string;
@@ -334,7 +335,7 @@ export async function writeBlocker(): Promise<string | null> {
 }
 
 /** A gateway sign-in is connected and not paused. */
-async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "shopify"): Promise<boolean> {
+async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify"): Promise<boolean> {
   const s = await mcpStatus(id);
   return !!s?.connected && !s.paused;
 }
@@ -430,7 +431,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyShopifyTags(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -533,6 +534,52 @@ async function applyCampaign(a: ActionRow, runId: string) {
     return "applied" as const;
   } catch (e) {
     await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
+/** Approved calendar holds (card 251): private events on the gateway's own Calendar holds sign-in, at most max_calendar_holds_per_run per agent. */
+async function applyHolds(ids?: string[]) {
+  const rows = await approvedOf(CALENDAR_HOLD, ids);
+  if (!rows.length) return null;
+  if (!(await ready("calendar_holds"))) return { ok: true, text: "Approved, not on the calendar yet: the Calendar holds sign-in isn't connected (Connections, Google Calendar)." };
+  const cap = await numPolicy("max_calendar_holds_per_run", 10);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyHold(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway put ${n.applied} approved hold${n.applied === 1 ? "" : "s"} on the calendar${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}. No one was invited or emailed.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved holds are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyHold(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as Record<string, unknown>;
+    // the fields and the time again, at execution time (a granted action's agent was checked by refuseUngranted);
+    // the server checks the time is still free on the calendar right before it writes
+    const no = refuseHold(args, Date.now()) ?? (a.target === `${args.start}/${args.end}` ? null : "The target is not the hold's own start and end.");
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const out = (await callWriteTool("calendar_holds", "calendar_create_hold", { title: args.title, start: args.start, end: args.end })) as { eventId?: unknown };
+    if (typeof out?.eventId !== "string" || !out.eventId) throw new Error("Google Calendar didn't return an event id");
+    await done({ status: "applied", result_json: { calendar_event_id: out.eventId, start: args.start, end: args.end, guests: 0 } });
+    return "applied" as const;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // a slot taken since the card is a refusal, not a failure to retry
+    if (/isn't free any more/.test(msg)) { await done({ status: "refused", reason: "That time isn't free on the calendar any more." }); return "refused" as const; }
+    await done({ status: "failed", reason: msg.slice(0, 300) });
     return "failed" as const;
   }
 }

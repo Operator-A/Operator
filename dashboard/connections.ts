@@ -9,7 +9,7 @@ import type { ToolDef, ToolGroup } from "@/core/tools/types";
 import type { IntegrationId } from "./crew";
 import type { McpId } from "@/core/mcp-rules";
 
-export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "email" | "web" | "agents" | "control_room" | "math";
+export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "email" | "web" | "agents" | "control_room" | "math";
 /** A server the owner added by its address (docs/custom-servers.md): its id is the connection's. */
 export type CustomConnId = `c_${string}`;
 
@@ -68,6 +68,14 @@ export const CONNECTIONS: Connection[] = [
     checks: [{ key: "ga4", label: "Property", setup: "Tap Connect, sign in with a Google account that can see the business’s Analytics, then pick the property below. Needs GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel, with the Analytics APIs turned on for that Google client." }],
   },
   {
+    id: "calendar", name: "Google Calendar", sub: "Your week, free time, holds", icon: "calendar", builtIn: false, mcp: "calendar", mcpMore: ["calendar_holds"],
+    about: "Our own Google Calendar server, run in the app. Google’s Calendar MCP server is a gated preview, so it isn’t used. Two separate Google sign-ins to the business’s calendar, each granted one scope: one only reads events (and our server never asks Google for guests’ email addresses, descriptions, places or links), one only puts a private hold you approved on the calendar and is used only by the gateway. A hold has no guests and emails no one; there is no code to change or delete an event. Free time is worked out in code. Event titles come from whoever sent the invite, so they are untrusted data.",
+    checks: [
+      { key: "calendar", label: "Calendar (read only)", setup: "Tap Connect under Google Calendar and sign in with the account whose calendar the business runs on. Needs GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel, with the Google Calendar API turned on for that Google client.", tools: ["calendar_week", "calendar_free_time"] },
+      { key: "calendar_holds", label: "Holds", tools: ["calendar_hold"], setup: "Tap Connect under Calendar holds and sign in with the same account." },
+    ],
+  },
+  {
     id: "email", name: "Email to you", sub: "Briefs and alerts", icon: "inbox", builtIn: false,
     about: "Sends through Resend to the owner email on Settings > Where things go, always one of this business’s owners. The code has no way to name anyone else.",
     checks: [{ key: "email", label: "Email", setup: "Set RESEND_API_KEY and BRIEF_FROM (a sender on a domain verified in Resend) in Vercel, and pick the owner email on Settings > Where things go." }],
@@ -99,7 +107,7 @@ export const CONN_BY_ID = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c])) 
 /** Which connection each tool group belongs to. */
 type BuiltInGroup = Exclude<ToolGroup, "custom">;
 const GROUP_CONN: Record<BuiltInGroup, ConnId> = {
-  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
+  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
 };
 /** For tools on the list in code. A custom server's tools belong to that server (dashboard/builder.ts customMenuFor). */
 export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group as BuiltInGroup];

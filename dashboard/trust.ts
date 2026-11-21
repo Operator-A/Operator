@@ -5,7 +5,7 @@ import "server-only";
 import { db } from "@/core/db";
 import { agentNames } from "@/core/org";
 import { loadCaps } from "@/core/gateway";
-import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, type ActionDef } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, type ActionDef } from "@/core/gateway/policy";
 import { listTrust, standingOf, TRUST_MISSING } from "@/core/trust";
 import { loadSpec } from "@/core/agent-spec";
 import { LEVEL_WORDS, offerWords, standingWords, type Level } from "@/core/trust-rules";
@@ -16,6 +16,7 @@ export const WHAT: Record<string, string> = {
   [DRAFT_EMAIL]: "first-email drafts",
   [CAMPAIGN_DRAFT]: "campaign drafts",
   [SHOPIFY_TAGS]: "Shopify order and customer tags",
+  [CALENDAR_HOLD]: "calendar holds",
 };
 
 export interface TrustLine { agentId: string; tool: string; name: string; what: string; level: Level; levelWords: string; words: string; reason: string | null; changedAt: string | null; clean: number }
@@ -52,7 +53,7 @@ export async function trustView(): Promise<TrustView> {
   if (error && !problem && /execute_after|schema cache|column/.test(error.message)) problem = TRUST_MISSING;
   const scheduled = ((sched ?? []) as { id: string; agent_id: string; tool: string; target: string; args_json: Record<string, unknown>; execute_after: string }[]).map((a) => ({
     id: a.id, agentId: a.agent_id, name: names[a.agent_id] ?? a.agent_id, what: WHAT[a.tool] ?? a.tool, executeAfter: a.execute_after,
-    label: String(a.args_json?.subject ?? a.args_json?.note ?? a.args_json?.category ?? a.target).slice(0, 120),
+    label: String(a.args_json?.subject ?? a.args_json?.title ?? a.args_json?.note ?? a.args_json?.category ?? a.target).slice(0, 120),
   }));
   return { offers, scheduled, lines, undoMinutes, problem };
 }

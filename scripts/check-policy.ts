@@ -1,5 +1,5 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -95,6 +95,18 @@ t("named: Mercury writes stay CFO and Bookkeeper only", JSON.stringify(TOOLS[ANN
 t("named: a granted spec doesn't let Rowan annotate", refuseProposal("wholesale_hunter", ANNOTATE, "00000000-0000-0000-0000-000000000000", { note: "x" }, 200, ["mercury_propose_annotation"]) !== null);
 t("every action type starts at Draft", Object.values(TOOLS).every((d) => d.tier === "Draft"));
 t("every granted action names its tool", Object.values(TOOLS as Record<string, ActionDef>).every((d) => d.agents !== "granted" || !!d.grant));
+
+// calendar holds (card 251): the first granted action type
+const nowMs = Date.parse("2026-11-24T14:52:00Z");
+const hold = { title: "Write the newsletter", start: "2026-11-24T11:00:00-06:00", end: "2026-11-24T12:00:00-06:00" };
+const holdAt = `${hold.start}/${hold.end}`;
+t("hold: granted, Draft, promotable, given as calendar_hold", TOOLS[CALENDAR_HOLD].agents === "granted" && TOOLS[CALENDAR_HOLD].grant === "calendar_hold" && TOOLS[CALENDAR_HOLD].tier === "Draft" && TOOLS[CALENDAR_HOLD].promotable);
+t("hold: ok for an agent given it", refuseProposal("b_ops_1", CALENDAR_HOLD, holdAt, hold, 200, ["calendar_free_time", "calendar_hold"], nowMs) === null);
+t("hold: refused for an agent not given it", refuseProposal("b_ops_1", CALENDAR_HOLD, holdAt, hold, 200, ["calendar_free_time"], nowMs) !== null);
+t("hold: refused when the spec can't be read", refuseProposal("bookkeeper", CALENDAR_HOLD, holdAt, hold, 200, null, nowMs) !== null);
+t("hold: refused when the target isn't its own time", refuseProposal("b_ops_1", CALENDAR_HOLD, "2026-11-25T11:00:00-06:00/2026-11-25T12:00:00-06:00", hold, 200, ["calendar_hold"], nowMs) !== null);
+t("hold: refused with a guest", refuseProposal("b_ops_1", CALENDAR_HOLD, holdAt, { ...hold, attendees: "x@y.example" }, 200, ["calendar_hold"], nowMs) !== null);
+t("hold: refused in the past", refuseProposal("b_ops_1", CALENDAR_HOLD, holdAt, hold, 200, ["calendar_hold"], Date.parse("2026-11-24T18:00:00Z")) !== null);
 
 console.log(fails ? `${fails} FAILED` : "all passed");
 if (fails) process.exit(1);

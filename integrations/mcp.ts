@@ -30,6 +30,7 @@ import { looksLikeMercuryToken } from "@/core/mercury-rules";
 import { shopifyKeyKind } from "@/core/shopify-queries";
 import { gmailMailbox, gmailServer } from "./gmail-server";
 import { ga4Properties, ga4Server } from "./ga4-server";
+import { calendarServer, calendarWho } from "./calendar-server";
 import {
   CUSTOM_ID, MAX_CUSTOM_SERVERS, acceptTools, cantTurnOn, customArgs, customReply, checkAddress, checkCustomTools, checkLabel, checkLine, checkPins, checkScopes, checkServerName, customCheckNote, isCustomId, isPublicIp, looksLikeKey, readToolList,
   type CustomAuth, type CustomServer, type CustomTool, type ToolOn,
@@ -632,7 +633,11 @@ export async function callWriteTool(id: McpId, tool: string, args: Record<string
 /** Who a Google sign-in belongs to, checked right after Connect, with the settings kept on its row; or why it can't be kept. */
 type GoogleWho = { label: string; settings: Record<string, string> } | { problem: string };
 const gmailWho = async (token: string): Promise<GoogleWho> => { const box = await gmailMailbox(token); return box ? { label: `as ${box}`, settings: { mailbox: box } } : { problem: "Gmail didn't say which mailbox this is" }; };
-/** Our own servers signed in with Google: Gmail (slice 6) and Google Analytics (card 152b). */
+const calendarSignIn = async (token: string): Promise<GoogleWho> => {
+  const c = await calendarWho(token);
+  return c.calendar ? { label: `as ${c.calendar}`, settings: { calendar: c.calendar, ...(c.timeZone ? { timeZone: c.timeZone } : {}) } } : { problem: "Google Calendar didn't say whose calendar this is" };
+};
+/** Our own servers signed in with Google: Gmail (slice 6), Google Analytics (card 152b) and Google Calendar (card 251). */
 const GOOGLE: Partial<Record<McpId, { server: (profile: McpId, token: string, settings: Record<string, string>) => Handler; who: (token: string) => Promise<GoogleWho> }>> = {
   gmail_read: { server: (p, t) => gmailServer(p, t), who: gmailWho },
   gmail: { server: (p, t) => gmailServer(p, t), who: gmailWho },
@@ -646,10 +651,12 @@ const GOOGLE: Partial<Record<McpId, { server: (profile: McpId, token: string, se
       return { label: `${props.length} propert${props.length === 1 ? "y" : "ies"}`, settings: { properties: String(props.length), ...one } };
     },
   },
+  calendar: { server: (p, t) => calendarServer(p, t), who: calendarSignIn },
+  calendar_holds: { server: (p, t) => calendarServer(p, t), who: calendarSignIn },
 };
 
 /**
- * One tools/call to our own Gmail or Google Analytics server (slice 6, card 152b), with an access token the vault opens and renews
+ * One tools/call to our own Gmail, Google Analytics or Google Calendar server (slice 6, cards 152b, 251), with an access token the vault opens and renews
  * for this profile's sign-in. The server serves only this profile's tools. Errors are scrubbed; a
  * token Google no longer accepts pauses the sign-in.
  */
@@ -665,7 +672,7 @@ async function callGoogleTool(id: McpId, tool: string, args: Record<string, unkn
   const out = "error" in rep ? { error: rep.error } : toolPayload(rep.result);
   if ("error" in out) {
     const msg = scrubSecrets(out.error, secrets);
-    if (/^(Gmail|Analytics) 401\b/.test(msg)) { await pause(id, `Google refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: Google refused the sign-in. Tap Sign in again on Connections.`); }
+    if (/^(Gmail|Analytics|Calendar) 401\b/.test(msg)) { await pause(id, `Google refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: Google refused the sign-in. Tap Sign in again on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;

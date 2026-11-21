@@ -167,6 +167,9 @@ export function health(): Record<IntegrationId, boolean> {
     vault: vaultReady(),
     // signed in on Connections, and a property picked: getFloor reads mcp_connections
     ga4: false,
+    // both Google Calendar sign-ins (reads, the gateway's holds) are made on Connections
+    calendar: false,
+    calendar_holds: false,
   };
 }
 
@@ -356,7 +359,7 @@ export interface ApprovalItem {
   status: string;
   created_at: string;
   decided_at: string | null;
-  preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null; charge?: string; to?: string; subject?: string; body?: string; list?: string; preview_text?: string; record?: string; tags?: string[]; why?: string };
+  preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null; charge?: string; to?: string; subject?: string; body?: string; list?: string; preview_text?: string; title?: string; slot?: string; minutes?: number; record?: string; tags?: string[]; why?: string };
   /** The gateway tool: a Mercury change or a Gmail draft. */
   tool: string;
   /** A 10-minute signed link to the receipt file, so the owner can check it before approving. */

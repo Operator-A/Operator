@@ -277,6 +277,44 @@ platform > Data access.
 
 No migration.
 
+## Google Calendar on our own server (card 251)
+
+Google's Calendar MCP server (`calendarmcp.googleapis.com`) is a gated Developer Preview, so a
+business can't connect it. Ours runs in the app like Gmail's, with two Google sign-ins.
+
+- **Profiles** (`core/mcp-rules.ts`), both signed in with Google on the Gmail OAuth client:
+  - `calendar`: `https://www.googleapis.com/auth/calendar.events.readonly` alone. Read tools
+    `calendar_events` and `calendar_free`. No write tools.
+  - `calendar_holds`: `https://www.googleapis.com/auth/calendar.events` alone, held only by the
+    gateway. One write tool, `calendar_create_hold` (action type `calendar.hold`). No read tools.
+  A grant with anything more, or less, is cancelled at Google and not kept (`scopeProblem`).
+- **Who it is:** right after Connect the server reads the primary calendar's name and time zone,
+  kept in the connection's settings.
+- **What the reads return** (`core/calendar-rules.ts`): the primary calendar only. The server asks
+  Google for a fixed field list with no attendee email, description, place or link
+  (`LIST_FIELDS`), so none reach the app. An event is a time, a title cut to 80 characters
+  (untrusted: whoever sent the invite wrote it) and a guest count. Meetings, hours in meetings, the
+  busiest day and free slots (working hours less busy time, 30 minutes or more, in the calendar's
+  own time zone) are worked out in code. Declined, free, cancelled and all-day events don't block time.
+- **Agents** read them as `calendar_week` (untrusted) and `calendar_free_time` (trusted; each slot
+  carries a pick), group `calendar`, needing `CALENDAR_CONNECTED`.
+- **The action** `calendar_hold` is the first granted action type (card 250): any agent an approver
+  gives it to on the builder's Tools step. It takes a slot pick, a length (15 minutes to 8 hours,
+  inside the slot), a title and a reason; the model never types a time. The gateway checks the fields
+  (`refuseHold`: title, start and end only; no links or addresses; 5 minutes to 30 days out) when it
+  is proposed and again before it is applied, and the server checks the time is still free on the
+  calendar right before it writes. The hold is private, busy, has no guests and no reminders, and is
+  inserted with `sendUpdates=none`, so no one is invited or emailed. There is no update, move or
+  delete code. At most `policies.max_calendar_holds_per_run` (default 10) per agent per apply.
+- **Files:** `integrations/calendar-api.ts` is the only file that calls Google Calendar (list events,
+  insert a hold), and only `integrations/calendar-server.ts` imports it. Only `integrations/mcp.ts`
+  reaches the server. Lint and `check:mcp` enforce both.
+
+**Setting it up (once per Google OAuth client):** in Google Cloud, open the project that holds the
+client in `GMAIL_CLIENT_ID`. Turn on **Google Calendar API** (APIs & Services > Library), then add the
+scopes `.../auth/calendar.events.readonly` and `.../auth/calendar.events` under Google Auth platform >
+Data access.
+
 ## Klaviyo campaign drafts on our own server (card 159b)
 
 Klaviyo's hosted MCP server stays read-only for agents (`read-only=true`). The one write the Campaign

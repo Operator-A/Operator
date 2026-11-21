@@ -41,6 +41,17 @@ The gateway checks a granted action twice: `propose` reads the agent's active sp
 and `applyApproved` refuses, rather than applies, any approved granted action whose agent no longer
 holds the tool (`refuseUngranted`). That covers actions released from the undo window too.
 
+## `calendar.hold` (card 251)
+
+A private hold on the business's primary Google Calendar: a title, a start and an end, nothing else.
+Granted: any agent an approver gives `calendar_hold` to. The time is a free slot from
+`calendar_free_time`, picked by code, so an event title can't choose it. `refuseHold` checks the
+fields on proposal and again in `applyHold`; the Calendar holds server checks the time is still free
+right before it writes (a taken slot is refused, not retried). The event is private and busy, has no
+guests and is inserted with `sendUpdates=none`, so no one is emailed. Starts at Draft and may be
+promoted (28 of the last 30 approvals unedited). Needs the Calendar holds sign-in on Connections;
+until then approved holds wait.
+
 ## `gmail.create_draft` (slice 7)
 
 A plain-text draft in the business's Gmail, to a lead on the leads list (`wholesale_leads`). Only
