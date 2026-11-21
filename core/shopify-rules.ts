@@ -1,9 +1,10 @@
 // The rules every Shopify query on our own MCP server follows (docs/mcp-everywhere.md, slice 7).
 // Pure, so the server and the checks can both build on it. There is no
 // "run any GraphQL" tool: a model or agent picks a tool, never a query, and each tool's variables
-// are built in code from checked inputs. Every document is a read (`assertReadOnly`, and
-// scripts/validate-graphql.mjs against Shopify's schema), and the app's key is refused at paste time
-// if it carries any scope that isn't a read.
+// are built in code from checked inputs. Every document here is a read (`assertReadOnly`, and
+// scripts/validate-graphql.mjs against Shopify's schema). Store actions are fixed mutations in
+// core/shopify-actions.ts, run only by the gateway. The app's key is refused at paste time if it carries
+// a write scope the Shopify profile doesn't name.
 import { offsetOn } from "@/core/time";
 
 
@@ -51,8 +52,11 @@ export function assertReadOnly(doc: string): void {
   if (!/^\s*query\s+[A-Za-z_]\w*/.test(body) || /\b(mutation|subscription)\b/.test(body) || !single) throw new Error("only a single query may run on Shopify");
 }
 
-/** Every scope is a read (read_* or unauthenticated_read_*). A key with any other scope is refused. */
-export const writeScopes = (handles: readonly string[]) => handles.filter((h) => !/^(unauthenticated_)?read_[a-z_]+$/.test(h));
+/**
+ * The scopes a key carries beyond what the profile asks for: anything that isn't a read (read_* or
+ * unauthenticated_read_*) or one of the write scopes named in `allowed`. A key with any is refused.
+ */
+export const scopesBeyond = (handles: readonly string[], allowed: readonly string[]) => handles.filter((h) => !/^(unauthenticated_)?read_[a-z_]+$/.test(h) && !allowed.includes(h));
 
 /** The pasted key: the app's Admin API access token, or the client secret of a Dev Dashboard app (its client id is on Settings). */
 export function shopifyKeyKind(key: string): "token" | "secret" | null {
@@ -141,6 +145,21 @@ const PRODUCT_FACTS = gql`
   }
 `;
 
+// The latest orders with their Shopify ids, for store actions: an agent names one by its pick code.
+// Order number, date, total, tags and status; the customer only by id, order count and tags. No names or addresses.
+const RECENT_ORDERS = gql`
+  query AgentRecentOrders($query: String!, $after: String) {
+    orders(first: 50, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) {
+      nodes {
+        id name createdAt tags cancelledAt displayFulfillmentStatus
+        totalPriceSet { shopMoney { amount currencyCode } }
+        customer { id numberOfOrders tags }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
 /** Core's Shopify tools: what every business on Shopify can read. */
 export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
   {
@@ -177,6 +196,18 @@ export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };
       if (!since) return { problem: "since must be YYYY-MM-DD" };
       return { variables: { query: `status:open AND created_at:>='${since}T00:00:00${offsetOn(since, ctx.timeZone)}' AND (fulfillment_status:unshipped OR fulfillment_status:partial)`, after: cur } };
+    },
+  },
+  {
+    tool: "shopify_recent_orders",
+    description: "The latest orders placed since a day, newest first, 50 a page, with their Shopify ids: order number, date, total, tags, fulfillment status, and the customer only by id, order count and tags. No names or addresses.",
+    inputSchema: { type: "object", required: ["since"], properties: { since: day, after } },
+    doc: RECENT_ORDERS,
+    variables: (a, ctx) => {
+      const since = dayArg(a, "since"), cur = afterArg(a);
+      if (cur === undefined) return { problem: "after must be a cursor from the last page" };
+      if (!since) return { problem: "since must be YYYY-MM-DD" };
+      return { variables: { query: `created_at:>='${since}T00:00:00${offsetOn(since, ctx.timeZone)}'`, after: cur } };
     },
   },
   {

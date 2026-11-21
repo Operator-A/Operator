@@ -2,26 +2,64 @@ import "server-only";
 // Our own Shopify MCP server (docs/mcp-everywhere.md, slice 7). Shopify's own MCP servers are for
 // storefronts and building apps, not a read-only Admin view of one store, so Shopify runs here, like
 // Notion and Gmail. It speaks the same JSON-RPC as any MCP server and is reached only through
-// integrations/mcp.ts callLocalTool, which opens the read-only app's key from the token vault.
-// Each tool runs one fixed query (core/shopify-queries.ts); there is no tool that takes GraphQL.
+// integrations/mcp.ts, which opens the app's key from the token vault. Each read tool runs one fixed
+// query (core/shopify-queries.ts); each write tool runs one fixed mutation (core/shopify-actions.ts)
+// and is reached only by core/gateway through callWriteTool. There is no tool that takes GraphQL.
 import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import { settings } from "@/core/settings";
 import { DEFAULT_TZ } from "@/core/time";
-import { SHOPIFY_QUERIES, shopifyKeyKind, shopifyVariables, writeScopes } from "@/core/shopify-queries";
-import { shopifyQuery, whoIs } from "./shopify-api";
+import { SHOPIFY_QUERIES, shopifyKeyKind, shopifyVariables, scopesBeyond } from "@/core/shopify-queries";
+import { SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, TAGS_ADD, TAGS_OF, planTags, refuseTags, scopeFor, shopifyTarget } from "@/core/shopify-actions";
+import { shopifyMutate, shopifyQuery, whoIs } from "./shopify-api";
 
-const OFFERED = MCP_SERVERS.shopify.readTools as readonly string[];
+const READS = MCP_SERVERS.shopify.readTools as readonly string[];
+const WRITES = (MCP_SERVERS.shopify.writeTools as readonly { tool: string }[]).map((w) => w.tool);
 const TOOLS = Object.fromEntries(SHOPIFY_QUERIES.map((q) => [q.tool, q]));
+const WRITE_ABOUT: Record<string, { description: string; inputSchema: unknown }> = {
+  [SHOPIFY_TAGS_TOOL]: {
+    description: "Adds tags to one order or one customer. Only the gateway calls it, after an approver approves. Never removes a tag.",
+    inputSchema: { type: "object", required: ["target", "tags"], properties: { target: { type: "string" }, tags: { type: "array", items: { type: "string" } } } },
+  },
+};
 
-/** Before a key is kept: its shape, which shop it opens, and that every scope it carries is a read. */
+/** Before a key is kept: its shape, which shop it opens, and that it carries no write scope beyond the profile's. */
 export async function checkShopifyKey(key: string): Promise<{ name: string; workspace: string }> {
   if (!shopifyKeyKind(key)) throw new Error("not an Admin API access token or a client secret");
   const w = await whoIs(key);
-  const bad = writeScopes(w.scopes);
-  if (bad.length) throw new Error(`this app can change the store (${bad.slice(0, 6).join(", ")}). Use the read-only app, with read scopes only`);
+  const bad = scopesBeyond(w.scopes, SHOPIFY_WRITE_SCOPES);
+  if (bad.length) throw new Error(`this app can do more than OPERATOR asks for (${bad.slice(0, 6).join(", ")}). Untick those scopes: keep the read scopes plus ${SHOPIFY_WRITE_SCOPES.join(" and ")}`);
   const shop = (await settings()).shopifyDomain;
   if (shop && w.domain !== shop) throw new Error(`it opens ${w.domain}, not ${shop}`);
-  return { name: w.name, workspace: `${w.domain}, ${w.scopes.length} read scopes` };
+  const writes = SHOPIFY_WRITE_SCOPES.filter((s) => w.scopes.includes(s));
+  return { name: w.name, workspace: `${w.domain}, ${w.scopes.length - writes.length} read scopes${writes.length ? `, ${writes.join(" and ")}` : ", no store actions yet"}` };
+}
+
+type TagsOf = { node: { id: string; name?: string; tags: string[]; numberOfOrders?: string | number } | null };
+type TagsAdded = { tagsAdd: { node: { id: string } | null; userErrors: { field?: string[]; message: string }[] } };
+
+/**
+ * Adds tags to one order or customer: the inputs checked again, the app's live scopes, the live tags,
+ * then Shopify's tagsAdd with only the tags not already there. Returns what it added (the undo) and
+ * what the record had before.
+ */
+async function addTags(key: string, raw: unknown): Promise<Record<string, unknown>> {
+  const a = (raw && typeof raw === "object" ? raw : {}) as { target?: unknown; tags?: unknown };
+  const target = typeof a.target === "string" ? shopifyTarget(a.target) : null;
+  if (!target) throw new Error("the target isn't a Shopify order or customer id");
+  const no = refuseTags({ tags: a.tags });
+  if (no) throw new Error(no);
+  const need = scopeFor(target);
+  const { scopes } = await whoIs(key);
+  if (!scopes.includes(need)) throw new Error(`the Shopify app doesn't have ${need} yet. In Shopify: Settings, Apps and sales channels, Develop apps, your OPERATOR app, Configuration, tick ${need}, Save, then update the app`);
+  const live = (await shopifyQuery<TagsOf>(key, TAGS_OF, { id: target.gid })).node;
+  if (!live || live.id !== target.gid) throw new Error(`Shopify doesn't have this ${target.kind.toLowerCase()} any more`);
+  const plan = planTags(a.tags as string[], live.tags ?? []);
+  const label = target.kind === "Order" ? `order ${live.name ?? ""}`.trim() : "customer";
+  if (!plan.add.length) return { added: [], skipped: plan.skipped, before: live.tags ?? [], label };
+  const out = await shopifyMutate<TagsAdded>(key, TAGS_ADD, { id: target.gid, tags: plan.add });
+  const errs = out.tagsAdd.userErrors ?? [];
+  if (errs.length) throw new Error(`Shopify refused the tags: ${errs.map((e) => e.message).join("; ").slice(0, 200)}`);
+  return { added: plan.add, skipped: plan.skipped, before: live.tags ?? [], label };
 }
 
 /** A JSON-RPC handler for one call, with the key the vault opened. */
@@ -36,10 +74,21 @@ export function shopifyServer(key: string) {
       case "initialize":
         return reply(id, { protocolVersion: MCP_PROTOCOL, capabilities: { tools: {} }, serverInfo: { name: "operator-shopify", version: "1" } });
       case "tools/list":
-        return reply(id, { tools: OFFERED.map((name) => ({ name, description: TOOLS[name].description, inputSchema: TOOLS[name].inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })) });
+        return reply(id, { tools: [
+          ...READS.map((name) => ({ name, description: TOOLS[name].description, inputSchema: TOOLS[name].inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })),
+          ...WRITES.map((name) => ({ name, ...WRITE_ABOUT[name], annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } })),
+        ] });
       case "tools/call": {
         const name = typeof req.params?.name === "string" ? req.params.name : "";
-        if (!OFFERED.includes(name)) return toolError(id, `${name || "That"} isn't a tool this server serves.`);
+        // integrations/mcp.ts lets only callWriteTool (the gateway) reach a write tool
+        if (name === SHOPIFY_TAGS_TOOL && WRITES.includes(name)) {
+          try {
+            return reply(id, { structuredContent: await addTags(key, req.params?.arguments), content: [{ type: "text", text: "ok" }] });
+          } catch (e) {
+            return toolError(id, e instanceof Error ? e.message : String(e));
+          }
+        }
+        if (!READS.includes(name)) return toolError(id, `${name || "That"} isn't a tool this server serves.`);
         const s = await settings();
         const v = shopifyVariables(name, req.params?.arguments, { productCollections: s.productCollections, productFields: s.productFields, timeZone: s.timeZone ?? DEFAULT_TZ });
         if ("problem" in v) return toolError(id, `Input refused: ${v.problem}`);

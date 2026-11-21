@@ -15,12 +15,13 @@ import { orgTz } from "@/core/tz";
 import { hasGmail } from "@/integrations/gmail";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
+import { refuseTags, shopifyTarget } from "@/core/shopify-actions";
 import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
 import { refuseHold } from "@/core/calendar-rules";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS } from "./policy";
 
 export interface Proposal {
   agentId: string;
@@ -334,7 +335,7 @@ export async function writeBlocker(): Promise<string | null> {
 }
 
 /** A gateway sign-in is connected and not paused. */
-async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds"): Promise<boolean> {
+async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify"): Promise<boolean> {
   const s = await mcpStatus(id);
   return !!s?.connected && !s.paused;
 }
@@ -430,7 +431,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -579,6 +580,58 @@ async function applyHold(a: ActionRow, runId: string) {
     // a slot taken since the card is a refusal, not a failure to retry
     if (/isn't free any more/.test(msg)) { await done({ status: "refused", reason: "That time isn't free on the calendar any more." }); return "refused" as const; }
     await done({ status: "failed", reason: msg.slice(0, 300) });
+    return "failed" as const;
+  }
+}
+
+/** Approved Shopify tag changes, at most max_shopify_writes_per_run per agent, through our Shopify server on the business's key. */
+async function applyShopifyTags(ids?: string[]) {
+  const rows = await approvedOf(SHOPIFY_TAGS, ids);
+  if (!rows.length) return null;
+  if (!(await ready("shopify"))) return { ok: true, text: "Approved, not in Shopify yet: Shopify isn't connected (Connections, Shopify)." };
+  const cap = await numPolicy("max_shopify_writes_per_run", 25);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyShopifyTag(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway tagged ${n.applied} approved Shopify record${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved tags are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyShopifyTag(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as { tags: string[] };
+    // the fields again, at execution time (the grant was re-checked by refuseUngranted before any apply);
+    // the server re-checks the app's scopes and the live tags
+    const no = shopifyTarget(a.target) ? refuseTags(args as unknown as Record<string, unknown>) : "The target is not a Shopify order or customer id.";
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const out = (await callWriteTool("shopify", "shopify_add_tags", { target: a.target, tags: args.tags })) as { added?: unknown; skipped?: unknown; before?: unknown; label?: unknown };
+    const added = Array.isArray(out?.added) ? (out.added as string[]) : [];
+    const skipped = Array.isArray(out?.skipped) ? (out.skipped as string[]) : [];
+    const before = Array.isArray(out?.before) ? (out.before as string[]) : [];
+    await done({
+      status: "applied",
+      reason: skipped.length ? `Already there, left as is: ${skipped.join(", ")}` : added.length ? null : "Every tag was already there.",
+      diff_json: { before: { tags: before }, after: { tags: [...before, ...added] } },
+      // what to put back: remove exactly the tags this action added (Shopify's tagsRemove), never one set by hand
+      undo_json: added.length ? { tags_remove: added } : null,
+      result_json: { added, skipped, record: typeof out?.label === "string" ? out.label : null },
+    });
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
     return "failed" as const;
   }
 }

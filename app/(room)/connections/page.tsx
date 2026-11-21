@@ -217,7 +217,7 @@ function Detail({ c, f, mcp, more, note }: { c: Connection; f: Floor; mcp: McpVi
       {c.checks.length > 1 && <span className="row wrap" style={{ gap: 6 }}>{c.checks.map((k) => <span key={k.key} className="pill sm" style={{ background: f.health[k.key] ? "var(--mint-soft)" : "var(--soft)", color: f.health[k.key] ? "var(--mint-ink)" : "var(--ink2)" }}>{k.label}: {f.health[k.key] ? "set up" : "not set up"}</span>)}</span>}
       {!c.mcp && missing.map((k) => <span key={k.key} className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.checks.length > 1 ? `${k.label}: ` : ""}{k.setup}</span>)}
       {section("Can read", "Looks only. Nothing changes.", t.read, `Agents can’t read anything from ${c.name}.`)}
-      {section("Can do", "Each one becomes a card on Approvals. Nothing happens until you tap Approve.", t.do, c.id === "shopify" ? "Nothing. Shopify is read-only here." : "Nothing yet.", true)}
+      {section("Can do", "Each one becomes a card on Approvals. Nothing happens until you tap Approve.", t.do, "Nothing yet.", true)}
       {section("Hands you", "Delivered by code after a run finishes. Never during a try.", t.hands, "Nothing.")}
     </div>
   );
