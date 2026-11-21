@@ -54,11 +54,14 @@ function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView
   const oauth = srv.auth !== "token";
   const hosted = srv.auth === "oauth";
   const google = srv.auth === "google";
+  const intuit = srv.auth === "intuit";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <VaultNote v={v.vault} />
       {!srv.readTools.length
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Only the gateway uses this {oauth ? "sign-in" : "key"}, after you approve: {writes.join(", ")}. {oauth ? `Sign-in asks only for: ${srv.scopes.join(", ")}.` : `It should be ${srv.scopes.join(", ")}, and is locked in the vault, never shown again.`}</span>
+        : intuit
+        ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Our own server, run in the app. Agents may read with: {srv.readTools.join(", ")}. Only the gateway, after you approve, may use: {writes.join(", ")}; it moves an expense out of Uncategorized Expense and changes nothing else. Intuit has one accounting permission ({srv.scopes.join(", ")}) and it can read and write, so these limits are in our code.</span>
         : google
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Our own server, run in the app. Agents may read with: {srv.readTools.join(", ")}; nothing here can change {srv.name}. Sign-in asks Google only for: {srv.scopes.join(", ")}, and is refused if Google grants anything else.</span>
         : oauth
@@ -82,6 +85,11 @@ function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView
           {google && id !== "ga4" && !s.paused && (
             <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
               {s.settings.mailbox ? <>Signed in as <b>{s.settings.mailbox}</b>. If that isn’t the business’s mailbox, tap Disconnect, then Connect again with the right Google account.</> : "Couldn’t read which mailbox this is."}
+            </span>
+          )}
+          {intuit && !s.paused && (
+            <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+              {s.settings.company ? <>Signed in to <b>{s.settings.company}</b>. If that isn’t the business’s QuickBooks company, tap Disconnect, then Connect again and pick the right company on Intuit’s page.</> : "Couldn’t read which company this is."}
             </span>
           )}
           {id === "mercury" && !s.paused && (

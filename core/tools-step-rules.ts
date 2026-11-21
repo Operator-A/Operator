@@ -6,7 +6,7 @@ import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import type { FactTopic } from "@/core/setup-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe" | "quickbooks";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -89,6 +89,15 @@ export const TOOL_TILES: readonly ToolTile[] = [
     ],
     also: { mcp: "stripe_drafts", label: "Stripe invoice drafts", why: "To draft invoices you approve, paste a second restricted key that can write invoices and nothing else. Only the gateway uses it, and you finalize and send each invoice from Stripe." },
   },
+  {
+    id: "quickbooks", name: "QuickBooks Online", gives: "Profit and loss, and expenses to categorize", icon: "book-open", mcp: "quickbooks",
+    steps: [
+      "Tap Connect QuickBooks below. Intuit’s own sign-in page opens.",
+      "Sign in as an admin of the business’s QuickBooks company.",
+      "If you have more than one company, pick the business’s, then tap Connect.",
+      "Back here, check that the company name shown is your business.",
+    ],
+  },
 ];
 
 export const TILE_BY_ID = Object.fromEntries(TOOL_TILES.map((t) => [t.id, t])) as Record<ToolTileId, ToolTile>;
@@ -109,6 +118,7 @@ export const SCOPE_WORDS: Record<string, string> = {
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
   "a Stripe restricted key with Read on Balance, Balance transaction sources, Subscriptions, Invoices and Customers, and None on everything else (a key that can change anything is refused)": "see your balance, payments, subscriptions, open invoices and customers. A key that can change anything is refused",
   "a Stripe restricted key with Write on Invoices and Invoice items, Read on Customers, and None on everything else, used only to make a draft invoice": "make a draft invoice you approved. It can’t finalize, send, charge or refund",
+  "com.intuit.quickbooks.accounting": "see your profit and loss, expenses and accounts, and move an expense out of Uncategorized Expense after you approve. Intuit’s one accounting permission can do more, so our server holds it to exactly that: it never changes an amount and never creates or deletes anything",
   "the app’s read scopes": "read orders, products and stock",
   write_orders: "add tags to an order, only after you approve",
   write_customers: "add tags to a customer, only after you approve",
@@ -123,7 +133,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", STRIPE_CONNECTED: "stripe",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", STRIPE_CONNECTED: "stripe", QUICKBOOKS_CONNECTED: "quickbooks",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -185,7 +195,7 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
   part({ id: "money", area: "Bank", core: true, topic: "other", learns: "balances and every charge", question: "Where does the money live?", value: "Your bookkeeper categorizes every charge and matches the receipts.", ready: "Your books can start from your real transactions.",
     tools: [{ name: "Mercury", tile: "mercury" }, { name: "Chase" }, { name: "Bank of America" }, { name: "Wells Fargo" }] }),
   part({ id: "books", area: "Books", core: true, topic: "other", learns: "profit and loss, bills and what’s owed to you", question: "What do you keep your books in?", value: "Monthly numbers come from your own books, not a guess.", ready: "Your books are in reach.",
-    tools: [{ name: "QuickBooks Online" }, { name: "Xero" }, { name: "Wave" }] }),
+    tools: [{ name: "QuickBooks Online", tile: "quickbooks" }, { name: "Xero" }, { name: "Wave" }] }),
   part({ id: "list", area: "Email marketing", core: true, topic: "channels", learns: "your lists and how campaigns did", question: "What do you use for email marketing?", value: "Campaigns get drafted from what sold best. You press send.", ready: "Your lists and past campaigns are in reach.",
     tools: [{ name: "Klaviyo", tile: "klaviyo" }, { name: "Mailchimp" }, { name: "Shopify Email" }, { name: "Kit" }],
     starter: { tile: "klaviyo", name: "Klaviyo", promise: "The free plan needs no card. It’s your account, I show you each tap, then you connect it here.", steps: [

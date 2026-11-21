@@ -10,6 +10,7 @@
 import { createHash } from "node:crypto";
 import { SHOPIFY_TOOLS } from "@/core/shopify-queries";
 import { STRIPE_DRAFT_TOOL, STRIPE_READ_TOOLS } from "@/core/stripe-rules";
+import { QBO_CATEGORIZE, QBO_CATEGORIZE_TOOL, QBO_READ_TOOLS, QBO_SCOPE } from "@/core/quickbooks-rules";
 import { SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES } from "@/core/shopify-actions";
 
 /**
@@ -24,9 +25,11 @@ export interface McpServer {
    * once on Connections, for a server we run ourselves in the app (integrations/mcp.ts LOCAL), used
    * where the service's hosted server would reach more than the profile needs. "google": a server we
    * run ourselves, signed in on Google's own page (Connect) with the business's own Google OAuth client
-   * (GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET), asking for the profile's one scope only.
+   * (GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET), asking for the profile's one scope only. "intuit": the
+   * same, on Intuit's own page with the app's Intuit OAuth client (QUICKBOOKS_CLIENT_ID and
+   * QUICKBOOKS_CLIENT_SECRET), for QuickBooks Online.
    */
-  auth: "oauth" | "token" | "google";
+  auth: "oauth" | "token" | "google" | "intuit";
   /** The server's address (for a token server, the API our own server calls), with read-only switches on where it has them. */
   url: string;
   /** The only tools code may call on it, by the server's own names. Read tools only. */
@@ -226,6 +229,22 @@ export const MCP_SERVERS = {
     writeTools: [{ tool: STRIPE_DRAFT_TOOL, actionType: "stripe.invoice_draft" }],
     signInHint: "In Stripe: Developers, API keys, Create restricted key, name it OPERATOR invoice drafts. Set Invoices to Write (and Invoice items too, if Stripe lists it on its own), Customers to Read, leave everything else None, then Create key. Paste it here (rk_…). Only the gateway uses it, after you approve; you finalize and send from Stripe.",
   },
+  quickbooks: {
+    id: "quickbooks",
+    name: "QuickBooks Online",
+    // Our own server (integrations/quickbooks-server.ts, card 241). Intuit's QuickBooks MCP server runs
+    // on a person's machine and can create, change and delete almost anything. Intuit has one accounting
+    // scope and it can read and write, so the limits are in code: each read tool runs one fixed request
+    // (core/quickbooks-rules.ts) and sums are made there; the one write tool, called only by the gateway
+    // after an approver approves, moves an expense line out of Uncategorized Expense and changes nothing else.
+    auth: "intuit",
+    url: "https://quickbooks.api.intuit.com/v3/company",
+    readTools: QBO_READ_TOOLS,
+    reportTools: [],
+    scopes: [QBO_SCOPE],
+    writeTools: [{ tool: QBO_CATEGORIZE_TOOL, actionType: QBO_CATEGORIZE }],
+    signInHint: "Sign in as an admin of the business’s QuickBooks company, and pick that company on Intuit’s page.",
+  },
   calendar: {
     id: "calendar",
     name: "Google Calendar",
@@ -282,6 +301,8 @@ export function mayReport(id: string, tool: string): boolean {
 export const isHosted = (id: McpId) => MCP_SERVERS[id].auth === "oauth";
 /** Servers we run ourselves, signed in on Google's page with our own OAuth client. */
 export const isGoogle = (id: McpId) => MCP_SERVERS[id].auth === "google";
+/** Servers we run ourselves, signed in on the service's own page with the app's own OAuth client: Google and Intuit. */
+export const isAppSignIn = (id: McpId) => MCP_SERVERS[id].auth === "google" || MCP_SERVERS[id].auth === "intuit";
 /** Signed in with a Connect button (hosted or Google), not a pasted key. */
 export const usesConnect = (id: McpId) => MCP_SERVERS[id].auth !== "token";
 
@@ -290,6 +311,16 @@ export const GOOGLE_AUTH: AuthServer = {
   authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
   token_endpoint: "https://oauth2.googleapis.com/token",
   revocation_endpoint: "https://oauth2.googleapis.com/revoke",
+};
+
+/**
+ * Intuit's fixed sign-in addresses, from its OpenID discovery document (developer.api.intuit.com/.well-known/openid_configuration):
+ * no self-registration, our own OAuth client. The token reply carries no scope list; the company comes back as realmId.
+ */
+export const INTUIT_AUTH: AuthServer = {
+  authorization_endpoint: "https://appcenter.intuit.com/connect/oauth2",
+  token_endpoint: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+  revocation_endpoint: "https://developer.api.intuit.com/v2/oauth2/tokens/revoke",
 };
 
 /** The scopes a token reply says were granted, or null when it doesn't say. */

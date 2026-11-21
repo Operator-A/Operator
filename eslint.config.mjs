@@ -40,6 +40,10 @@ const STAPI_MSG = "A business's Stripe is called only by our Stripe MCP server (
 const STAPI = { paths: ["@/integrations/stripe-api", "./stripe-api", "../integrations/stripe-api"].map((name) => ({ name, message: STAPI_MSG })), pattern: { group: ["**/integrations/stripe-api", "./stripe-api"], message: STAPI_MSG } };
 const STSRV_MSG = "Our Stripe MCP server is reached only through integrations/mcp.ts, which opens its key from the vault.";
 const STSRV = { paths: ["@/integrations/stripe-server", "./stripe-server", "../integrations/stripe-server"].map((name) => ({ name, message: STSRV_MSG })), pattern: { group: ["**/stripe-server"], message: STSRV_MSG } };
+const QAPI_MSG = "A business's QuickBooks is called only by our QuickBooks MCP server (integrations/quickbooks-server.ts), reached through integrations/mcp.ts.";
+const QAPI = { paths: ["@/integrations/quickbooks-api", "./quickbooks-api", "../integrations/quickbooks-api"].map((name) => ({ name, message: QAPI_MSG })), pattern: { group: ["**/integrations/quickbooks-api", "./quickbooks-api"], message: QAPI_MSG } };
+const QSRV_MSG = "Our QuickBooks MCP server is reached only through integrations/mcp.ts, which opens its sign-in from the vault.";
+const QSRV = { paths: ["@/integrations/quickbooks-server", "./quickbooks-server", "../integrations/quickbooks-server"].map((name) => ({ name, message: QSRV_MSG })), pattern: { group: ["**/quickbooks-server"], message: QSRV_MSG } };
 // MCP write tools (slice 5b): only the gateway calls one, after an approver approves.
 const MCPW_MSG = "Only core/gateway calls an MCP write tool, after an approver approves.";
 const MCPW = { name: "@/integrations/mcp", importNames: ["callWriteTool"], message: MCPW_MSG };
@@ -62,13 +66,13 @@ export default defineConfig([
     files: ["**/*.{ts,tsx}"],
     ignores: ["core/gateway/**"],
     rules: {
-      "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, MCPW, MCPC], patterns: [MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern] }],
+      "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, ...QAPI.paths, ...QSRV.paths, MCPW, MCPC], patterns: [MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern, QAPI.pattern, QSRV.pattern] }],
     },
   },
   {
     files: ["core/tools/custom.ts"],
     rules: {
-      "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, MCPW], patterns: [MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern] }],
+      "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, ...QAPI.paths, ...QSRV.paths, MCPW], patterns: [MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern, QAPI.pattern, QSRV.pattern] }],
     },
   },
   // Hard rule: memory is notes, never authority. Nothing that decides access reads it.
@@ -80,51 +84,61 @@ export default defineConfig([
   },
   {
     files: ["integrations/**/*.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, MCPW, MCPC], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, ...QAPI.paths, ...QSRV.paths, MCPW, MCPC], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern, QAPI.pattern, QSRV.pattern] }] },
   },
   // Our Notion server is the one file that calls Notion's API.
   {
     files: ["integrations/notion-server.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, ...QAPI.paths, ...QSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern, QAPI.pattern, QSRV.pattern] }] },
   },
   // Our Gmail server is the one file that calls Gmail's API.
   {
     files: ["integrations/gmail-server.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, ...QAPI.paths, ...QSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern, QAPI.pattern, QSRV.pattern] }] },
   },
   // Our GA4 server is the one file that calls Google Analytics' APIs.
   {
     files: ["integrations/ga4-server.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, ...QAPI.paths, ...QSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern, QAPI.pattern, QSRV.pattern] }] },
   },
   // Our Calendar server is the one file that calls Google Calendar's API.
   {
     files: ["integrations/calendar-server.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, ...QAPI.paths, ...QSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern, QAPI.pattern, QSRV.pattern] }] },
   },
   // Our Shopify server is the one file that calls Shopify's API.
   {
     files: ["integrations/shopify-server.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, ...QAPI.paths, ...QSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern, QAPI.pattern, QSRV.pattern] }] },
   },
   // The MCP client is the one integration that opens the vault; its test reads it too.
   {
     files: ["integrations/mcp.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...NAPI.paths, ...GAPI.paths, ...G4API.paths, ...CAPI.paths, ...SAPI.paths, ...STAPI.paths], patterns: [MEMORY_PATTERN, SPEC_PATTERN, NAPI.pattern, GAPI.pattern, G4API.pattern, CAPI.pattern, SAPI.pattern, STAPI.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...NAPI.paths, ...GAPI.paths, ...G4API.paths, ...CAPI.paths, ...SAPI.paths, ...STAPI.paths, ...QAPI.paths], patterns: [MEMORY_PATTERN, SPEC_PATTERN, NAPI.pattern, GAPI.pattern, G4API.pattern, CAPI.pattern, SAPI.pattern, STAPI.pattern, QAPI.pattern] }] },
   },
   {
     files: ["scripts/check-mcp.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, MCPW], patterns: [MERCURY_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, ...QAPI.paths, ...QSRV.paths, MCPW], patterns: [MERCURY_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern, QAPI.pattern, QSRV.pattern] }] },
   },
   // Our Stripe server is the one file that calls a business's Stripe.
   {
     files: ["integrations/stripe-server.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STSRV.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STSRV.paths, ...QSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STSRV.pattern, QSRV.pattern] }] },
   },
   // The Stripe check runs our Stripe server on a fake fetch; it still may not import Stripe's API file.
   {
     files: ["scripts/check-stripe.ts"],
-    rules: { "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, MCPW], patterns: [MERCURY_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern] }] },
+    rules: { "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...QSRV.paths, ...STAPI.paths, ...QAPI.paths, MCPW], patterns: [MERCURY_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, QSRV.pattern, STAPI.pattern, QAPI.pattern] }] },
+  },
+  // Our QuickBooks server is the one file that calls a business's QuickBooks.
+  {
+    files: ["integrations/quickbooks-server.ts"],
+    rules: { "no-restricted-imports": ["error", { paths: [MEMORY_RULE, ...SPEC_RULES, ...MERCURY_PATHS, ...VAULT_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STAPI.paths, ...STSRV.paths, ...QSRV.paths, MCPW], patterns: [MEMORY_PATTERN, SPEC_PATTERN, MERCURY_PATTERN, VAULT_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STAPI.pattern, STSRV.pattern, QSRV.pattern] }] },
+  },
+  // The QuickBooks check runs our QuickBooks server on a fake fetch; it still may not import the QuickBooks API file.
+  {
+    files: ["scripts/check-quickbooks.ts"],
+    rules: { "no-restricted-imports": ["error", { paths: [...MERCURY_PATHS, ...NAPI.paths, ...NSRV.paths, ...GAPI.paths, ...G4API.paths, ...GSRV.paths, ...G4SRV.paths, ...CAPI.paths, ...CSRV.paths, ...SAPI.paths, ...SSRV.paths, ...KSRV.paths, ...STSRV.paths, ...STAPI.paths, ...QAPI.paths, MCPW], patterns: [MERCURY_PATTERN, NAPI.pattern, NSRV.pattern, GAPI.pattern, G4API.pattern, GSRV.pattern, G4SRV.pattern, CAPI.pattern, CSRV.pattern, SAPI.pattern, SSRV.pattern, KSRV.pattern, STSRV.pattern, STAPI.pattern, QAPI.pattern] }] },
   },
   // Tenancy (docs/tenancy.md): core/db.ts is the one file that makes a Supabase client, so every
   // query goes through the org-scoped db(). A separate rule, so it doesn't replace the import rules above.
