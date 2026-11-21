@@ -7,7 +7,7 @@
 import { gql } from "@/core/shopify-rules";
 
 /** The write scopes the Shopify profile asks for. A key with any other write scope is refused. */
-export const SHOPIFY_WRITE_SCOPES = ["write_orders", "write_customers"] as const;
+export const SHOPIFY_WRITE_SCOPES = ["write_orders", "write_customers", "write_inventory"] as const;
 
 /** Gateway action type: add tags to one order or one customer. Undo removes only the tags it added. */
 export const SHOPIFY_TAGS = "shopify.add_tags";
@@ -23,7 +23,7 @@ export function shopifyTarget(target: string): ShopifyTarget | null {
   const m = GID.exec(target);
   return m ? { kind: m[1] as ShopifyTarget["kind"], gid: target } : null;
 }
-/** The write scope a tag change on this target needs. */
+/** The write scope a tag change on this target needs (a stock change needs write_inventory). */
 export const scopeFor = (t: ShopifyTarget) => (t.kind === "Order" ? "write_orders" : "write_customers");
 
 export const TAG_LIMITS = { tags: 5, chars: 40 } as const;
@@ -80,8 +80,91 @@ export const TAGS_ADD = gql`
   }
 `;
 
+// ---------- slice 2: set the available count of one variant at one location ----------
+
+/** Gateway action type: set the available count of one inventory item at one location. Draft only, never promoted. */
+export const SHOPIFY_STOCK = "shopify.set_stock";
+/** The write tool on our Shopify server that applies it. */
+export const SHOPIFY_STOCK_TOOL = "shopify_set_stock";
+/** The builder's tool an approver grants (core/tools/catalog.ts). */
+export const SHOPIFY_STOCK_GRANT = "shopify_stock";
+
+/**
+ * The limits on one stock change, in code (Zak, 2026-11-21): a count from 0 to 10,000, moved at most
+ * 100 units up or down from the count the card was staged against.
+ */
+export const STOCK_LIMITS = { max: 10_000, change: 100 } as const;
+/** Shopify's own reason codes an agent may give. Anything else is refused. */
+export const STOCK_REASONS = ["received", "correction", "cycle_count_available", "damaged", "shrinkage"] as const;
+export type StockReason = (typeof STOCK_REASONS)[number];
+
+export type StockTarget = { item: string; location: string };
+const ITEM = /^gid:\/\/shopify\/InventoryItem\/\d{1,20}$/;
+const LOCATION = /^gid:\/\/shopify\/Location\/\d{1,20}$/;
+/** The target of a stock change: "<inventory item gid>@<location gid>", as a Stock levels row names it. */
+export function stockTarget(target: string): StockTarget | null {
+  const [item, location, more] = target.split("@");
+  return more === undefined && ITEM.test(item ?? "") && LOCATION.test(location ?? "") ? { item, location } : null;
+}
+export const stockTargetOf = (item: string, location: string) => `${item}@${location}`;
+/** An idempotency key for one stock change: the gateway action's id. */
+export const stockKeyOk = (v: unknown): v is string => typeof v === "string" && /^[A-Za-z0-9-]{8,64}$/.test(v);
+
+const whole = (v: unknown, lo: number, hi: number) => typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi;
+
+/**
+ * Why a stock change is refused, or null: `from` (the count the card was staged against), `available`
+ * (the new count) and `reason`, nothing else; both counts 0 to 10,000; a real change of at most 100 units.
+ */
+export function refuseStock(args: Record<string, unknown>): string | null {
+  const extra = Object.keys(args).filter((k) => !["from", "available", "reason"].includes(k));
+  if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. A stock change holds only the count before, the new count and a reason.`;
+  if (!whole(args.from, -1_000_000, 1_000_000)) return "from must be the whole count the Stock levels row showed.";
+  if (!whole(args.available, 0, STOCK_LIMITS.max)) return `The new count must be a whole number from 0 to ${STOCK_LIMITS.max.toLocaleString("en-US")}.`;
+  const change = (args.available as number) - (args.from as number);
+  if (change === 0) return "That is already the count.";
+  if (Math.abs(change) > STOCK_LIMITS.change) return `A change of ${Math.abs(change)} units is over the limit of ${STOCK_LIMITS.change} per change.`;
+  if (!STOCK_REASONS.includes(args.reason as StockReason)) return `reason must be one of: ${STOCK_REASONS.join(", ")}.`;
+  return null;
+}
+
+/**
+ * What a staged stock change may still do against the live count: write only when the store still shows
+ * the count the card was staged against (Shopify's changeFromQuantity checks it again as it writes).
+ */
+export function planStock(from: number, available: number, live: number | null): { write: true } | { refuse: string } {
+  if (live === null) return { refuse: "This item isn't stocked at that location any more." };
+  if (live !== from) return { refuse: `Stock changed since this was staged (it was ${from}, it is ${live} now). Nothing was written.` };
+  return available === live ? { refuse: "That is already the count." } : { write: true };
+}
+
+/**
+ * Whether an undo of a stock change may put the count back: only while the store still shows the count
+ * the action set, so a count someone changed since is never overwritten.
+ */
+export const mayUndoStock = (set: number, live: number | null) => live === set;
+
+// The live count of one item at one location, read right before the write. A read, so it may live here.
+export const STOCK_OF = gql`
+  query AgentStockOf($item: ID!, $location: ID!) {
+    inventoryItem(id: $item) {
+      id tracked sku
+      variant { title product { title } }
+      inventoryLevel(locationId: $location) { id location { id name } quantities(names: ["available"]) { name quantity } }
+    }
+  }
+`;
+
+// The only Shopify write in the repo for this action type: set the available count, compared against the
+// count it was staged against. The idempotency key is the gateway action's id, so a retry never applies twice.
+export const STOCK_SET = gql`
+  mutation AgentStockSet($input: InventorySetQuantitiesInput!, $key: String!) {
+    inventorySetQuantities(input: $input) @idempotent(key: $key) { inventoryAdjustmentGroup { id } userErrors { field message code } }
+  }
+`;
+
 /** Every mutation our Shopify server may run, by write tool. The server refuses any other document. */
-export const SHOPIFY_MUTATIONS: Readonly<Record<string, string>> = { [SHOPIFY_TAGS_TOOL]: TAGS_ADD };
+export const SHOPIFY_MUTATIONS: Readonly<Record<string, string>> = { [SHOPIFY_TAGS_TOOL]: TAGS_ADD, [SHOPIFY_STOCK_TOOL]: STOCK_SET };
 
 /** A document is exactly one of the fixed mutations above. */
 export function assertFixedMutation(doc: string): void {

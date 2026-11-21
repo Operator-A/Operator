@@ -9,7 +9,7 @@ import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import { settings } from "@/core/settings";
 import { DEFAULT_TZ } from "@/core/time";
 import { SHOPIFY_QUERIES, shopifyKeyKind, shopifyVariables, scopesBeyond } from "@/core/shopify-queries";
-import { SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, TAGS_ADD, TAGS_OF, planTags, refuseTags, scopeFor, shopifyTarget } from "@/core/shopify-actions";
+import { SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_ADD, TAGS_OF, planStock, planTags, refuseStock, refuseTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "@/core/shopify-actions";
 import { shopifyMutate, shopifyQuery, whoIs } from "./shopify-api";
 
 const READS = MCP_SERVERS.shopify.readTools as readonly string[];
@@ -20,7 +20,14 @@ const WRITE_ABOUT: Record<string, { description: string; inputSchema: unknown }>
     description: "Adds tags to one order or one customer. Only the gateway calls it, after an approver approves. Never removes a tag.",
     inputSchema: { type: "object", required: ["target", "tags"], properties: { target: { type: "string" }, tags: { type: "array", items: { type: "string" } } } },
   },
+  [SHOPIFY_STOCK_TOOL]: {
+    description: "Sets the available count of one inventory item at one location, only while the store still shows the count it was staged against. Only the gateway calls it, after an approver approves.",
+    inputSchema: { type: "object", required: ["target", "from", "available", "reason", "key"], properties: { target: { type: "string" }, from: { type: "integer" }, available: { type: "integer" }, reason: { type: "string" }, key: { type: "string" } } },
+  },
 };
+
+// where a business adds a write scope: a new version of its app (Dev Dashboard) or the legacy custom app's Configuration
+const addScope = (need: string) => `the Shopify app doesn't have ${need} yet. Add ${need} to the app's scopes (Dev Dashboard: your app, Versions, Create version, Scopes, Release; then approve it for your store), and try again`;
 
 /** Before a key is kept: its shape, which shop it opens, and that it carries no write scope beyond the profile's. */
 export async function checkShopifyKey(key: string): Promise<{ name: string; workspace: string }> {
@@ -50,7 +57,7 @@ async function addTags(key: string, raw: unknown): Promise<Record<string, unknow
   if (no) throw new Error(no);
   const need = scopeFor(target);
   const { scopes } = await whoIs(key);
-  if (!scopes.includes(need)) throw new Error(`the Shopify app doesn't have ${need} yet. In Shopify: Settings, Apps and sales channels, Develop apps, your OPERATOR app, Configuration, tick ${need}, Save, then update the app`);
+  if (!scopes.includes(need)) throw new Error(addScope(need));
   const live = (await shopifyQuery<TagsOf>(key, TAGS_OF, { id: target.gid })).node;
   if (!live || live.id !== target.gid) throw new Error(`Shopify doesn't have this ${target.kind.toLowerCase()} any more`);
   const plan = planTags(a.tags as string[], live.tags ?? []);
@@ -60,6 +67,43 @@ async function addTags(key: string, raw: unknown): Promise<Record<string, unknow
   const errs = out.tagsAdd.userErrors ?? [];
   if (errs.length) throw new Error(`Shopify refused the tags: ${errs.map((e) => e.message).join("; ").slice(0, 200)}`);
   return { added: plan.add, skipped: plan.skipped, before: live.tags ?? [], label };
+}
+
+type StockOf = { inventoryItem: { id: string; tracked: boolean; sku: string | null; variant: { title: string; product: { title: string } | null } | null; inventoryLevel: { id: string; location: { id: string; name: string }; quantities: { name: string; quantity: number }[] } | null } | null };
+type StockSet = { inventorySetQuantities: { inventoryAdjustmentGroup: { id: string } | null; userErrors: { field?: string[] | string; message: string; code?: string }[] } };
+
+/**
+ * Sets the available count of one item at one location: the inputs checked again, the app's live scopes,
+ * the live count (it must still be the count the card was staged against), then Shopify's
+ * inventorySetQuantities with changeFromQuantity, so Shopify refuses it too if the count moved meanwhile.
+ */
+async function setStock(key: string, raw: unknown): Promise<Record<string, unknown>> {
+  const a = (raw && typeof raw === "object" ? raw : {}) as { target?: unknown; from?: unknown; available?: unknown; reason?: unknown; key?: unknown };
+  const target = typeof a.target === "string" ? stockTarget(a.target) : null;
+  if (!target) throw new Error("the target isn't a Shopify inventory item at a location");
+  if (!stockKeyOk(a.key)) throw new Error("a stock change needs the action's id as its idempotency key");
+  const no = refuseStock({ from: a.from, available: a.available, reason: a.reason });
+  if (no) throw new Error(no);
+  const from = a.from as number, available = a.available as number;
+  const { scopes } = await whoIs(key);
+  if (!scopes.includes("write_inventory")) throw new Error(addScope("write_inventory"));
+  const item = (await shopifyQuery<StockOf>(key, STOCK_OF, { item: target.item, location: target.location })).inventoryItem;
+  if (!item || item.id !== target.item) throw new Error("Shopify doesn't have this item any more");
+  if (!item.tracked) throw new Error("Shopify doesn't track stock for this item");
+  const lvl = item.inventoryLevel && item.inventoryLevel.location.id === target.location ? item.inventoryLevel : null;
+  const live = lvl ? lvl.quantities.find((q) => q.name === "available")?.quantity ?? null : null;
+  const name = item.variant ? [item.variant.product?.title, item.variant.title === "Default Title" ? "" : item.variant.title].filter(Boolean).join(" · ") : "";
+  const label = `${name || item.sku || "item"} at ${lvl?.location.name ?? "that location"}`;
+  const plan = planStock(from, available, live);
+  if ("refuse" in plan) return { refused: plan.refuse, live, label };
+  const out = await shopifyMutate<StockSet>(key, STOCK_SET, {
+    input: { name: "available", reason: a.reason, quantities: [{ inventoryItemId: target.item, locationId: target.location, quantity: available, changeFromQuantity: from }] },
+    key: a.key,
+  });
+  const errs = out.inventorySetQuantities.userErrors ?? [];
+  if (errs.some((e) => e.code === "CHANGE_FROM_QUANTITY_STALE")) return { refused: "Stock changed in Shopify while this was being written. Nothing was written.", live: null, label };
+  if (errs.length) throw new Error(`Shopify refused the stock change: ${errs.map((e) => e.message).join("; ").slice(0, 200)}`);
+  return { before: from, after: available, label, adjustment: out.inventorySetQuantities.inventoryAdjustmentGroup?.id ?? null };
 }
 
 /** A JSON-RPC handler for one call, with the key the vault opened. */
@@ -76,14 +120,15 @@ export function shopifyServer(key: string) {
       case "tools/list":
         return reply(id, { tools: [
           ...READS.map((name) => ({ name, description: TOOLS[name].description, inputSchema: TOOLS[name].inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })),
-          ...WRITES.map((name) => ({ name, ...WRITE_ABOUT[name], annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } })),
+          ...WRITES.map((name) => ({ name, ...WRITE_ABOUT[name], annotations: { readOnlyHint: false, destructiveHint: name === SHOPIFY_STOCK_TOOL, idempotentHint: true, openWorldHint: false } })),
         ] });
       case "tools/call": {
         const name = typeof req.params?.name === "string" ? req.params.name : "";
         // integrations/mcp.ts lets only callWriteTool (the gateway) reach a write tool
-        if (name === SHOPIFY_TAGS_TOOL && WRITES.includes(name)) {
+        const write = name === SHOPIFY_TAGS_TOOL ? addTags : name === SHOPIFY_STOCK_TOOL ? setStock : null;
+        if (write && WRITES.includes(name)) {
           try {
-            return reply(id, { structuredContent: await addTags(key, req.params?.arguments), content: [{ type: "text", text: "ok" }] });
+            return reply(id, { structuredContent: await write(key, req.params?.arguments), content: [{ type: "text", text: "ok" }] });
           } catch (e) {
             return toolError(id, e instanceof Error ? e.message : String(e));
           }
