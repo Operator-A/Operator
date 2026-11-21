@@ -673,6 +673,13 @@ a.goal-add:hover { text-decoration: none; color: var(--ink); }
 .wg-node.now::after, .wg-node.on::after { opacity: 1; }
 .wg-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; min-height: 56px; padding: 12px 16px; border-radius: 16px; border: 1px solid var(--bd); background: rgba(255, 255, 255, .8); color: var(--ink); transition: transform .25s, box-shadow .25s, border-color .25s; }
 button.wg-opt { width: 100%; font: inherit; text-align: left; cursor: pointer; }
+/* a part's card in the chat (card 195): the common tools in a grid of three, two on a phone */
+.wg-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.wg-tool { min-height: 48px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--bd); background: var(--card); color: var(--ink); font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer; overflow-wrap: anywhere; transition: border-color .2s, transform .2s; }
+.wg-tool:hover { border-color: #7C8CF8; transform: translateY(-1px); }
+.wg-else > summary { list-style: none; cursor: pointer; } .wg-else > summary::-webkit-details-marker { display: none; }
+.wg-else[open] { flex-basis: 100%; }
+@media (max-width: 560px) { .wg-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .wg-opt:hover { text-decoration: none; transform: translateY(-2px); border-color: #7C8CF8; box-shadow: 0 14px 28px -16px rgba(63, 71, 184, .5); }
 @keyframes wgDash { to { background-position: 24px 0; } }
 @media (max-width: 900px) {

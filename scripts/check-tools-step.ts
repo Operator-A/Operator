@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 import { MCP_SERVERS } from "../core/mcp-rules";
 import { TEMPLATES } from "../core/templates";
 import { TOOLS } from "../core/tools/catalog";
-import { readSetupState } from "../core/setup-rules";
+import { readAsked, readSetupState, setupDirective, toolLines, FACT_TOPICS } from "../core/setup-rules";
 import { waitLine } from "../core/company-rules";
-import { CATEGORY_IDS, NEED_TILE, SCOPE_WORDS, TOOL_CATEGORIES, TOOL_TILES, backTarget, categoryOfTile, categoryState, currentCategory, followUps, orderCategories, planNotes, readPlans, readSkipped, tileOfMcp, type Plans, type ToolTileId, neededBy, permissionsOf, routeUnlisted, tilesFor, waitingOn, type TemplateTools } from "../core/tools-step-rules";
+import { CATEGORY_IDS, NEED_TILE, SCOPE_WORDS, TOOL_CATEGORIES, TOOL_TILES, MAX_LISTED, answerFact, backTarget, cardCategory, categoryOfTile, categoryState, followUps, listedTool, partsShown, planKinds, planNotes, readPlans, readSkipped, tileOfMcp, type Plans, type ToolTileId, neededBy, permissionsOf, routeUnlisted, tilesFor, waitingOn, type TemplateTools } from "../core/tools-step-rules";
 
 const read = (f: string) => readFileSync(f, "utf8");
 const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[id]?.needs ?? [];
@@ -54,47 +54,88 @@ const connect = read("app/(room)/connections/[id]/connect/route.ts");
 assert.match(connect, /searchParams\.get\("from"\) === "start"/, "the connect route takes from=start only");
 assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookies\.get\(BACK_COOKIE\)\?\.value === "start"/, "the callback trusts only its own cookie");
 
-// one question per part of the company (card 182)
+// the parts of a business a tool runs, asked inside Avery's interview (card 195)
 {
   const built = TOOL_TILES.filter((t) => t.mcp).map((t) => t.id);
-  for (const id of built) assert.equal(TOOL_CATEGORIES.filter((c) => c.tiles.includes(id)).length, 1, `${id} answers exactly one question`);
-  for (const c of TOOL_CATEGORIES) {
-    assert.ok(c.question.endsWith("?") && c.value && c.ready && c.area, `${c.id}: a question, what it gets you, and the line once connected`);
-    assert.ok(c.value.length <= 110, `${c.id}: value in few words`);
-    for (const t of c.tiles) assert.ok(TOOL_TILES.some((x) => x.id === t), `${c.id}: ${t} is a tile`);
-  }
+  for (const id of built) assert.equal(TOOL_CATEGORIES.filter((c) => c.tiles.includes(id)).length, 1, `${id} answers exactly one part`);
   assert.deepEqual(TOOL_CATEGORIES.map((c) => c.id), [...CATEGORY_IDS]);
+  assert.equal(CATEGORY_IDS.length, 14, "8 core parts and 6 that fit only some businesses");
+  assert.deepEqual(TOOL_CATEGORIES.filter((c) => c.core).map((c) => c.id), ["store", "payments", "money", "books", "list", "inbox", "site", "leads"]);
+  for (const c of TOOL_CATEGORIES) {
+    assert.ok(c.question.endsWith("?") && c.value && c.ready && c.area && c.learns, `${c.id}: a question, what it gets you, what Avery learns, the line once connected`);
+    assert.ok(c.value.length <= 110, `${c.id}: value in few words`);
+    assert.ok((FACT_TOPICS as readonly string[]).includes(c.topic), `${c.id}: its answer is saved under a fact topic`);
+    assert.ok(c.tools.length >= 2 && c.tools.length <= MAX_LISTED, `${c.id}: two to ${MAX_LISTED} common tools`);
+    assert.equal(new Set(c.tools.map((t) => t.name)).size, c.tools.length, `${c.id}: each tool once`);
+    const firstUnbuilt = c.tools.findIndex((t) => !t.tile);
+    assert.ok(c.tools.slice(firstUnbuilt < 0 ? c.tools.length : firstUnbuilt).every((t) => !t.tile), `${c.id}: the tools that connect come first`);
+    assert.deepEqual([...c.tiles], c.tools.flatMap((t) => (t.tile ? [t.tile] : [])), `${c.id}: tiles come from its own list`);
+    for (const t of c.tiles) assert.ok(TOOL_TILES.some((x) => x.id === t && x.mcp), `${c.id}: ${t} is a built tile`);
+    assert.ok(answerFact(c, c.tools[0].name).length <= 160 && answerFact(c, null).endsWith(": none yet"), `${c.id}: the answer fits one fact`);
+  }
   assert.equal(categoryOfTile("mercury"), "money");
   assert.equal(categoryOfTile("nope"), null);
   assert.equal(tileOfMcp("gmail"), "gmail");
   assert.equal(tileOfMcp("mercury_write"), null, "a gateway-only sign-in is no tile");
-  // order: what a leaned-toward department needs comes first, the rest keep list order
-  assert.deepEqual(orderCategories(new Set()).map((c) => c.id), [...CATEGORY_IDS]);
-  assert.deepEqual(orderCategories(new Set(["mercury", "klaviyo"] as const)).map((c) => c.id), ["money", "list", "store", "site", "inbox"]);
-  // skipped: only real categories, each once
+  // a picked tool must be on the part's own card, by its exact name
+  assert.deepEqual(listedTool("bookings", "Calendly"), { name: "Calendly" });
+  assert.deepEqual(listedTool("store", "Shopify"), { name: "Shopify", tile: "shopify" });
+  assert.equal(listedTool("bookings", "Shopify"), null, "a tool from another part's card is refused");
+  assert.equal(listedTool("store", "https://evil.example"), null);
+  assert.equal(listedTool("store", undefined), null);
+  // skipped: only real parts, each once; asked: only real parts, the latest ask last
   assert.deepEqual(readSkipped(["inbox", "nope", "inbox", "store", 3]), ["store", "inbox"]);
   assert.deepEqual(readSkipped("store"), []);
   assert.deepEqual(readSetupState({ skipped: ["site", "x"] }, []).skipped, ["site"]);
-  // the question on screen
-  const order = orderCategories(new Set());
-  const cur = (connected: ToolTileId[], skipped: string[], asked?: unknown) => currentCategory(order, new Set(connected), readSkipped(skipped), asked)?.id ?? null;
-  assert.equal(cur([], []), "store", "the first open one");
-  assert.equal(cur(["shopify"], ["site"]), "money", "connected and skipped ones are answered");
-  assert.equal(cur(["shopify"], [], "store"), "store", "one asked for shows even when answered");
-  assert.equal(cur([], [], "nope"), "store", "an unknown one is ignored");
-  assert.equal(cur(["shopify", "analytics", "mercury"], ["list", "inbox"]), null, "every part connected or skipped: none");
-  assert.equal(categoryState(order[0], new Set(["shopify"] as const), ["store"]), "connected", "connected wins over skipped");
+  assert.deepEqual(readAsked(["bookings", "nope", "store", "bookings", 4]), ["store", "bookings"], "asking again moves a part to the end");
+  assert.deepEqual(readAsked("store"), []);
+  assert.deepEqual(readSetupState({ asked: ["ads", "x"] }, []).asked, ["ads"]);
+  // the card in the chat: the tapped part, else Avery's last ask while it is still open
+  const card = (tapped: unknown, asking: string | null, connected: ToolTileId[] = [], skipped: string[] = [], plans: Plans = {}) =>
+    cardCategory(tapped, asking as never, new Set(connected), readSkipped(skipped), plans)?.id ?? null;
+  assert.equal(card(undefined, null), null, "no card until Avery asks");
+  assert.equal(card(undefined, "bookings"), "bookings");
+  assert.equal(card(undefined, "store", ["shopify"]), null, "an answered ask closes its card");
+  assert.equal(card(undefined, "store", [], ["store"]), null, "so does a skip");
+  assert.equal(card(undefined, "bookings", [], [], { bookings: { kind: "uses", tool: "Calendly" } }), null, "and an answer");
+  assert.equal(card("store", null, ["shopify"]), "store", "a tapped part shows even when answered");
+  assert.equal(card("nope", "ads"), "ads", "an unknown tap is ignored");
+  // Your tools: core parts from the start, the others once asked or answered
+  const shown = (asked: string[], plans: Plans = {}) => partsShown(new Set(), [], plans, readAsked(asked)).map((p) => p.c.id);
+  assert.deepEqual(shown([]), TOOL_CATEGORIES.filter((c) => c.core).map((c) => c.id));
+  assert.ok(shown(["bookings"]).includes("bookings") && !shown(["bookings"]).includes("shipping"), "a part that fits only some businesses shows once asked");
+  assert.ok(shown([], { ads: { kind: "none" } }).includes("ads"), "or once answered");
+  assert.equal(categoryState(TOOL_CATEGORIES[0], new Set(["shopify"] as const), ["store"]), "connected", "connected wins over skipped");
+  // Avery names a part only; its state comes from code, and the tools come from the list
+  const lines = toolLines([{ id: "store", state: "connected" }, { id: "bookings", state: "open" }]);
+  assert.match(lines, /- store \(where you sell\): connected/);
+  assert.match(lines, /- bookings \(bookings, only if it fits\): open/);
+  assert.ok(!/Shopify|Calendly|https?:/.test(lines), "the directive lists parts, never tools or links");
+  const dir = setupDirective("Avery", [], []);
+  assert.match(dir, /call Ask about a tool with that part's id/);
+  assert.match(dir, /Never name a tool, a link or a sign-in step yourself: the card does that/);
+  assert.ok(!dir.includes("that is advice only"), "the old line that sent tools to a later step is gone");
+  const setup = read("core/setup.ts");
+  assert.match(setup, /function askToolTool[\s\S]{0,900}if \(rows\.length\) return \{ problem: "one card per reply" \}[\s\S]{0,200}if \(!open\.has\(cat\)\) return \{ problem: "that part already has an answer" \}/, "one card per reply, and only an open part");
+  assert.match(setup, /options: \[\.\.\.CATEGORY_IDS\]/, "ask_tool takes a part id from the list, nothing else");
+  assert.match(setup, /if \(heldAsk\.cat\) \{ const now = await setupState\(\); await saveSetupState/, "the ask is kept only after a run that finished");
+  assert.match(setup, /export async function answerCategory[\s\S]{0,500}listedTool\(cat, tool\)[\s\S]{0,120}throw new Error/, "an answer is checked against the part's own list");
   const acts = read("dashboard/setupActions.ts");
-  assert.match(acts, /export async function setupSkipTool[\s\S]{0,140}asRole\("approver"\)[\s\S]{0,80}isCategory\(cat\)/, "skipping checks the role, then the category");
+  assert.match(acts, /export async function setupAnswerTool[\s\S]{0,200}asRole\("owner"\)[\s\S]{0,80}isCategory\(cat\)/, "answering checks the role, then the part");
+  assert.doesNotMatch(acts.slice(acts.indexOf("export async function setupAnswerTool"), acts.indexOf("export async function setupPlanClear")), /askSetup|runExplore/, "no model call");
+  assert.match(acts, /export async function setupSkipTool[\s\S]{0,140}asRole\("approver"\)[\s\S]{0,80}isCategory\(cat\)/, "skipping checks the role, then the part");
+  assert.match(acts, /connectedTiles\(await getHealth\(\)\)[\s\S]{0,120}askSetup\(m\.text, site, connected\)/, "Avery is told which parts are connected");
   const page = read("app/start/page.tsx");
-  assert.ok(!page.includes("ToolTileCard"), "the tile grid is gone");
-  assert.match(page, /isCategory\(sp\.q\) \? sp\.q : categoryOfTile\(sp\.c\)/, "the page only takes a category from the list");
+  assert.ok(!page.includes('state.stage === "tools"') && !page.includes("PartBox"), "the separate tools step is gone");
+  assert.match(page, /const tapped = isCategory\(sp\.q\) \? sp\.q : categoryOfTile\(sp\.c\)/, "the page only takes a part from the list");
+  assert.match(page, /c\.tools\.map\(\(t\) => \(\s*<ActionButton key=\{t\.name\} className="wg-tool" action=\{setupAnswerTool\.bind\(null, c\.id, t\.name\)\}/, "the card's tools come from the list in code");
+  assert.match(read("dashboard/components/setup.tsx"), /\{!busy && card\}/, "the card sits under the last message");
 }
 
 // no tool yet, or one we don't connect (card 183)
 {
   const starters = TOOL_CATEGORIES.filter((c) => c.starter);
-  assert.deepEqual(starters.map((c) => c.id), ["site", "list"], "a starter where we have a default tool");
+  assert.deepEqual(starters.map((c) => c.id), ["list", "site"], "a starter where we have a default tool");
   for (const c of starters) {
     assert.ok(c.tiles.includes(c.starter!.tile), `${c.id}: the starter is one of the part's own tools`);
     assert.ok(c.starter!.steps.length >= 4 && c.starter!.steps.at(-1)!.includes(`Connect ${c.starter!.name}`), `${c.id}: steps end at the normal connect`);
@@ -103,6 +144,12 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   // stored plans: only real parts, a guide only where there is a starter, a checked tool name
   assert.deepEqual(readPlans({ list: { kind: "guide" }, money: { kind: "guide" }, nope: { kind: "guide" }, inbox: { kind: "export", tool: "  Outlook " }, store: { kind: "export", tool: "https://evil.example" }, site: { kind: "other" } }),
     { list: { kind: "guide" }, inbox: { kind: "export", tool: "Outlook" } });
+  // card 195: a listed tool that doesn't connect yet, or none
+  assert.deepEqual(readPlans({ bookings: { kind: "uses", tool: "Calendly" }, ads: { kind: "none" }, store: { kind: "uses", tool: "Shopify" }, books: { kind: "uses", tool: "Made Up" } }),
+    { bookings: { kind: "uses", tool: "Calendly" }, ads: { kind: "none" } }, "uses only names an unconnectable tool on the part's own list");
+  assert.deepEqual(planNotes({ money: { kind: "uses", tool: "Chase" }, list: { kind: "none" } }), {}, "uses and none add no wait notes");
+  assert.deepEqual(planKinds({ money: { kind: "uses", tool: "Chase" } }), {});
+  assert.deepEqual(followUps({ money: { kind: "uses", tool: "Chase" }, list: { kind: "none" } }, new Set(), new Set()), [], "nor Desk follow-ups");
   assert.deepEqual(readPlans(["list"]), {});
   assert.deepEqual(readPlans(null), {});
   assert.deepEqual(readSetupState({ plans: { list: { kind: "guide" }, x: 1 } }, []).plans, { list: { kind: "guide" } }, "the saved state keeps its plans");
@@ -113,10 +160,9 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   assert.equal(categoryState(list, new Set(["klaviyo"] as const), [], plans), "connected");
   assert.equal(categoryState(TOOL_CATEGORIES.find((c) => c.id === "money")!, new Set(), [], plans), "export");
   assert.equal(categoryState(list, new Set(), ["list"]), "skipped");
-  // a planned part isn't asked again
-  const order = orderCategories(new Set());
-  assert.equal(currentCategory(order, new Set(["shopify", "analytics"] as const), [], undefined, plans)?.id, "inbox");
-  assert.equal(currentCategory(order, new Set(), [], "list", plans)?.id, "list", "but it shows when tapped");
+  // a planned part's card closes, but shows when tapped
+  assert.equal(cardCategory(undefined, "list", new Set(), [], plans), null);
+  assert.equal(cardCategory("list", null, new Set(), [], plans)?.id, "list");
   // Your company: a waiting department says the plan
   const notes = planNotes(plans);
   assert.match(notes.Klaviyo, /^Avery sets up Klaviyo with you after setup/);
@@ -129,7 +175,8 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   assert.deepEqual(followUps(plans, new Set(), new Set(["chase"])).map((f) => f.cat), ["list"]);
   assert.deepEqual(followUps({}, new Set(), new Set()), []);
   const acts = read("dashboard/setupActions.ts");
-  assert.match(acts, /export async function setupPlanGuide[\s\S]{0,140}asRole\("approver"\)[\s\S]{0,80}isCategory\(cat\)[\s\S]{0,200}starter/, "Nothing yet checks the role, the category, then that the part has a starter");
+  assert.match(read("core/setup.ts"), /if \(!t\) await planCategory\(cat, c\.starter \? \{ kind: "guide" \} : \{ kind: "none" \}\)/, "None yet on a part with a starter means Avery sets it up after");
+  assert.ok(!acts.includes("setupPlanGuide"), "the old Nothing yet action is gone");
   assert.match(acts, /export async function setupPlanClear[\s\S]{0,140}asRole\("approver"\)[\s\S]{0,80}isCategory\(cat\)/, "taking a plan back checks the role, then the category");
   assert.match(read("app/(room)/page.tsx"), /<FollowUpsCard items=\{finish\} owner=\{owner\} \/>/, "the Desk shows what setup left to finish");
 }
@@ -148,7 +195,5 @@ assert.match(actions, /export async function setupOtherTool[\s\S]{0,140}asRole\(
 assert.doesNotMatch(actions.slice(actions.indexOf("export async function setupOtherTool")), /askSetup|runExplore/, "no model call");
 assert.ok(!actions.includes("setupToolAsk"), "the old action is gone");
 
-// Avery may recommend a tool, as advice only
-assert.match(read("core/setup-rules.ts"), /that is advice only, the founder connects it/);
 
 console.log("check:tools-step ok");

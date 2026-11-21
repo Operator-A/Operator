@@ -6,16 +6,16 @@ on screen at a time (card 181, the first slice of the white glove setup, epic ca
 
 1. **Your business.** One card: "Let's build your company", a box for the business and one for the
    website. After the first message it becomes the conversation with the Chief of Staff, with what
-   she has learned and the departments she is thinking of beside it.
-2. **Your tools.** A tile per tool, each with click-by-click steps (card 152, below).
-3. **Your company.** The org chart Avery proposes (card 153, below), or **Start empty**.
-4. **First job.** What the Desk offers next (card 154), and credits on OPERATOR's Claude.
+   she has learned, the tools she knows about and the departments she is thinking of beside it. She
+   asks about tools inside the conversation, one part of the business at a time (card 195, below).
+2. **Your company.** The org chart Avery proposes (card 153, below), or **Start empty**.
+3. **First job.** What the Desk offers next (card 154), and credits on OPERATOR's Claude.
 
 ## One step at a time
 
 The step is `stage` in the `setup` row of `policies` (`STAGES` in `core/setup-rules.ts`: business,
-tools, company, first). `readStage` opens on the first step when the stored one is missing or not on
-the list. **Back** and **Next** call `setupGo` (an approver; the step is checked against the list),
+company, first). `readStage` opens on the first step when the stored one is missing or not on
+the list, so a business saved on the old tools step opens on the conversation. **Back** and **Next** call `setupGo` (an approver; the step is checked against the list),
 and the page shows the saved step, so a refresh, a tool's sign-in or Stripe Checkout comes back to
 the same place: their return addresses are plain `/start`.
 
@@ -99,47 +99,58 @@ The tools change nothing. Code saves what they hand it, and only after a run tha
 The site address is checked like a custom server's (`checkAddress`: a public https host). The page
 is untrusted data. It never chooses a recipient, URL, product or category, and the directive says so.
 
-## Connect your tools
+## Connect your tools, inside the interview (card 195)
 
-Step 2 asks one question per part of the company (card 182; the first version was a grid of tiles,
-card 152). The parts are `TOOL_CATEGORIES` in `core/tools-step-rules.ts`: Store (Shopify), Website
-(Google Analytics, our own read-only server, card 152b, `docs/mcp-everywhere.md`), Books (Mercury),
-Email marketing (Klaviyo) and Inbox (Gmail). Each has its question, one line on what connecting it
-gets the founder, and the line shown once it is connected. The tools themselves, their steps and what
-each permission is for are still `TOOL_TILES`. When the Analytics sign-in sees more than one
-property, the panel asks which one agents report on.
+Avery asks about tools while she learns the business, one part at a time, and code draws the card
+in the chat (the first versions were a grid of tiles, card 152, then a separate step with one
+question per part, card 182). The parts are `TOOL_CATEGORIES` in `core/tools-step-rules.ts`, 14 of
+them: eight **core** parts every business has (where you sell, payments, bank, books, email
+marketing, inbox and calendar, website traffic, leads and customers) and six that fit only some
+(ads, social, customer support, bookings, shipping, team and work). Each has the common tools for it,
+the ones that connect today first (`tools`, with a `tile` for Shopify, Mercury, Klaviyo, Gmail and
+Google Analytics), what Avery learns from it, and the fact topic its answer is saved under. The tools
+that connect, their steps and what each permission is for are still `TOOL_TILES`.
 
-- **The question.** One on screen at a time, in the middle, with the five parts as boxes around it
-  (under it on a phone): open, being asked, connected with the account's name, or left for later.
-  Tapping a box goes to its question. Which one is on screen is worked out in code
-  (`currentCategory`): the one asked for (`?q=`, or the tool in `?c=`), else the first still open.
-- **The order.** Parts that a department in Avery's sketch needs come first (`orderCategories`);
-  the box says "Needed for Finance" from the tools' `needs` (`SHOPIFY_CONNECTED` and so on,
-  `NEED_TILE`). Nobody types it.
-- **Skip for now** is saved (`skipped` in the setup state, `setupSkipTool`), so the next question
-  comes up and the box says Later. When every part is connected, planned or skipped, the card says so and Next
-  reads "Show me my company".
+- **Avery names a part, nothing else.** Her setup run has a report tool, Ask about a tool
+  (`ask_tool`), whose only input is a part id from the list. Code refuses a part that already has an
+  answer and more than one card per reply. The directive lists each part with its state, worked out
+  in code (`toolLines`), and tells her never to name a tool, link or sign-in step herself. The ask is
+  kept (`asked` in the setup state, `readAsked`) only after a run that finished.
+- **The card.** Under her last message, code draws the part's card (`ToolCard` in
+  `app/start/page.tsx`, `cardCategory`): the listed tools, **Something else**, **None yet** and
+  **Skip for now**. It shows while the part is open; any answer closes it.
+- **A tool that connects** opens its steps on the card (the panel below). Picking it also saves the
+  answer as a fact ("Where you sell: Shopify").
+- **A listed tool that doesn't connect yet** is saved as a fact and as the part's plan (`uses`), and
+  goes on our build list as a connection request (`askFor`). It starts working the day it connects.
+- **Something else** routes the typed name in code as before (`routeUnlisted`, `setupOtherTool`):
+  a tile opens, a built-in or known server opens on Connections, anything else is a request and the
+  part starts from an export. The name is also saved as the answer's fact.
+- **None yet** is saved as a fact. A part with a starter tool (email marketing, website traffic)
+  becomes **Avery sets it up** after setup (card 183); any other is plan `none`.
+- **Skip for now** saves only the skip; the part stays in Your tools to tap later.
+- **Your tools**, beside the chat (`partsShown`): every core part, and any other once Avery asked
+  about it or it has an answer. Tapping one opens its card (`?q=`), even when answered, with **Change
+  my answer** (`setupPlanClear`).
+- **The answer's fact** is code's own line, one per part (`answerCategory`, `keepAnswerFact`): a new
+  answer replaces it, the founder can edit or remove it like any fact, and it is skipped when the
+  panel is full. Only an owner answers (`setupAnswerTool`, audited). No model call.
+- **Avery knows what's connected.** Each message tells her which parts are connected, so she doesn't
+  ask about them again (`connectedTiles` in `sendSetup`).
 - **The panel.** Numbered steps, then what each permission is for (from the profile's scopes,
   `SCOPE_WORDS`), then the Connect button or, for Shopify, the store's address and the read-only key.
   Gmail also offers the drafts sign-in once the read-only one is connected.
 - **Back to setup.** Connect from here goes to `/connections/<id>/connect?from=start`. The route
   takes only `start` and keeps it in its own short-lived cookie; the callback returns to
-  `/start?c=<the tool>` (the question that tool answers, on the saved step) only when that cookie says so. Anything else returns to Connections, so it can't
+  `/start?c=<the tool>` (the conversation, with that tool's card showing it connected) only when that cookie says so. Anything else returns to Connections, so it can't
   become an open redirect.
-- **Something else?** The founder types the tool's name and code routes it (`routeUnlisted`,
-  `setupOtherTool`): a tile opens, a built-in opens on Connections, a known server opens Add a server
-  with its address filled in. Anything else becomes a connection request (`askFor`) and the part is
-  marked **Export for now** with the tool's name. No model call, and nothing is connected.
-- **Nothing yet** (card 183). Website and Email marketing each have a starter tool (`starter` on the
-  category: Google Analytics, Klaviyo). Tapping Nothing yet marks the part **Avery sets it up**
-  (`setupPlanGuide`) and setup carries on. Nothing is created: no agent signs up for a service or
-  accepts its terms. The founder creates the account from the steps on the Desk after setup.
 - **Plans** are saved as `plans` in the setup state (`readPlans`: only real parts, a guide only where
-  there is a starter, the tool's name checked as a service name). A connected tool wins over a plan,
+  there is a starter, an export's name checked as a service name, a `uses` tool only from the part's
+  own list). A connected tool wins over a plan,
   a plan over a skip (`categoryState`). Tapping a planned part shows what was chosen and **Change my
   answer** (`setupPlanClear`). The tool's name is the founder's typed text: it is shown, never used
   to choose a recipient, URL, product or category.
-- **Left for later.** Step 3 shows the tools each department still waits on (`waitLine`), and for a
+- **Left for later.** Your company shows the tools each department still waits on (`waitLine`), and for a
   planned part what happens instead: "Avery sets up Klaviyo with you after setup" or "Starts from an
   export of Mailchimp". It installs anyway and starts working once they're connected.
 - **Finish setting up, on the Desk** (`followUps`, `dashboard/followUps.ts`). After setup the owner's
@@ -195,7 +206,7 @@ finishes. The lines under her reply say what was sketched or refused.
 
 The directive lists the kits, the read tools and measures she may use, and her sketch so far, and
 tells her to name departments for this business, in the founder's words, and to use a kit only when it
-truly fits. There is no fixed list to lean toward: the leaning the tools step and the chart use is
+truly fits. There is no fixed list to lean toward: the leaning the chart uses is
 derived in code (`leaningOf`: each kit in the sketch is a strong fit).
 
 On step 3, Avery's sketch comes first in her order, then the remaining templates under **Also
@@ -300,6 +311,8 @@ from Shopify data (`docs/product-facts.md`).
 the `#step-N` return addresses (card 181). The Desk's **Start your crew** card and its `installTemplate` action (card 151),
 step 2's plain link to Connections (card 152), step 3's department checkboxes (`TemplatePicker`,
 card 153), and "approve each playbook on Crew" as the only way to start the first agent (card 154).
+The separate Your tools step, its question in the middle with boxes around it, `orderCategories`,
+`currentCategory` and the Nothing yet action `setupPlanGuide` (card 195).
 
 ## Wording a founder reads (card 187)
 

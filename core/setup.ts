@@ -14,13 +14,13 @@ import { installTemplates } from "@/core/install";
 import { TEMPLATES, templateList } from "@/core/templates";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
-import { readPlans, readSkipped, type CategoryId, type CategoryPlan } from "@/core/tools-step-rules";
+import { CATEGORY_IDS, TOOL_CATEGORIES, answerFact, categoryState, listedTool, readPlans, readSkipped, type CategoryId, type CategoryPlan, type ToolTileId } from "@/core/tools-step-rules";
 import { checkAddress } from "@/core/custom-mcp-rules";
 import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
 import { MAX_REPLY } from "@/core/chat-rules";
 import {
   FACT_TOPICS, MAX_FACTS_PER_MESSAGE, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
-  cleanFact, coverage, factProblem, SETUP_EFFORT, SETUP_MODEL, isStage, isTopic, needsSetup, readSetupState, setupDirective, setupPrompt, stateFor,
+  cleanFact, coverage, factProblem, SETUP_EFFORT, SETUP_MODEL, isStage, isTopic, MAX_FACTS, needsSetup, readAsked, readSetupState, setupDirective, setupPrompt, stateFor,
   type Fact, type FactState, type SetupState, type Stage,
 } from "@/core/setup-rules";
 import { applyDesign, designGaps, pickId, BESPOKE_PREFIX, DESIGN_PARTS, MAX_DESIGN_PARTS, MAX_DESIGNS, REASON_MAX, type Design, type Kit } from "@/core/design-rules";
@@ -113,6 +113,33 @@ export async function planCategory(cat: CategoryId, plan: CategoryPlan | null): 
   await saveSetupState({ ...s, plans: readPlans(plans), skipped: plan ? s.skipped.filter((c) => c !== cat) : s.skipped });
 }
 
+/**
+ * The founder's answer on a part's card (card 195): a tool from the part's list, or none. Code saves it
+ * as one known fact (replacing its own earlier answer for the part) and, for a tool that doesn't connect
+ * yet or none, as the part's plan. Returns the tile to connect, when the tool has one. No model call.
+ */
+export async function answerCategory(cat: CategoryId, tool: string | null): Promise<{ tile: ToolTileId | null; name: string | null }> {
+  const c = TOOL_CATEGORIES.find((x) => x.id === cat)!;
+  const t = tool === null ? null : listedTool(cat, tool);
+  if (tool !== null && !t) throw new Error("That tool isn’t on this card.");
+  await keepAnswerFact(cat, t?.name ?? null);
+  if (!t) await planCategory(cat, c.starter ? { kind: "guide" } : { kind: "none" });
+  else if (!t.tile) await planCategory(cat, { kind: "uses", tool: t.name });
+  else await planCategory(cat, null);
+  return { tile: t?.tile ?? null, name: t?.name ?? null };
+}
+
+/** The fact for a part's answer: code's own line, one per part, known at once. Quietly skipped when the panel is full. */
+export async function keepAnswerFact(cat: CategoryId, tool: string | null): Promise<void> {
+  const c = TOOL_CATEGORIES.find((x) => x.id === cat)!;
+  const old = (await listFacts())?.filter((f) => f.source === "owner" && f.text.startsWith(`${c.area}: `)) ?? [];
+  for (const f of old) await db().from("business_facts").delete().eq("id", f.id);
+  if ((await factCount()) >= MAX_FACTS) return;
+  const { error } = await db().from("business_facts").insert({ topic: c.topic, text: cleanFact(answerFact(c, tool)), state: "known", source: "owner" });
+  if (error) throw new Error(error.message);
+  await forgetBusiness();
+}
+
 /** The first job started (card 154): which agent, and when. */
 export async function markFirstJob(agentId: string, kind: "playbook" | "try" = "playbook"): Promise<void> {
   await saveSetupState({ ...(await setupState()), firstJob: { agentId, at: new Date().toISOString(), kind } });
@@ -193,6 +220,25 @@ function saveFactTool(held: { topic: string; text: string }[], have: number): To
 }
 
 /**
+ * Ask about a tool (card 195): Avery names one part of the business by its id, nothing else. Code
+ * shows the founder that part's card in the chat after a run that finishes. Only an open part.
+ */
+function askToolTool(held: { cat: CategoryId | null }, open: ReadonlySet<CategoryId>): ToolDef {
+  return {
+    id: "ask_tool", label: "Ask about a tool", detail: "Shows the founder a card for one part of the business, with the common tools for it to connect or name. Ask your question in words too",
+    kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
+    params: [{ name: "part", type: "enum", options: [...CATEGORY_IDS], description: TOOL_CATEGORIES.map((c) => `${c.id}: ${c.area.toLowerCase()}`).join(". ") + "." }],
+    collect: (input, rows) => {
+      if (rows.length) return { problem: "one card per reply" };
+      const cat = String(input.part) as CategoryId;
+      if (!open.has(cat)) return { problem: "that part already has an answer" };
+      return { row: { part: cat } };
+    },
+    deliver: async (o) => { held.cat = (o.rows[0]?.part as CategoryId | undefined) ?? null; return "kept"; },
+  };
+}
+
+/**
  * Design a department (card 193): one part per call, about a department named in `dept`. Checked in
  * code against the sketch so far (core/design-rules.ts, with the card 156 department checks), applied
  * in order and saved only after a run that finishes. It builds nothing: Start this company does.
@@ -260,7 +306,7 @@ function siteTool(host: string): ToolDef {
 export interface SetupAnswer extends ChatAnswer { saved: number; suggested: number }
 
 /** One setup message: a logged run (trigger "setup") inside Avery's budget. Saves both sides of the conversation. */
-export async function askSetup(message: string, siteRaw: string): Promise<SetupAnswer> {
+export async function askSetup(message: string, siteRaw: string, connected: ReadonlySet<ToolTileId> = new Set()): Promise<SetupAnswer> {
   const none = (reply: string): SetupAnswer => ({ ok: false, reply, notes: [], runId: null, costUsd: 0, kept: false, saved: 0, suggested: 0 });
   let site: string | null = null;
   if (siteRaw.trim()) {
@@ -275,14 +321,18 @@ export async function askSetup(message: string, siteRaw: string): Promise<SetupA
   if (!facts) return none(FACTS_MISSING);
   const history = (await chatHistory(12)) ?? [];
   const kept = await keepChat({ role: "owner", text: site ? `${message}\n\n(My site: ${site})` : message });
-  const heldFacts: { topic: string; text: string }[] = [], heldDesign: { parts: Record<string, unknown>[] } = { parts: [] };
+  const heldFacts: { topic: string; text: string }[] = [], heldDesign: { parts: Record<string, unknown>[] } = { parts: [] }, heldAsk: { cat: CategoryId | null } = { cat: null };
+  const st = await setupState();
+  // the parts of the business a tool runs (card 195), each with its state, so she asks only an open one
+  const parts = TOOL_CATEGORIES.map((c) => ({ id: c.id, state: categoryState(c, connected, st.skipped, st.plans) }));
+  const open = new Set(parts.filter((p) => p.state === "open").map((p) => p.id));
   // the interview comes first (card 192): Avery designs (card 193) only once code counts enough of it
   const ready = coverage(facts).ready;
-  const tools = [saveFactTool(heldFacts, facts.length), ...(ready ? [designTool(heldDesign)] : []), ...(site ? [siteTool(new URL(site).hostname)] : [])];
+  const tools = [saveFactTool(heldFacts, facts.length), askToolTool(heldAsk, open), ...(ready ? [designTool(heldDesign)] : []), ...(site ? [siteTool(new URL(site).hostname)] : [])];
   const base = loaded.spec;
   const spec: AgentSpec = {
     ...base,
-    directive: setupDirective(base.name, facts, kitLines(), ready ? await designMenu() : null, (await setupState()).designs),
+    directive: setupDirective(base.name, facts, kitLines(), ready ? await designMenu() : null, st.designs, parts),
     goodResult: "A short plain reply, at most about 90 words, ending with a question or the next step.",
     model: SETUP_MODEL,
     effort: SETUP_EFFORT,
@@ -318,6 +368,7 @@ export async function askSetup(message: string, siteRaw: string): Promise<SetupA
       if (d.done.length) { await saveSetupState({ ...(await setupState()), designs: d.designs }); notes.push(`Sketched: ${d.done.join("; ")}.`); }
       for (const x of d.not) notes.push(`Not in the sketch: ${x}.`);
     }
+    if (heldAsk.cat) { const now = await setupState(); await saveSetupState({ ...now, asked: readAsked([...now.asked, heldAsk.cat]) }); }
     if (saved || suggested) await forgetBusiness();
   }
   const reply = res.status === "skipped" ? `I can't answer right now: ${res.summary}` : (finished && said ? said : res.summary).slice(0, MAX_REPLY);

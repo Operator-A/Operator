@@ -16,7 +16,8 @@ import { Icon } from "./Icon";
 export interface SetupMsg { id: string; role: "owner" | "avery"; text: string; runId: string | null; notes: string[] }
 
 /** `zone`: while the business has no time zone yet, the first message also sends the browser's (card 187). */
-export function SetupChat({ name, initial, send, ready, blocked, foot, zone }: { name: string; initial: SetupMsg[]; send: (text: string, site: string) => Promise<SetupAnswer>; ready: boolean; blocked: string | null; foot: string | null; zone?: (tz: string) => Promise<ActionResult> }) {
+/** `card`: a part's card Avery asked about (card 195), drawn by the page from code's list, under the last message. */
+export function SetupChat({ name, initial, send, ready, blocked, foot, zone, card }: { name: string; initial: SetupMsg[]; send: (text: string, site: string) => Promise<SetupAnswer>; ready: boolean; blocked: string | null; foot: string | null; zone?: (tz: string) => Promise<ActionResult>; card?: React.ReactNode }) {
   const [msgs, setMsgs] = useState<SetupMsg[]>(initial);
   const [text, setText] = useState("");
   const [site, setSite] = useState("");
@@ -30,7 +31,7 @@ export function SetupChat({ name, initial, send, ready, blocked, foot, zone }: {
     if (!el) return;
     const f = requestAnimationFrame(() => requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight })));
     return () => cancelAnimationFrame(f);
-  }, [msgs, busy, initial]);
+  }, [msgs, busy, initial, card]);
   const go = () => {
     const t = text.trim();
     if (!t || busy || !ready) return;
@@ -87,6 +88,7 @@ export function SetupChat({ name, initial, send, ready, blocked, foot, zone }: {
               </div>
             </div>
           ))}
+        {!busy && card}
         {busy && (
           <div className="row wg-pop ink2" style={{ gap: 10, fontSize: 14 }}>
             <span className="wg-dots" aria-hidden><i /><i /><i /></span>
