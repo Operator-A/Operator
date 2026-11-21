@@ -107,7 +107,7 @@ export const TOOLS = {
     tier: "Draft" as Tier,
     fields: ["from", "available", "reason"],
     // the new count comes from the agent (a count sheet, an email), and numbers come from code, not a
-    // model: Draft for good, never promoted (Zak, 2026-11-21)
+    // model: Draft for good, never promoted (decided 2026-11-21)
     promotable: false,
   },
 } as const satisfies Record<string, ActionDef>;

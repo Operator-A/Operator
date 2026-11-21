@@ -90,7 +90,7 @@ export const SHOPIFY_STOCK_TOOL = "shopify_set_stock";
 export const SHOPIFY_STOCK_GRANT = "shopify_stock";
 
 /**
- * The limits on one stock change, in code (Zak, 2026-11-21): a count from 0 to 10,000, moved at most
+ * The limits on one stock change, in code (decided 2026-11-21): a count from 0 to 10,000, moved at most
  * 100 units up or down from the count the card was staged against.
  */
 export const STOCK_LIMITS = { max: 10_000, change: 100 } as const;

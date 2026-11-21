@@ -65,7 +65,7 @@ mutation `inventorySetQuantities` (name `available`) with `@idempotent`, keyed b
 - **Card**: the item at its location, "12 → 40 (+28)", the reason and the agent's one-line why (where
   the number comes from).
 - Starts at Draft and is **never promoted** (`promotable: false`): the new count comes from the agent
-  reading a count sheet, an email or a note, and numbers come from code, not a model (Zak, 2026-11-21).
+  reading a count sheet, an email or a note, and numbers come from code, not a model (decided 2026-11-21).
   A later slice may add a promotable change whose number is computed in code.
 - Not in this slice: on hand, committed and incoming counts, moving stock between locations,
   turning tracking on or off, new locations.
