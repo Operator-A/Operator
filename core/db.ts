@@ -10,6 +10,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { env } from "@/core/env";
 import { REFRESH_MS, orgToken, parseSigningKey, type SigningKey } from "@/core/org-token";
 import { scopeClient } from "@/core/tenancy";
+import { overFloor, type PatternRow } from "@/core/brain-floor";
 import "@/core/request-org";
 
 let client: SupabaseClient | null = null;
@@ -78,6 +79,21 @@ export async function allOrgIds(): Promise<string[]> {
   const { data, error } = await client.from("orgs").select("id").order("created_at");
   if (error) throw new Error(error.message);
   return (data ?? []).map((r) => r.id as string);
+}
+
+/**
+ * The shared brain's totals across businesses (docs/shared-brain.md, card 231): the one read across orgs
+ * beyond their ids. brain_patterns() returns a pattern only when at least 5 businesses that allow
+ * sharing have it, and never a row, name, text or amount from one business. Only the cloud edition's
+ * ee/brain.ts calls this (check:brain enforces it), on the service role: an org's own token can't
+ * call the function. overFloor drops anything under the floor again in code.
+ */
+export async function brainPatterns(): Promise<PatternRow[]> {
+  if (!env.supabaseUrl || !env.supabaseServiceKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+  client ??= createClient(env.supabaseUrl, env.supabaseServiceKey, { auth: { persistSession: false } });
+  const { data, error } = await client.rpc("brain_patterns");
+  if (error) throw new Error(error.message);
+  return overFloor(((data ?? []) as PatternRow[]).map((r) => ({ ...r, orgs: Number(r.orgs), hits: Number(r.hits), num: r.num === null ? null : Number(r.num), den: r.den === null ? null : Number(r.den) })));
 }
 
 /**
