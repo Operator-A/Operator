@@ -10,6 +10,7 @@
 import { createHash } from "node:crypto";
 import { SHOPIFY_TOOLS } from "@/core/shopify-queries";
 import { STRIPE_DRAFT_TOOL, STRIPE_READ_TOOLS } from "@/core/stripe-rules";
+import { SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES } from "@/core/shopify-actions";
 
 /**
  * A server's profile (docs/mcp-everywhere.md, slice 3). It ships with the app and only a pull
@@ -137,17 +138,19 @@ export const MCP_SERVERS = {
   shopify: {
     id: "shopify",
     name: "Shopify",
-    // Our own server (integrations/shopify-server.ts) over the Admin GraphQL API with the read-only
-    // custom app (for example "Agents (read)"). Shopify's own MCP servers are for storefronts and app building, not
-    // a read-only Admin view (slice 7). Each tool runs one fixed query (core/shopify-rules.ts); no tool takes GraphQL, no mutation
-    // can run, and a key whose app has any write scope is refused.
+    // Our own server (integrations/shopify-server.ts) over the Admin GraphQL API with the business's own
+    // custom app. Shopify's own MCP servers are for storefronts and app building, not an Admin view of
+    // one store (slice 7). Each read tool runs one fixed query (core/shopify-rules.ts) and can't change
+    // anything; each write tool runs one fixed mutation (core/shopify-actions.ts), called only by the
+    // gateway after an approver approves. No tool takes GraphQL. The key may carry read scopes and only
+    // the write scopes named below; a key with any other write scope is refused.
     auth: "token",
     url: "https://shopify.dev/docs/api/admin-graphql",
     readTools: SHOPIFY_TOOLS,
     reportTools: [],
-    scopes: ["the read-only app’s read scopes (a key with any write scope is refused)"],
-    writeTools: [],
-    signInHint: "Paste the read-only app’s Admin API access token (shpat_…), or its client secret if it’s a Dev Dashboard app.",
+    scopes: ["the app’s read scopes", ...SHOPIFY_WRITE_SCOPES],
+    writeTools: [{ tool: SHOPIFY_TAGS_TOOL, actionType: SHOPIFY_TAGS }],
+    signInHint: "Paste your OPERATOR app’s Admin API access token (shpat_…), or its client secret if it’s a Dev Dashboard app. Give it read scopes, plus write_orders and write_customers if agents may tag orders and customers (after you approve). Any other write scope is refused.",
   },
   gmail_read: {
     id: "gmail_read",

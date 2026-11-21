@@ -31,7 +31,8 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, DRAFT_LIMITS, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { SHOPIFY_TAGS_GRANT, TAG_LIMITS, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { LIMITS as CAL, holdFromSlot } from "@/core/calendar-rules";
 import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
@@ -54,7 +55,7 @@ import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
 import { deliverBrief } from "@/core/brief";
 import { openCounts } from "@/core/brief/rules";
-import { openOrders } from "@/integrations/shopify/orders";
+import { openOrders, recentOrders } from "@/integrations/shopify/orders";
 
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -141,6 +142,29 @@ const TOOLS_LIST: ToolDef[] = [
     run: async () => {
       const c = openCounts(await openOrders((await orgDate(90))));
       return { data: c, numbers: { open_orders: c.unfulfilled + c.partial + c.onHold.length, to_ship: c.unfulfilled, partly_shipped: c.partial, on_hold: c.onHold.length } };
+    },
+  },
+  {
+    id: "shopify_recent_orders", label: "Recent orders", detail: "The latest Shopify orders, newest first (up to 50): order number, date, total, tags and fulfillment status, and each order's customer by order count and tags only. No names or addresses. Each order and customer has a pick code a store action can name",
+    kind: "read", group: "shopify", params: [daysParam(7, 60, "How many days back.")], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async ({ days }) => {
+      const orders = await recentOrders(await orgDate(Number(days)));
+      const picks: Record<string, Pick> = {};
+      const custPick = new Map<string, string>();
+      const rows = orders.map((o, i) => {
+        picks[`o${i + 1}`] = { kind: "order", id: o.id, label: `Order ${o.name}` };
+        let customer: string | null = null;
+        if (o.customer) {
+          customer = custPick.get(o.customer.id) ?? `cu${custPick.size + 1}`;
+          if (!custPick.has(o.customer.id)) { custPick.set(o.customer.id, customer); picks[customer] = { kind: "customer", id: o.customer.id, label: `Customer of order ${o.name} (${o.customer.numberOfOrders} orders)` }; }
+        }
+        return {
+          pick: `o${i + 1}`, order: o.name, date: o.createdAt.slice(0, 10), total: Number(o.totalPriceSet.shopMoney.amount), currency: o.totalPriceSet.shopMoney.currencyCode,
+          tags: o.tags, status: o.cancelledAt ? "cancelled" : o.displayFulfillmentStatus,
+          customer: o.customer ? { pick: customer, orders: Number(o.customer.numberOfOrders), tags: o.customer.tags } : null,
+        };
+      });
+      return { data: { days: Number(days), orders: rows }, numbers: { orders: rows.length, customers: custPick.size }, picks };
     },
   },
   {
@@ -831,6 +855,26 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, CALENDAR_HOLD, target, args, 200, ctx.granted ?? null);
       if (refused) return { problem: refused };
       return { gatewayTool: CALENDAR_HOLD, target, args, actionType: "calendar_hold", title: `${args.title}, ${slot.label.split(" to ")[0]}`, preview: { title: args.title, slot: slot.label, start: t.start, end: t.end, minutes: Number(input.minutes), why: input.why } };
+    },
+  },
+  {
+    id: SHOPIFY_TAGS_GRANT, label: "Tag an order or customer", detail: "Stages tags to add to one Shopify order or one customer, for an approver to approve (later on its own, once it has earned trust). Adds only: never removes a tag. The order or customer always comes from a Recent orders result",
+    kind: "action", group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
+    agents: GATEWAY_TOOLS[SHOPIFY_TAGS].agents,
+    params: [
+      { name: "order", type: "pick", kind: "order", optional: true, description: "The order, from a Recent orders result. Name an order or a customer, not both." },
+      { name: "customer", type: "pick", kind: "customer", optional: true, description: "The customer, from a Recent orders result. Name an order or a customer, not both." },
+      { name: "tags", type: "text", maxLength: 220, description: `Up to ${TAG_LIMITS.tags} tags, separated by commas: letters, numbers, spaces, dashes and underscores, each at most ${TAG_LIMITS.chars} characters.` },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const order = input.order as Pick | undefined, customer = input.customer as Pick | undefined;
+      if (!order === !customer) return { problem: "name an order or a customer, not both" };
+      const target = (order ?? customer)!;
+      const args = { tags: tagList(input.tags) };
+      const refused = refuseProposal(ctx.agentId, SHOPIFY_TAGS, target.id, args, undefined, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: SHOPIFY_TAGS, target: target.id, args, actionType: order ? "order_tags" : "customer_tags", title: `${target.label}: ${args.tags.join(", ")}`, preview: { record: target.label, tags: args.tags, why: input.why } };
     },
   },
 ];

@@ -108,7 +108,9 @@ export const SCOPE_WORDS: Record<string, string> = {
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
   "a Stripe restricted key with Read on Balance, Balance transaction sources, Subscriptions, Invoices and Customers, and None on everything else (a key that can change anything is refused)": "see your balance, payments, subscriptions, open invoices and customers. A key that can change anything is refused",
   "a Stripe restricted key with Write on Invoices and Invoice items, Read on Customers, and None on everything else, used only to make a draft invoice": "make a draft invoice you approved. It can’t finalize, send, charge or refund",
-  "the read-only app’s read scopes (a key with any write scope is refused)": "read orders, products and stock. A key that can change anything is refused",
+  "the app’s read scopes": "read orders, products and stock",
+  write_orders: "add tags to an order, only after you approve",
+  write_customers: "add tags to a customer, only after you approve",
 };
 
 /** The permissions a tile asks for, each with what it is for. */

@@ -1,5 +1,5 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -60,6 +60,25 @@ t("campaign refused with a long subject", refuseProposal("campaign_writer", CAMP
 t("campaign refused with a long preview", refuseProposal("campaign_writer", CAMPAIGN_DRAFT, "XZRviM", { ...camp, preview: "x".repeat(91) }) !== null);
 t("campaign refused without preview", refuseProposal("campaign_writer", CAMPAIGN_DRAFT, "XZRviM", { ...camp, preview: " " }) !== null);
 t("campaign starts at Draft", TOOLS[CAMPAIGN_DRAFT].tier === "Draft");
+// Shopify tags (docs/shopify-actions.md)
+const ord = "gid://shopify/Order/5551234", tagsOk = { tags: ["VIP", "wholesale-2026"] };
+const sh = (args: Record<string, unknown>, target = ord) => refuseProposal("b_ops_2", SHOPIFY_TAGS, target, args, 200, ["shopify_recent_orders", "shopify_tag"]);
+t("tags start at Draft and may earn trust", TOOLS[SHOPIFY_TAGS].tier === "Draft" && TOOLS[SHOPIFY_TAGS].promotable);
+t("tags refused for an agent that wasn't granted them", refuseProposal("b_ops_2", SHOPIFY_TAGS, ord, tagsOk, 200, ["shopify_recent_orders"]) !== null);
+t("tags refused when the spec can't be read", refuseProposal("b_ops_2", SHOPIFY_TAGS, ord, tagsOk) !== null);
+t("tags are a granted action, named by the builder's tool", TOOLS[SHOPIFY_TAGS].agents === "granted" && TOOLS[SHOPIFY_TAGS].grant === "shopify_tag");
+t("tags ok on an order", sh(tagsOk) === null);
+t("tags ok on a customer", sh(tagsOk, "gid://shopify/Customer/42") === null);
+t("tags refused on a product", sh(tagsOk, "gid://shopify/Product/42") !== null);
+t("tags refused on a raw id", sh(tagsOk, "5551234") !== null);
+t("tags refused when empty", sh({ tags: [] }) !== null);
+t("tags refused when more than 5", sh({ tags: ["a", "b", "c", "d", "e", "f"] }) !== null);
+t("tags refused when too long", sh({ tags: ["x".repeat(41)] }) !== null);
+t("tags refused with odd characters", sh({ tags: ["vip<script>"] }) !== null);
+t("tags refused with a comma inside", sh({ tags: ["a,b"] }) !== null);
+t("tags refused when repeated", sh({ tags: ["VIP", "vip"] }) !== null);
+t("tags refused with an extra field", sh({ ...tagsOk, remove: ["old"] }) !== null);
+t("tags refused when not a list", sh({ tags: "VIP" }) !== null);
 t("campaign list must be the business's own", refuseCampaignTo("XZRviM", [{ id: "XZRviM" }]) === null && refuseCampaignTo("Other1", [{ id: "XZRviM" }]) !== null);
 t("lead with address ok", refuseDraftTo({ email: "Ana@Fleet.coffee", stage: "new" }, new Set()) === null);
 t("lead without address refused", refuseDraftTo({ email: null, stage: "new" }, new Set()) !== null);

@@ -13,7 +13,7 @@ export interface BusinessSettings {
   siteUrl: string | null;
   /** The Shopify store, as its .myshopify.com address. */
   shopifyDomain: string | null;
-  /** The read-only Shopify app's client id (a Dev Dashboard app); not a secret. */
+  /** The Shopify app's client id (a Dev Dashboard app); not a secret. */
   shopifyClientId: string | null;
   /** Mercury accounts that count as cash: "all" or account ids. Empty = cash not reported. */
   mercuryAccountIds: string[];
