@@ -84,7 +84,7 @@ assert.ok(waits.find((w) => w.templateId === "prospecting")?.waitsOn.includes("G
 assert.deepEqual(deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: new Set([SETUP_AGENT, "cfo", "bookkeeper"]), connected: new Set(), needsOf }, null).map((w) => w.templateId), ["finance"], "only installed departments");
 
 // setup state: offer and firstJob read safely
-assert.deepEqual(readSetupState({ done: true, offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z" } }, []), { done: true, stage: "business", skipped: [], plans: {}, designs: [], leaning: [], offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z", kind: "playbook" }, wrapUp: false });
+assert.deepEqual(readSetupState({ done: true, offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z" } }, []), { done: true, stage: "business", skipped: [], plans: {}, designs: [], asked: [], leaning: [], offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z", kind: "playbook" }, wrapUp: false });
 assert.equal(readSetupState({ firstJob: { agentId: "tess", at: "2026-11-19T20:00:00Z", kind: "try" } }, []).firstJob?.kind, "try", "a first try is kept as one");
 assert.equal(readSetupState({ firstJob: { agentId: "tess", at: "2026-11-19T20:00:00Z", kind: "launch" } }, []).firstJob?.kind, "playbook", "anything else reads as a playbook job");
 assert.equal(readSetupState({ firstJob: { agentId: "Bad Id!", at: "2026-11-19" } }, []).firstJob, null);

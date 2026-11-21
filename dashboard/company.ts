@@ -42,5 +42,5 @@ export function companyChart(leaning: readonly Leaning[], designs: readonly Desi
   };
 }
 
-/** A bespoke department's tools, as the tools step reads a template's. */
+/** A bespoke department’s tools, read like a template’s. */
 export const designTools = (d: Design): TemplateTools => ({ id: pickId(d), name: d.name, tools: d.draft ? [...new Set(peopleOf(d.draft).flatMap((p) => p.tools))] : [] });
