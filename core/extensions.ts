@@ -38,3 +38,9 @@ export async function hostedClaudeReady(): Promise<boolean> {
 export async function runEnded(run: { runId: string; costUsd: number; billing: Billing }): Promise<void> {
   try { await extensions.afterRun(run); } catch { /* a charge that can't be written is retried by nothing: it is logged in agent_runs and usage_ledger either way */ }
 }
+
+/** Once per scheduler round, after every business (the cloud edition's weekly shared-brain sync). Never throws. */
+export async function afterSchedule(now: number): Promise<string | null> {
+  try { return await extensions.afterSchedule(now); }
+  catch (e) { return `failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`; }
+}

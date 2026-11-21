@@ -144,6 +144,9 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
               <CompanyChart owner={biz.ownerName || "You"} company={chart.company} depts={chart.depts} initial={initialPick(chart.depts)} install={setupInstall} back={setupGo.bind(null, "business")}
                 empty={<ActionButton className="btn ghost sm" action={setupStartEmpty} follow>Start empty instead</ActionButton>} />
             ) : <span className="sub" style={{ textAlign: "center" }}>An owner of this business picks the departments.</span>}
+            {extensions.edition === "cloud" && (
+              <span className="sub" style={{ textAlign: "center", fontSize: 12 }}>Your business adds counts, never names, messages or amounts, to what OPERATOR learns from businesses like yours. You can turn this off in Settings, under Shared brain.</span>
+            )}
           </section>
         )}
 

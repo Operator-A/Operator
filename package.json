@@ -72,6 +72,7 @@
     "@opentelemetry/sdk-metrics": "2.0.1",
     "@opentelemetry/sdk-trace-base": "2.0.1",
     "@supabase/supabase-js": "^2.118.0",
+    "@vectorize-io/hindsight-client": "1.2.0",
     "@vercel/oidc": "4.0.3",
     "@vercel/otel": "2.1.4",
     "@xyflow/react": "^12.12.1",
