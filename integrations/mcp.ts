@@ -30,6 +30,8 @@ import { looksLikeMercuryToken } from "@/core/mercury-rules";
 import { shopifyKeyKind } from "@/core/shopify-queries";
 import { gmailMailbox, gmailServer } from "./gmail-server";
 import { ga4Properties, ga4Server } from "./ga4-server";
+import { checkStripeDraftsKey, checkStripeReadKey, stripeServer } from "./stripe-server";
+import { looksLikeStripeKey } from "@/core/stripe-rules";
 import {
   CUSTOM_ID, MAX_CUSTOM_SERVERS, acceptTools, cantTurnOn, customArgs, customReply, checkAddress, checkCustomTools, checkLabel, checkLine, checkPins, checkScopes, checkServerName, customCheckNote, isCustomId, isPublicIp, looksLikeKey, readToolList,
   type CustomAuth, type CustomServer, type CustomTool, type ToolOn,
@@ -690,6 +692,9 @@ const LOCAL: Partial<Record<McpId, { server: (key: string) => Handler; looksRigh
   shopify: { server: shopifyServer, looksRight: (k) => !!shopifyKeyKind(k), who: checkShopifyKey },
   mercury_files: { server: mercuryFilesServer, looksRight: looksLikeMercuryToken, who: checkMercuryFilesKey },
   klaviyo_drafts: { server: klaviyoDraftsServer, looksRight: looksLikeKlaviyoKey, who: checkKlaviyoDraftsKey },
+  // a secret key (sk_) passes looksRight so the check can say why it is refused
+  stripe: { server: (k) => stripeServer("stripe", k), looksRight: (k) => looksLikeStripeKey(k) || /^sk_(live|test)_/.test(k), who: checkStripeReadKey },
+  stripe_drafts: { server: (k) => stripeServer("stripe_drafts", k), looksRight: (k) => looksLikeStripeKey(k) || /^sk_(live|test)_/.test(k), who: checkStripeDraftsKey },
 };
 
 /** Whether a server we run is connected and not paused. False when the tables are missing. */
@@ -744,7 +749,7 @@ async function localCall(id: McpId, tool: string, args: Record<string, unknown>,
   if ("error" in out) {
     const msg = scrubSecrets(out.error, [s.key]);
     // 401 is a key the service no longer accepts; Notion's 403 and 404 are a page not shared with the integration
-    if (/^(Notion|Shopify|Mercury|Klaviyo) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
+    if (/^(Notion|Shopify|Mercury|Klaviyo|Stripe) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;

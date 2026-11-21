@@ -4,6 +4,7 @@
 // after an approver approves (Draft tier). Nothing here can create, cancel or move money.
 
 import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-rules";
+import { CUSTOMER_ID, INVOICE_FIELDS, refuseInvoice } from "@/core/stripe-rules";
 
 export type Tier = "Report" | "Draft" | "Act";
 
@@ -20,6 +21,13 @@ export const DRAFT_EMAIL = "gmail.create_draft";
  * picked from the business's Klaviyo lists by code and checked again right before the write.
  */
 export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
+/**
+ * A draft invoice in the business's Stripe, to one of its own Stripe customers (card 240). Stripe holds
+ * it as a draft (auto_advance off): nothing is finalized, sent or charged until the owner does it in
+ * Stripe. The customer is the target, picked from a Stripe customers result and re-read right before
+ * the write. Asks a customer for money; never spends any.
+ */
+export const INVOICE_DRAFT = "stripe.invoice_draft";
 
 /**
  * Who may propose an action type. A list names the only agents, by id (today's three action types;
@@ -52,6 +60,14 @@ export const TOOLS = {
     tier: "Draft" as Tier,
     fields: CAMPAIGN_FIELDS,
     // a draft to people who signed up to the list, never sent by the app: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [INVOICE_DRAFT]: {
+    agents: "granted",
+    grant: "stripe_invoice_draft",
+    tier: "Draft" as Tier,
+    fields: INVOICE_FIELDS,
+    // a draft the owner finalizes in Stripe, to an existing customer: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
 } as const satisfies Record<string, ActionDef>;
@@ -129,6 +145,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (who) return who;
   if (tool === DRAFT_EMAIL) return UUID.test(target) ? refuseDraft(args) : "The target is not a lead on the leads list.";
   if (tool === CAMPAIGN_DRAFT) return listIdOk(target) ? refuseCampaign(args) : "The target is not a Klaviyo list id.";
+  if (tool === INVOICE_DRAFT) return CUSTOMER_ID.test(target) ? refuseInvoice(args) : "The target is not a Stripe customer id.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";
   const extra = Object.keys(args).filter((k) => !(def.fields as readonly string[]).includes(k));
   if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. Only receipt, category and memo can be written.`;

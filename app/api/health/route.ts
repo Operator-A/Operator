@@ -31,6 +31,7 @@ async function check() {
     gmail: await hasGmail(),
     gmail_read: await hasGmailRead(),
     ga4: await localReady("ga4"),
+    stripe: await localReady("stripe"),
   };
   let agents: { id: string; enabled: boolean }[] | string = "not checked";
   if (set.supabase) {

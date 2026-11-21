@@ -31,7 +31,7 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
 import { READ_ROWS, ageOf, columnNumbers, staleNote } from "@/core/export-rules";
 import { listExports, readExport } from "@/core/exports";
@@ -42,10 +42,12 @@ import { domainOf } from "@/core/lead-rules";
 import { hasGmail } from "@/integrations/gmail";
 import { klaviyoListSize, klaviyoLists, klaviyoReport } from "@/integrations/klaviyo";
 import { ga4Channels, ga4Overview, ga4TopPages } from "@/integrations/ga4";
+import { stripeBalance, stripeCustomers, stripeMoneyIn, stripeOpenInvoices, stripeSubscriptions } from "@/integrations/stripe";
+import { INVOICE_CURRENCIES, INVOICE_LIMITS, MAX_INVOICE_USD, STRIPE_PERIODS, invoiceCents, type InvoiceLine, type StripePeriod } from "@/core/stripe-rules";
 import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
-import type { Pick, ReportInput, ToolDef, ToolResult } from "./types";
-import { ANALYTICS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
+import type { Param, Pick, ReportInput, ToolDef, ToolResult } from "./types";
+import { ANALYTICS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, STRIPE, SUPABASE, daysParam, usd } from "./shared";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
 import { deliverBrief } from "@/core/brief";
@@ -279,6 +281,41 @@ const TOOLS_LIST: ToolDef[] = [
       { name: "limit", type: "number", integer: true, optional: true, description: "How many channels, 1 to 20 (10 if left out)." },
     ],
     run: async (p) => { const r = await ga4Channels(String(p.period) as Ga4Period, Number(p.limit ?? 10)); return { data: r, numbers: { sessions_listed: r.sessions_listed } }; },
+  },
+  // ---- Stripe (card 240): our own server on the business's restricted read key. Sums in code.
+  {
+    id: "stripe_balance", label: "Stripe balance", detail: "Cash sitting in the business's Stripe now, available and pending, per currency",
+    kind: "read", group: "stripe", params: [], trusted: true, needs: STRIPE, costUsd: 0,
+    run: async () => { const r = await stripeBalance(); const main = r.currencies[0]; const numbers: Record<string, number> = main ? { stripe_available: main.available, stripe_pending: main.pending } : {}; return { data: r, numbers }; },
+  },
+  {
+    id: "stripe_money_in", label: "Stripe payments", detail: "Money in through Stripe over a period: payments, refunds, Stripe's fees and net, in total and by day, all added up in code in the business's main currency",
+    kind: "read", group: "stripe", trusted: true, needs: STRIPE, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: STRIPE_PERIODS, default: "last_30_days", description: "How far back to look." }],
+    run: async (p) => { const r = await stripeMoneyIn(String(p.period) as StripePeriod); return { data: r, numbers: { stripe_gross: r.totals.gross, stripe_refunds: r.totals.refunds, stripe_fees: r.totals.fees, stripe_net: r.totals.net, stripe_payments: r.totals.payments } }; },
+  },
+  {
+    id: "stripe_subscriptions", label: "Stripe subscriptions", detail: "Subscriptions in Stripe: active, past due and trialing counts, monthly recurring revenue before discounts, and how many started and were cancelled in a period, worked out in code",
+    kind: "read", group: "stripe", trusted: true, needs: STRIPE, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: STRIPE_PERIODS, default: "last_30_days", description: "The window for starts and cancellations." }],
+    run: async (p) => { const r = await stripeSubscriptions(String(p.period) as StripePeriod); return { data: r, numbers: { stripe_mrr: r.mrr, stripe_active_subscriptions: r.active, stripe_past_due: r.past_due, stripe_started: r.started_in_period, stripe_cancelled: r.cancelled_in_period } }; },
+  },
+  {
+    id: "stripe_open_invoices", label: "Unpaid Stripe invoices", detail: "Open invoices in Stripe, most overdue first: invoice number, customer, amount still owed, due date and days late (worked out in code). Customer names come from outside, so they are untrusted",
+    kind: "read", group: "stripe", trusted: false, needs: STRIPE, costUsd: 0,
+    params: [{ name: "limit", type: "number", integer: true, optional: true, description: "How many invoices, 1 to 25 (10 if left out)." }],
+    run: async (p) => { const r = await stripeOpenInvoices(Number(p.limit ?? 10)); return { data: { invoices: r.invoices, open: r.open, overdue: r.overdue, overdue_amount: r.overdue_amount }, numbers: { stripe_open_invoices: r.open, stripe_overdue_invoices: r.overdue } }; },
+  },
+  {
+    id: "stripe_customers", label: "Stripe customers", detail: "The business's most recent Stripe customers, each with a pick so an invoice can name one. Names come from outside, so they are untrusted",
+    kind: "read", group: "stripe", trusted: false, needs: STRIPE, costUsd: 0,
+    params: [{ name: "limit", type: "number", integer: true, optional: true, description: "How many customers, 1 to 25 (10 if left out)." }],
+    run: async (p) => {
+      const r = await stripeCustomers(Number(p.limit ?? 10));
+      const picks: Record<string, Pick> = {};
+      const rows = r.customers.map((c, i) => { picks[`s${i + 1}`] = { kind: "stripe_customer", id: c.id, label: c.label }; return { pick: `s${i + 1}`, name: c.label, currency: c.currency }; });
+      return { data: { customers: rows }, numbers: { customers_listed: rows.length }, picks };
+    },
   },
   {
     id: "leads_list", label: "Leads list", detail: "Businesses already on the leads list (skip these), newest first, with stage and whether there is an email. Leads with an email carry a pick, so a draft can name one. Names and addresses came from the web, so they are untrusted",
@@ -753,8 +790,46 @@ const TOOLS_LIST: ToolDef[] = [
   },
 ];
 
+/** The invoice's line params, one description and amount per line; the first is required. */
+const INVOICE_LINE_PARAMS: Param[] = Array.from({ length: INVOICE_LIMITS.lines }, (_, i) => [
+  { name: `line${i + 1}`, type: "text", maxLength: INVOICE_LIMITS.description, optional: i > 0, description: `Line ${i + 1}: what it's for, plain words.` } as Param,
+  { name: `amount${i + 1}`, type: "number", integer: false, optional: i > 0, description: `Line ${i + 1}: the amount in the invoice's currency, whole cents (for example 120.50).` } as Param,
+]).flat();
+
+const STRIPE_ACTIONS: ToolDef[] = [
+  {
+    id: "stripe_invoice_draft", label: "Draft a Stripe invoice", detail: `Stages one invoice for one of the business's Stripe customers, for the owner to approve. Approving makes it a draft in Stripe; nothing is finalized, sent or charged until the owner does it in Stripe. Up to ${INVOICE_LIMITS.lines} lines, at most ${MAX_INVOICE_USD.toLocaleString("en-US")} in total`,
+    kind: "action", group: "stripe", trusted: true, needs: STRIPE, costUsd: 0,
+    agents: GATEWAY_TOOLS[INVOICE_DRAFT].agents,
+    params: [
+      { name: "customer", type: "pick", kind: "stripe_customer", description: "The customer, from a Stripe customers result." },
+      { name: "currency", type: "enum", options: INVOICE_CURRENCIES, default: "usd", description: "The invoice's currency." },
+      ...INVOICE_LINE_PARAMS,
+      { name: "days_until_due", type: "int", min: INVOICE_LIMITS.minDays, max: INVOICE_LIMITS.maxDays, default: 30, description: "Days the customer has to pay once the owner sends it." },
+      { name: "memo", type: "text", maxLength: INVOICE_LIMITS.memo, optional: true, multiline: true, description: "A note shown on the invoice, plain words, no links." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why this invoice now, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const customer = input.customer as Pick;
+      const lines: InvoiceLine[] = [];
+      for (let i = 1; i <= INVOICE_LIMITS.lines; i++) {
+        const d = input[`line${i}`], amt = input[`amount${i}`];
+        if (d === undefined && amt === undefined) continue;
+        if (typeof d !== "string" || typeof amt !== "number") return { problem: `Line ${i} needs both a description and an amount.` };
+        lines.push({ description: d, amount: amt });
+      }
+      const memo = typeof input.memo === "string" && input.memo.trim() ? input.memo : undefined;
+      const args = { currency: String(input.currency), lines, days_until_due: Number(input.days_until_due), ...(memo ? { memo } : {}) };
+      const refused = refuseProposal(ctx.agentId, INVOICE_DRAFT, customer.id, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      const total = (invoiceCents(lines) / 100).toFixed(2);
+      return { gatewayTool: INVOICE_DRAFT, target: customer.id, args, actionType: "invoice_draft", title: `${customer.label}: ${args.currency.toUpperCase()} ${total}`, preview: { customer: customer.label, currency: args.currency, lines, total, days_until_due: args.days_until_due, memo: memo ?? null, why: input.why } };
+    },
+  },
+];
+
 /** Every tool. An id is never used twice. */
-const ALL: ToolDef[] = [...TOOLS_LIST];
+const ALL: ToolDef[] = [...TOOLS_LIST, ...STRIPE_ACTIONS];
 const dupes = ALL.map((t) => t.id).filter((id, i, a) => a.indexOf(id) !== i);
 if (dupes.length) throw new Error(`Tool ids used twice: ${dupes.join(", ")}`);
 export const TOOLS: Readonly<Record<string, ToolDef>> = Object.fromEntries(ALL.map((t) => [t.id, t]));

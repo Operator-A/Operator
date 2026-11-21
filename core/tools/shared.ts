@@ -6,5 +6,6 @@ export const SHOPIFY = ["SHOPIFY_CONNECTED"], MERCURY = ["MERCURY_CONNECTED"], N
 /** Not settings: Klaviyo, Mercury and Notion are signed in on Connections (mcp_connections), so the builder checks those rows. */
 export const KLAVIYO = ["KLAVIYO_CONNECTED"];
 export const ANALYTICS = ["ANALYTICS_CONNECTED"];
+export const STRIPE = ["STRIPE_CONNECTED"];
 export const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
 export const daysParam = (def: number, max: number, what: string): Param => ({ name: "days", type: "int", min: 1, max, default: def, description: what });

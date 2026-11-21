@@ -42,7 +42,7 @@ function VaultNote({ v }: { v: VaultState | null }) {
   );
 }
 
-const KEY_HINT: Partial<Record<McpId, string>> = { shopify: "shpat_…", mercury_files: "secret-token:mercury_…", klaviyo_drafts: "pk_…" };
+const KEY_HINT: Partial<Record<McpId, string>> = { shopify: "shpat_…", mercury_files: "secret-token:mercury_…", klaviyo_drafts: "pk_…", stripe: "rk_live_…", stripe_drafts: "rk_live_…" };
 
 function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView; tz: string }) {
   const s = v.status;

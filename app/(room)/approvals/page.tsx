@@ -7,7 +7,7 @@ import { controlsOn } from "@/dashboard/session";
 import { ActionButton } from "@/dashboard/components/client";
 import { RejectButton } from "@/dashboard/components/react";
 import { Avatar, Empty } from "@/dashboard/components/ui";
-import { CAMPAIGN_DRAFT, DRAFT_EMAIL, writeBlocker } from "@/core/gateway";
+import { CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, writeBlocker } from "@/core/gateway";
 
 // Applying a batch calls Mercury once or twice per change.
 export const maxDuration = 300;
@@ -46,12 +46,27 @@ function Campaign({ i }: { i: ApprovalItem }) {
   );
 }
 
-const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft" };
+/** A Stripe invoice (any agent the owner gave the action): customer, lines and total as code added them. Approving makes a draft in Stripe; the owner finalizes and sends it there. */
+function Invoice({ i }: { i: ApprovalItem }) {
+  const p = i.preview;
+  const cur = (p.currency ?? "?").toUpperCase();
+  const rows: [string, string][] = [["Customer", p.customer ?? "?"], ...(p.lines ?? []).map((l): [string, string] => [l.description, `${cur} ${l.amount.toFixed(2)}`]), ["Total", `${cur} ${p.total ?? "?"}`], ["Due", p.days_until_due != null ? `${p.days_until_due} days after you send it` : "?"]];
+  return (
+    <div style={{ borderRadius: 16, background: "var(--soft)", padding: "6px 16px" }}>
+      {rows.map(([k, v], n) => <div key={n} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13, fontWeight: k === "Total" ? 600 : undefined }}><span className={k === "Total" ? undefined : "muted"} style={{ minWidth: 0, overflowWrap: "anywhere" }}>{k}</span><span style={{ fontWeight: 500, textAlign: "right", whiteSpace: "nowrap" }}>{v}</span></div>)}
+      {p.memo && <div className="rule" style={{ padding: "10px 0", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{p.memo}</div>}
+      <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Approving makes a draft in Stripe. Nothing is finalized, sent or charged: you do that from Stripe.</div>
+    </div>
+  );
+}
+
+const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [INVOICE_DRAFT]: "Stripe invoice draft" };
 
 function Change({ i }: { i: ApprovalItem }) {
   const p = i.preview;
   if (i.tool === DRAFT_EMAIL) return <Draft i={i} />;
   if (i.tool === CAMPAIGN_DRAFT) return <Campaign i={i} />;
+  if (i.tool === INVOICE_DRAFT) return <Invoice i={i} />;
   const lines: [string, React.ReactNode][] = [
     p.charge && !p.merchant ? ["Charge", p.charge] : ["Charge", `${p.merchant ?? "?"} · ${p.amount_usd != null ? m2(p.amount_usd) : "?"} · ${p.date ? md(`${p.date}T12:00:00Z`, "UTC") : "?"}`],
     ...(p.receipt_path ? [["Attach receipt", i.receipt_url ? <a key="r" href={i.receipt_url} target="_blank" rel="noopener noreferrer">{p.receipt_path.split("/").pop()} (open)</a> : p.receipt_path.split("/").pop()] as [string, React.ReactNode]] : []),

@@ -14,11 +14,13 @@ They hold for every business on OPERATOR. "The owner" is the business's owner; "
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
-The tool gateway (`core/gateway`) has three action types so far, all Draft: receipt, category
+The tool gateway (`core/gateway`) has four action types so far, all Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), a Gmail draft to a lead
-on the leads list (the prospecting lead finder; the owner sends it from Gmail), and a draft email campaign
-to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo). No send,
-payment or publish action type is built, so no agent can send, pay or publish.
+on the leads list (the prospecting lead finder; the owner sends it from Gmail), a draft email campaign
+to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), and a
+draft invoice to one of the business's existing Stripe customers (any agent the owner gives it to; the
+owner finalizes and sends it from Stripe). No send, payment or publish action type is built, so no agent
+can send, pay or publish.
 
 
 - Sending, buying and posting are allowed only as gateway action types, and every new
@@ -71,7 +73,8 @@ payment or publish action type is built, so no agent can send, pay or publish.
   URL, product or category. Hosted servers (Klaviyo, Mercury) are used where they fit;
   where one reaches more than the profile needs or doesn't fit, we run our own in the app
   (Notion, Gmail with no send tool, Google Analytics read only, Shopify with one fixed query per tool,
-  Mercury receipt files, Klaviyo campaign drafts).
+  Mercury receipt files, Klaviyo campaign drafts, Stripe with one fixed request per read tool and a
+  drafts-only invoice key).
   Each of our own servers is the only file that calls its service's API, and only
   `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).
 - One tool path: agents read only through `callMcpTool` (read tools), or a turned-on custom tool

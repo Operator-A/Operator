@@ -5,7 +5,7 @@
 import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "stripe";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -68,6 +68,17 @@ export const TOOL_TILES: readonly ToolTile[] = [
       "Back here, if the account sees more than one property, tap Use this one next to the business’s site.",
     ],
   },
+  {
+    id: "stripe", name: "Stripe", gives: "Payments, subscriptions and open invoices", icon: "credit-card", mcp: "stripe",
+    steps: [
+      "In Stripe, open Developers > API keys (on the Stripe dashboard, bottom left).",
+      "Tap Create restricted key. If Stripe asks how you’ll use it, pick the option for your own integration.",
+      "Name it OPERATOR read.",
+      "Set Balance, Balance transaction sources, Subscriptions, Invoices and Customers to Read. Leave everything else on None.",
+      "Tap Create key, then copy the key (it starts with rk_live_) and paste it below.",
+    ],
+    also: { mcp: "stripe_drafts", label: "Stripe invoice drafts", why: "To draft invoices you approve, paste a second restricted key that can write invoices and nothing else. Only the gateway uses it, and you finalize and send each invoice from Stripe." },
+  },
 ];
 
 export const TILE_BY_ID = Object.fromEntries(TOOL_TILES.map((t) => [t.id, t])) as Record<ToolTileId, ToolTile>;
@@ -84,6 +95,8 @@ export const SCOPE_WORDS: Record<string, string> = {
   "https://www.googleapis.com/auth/gmail.readonly": "search and read email. Google refuses it anything that drafts, sends, labels or deletes",
   "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
+  "a Stripe restricted key with Read on Balance, Balance transaction sources, Subscriptions, Invoices and Customers, and None on everything else (a key that can change anything is refused)": "see your balance, payments, subscriptions, open invoices and customers. A key that can change anything is refused",
+  "a Stripe restricted key with Write on Invoices and Invoice items, Read on Customers, and None on everything else, used only to make a draft invoice": "make a draft invoice you approved. It can’t finalize, send, charge or refund",
   "the read-only app’s read scopes (a key with any write scope is refused)": "read orders, products and stock. A key that can change anything is refused",
 };
 
@@ -96,7 +109,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", STRIPE_CONNECTED: "stripe",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -130,7 +143,7 @@ export type CategoryId = (typeof CATEGORY_IDS)[number];
 export interface Starter { tile: ToolTileId; name: string; promise: string; steps: readonly string[] }
 export interface ToolCategory { id: CategoryId; area: string; question: string; value: string; ready: string; tiles: readonly ToolTileId[]; starter?: Starter }
 export const TOOL_CATEGORIES: readonly ToolCategory[] = [
-  { id: "store", area: "Store", question: "Where do you sell?", value: "Your agents read orders, products and stock, and tell you what sold in plain words.", ready: "Your agents can see your orders, products and stock.", tiles: ["shopify"] },
+  { id: "store", area: "Store", question: "Where do you sell?", value: "Your agents read what sold and what came in, and tell you in plain words.", ready: "Your agents can see what you sell and what came in.", tiles: ["shopify", "stripe"] },
   { id: "site", area: "Website", question: "How do you track your website?", value: "Know where visitors come from and where they drop off.", ready: "Visits and conversions go into your summaries.", tiles: ["analytics"],
     starter: { tile: "analytics", name: "Google Analytics", promise: "It’s free. You create the property, I show you each tap, then you connect it here.", steps: [
       "Open analytics.google.com and sign in with the Google account you use for the business.",

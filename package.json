@@ -55,6 +55,7 @@
     "check:signout": "npx --yes tsx scripts/check-signout.ts",
     "check:time-zone": "npx --yes tsx scripts/check-time-zone.ts",
     "check:on-duty": "npx --yes tsx scripts/check-on-duty.ts",
+    "check:stripe": "npx --yes tsx --conditions=react-server scripts/check-stripe.ts",
     "check:ee": "npx --yes tsx ee/check.ts",
     "check:all": "node scripts/check-all.mjs",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",
