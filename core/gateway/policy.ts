@@ -4,6 +4,7 @@
 // after an approver approves (Draft tier). Nothing here can create, cancel or move money.
 
 import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-rules";
+import { CUSTOMER_ID, INVOICE_FIELDS, refuseInvoice } from "@/core/stripe-rules";
 import { SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, refuseTags, shopifyTarget } from "@/core/shopify-actions";
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
@@ -30,6 +31,13 @@ export const DRAFT_EMAIL = "gmail.create_draft";
  */
 export { SHOPIFY_TAGS };
 export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
+/**
+ * A draft invoice in the business's Stripe, to one of its own Stripe customers (card 240). Stripe holds
+ * it as a draft (auto_advance off): nothing is finalized, sent or charged until the owner does it in
+ * Stripe. The customer is the target, picked from a Stripe customers result and re-read right before
+ * the write. Asks a customer for money; never spends any.
+ */
+export const INVOICE_DRAFT = "stripe.invoice_draft";
 /**
  * A private hold on the business's primary Google Calendar (card 251): a title, a start and an end,
  * no guests, made with sendUpdates=none so it emails no one. The time is a free slot code found, and
@@ -105,6 +113,14 @@ export const TOOLS = {
     tier: "Draft" as Tier,
     fields: MOVE_FIELDS,
     // a stage change and a note inside the business's own CRM, emailing no one: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [INVOICE_DRAFT]: {
+    agents: "granted",
+    grant: "stripe_invoice_draft",
+    tier: "Draft" as Tier,
+    fields: INVOICE_FIELDS,
+    // a draft the owner finalizes in Stripe, to an existing customer: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
   [CALENDAR_HOLD]: {
@@ -202,6 +218,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (tool === MAILCHIMP_DRAFT) return audienceIdOk(target) ? refuseMailchimpCampaign(args) : "The target is not a Mailchimp audience id.";
   if (tool === WOO_NOTE) return orderIdOk(target) ? refuseNote(args) : "The target is not a WooCommerce order id.";
   if (tool === HUBSPOT_MOVE) return dealIdOk(target) ? refuseMove(args) : "The target is not a HubSpot deal id.";
+  if (tool === INVOICE_DRAFT) return CUSTOMER_ID.test(target) ? refuseInvoice(args) : "The target is not a Stripe customer id.";
   if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
   if (tool === CALENDAR_HOLD) return target === `${args.start}/${args.end}` && isoMs(args.start) !== null ? refuseHold(args, now) : "The target is not the hold's own start and end.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";

@@ -6,6 +6,7 @@ export const SHOPIFY = ["SHOPIFY_CONNECTED"], MERCURY = ["MERCURY_CONNECTED"], N
 /** Not settings: Klaviyo, Mercury and Notion are signed in on Connections (mcp_connections), so the builder checks those rows. */
 export const KLAVIYO = ["KLAVIYO_CONNECTED"];
 export const ANALYTICS = ["ANALYTICS_CONNECTED"];
+export const STRIPE = ["STRIPE_CONNECTED"];
 export const CALENDAR = ["CALENDAR_CONNECTED"];
 export const CALENDAR_HOLDS = ["CALENDAR_HOLDS_CONNECTED"];
 export const MAILCHIMP = ["MAILCHIMP_CONNECTED"];

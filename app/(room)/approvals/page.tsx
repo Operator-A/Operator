@@ -7,7 +7,7 @@ import { controlsOn } from "@/dashboard/session";
 import { ActionButton } from "@/dashboard/components/client";
 import { RejectButton } from "@/dashboard/components/react";
 import { Avatar, Empty } from "@/dashboard/components/ui";
-import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, DRAFT_EMAIL, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
+import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
 
 // Applying a batch calls Mercury once or twice per change.
 export const maxDuration = 300;
@@ -42,6 +42,20 @@ function Campaign({ i }: { i: ApprovalItem }) {
       {([["List", p.list ?? "?"], ["Subject", p.subject ?? "?"], ["Preview text", p.preview_text ?? "?"]] as [string, string][]).map(([k, v], n) => <div key={k} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13 }}><span className="muted">{k}</span><span style={{ fontWeight: 500, textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>{v}</span></div>)}
       <div className="rule" style={{ padding: "10px 0", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{p.body ?? ""}</div>
       <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Code adds an unsubscribe line. Approving makes a draft in {i.tool === MAILCHIMP_DRAFT ? "Mailchimp" : "Klaviyo"}; you send it from there.</div>
+    </div>
+  );
+}
+
+/** A Stripe invoice (any agent the owner gave the action): customer, lines and total as code added them. Approving makes a draft in Stripe; the owner finalizes and sends it there. */
+function Invoice({ i }: { i: ApprovalItem }) {
+  const p = i.preview;
+  const cur = (p.currency ?? "?").toUpperCase();
+  const rows: [string, string][] = [["Customer", p.customer ?? "?"], ...(p.lines ?? []).map((l): [string, string] => [l.description, `${cur} ${l.amount.toFixed(2)}`]), ["Total", `${cur} ${p.total ?? "?"}`], ["Due", p.days_until_due != null ? `${p.days_until_due} days after you send it` : "?"]];
+  return (
+    <div style={{ borderRadius: 16, background: "var(--soft)", padding: "6px 16px" }}>
+      {rows.map(([k, v], n) => <div key={n} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13, fontWeight: k === "Total" ? 600 : undefined }}><span className={k === "Total" ? undefined : "muted"} style={{ minWidth: 0, overflowWrap: "anywhere" }}>{k}</span><span style={{ fontWeight: 500, textAlign: "right", whiteSpace: "nowrap" }}>{v}</span></div>)}
+      {p.memo && <div className="rule" style={{ padding: "10px 0", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{p.memo}</div>}
+      <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Approving makes a draft in Stripe. Nothing is finalized, sent or charged: you do that from Stripe.</div>
     </div>
   );
 }
@@ -92,12 +106,13 @@ function Tags({ i }: { i: ApprovalItem }) {
   );
 }
 
-const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note", [HUBSPOT_MOVE]: "HubSpot deal move" };
+const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [INVOICE_DRAFT]: "Stripe invoice draft", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note", [HUBSPOT_MOVE]: "HubSpot deal move" };
 
 function Change({ i }: { i: ApprovalItem }) {
   const p = i.preview;
   if (i.tool === DRAFT_EMAIL) return <Draft i={i} />;
   if (i.tool === CAMPAIGN_DRAFT || i.tool === MAILCHIMP_DRAFT) return <Campaign i={i} />;
+  if (i.tool === INVOICE_DRAFT) return <Invoice i={i} />;
   if (i.tool === CALENDAR_HOLD) return <Hold i={i} />;
   if (i.tool === SHOPIFY_TAGS) return <Tags i={i} />;
   if (i.tool === WOO_NOTE) return <OrderNote i={i} />;

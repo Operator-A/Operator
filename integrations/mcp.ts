@@ -37,6 +37,8 @@ import { checkHubSpotKey, hubspotServer } from "./hubspot-server";
 import { looksLikeHubSpotKey } from "@/core/hubspot-rules";
 import { looksLikeWooKey } from "@/core/woo-rules";
 import { looksLikeMailchimpKey } from "@/core/mailchimp-rules";
+import { checkStripeDraftsKey, checkStripeReadKey, stripeServer } from "./stripe-server";
+import { looksLikeStripeKey } from "@/core/stripe-rules";
 import {
   CUSTOM_ID, MAX_CUSTOM_SERVERS, acceptTools, cantTurnOn, customArgs, customReply, checkAddress, checkCustomTools, checkLabel, checkLine, checkPins, checkScopes, checkServerName, customCheckNote, isCustomId, isPublicIp, looksLikeKey, readToolList,
   type CustomAuth, type CustomServer, type CustomTool, type ToolOn,
@@ -710,6 +712,9 @@ const LOCAL: Partial<Record<McpId, { server: (key: string) => Handler; looksRigh
   woo_notes: { server: (k) => wooServer("woo_notes", k, assertPublic), looksRight: looksLikeWooKey, who: (k) => checkWooKey("woo_notes", k, assertPublic) },
   hubspot: { server: (k) => hubspotServer("hubspot", k), looksRight: looksLikeHubSpotKey, who: (k) => checkHubSpotKey("hubspot", k) },
   hubspot_deals: { server: (k) => hubspotServer("hubspot_deals", k), looksRight: looksLikeHubSpotKey, who: (k) => checkHubSpotKey("hubspot_deals", k) },
+  // a secret key (sk_) passes looksRight so the check can say why it is refused
+  stripe: { server: (k) => stripeServer("stripe", k), looksRight: (k) => looksLikeStripeKey(k) || /^sk_(live|test)_/.test(k), who: checkStripeReadKey },
+  stripe_drafts: { server: (k) => stripeServer("stripe_drafts", k), looksRight: (k) => looksLikeStripeKey(k) || /^sk_(live|test)_/.test(k), who: checkStripeDraftsKey },
 };
 
 /** Whether a server we run is connected and not paused. False when the tables are missing. */
@@ -764,7 +769,7 @@ async function localCall(id: McpId, tool: string, args: Record<string, unknown>,
   if ("error" in out) {
     const msg = scrubSecrets(out.error, [s.key]);
     // 401 is a key the service no longer accepts; Notion's 403 and 404 are a page not shared with the integration
-    if (/^(Notion|Shopify|Mercury|Klaviyo|Mailchimp|WooCommerce|HubSpot) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
+    if (/^(Notion|Shopify|Mercury|Klaviyo|Stripe|Mailchimp|WooCommerce|HubSpot) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;

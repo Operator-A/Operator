@@ -457,3 +457,44 @@ gateway uses.
 "Campaign drafts", pick **Custom Key**, set **Campaigns** to Full Access, **Templates** to Full Access and
 **Lists** to Read Access, leave everything else at No Access, and tap **Create**. In the Control Room,
 open **Connections > Klaviyo**, paste the key under **Klaviyo campaign drafts** and tap **Save**.
+
+## Stripe on our own server (card 240)
+
+A business's own Stripe account (not OPERATOR's billing in `ee/`, which no agent reaches). Stripe's
+hosted MCP server (`mcp.stripe.com`) offers only generic tools, `stripe_api_read` (any GET) and
+`stripe_api_write` (any write, refunds included), and has no read-only switch, so it can't be held to a
+profile. Our own server runs in the app with two restricted keys.
+
+- **Profile** `stripe` (`core/mcp-rules.ts`): a restricted key (`rk_…`) with Read on Balance, Balance
+  transaction sources, Subscriptions, Invoices and Customers. Five read tools, each one fixed request in
+  `core/stripe-rules.ts`: `stripe_balance`, `stripe_money_in` (gross, refunds, fees, net, by day, for 7,
+  30 or 90 days), `stripe_subscriptions` (MRR, active, past due, trialing, starts and cancellations),
+  `stripe_open_invoices` (most overdue first) and `stripe_customers` (picks for an invoice). Every sum is
+  made in code and never added across currencies; lists page up to 1,000 rows and say when they were cut.
+- **Profile** `stripe_drafts`: a second restricted key with Write on Invoices (and Invoice items), Read
+  on Customers. No read tools; one write tool `stripe_create_invoice_draft`, the gateway action type
+  `stripe.invoice_draft` (Draft). The server re-reads the customer, creates the invoice with
+  `collection_method=send_invoice`, `auto_advance=false` and `pending_invoice_items_behavior=exclude`,
+  adds the approved lines, and reads the subtotal back; the action is marked partly applied if it doesn't
+  match what was approved. Each POST carries an idempotency key made from the action id, so a retry
+  never makes a second invoice; a failure after the draft exists is recorded as partly done, never retried.
+  There is no finalize, send, pay, void, refund or delete call, and `check:stripe` fails on one.
+- **Key checks:** a secret key (`sk_…`) is refused before any request. A pasted key must answer the
+  GETs its profile needs, then is probed with updates of objects that can't exist (refunds, charges,
+  payouts, customers, subscriptions, products, invoices, invoice items): Stripe answers 403 when the key
+  lacks the permission and 404 when it has it, so nothing is changed. The read key must be refused all of
+  them; the drafts key must reach invoices and invoice items and nothing else.
+- **Who drafts:** no agent is named in code. The owner gives `stripe_invoice_draft` to an agent on the
+  builder's Tools step (granted actions, card 250), the gateway checks the agent's active spec at propose
+  and apply, and each draft is capped at 5 lines and $5,000 in code.
+- **Files:** `integrations/stripe-api.ts` is the only file that calls Stripe for a business, only
+  `integrations/stripe-server.ts` imports it, and only `integrations/mcp.ts` imports the server (lint and
+  `check:stripe`). API version pinned to 2024-06-20; requests never follow redirects; a 401 pauses the key.
+
+**Setting it up:** in the Stripe dashboard, open **Developers > API keys** and tap **Create restricted
+key**. Name it "OPERATOR read", set **Balance**, **Balance transaction sources**, **Subscriptions**,
+**Invoices** and **Customers** to **Read**, leave everything else on **None**, tap **Create key**, and
+copy it. In the Control Room, open **Connections > Stripe**, paste it under **Read key** and tap
+**Save**. For invoice drafts, make a second restricted key named "OPERATOR invoice drafts" with
+**Invoices** (and **Invoice items**, if listed) on **Write** and **Customers** on **Read**, and paste it
+under **Stripe invoice drafts**.
