@@ -1,5 +1,5 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -122,6 +122,15 @@ t("woo: refused for an agent not given it", refuseProposal("b_ops_1", WOO_NOTE, 
 t("woo: refused on a non-order target", refuseProposal("b_ops_1", WOO_NOTE, "1234/refunds", { note: "x" }, 200, ["woo_order_note"]) !== null);
 t("woo: refused when it would tell the customer", refuseProposal("b_ops_1", WOO_NOTE, "1234", { note: "x", customer_note: true }, 200, ["woo_order_note"]) !== null);
 t("woo: refused with a link", refuseProposal("b_ops_1", WOO_NOTE, "1234", { note: "www.x.example" }, 200, ["woo_order_note"]) !== null);
+
+// HubSpot deal moves (card 253): granted, a stage id and a note on one deal
+const mv = { stage: "contractsent", note: "Signed the quote on the call." };
+t("hubspot: granted, Draft, promotable", TOOLS[HUBSPOT_MOVE].agents === "granted" && TOOLS[HUBSPOT_MOVE].grant === "hubspot_move_deal" && TOOLS[HUBSPOT_MOVE].tier === "Draft" && TOOLS[HUBSPOT_MOVE].promotable);
+t("hubspot: ok for an agent given it", refuseProposal("b_sales_1", HUBSPOT_MOVE, "11", mv, 200, ["hubspot_move_deal"]) === null);
+t("hubspot: refused for an agent not given it", refuseProposal("b_sales_1", HUBSPOT_MOVE, "11", mv, 200, ["hubspot_deals"]) !== null);
+t("hubspot: refused on a non-deal target", refuseProposal("b_sales_1", HUBSPOT_MOVE, "11/notes", mv, 200, ["hubspot_move_deal"]) !== null);
+t("hubspot: refused with another field", refuseProposal("b_sales_1", HUBSPOT_MOVE, "11", { ...mv, amount: "1" }, 200, ["hubspot_move_deal"]) !== null);
+t("hubspot: refused without a note", refuseProposal("b_sales_1", HUBSPOT_MOVE, "11", { stage: "contractsent" }, 200, ["hubspot_move_deal"]) !== null);
 
 console.log(fails ? `${fails} FAILED` : "all passed");
 if (fails) process.exit(1);

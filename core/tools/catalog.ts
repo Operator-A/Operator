@@ -31,13 +31,15 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, DRAFT_EMAIL, DRAFT_LIMITS, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, DRAFT_EMAIL, DRAFT_LIMITS, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { SHOPIFY_TAGS_GRANT, TAG_LIMITS, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
 import type { McPeriod } from "@/core/mailchimp-rules";
 import { wooLowStock, wooOrders } from "@/integrations/woo";
 import { NOTE_MAX, type WooPeriod } from "@/core/woo-rules";
+import { NOTE_MAX as MOVE_NOTE_MAX, type HsPeriod } from "@/core/hubspot-rules";
+import { hubspotContacts, hubspotDeals } from "@/integrations/hubspot";
 import { LIMITS as CAL, holdFromSlot } from "@/core/calendar-rules";
 import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
 import { READ_ROWS, ageOf, columnNumbers, staleNote } from "@/core/export-rules";
@@ -52,7 +54,7 @@ import { ga4Channels, ga4Overview, ga4TopPages } from "@/integrations/ga4";
 import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Pick, ReportInput, ToolDef, ToolResult } from "./types";
-import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, WOO, WOO_NOTES, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
+import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, WOO, WOO_NOTES, HUBSPOT, HUBSPOT_DEALS, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
 import { deliverBrief } from "@/core/brief";
@@ -309,6 +311,24 @@ const TOOLS_LIST: ToolDef[] = [
       { name: "limit", type: "number", integer: true, optional: true, description: "How many channels, 1 to 20 (10 if left out)." },
     ],
     run: async (p) => { const r = await ga4Channels(String(p.period) as Ga4Period, Number(p.limit ?? 10)); return { data: r, numbers: { sessions_listed: r.sessions_listed } }; },
+  },
+  {
+    id: "hubspot_deals", label: "HubSpot deals", detail: "Open deals in the business’s HubSpot: how many and how much in each stage, the ones untouched for 14 days or more, and the 50 largest (name, amount, stage, days quiet, close date), all counted in code. No contacts or emails. Each deal and each open stage carries a pick, so Move a HubSpot deal can name them. Deal names were typed by people, so they are untrusted",
+    kind: "read", group: "hubspot", params: [], trusted: false, needs: HUBSPOT, costUsd: 0,
+    run: async () => {
+      const r = await hubspotDeals();
+      // the deal and the stage a move names are pick codes: their ids come from HubSpot here, never from the model
+      const picks: Record<string, Pick> = {};
+      const deals = r.deals.map((d, i) => { picks[`d${i + 1}`] = { kind: "deal", id: d.id, label: `${d.name || d.id} · ${d.stage} · ${d.pipeline}` }; const { stageId: _s, ...rest } = d; void _s; return { pick: `d${i + 1}`, ...rest }; });
+      const stages = r.stage_ids.map((s, i) => { picks[`s${i + 1}`] = { kind: "stage", id: s.id, label: `${s.pipeline} · ${s.stage}` }; return { pick: `s${i + 1}`, stage: s.stage, pipeline: s.pipeline }; });
+      return { data: { deals, by_stage: r.stages, stages, totals: r.totals, truncated: r.truncated }, numbers: r.totals, picks };
+    },
+  },
+  {
+    id: "hubspot_contacts", label: "HubSpot contacts and companies", detail: "How many contacts and companies the business has in HubSpot, and how many were added in a period. Counts only, never a list of people",
+    kind: "read", group: "hubspot", trusted: false, needs: HUBSPOT, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "The period for new contacts and companies." }],
+    run: async (p) => { const r = await hubspotContacts(String(p.period) as HsPeriod); return { data: r, numbers: { contacts: r.contacts, new_contacts: r.new_contacts, companies: r.companies, new_companies: r.new_companies } }; },
   },
   {
     id: "woo_orders", label: "WooCommerce orders", detail: "Orders in the business’s WooCommerce store over a period: orders, paid orders, revenue, average order, repeat buyers and the ten best sellers, all counted in code, plus the latest 50 orders (number, status, total, date, items). No customer names or addresses. Each order carries a pick, so Note on a WooCommerce order can name one",
@@ -836,6 +856,24 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, CAMPAIGN_DRAFT, list.id, args);
       if (refused) return { problem: refused };
       return { gatewayTool: CAMPAIGN_DRAFT, target: list.id, args, actionType: "campaign_draft", title: `${list.label}: ${args.subject}`, preview: { list: list.label, subject: args.subject, preview_text: args.preview, body: args.body, why: input.why } };
+    },
+  },
+  {
+    id: "hubspot_move_deal", label: "Move a HubSpot deal", detail: "Stages moving one deal from HubSpot deals to another stage of its own pipeline, with a note saying why, for the owner to approve. Approving changes the stage in HubSpot and logs the note on the deal. Nothing here can create, delete or merge a record, change an amount or owner, or email anyone",
+    kind: "action", group: "hubspot", trusted: true, needs: HUBSPOT_DEALS, costUsd: 0,
+    agents: GATEWAY_TOOLS[HUBSPOT_MOVE].agents,
+    params: [
+      { name: "deal", type: "pick", kind: "deal", description: "The deal, from a HubSpot deals result." },
+      { name: "stage", type: "pick", kind: "stage", description: "The stage it moves to, from the same HubSpot deals result. It must be in the deal’s own pipeline." },
+      { name: "note", type: "text", maxLength: MOVE_NOTE_MAX, multiline: true, description: "The note logged on the deal, saying why, plain text." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const deal = input.deal as Pick, stage = input.stage as Pick;
+      const args = { stage: stage.id, note: String(input.note) };
+      const refused = refuseProposal(ctx.agentId, HUBSPOT_MOVE, deal.id, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: HUBSPOT_MOVE, target: deal.id, args, actionType: "deal_stage", title: deal.label, preview: { deal: deal.label, stage: stage.label, note: args.note, why: input.why } };
     },
   },
   {

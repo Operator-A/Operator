@@ -12,5 +12,7 @@ export const MAILCHIMP = ["MAILCHIMP_CONNECTED"];
 export const MAILCHIMP_DRAFTS = ["MAILCHIMP_DRAFTS_CONNECTED"];
 export const WOO = ["WOO_CONNECTED"];
 export const WOO_NOTES = ["WOO_NOTES_CONNECTED"];
+export const HUBSPOT = ["HUBSPOT_CONNECTED"];
+export const HUBSPOT_DEALS = ["HUBSPOT_DEALS_CONNECTED"];
 export const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
 export const daysParam = (def: number, max: number, what: string): Param => ({ name: "days", type: "int", min: 1, max, default: def, description: what });

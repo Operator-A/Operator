@@ -343,6 +343,54 @@ OAuth scope: every key reaches the whole account. So our server is the limit.
 **Setting it up:** nothing in Vercel. The business makes two keys in Mailchimp (profile, Extras, API
 keys, Create A Key) and pastes them on Connections > Mailchimp.
 
+## HubSpot on our own server (card 253)
+
+HubSpot's hosted MCP server (mcp.hubspot.com) takes its scopes from its own tool list, writes
+included, so it can't give agents read access only. Our server runs in the app over HubSpot's CRM API
+with two **service keys** the owner makes in HubSpot (Development > Keys > Service keys). HubSpot
+stopped new legacy private apps in October 2026, and service keys take exact scopes for one account.
+Zak chose pasted keys on 2026-11-21. A HubSpot app for one-tap Connect is a later card (253.5).
+
+- **Profiles** (`core/mcp-rules.ts`), both a pasted service key sealed in the vault:
+  - `hubspot`: the agents' key, with `crm.objects.deals.read`, `crm.objects.contacts.read` and
+    `crm.objects.companies.read`. Read tools `hubspot_deals` and `hubspot_contacts`. No write tools.
+  - `hubspot_deals`: a second key, held only by the gateway, with `crm.objects.deals.read` and
+    `crm.objects.deals.write`. One write tool, `hubspot_move_deal` (action type `hubspot.deal_stage`).
+- **Which key is which** is checked when it is pasted (`checkHubSpotKey`). The server asks to change no
+  property on deal 0, which doesn't exist. A key without deal write gets 403 for the missing scope, and
+  a key with it gets 400 or 404, so nothing is written either way. A key that can write is refused for
+  `hubspot`, and one that can't is refused for `hubspot_deals`. HubSpot has no documented way to list a
+  service key's scopes, so this probe is the check.
+- **The host** is fixed (`https://api.hubapi.com`), and requests never follow redirects.
+- **What the reads return** (`core/hubspot-rules.ts`):
+  - Deals come back with fixed properties (name, amount, stage, pipeline, close date, last change), and
+    no contact, owner or email.
+  - Code works out open deals per stage, amounts, and the deals untouched for 14 days or more, using the
+    pipelines as HubSpot lists them.
+  - Contacts and companies are counts only, all-time and new in a period, from HubSpot's search
+    `total`.
+- **Agents** read them as `hubspot_deals` (each deal and each open stage carries a pick) and
+  `hubspot_contacts`, group `hubspot`, needing `HUBSPOT_CONNECTED`.
+- **The action** `hubspot_move_deal` is granted (card 250):
+  - The deal and the stage are picks. The note is plain text up to 500 characters, with no links
+    (`refuseMove`).
+  - On apply, the server reads the deal and its pipeline's stages again on the same key. It refuses a
+    stage that isn't in the deal's own pipeline, or the stage the deal is already in.
+  - It then changes `dealstage` and logs the note on the deal (association type 214).
+  - There is no create, delete, merge, contact, company, email or sequence call (`check:mcp` fails on
+    one).
+  - At most `policies.max_deal_moves_per_run` (default 20) moves per agent per apply.
+- **Files:** `integrations/hubspot-server.ts` is the only file that calls HubSpot, and only
+  `integrations/mcp.ts` reaches it (lint and `check:mcp`).
+
+**Setting it up:** nothing in Vercel. A super admin in HubSpot opens Development > Keys > Service keys
+and taps Create service key twice:
+- "OPERATOR agents", with the three read scopes, pasted on Connections > HubSpot.
+- "OPERATOR deal moves", with deal read and write, pasted on Connections > HubSpot deal moves.
+
+To confirm on the first real key: HubSpot's docs don't name a scope for creating notes. If a move's
+note is refused, the error names the scope to add.
+
 ## WooCommerce on our own server (card 254)
 
 WooCommerce's own MCP adapter is a plugin each store installs, still in preview, signed in with a

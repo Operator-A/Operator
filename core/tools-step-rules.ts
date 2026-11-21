@@ -6,7 +6,7 @@ import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import type { FactTopic } from "@/core/setup-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "mailchimp" | "woo";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "mailchimp" | "woo" | "hubspot";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -70,6 +70,16 @@ export const TOOL_TILES: readonly ToolTile[] = [
     ],
   },
   {
+    id: "hubspot", name: "HubSpot", gives: "Deals by stage and who went quiet", icon: "users", mcp: "hubspot",
+    steps: [
+      "In HubSpot, open Development > Keys > Service keys and tap Create service key. You need to be a super admin.",
+      "Name it OPERATOR agents and tap Add new scope.",
+      "Tick crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read, tap Update, then Create.",
+      "Copy the key (it starts with pat-) and paste it below.",
+    ],
+    also: { mcp: "hubspot_deals", label: "HubSpot deal moves", why: "An agent you give deal moves to can move a deal to another stage and log why, after you approve, with a second key that can change deals and that only the gateway uses. It never emails anyone." },
+  },
+  {
     id: "woo", name: "WooCommerce", gives: "Orders, best sellers and stock", icon: "shopping-bag", mcp: "woo",
     steps: [
       "In WordPress, open WooCommerce > Settings > Advanced > REST API and tap Add key.",
@@ -115,6 +125,8 @@ export const SCOPE_WORDS: Record<string, string> = {
   "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
   "a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts and campaign reports)": "read your audiences’ sizes and how each campaign did. Mailchimp keys reach the whole account, so our server is the limit: it has no other calls",
   "a second Mailchimp API key, used only to make a draft campaign you approved": "make a draft campaign you approved. Our server has no send or schedule call, so you send it from Mailchimp",
+  "a HubSpot service key with crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read only (a key that can change deals is refused)": "read your deals and count your contacts and companies. Our server never asks for a contact list, an email or a phone number",
+  "a second HubSpot service key with crm.objects.deals.read and crm.objects.deals.write, used only to move a deal you approved and note why": "move a deal you approved to another stage and log why. Only the gateway uses it; it can’t create, delete or merge records, or email anyone",
   "a WooCommerce REST key with Read permission (a Read/Write key is refused)": "read orders, best sellers and stock. Our server never asks for customer names, emails or addresses",
   "a WooCommerce REST key with Read/Write permission, used only to add a private note you approved": "add a private note you approved to an order. Our server has no other write, so it can’t change orders, products or stock",
   "https://www.googleapis.com/auth/calendar.events.readonly": "see the events on your calendars. It can’t change, add or delete anything",
@@ -134,7 +146,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp", WOO_CONNECTED: "woo", WOO_NOTES_CONNECTED: "woo",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp", WOO_CONNECTED: "woo", WOO_NOTES_CONNECTED: "woo", HUBSPOT_CONNECTED: "hubspot", HUBSPOT_DEALS_CONNECTED: "hubspot",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -221,7 +233,7 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
       "Come back here and tap Connect Google Analytics.",
     ] } }),
   part({ id: "leads", area: "Leads and customers", core: true, topic: "customers", learns: "your contacts, deals and who went quiet", question: "Where do you keep track of leads and customers?", value: "Follow-ups get drafted for the people who went quiet.", ready: "Your contacts and deals are in reach.",
-    tools: [{ name: "HubSpot" }, { name: "Salesforce" }, { name: "Pipedrive" }] }),
+    tools: [{ name: "HubSpot", tile: "hubspot" }, { name: "Salesforce" }, { name: "Pipedrive" }] }),
   part({ id: "ads", area: "Ads", core: false, topic: "channels", learns: "spend and what each ad brought in", question: "Where do you run ads?", value: "See what each dollar of ads brought back.", ready: "Your ad numbers are in reach.",
     tools: [{ name: "Meta Ads" }, { name: "Google Ads" }, { name: "TikTok Ads" }] }),
   part({ id: "social", area: "Social", core: false, topic: "channels", learns: "posts and what people respond to", question: "Where do you post?", value: "Posts get drafted from what your customers respond to. You approve each one.", ready: "Your posts are in reach.",

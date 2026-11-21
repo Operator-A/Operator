@@ -33,6 +33,8 @@ import { ga4Properties, ga4Server } from "./ga4-server";
 import { calendarServer, calendarWho } from "./calendar-server";
 import { checkMailchimpKey, mailchimpServer } from "./mailchimp-server";
 import { checkWooKey, wooServer } from "./woo-server";
+import { checkHubSpotKey, hubspotServer } from "./hubspot-server";
+import { looksLikeHubSpotKey } from "@/core/hubspot-rules";
 import { looksLikeWooKey } from "@/core/woo-rules";
 import { looksLikeMailchimpKey } from "@/core/mailchimp-rules";
 import {
@@ -706,6 +708,8 @@ const LOCAL: Partial<Record<McpId, { server: (key: string) => Handler; looksRigh
   // the store address is the owner's: a public https host, checked right before every request
   woo: { server: (k) => wooServer("woo", k, assertPublic), looksRight: looksLikeWooKey, who: (k) => checkWooKey("woo", k, assertPublic) },
   woo_notes: { server: (k) => wooServer("woo_notes", k, assertPublic), looksRight: looksLikeWooKey, who: (k) => checkWooKey("woo_notes", k, assertPublic) },
+  hubspot: { server: (k) => hubspotServer("hubspot", k), looksRight: looksLikeHubSpotKey, who: (k) => checkHubSpotKey("hubspot", k) },
+  hubspot_deals: { server: (k) => hubspotServer("hubspot_deals", k), looksRight: looksLikeHubSpotKey, who: (k) => checkHubSpotKey("hubspot_deals", k) },
 };
 
 /** Whether a server we run is connected and not paused. False when the tables are missing. */
@@ -760,7 +764,7 @@ async function localCall(id: McpId, tool: string, args: Record<string, unknown>,
   if ("error" in out) {
     const msg = scrubSecrets(out.error, [s.key]);
     // 401 is a key the service no longer accepts; Notion's 403 and 404 are a page not shared with the integration
-    if (/^(Notion|Shopify|Mercury|Klaviyo|Mailchimp|WooCommerce) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
+    if (/^(Notion|Shopify|Mercury|Klaviyo|Mailchimp|WooCommerce|HubSpot) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;

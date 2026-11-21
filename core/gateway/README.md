@@ -49,6 +49,16 @@ from `mailchimp_audiences`; `refuseMailchimpCampaign` checks the words on propos
 `applyMailchimpOne`, and the server reads the audience again right before it writes. Needs the
 Mailchimp campaign drafts key on Connections; until then approved drafts wait.
 
+## `hubspot.deal_stage` (card 253)
+
+Moves one deal in the business's HubSpot to another stage of its own pipeline and logs a note on it
+saying why. It emails no one. Granted: any agent an approver gives `hubspot_move_deal` to. The deal and
+the stage are picks from `hubspot_deals`. `refuseMove` checks the stage id and the note on proposal and
+again in `applyHubSpotMove`. Right before it writes, the server reads the deal's pipeline as HubSpot
+lists it, and refuses a stage outside that pipeline or the deal's current stage. The stage before and
+after go into `diff_json`. It starts at Draft and may be promoted. It needs the HubSpot deal moves key
+on Connections; until that is connected, approved moves wait.
+
 ## `woocommerce.order_note` (card 254)
 
 One private note on one order in the business's WooCommerce store. Store staff see it; the customer

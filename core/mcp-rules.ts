@@ -252,6 +252,35 @@ export const MCP_SERVERS = {
     writeTools: [{ tool: "woo_add_order_note", actionType: "woocommerce.order_note" }],
     signInHint: "Make a second key the same way, named OPERATOR order notes, with Permissions set to Read/Write. Paste the store’s address, Consumer key and Consumer secret here. Only the gateway uses it, to add a private note you approved.",
   },
+  hubspot: {
+    id: "hubspot",
+    name: "HubSpot",
+    // Our own server (integrations/hubspot-server.ts) over HubSpot's CRM API (card 253). HubSpot's hosted
+    // MCP server takes its scopes from its own tool list, writes included. This is a service key with
+    // read scopes only (a key that can change deals is refused when pasted); the server asks HubSpot for
+    // no contact list, email or phone, only deals and counts.
+    auth: "token",
+    url: "https://developers.hubspot.com/docs/api-reference/latest/crm/objects/deals/guide",
+    readTools: ["hubspot_deals", "hubspot_contacts"],
+    reportTools: [],
+    scopes: ["a HubSpot service key with crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read only (a key that can change deals is refused)"],
+    writeTools: [],
+    signInHint: "In HubSpot: Development, Keys, Service keys, Create service key. Name it OPERATOR agents, add the scopes crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read, tap Create, then copy the key here.",
+  },
+  hubspot_deals: {
+    id: "hubspot_deals",
+    name: "HubSpot deal moves",
+    // A second service key, held only by the gateway: deal read and write (a key that can't change deals
+    // is refused), used for one tool, moving a deal to another stage of its own pipeline with a note,
+    // after an approver approves. Our server has no other write.
+    auth: "token",
+    url: "https://developers.hubspot.com/docs/api-reference/latest/crm/objects/deals/guide",
+    readTools: [],
+    reportTools: [],
+    scopes: ["a second HubSpot service key with crm.objects.deals.read and crm.objects.deals.write, used only to move a deal you approved and note why"],
+    writeTools: [{ tool: "hubspot_move_deal", actionType: "hubspot.deal_stage" }],
+    signInHint: "Make a second service key named OPERATOR deal moves with the scopes crm.objects.deals.read and crm.objects.deals.write, and paste it here. Only the gateway uses it, after you approve.",
+  },
   calendar: {
     id: "calendar",
     name: "Google Calendar",

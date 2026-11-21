@@ -157,6 +157,12 @@ async function main() {
   const mstaged = TOOLS.mailchimp_campaign_draft.stage!({ audience: aud, subject: "New roast", preview: "Out Friday", body: "Hello", why: "Friday" }, mctx);
   assert.ok(!("problem" in mstaged) && mstaged.gatewayTool === "mailchimp.campaign_draft" && mstaged.target === "a1b2c3d4e5");
   assert.ok("problem" in TOOLS.mailchimp_campaign_draft.stage!({ audience: aud, subject: "x", preview: "y", body: "Hello", why: "z" }, { ...mctx, granted: [] }));
+  // card 253: a HubSpot move names its deal and stage by pick, only for an agent given it
+  const deal = { kind: "deal", id: "11", label: "Cafe Uno wholesale · Meeting booked · Sales" }, stg = { kind: "stage", id: "contractsent", label: "Sales · Contract sent" };
+  const hctx2 = { agentId: "b_sales_1", notionPages: [], outputSources: [], granted: ["hubspot_deals", "hubspot_move_deal"] };
+  const hstaged = TOOLS.hubspot_move_deal.stage!({ deal, stage: stg, note: "Signed the quote", why: "Call today" }, hctx2);
+  assert.ok(!("problem" in hstaged) && hstaged.gatewayTool === "hubspot.deal_stage" && hstaged.target === "11" && JSON.stringify(hstaged.args) === '{"stage":"contractsent","note":"Signed the quote"}');
+  assert.ok("problem" in TOOLS.hubspot_move_deal.stage!({ deal, stage: stg, note: "x", why: "z" }, { ...hctx2, granted: ["hubspot_deals"] }));
   // card 254: a WooCommerce note names its order by pick, only for an agent given it
   const ord = { kind: "order", id: "1234", label: "#1001, Nov 2, $30.00" };
   const wctx = { agentId: "b_ops_1", notionPages: [], outputSources: [], granted: ["woo_orders", "woo_order_note"] };

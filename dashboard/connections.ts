@@ -9,7 +9,7 @@ import type { ToolDef, ToolGroup } from "@/core/tools/types";
 import type { IntegrationId } from "./crew";
 import type { McpId } from "@/core/mcp-rules";
 
-export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "mailchimp" | "woo" | "email" | "web" | "agents" | "control_room" | "math";
+export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "mailchimp" | "woo" | "hubspot" | "email" | "web" | "agents" | "control_room" | "math";
 /** A server the owner added by its address (docs/custom-servers.md): its id is the connection's. */
 export type CustomConnId = `c_${string}`;
 
@@ -68,6 +68,14 @@ export const CONNECTIONS: Connection[] = [
     checks: [{ key: "ga4", label: "Property", setup: "Tap Connect, sign in with a Google account that can see the business’s Analytics, then pick the property below. Needs GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel, with the Analytics APIs turned on for that Google client." }],
   },
   {
+    id: "hubspot", name: "HubSpot", sub: "Deals by stage, contact counts, deal moves", icon: "users", builtIn: false, mcp: "hubspot", mcpMore: ["hubspot_deals"],
+    about: "Our own HubSpot server, run in the app over HubSpot’s CRM API. HubSpot’s hosted MCP server asks for write access on every sign-in, so it isn’t used. Two service keys you make in HubSpot: a read key for agents (open deals by stage with amounts, deals gone quiet, and how many contacts and companies you have, never a contact list, email or phone), and a key that can change deals, which only the gateway uses, after you approve, to move a deal to another stage of its own pipeline and log a note on it. A key that can write is refused for agents. There is no code to create, delete or merge a record, or to email anyone.",
+    checks: [
+      { key: "hubspot", label: "CRM (read only)", setup: "In HubSpot: Development, Keys, Service keys, Create service key, with the scopes crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read. Paste it under HubSpot below.", tools: ["hubspot_deals", "hubspot_contacts"] },
+      { key: "hubspot_deals", label: "Deal moves", tools: ["hubspot_move_deal"], setup: "Make a second service key with crm.objects.deals.read and crm.objects.deals.write and paste it under HubSpot deal moves." },
+    ],
+  },
+  {
     id: "woo", name: "WooCommerce", sub: "Orders, best sellers, stock, order notes", icon: "shopping-bag", builtIn: false, mcp: "woo", mcpMore: ["woo_notes"],
     about: "Our own WooCommerce server, run in the app over your store’s REST API. WooCommerce’s MCP plugin is a preview with no read-only mode, so it isn’t used. Two keys you make in WooCommerce: a Read key for agents (orders, best sellers, repeat buyers and low stock, with no customer names, emails or addresses), and a Read/Write key only the gateway uses, after you approve, to add a private note to an order. A key with the wrong permission is refused. There is no code to change an order, product, stock or customer. Your store’s address is checked as a public https site before every request.",
     checks: [
@@ -123,7 +131,7 @@ export const CONN_BY_ID = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c])) 
 /** Which connection each tool group belongs to. */
 type BuiltInGroup = Exclude<ToolGroup, "custom">;
 const GROUP_CONN: Record<BuiltInGroup, ConnId> = {
-  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", mailchimp: "mailchimp", woo: "woo", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
+  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", mailchimp: "mailchimp", woo: "woo", hubspot: "hubspot", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
 };
 /** For tools on the list in code. A custom server's tools belong to that server (dashboard/builder.ts customMenuFor). */
 export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group as BuiltInGroup];

@@ -14,6 +14,7 @@ import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
 import * as Cal from "../core/calendar-rules";
 import * as Mc from "../core/mailchimp-rules";
 import * as Woo from "../core/woo-rules";
+import * as Hs from "../core/hubspot-rules";
 import { CAMPAIGN_LIMITS, campaignHtml, campaignText, checkDraftArgs, looksLikeKlaviyoKey } from "../core/klaviyo-draft-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { envWrapper, isBound, keyIdOf, newDataKey, open, seal, vaultKey } from "../core/vault";
@@ -554,6 +555,53 @@ assert.equal((wsrv.match(/, \{ body: \{/g) ?? []).length, 2, "one POST for the p
 assert.ok(/customer_note: false/.test(wsrv) && !/customer_note: true/.test(wsrv), "a note is always private");
 assert.match(wsrv, /redirect: "error"/);
 assert.match(wsrv, /await check\(url\)/, "the store address is checked as a public https host before every request");
+// ---- HubSpot on our own server, two service keys (card 253)
+assert.ok(!usesConnect("hubspot") && !usesConnect("hubspot_deals") && !isHosted("hubspot"));
+assert.deepEqual(checkedTools("hubspot"), [...Hs.HUBSPOT_TOOLS], "what our server serves to the agents' key");
+assert.deepEqual(checkedTools("hubspot_deals"), [Hs.MOVE_TOOL], "what our server serves to the gateway's key");
+assert.ok(mayWrite("hubspot_deals", Hs.MOVE_TOOL) && !mayCall("hubspot_deals", Hs.MOVE_TOOL) && !mayWrite("hubspot", Hs.MOVE_TOOL));
+const HSKEY = ["pat", "na1", "0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0"].join("-"); // made up, built here so it never reads as one
+assert.ok(Hs.looksLikeHubSpotKey(HSKEY) && Hs.looksLikeHubSpotKey(` ${HSKEY}\n`) && !Hs.looksLikeHubSpotKey("pat-na1-xyz") && !Hs.looksLikeHubSpotKey(HSKEY + "@evil.example"));
+assert.deepEqual(Hs.checkHubSpotArgs("hubspot_deals", {}), { tool: "hubspot_deals" });
+assert.deepEqual(Hs.checkHubSpotArgs("hubspot_contacts", {}), { tool: "hubspot_contacts", period: "last_30_days" });
+for (const [tool, args, why] of [
+  ["hubspot_deals", { owner: "x" }, /unknown input/],
+  ["hubspot_contacts", { period: "forever" }, /period is one of/],
+  ["hubspot_emails", {}, /isn't a HubSpot read tool/],
+] as const) { const r = Hs.checkHubSpotArgs(tool, args); assert.ok("problem" in r && why.test(r.problem), `${tool}`); }
+assert.ok(!/email|phone|contact|owner|description/.test(Hs.DEAL_PROPS.join(",")), "deals are asked for with no contact, email, phone or owner");
+const stages = Hs.readPipelines({ results: [{ id: "default", label: "Sales", stages: [
+  { id: "appointmentscheduled", label: "Meeting booked", displayOrder: 0, metadata: { isClosed: "false" } },
+  { id: "contractsent", label: "Contract sent", displayOrder: 1, metadata: { isClosed: "false" } },
+  { id: "closedwon", label: "Won", displayOrder: 2, metadata: { isClosed: "true" } },
+  { id: "../x", label: "bad" },
+] }, { id: "../p", label: "bad", stages: [] }] });
+assert.deepEqual(stages.map((x) => [x.id, x.closed]), [["appointmentscheduled", false], ["contractsent", false], ["closedwon", true]]);
+const HNOW = Date.parse("2026-11-21T12:00:00Z");
+const deals = Hs.readDeals([
+  { id: "11", properties: { dealname: "Cafe Uno wholesale", amount: "1200", dealstage: "contractsent", hs_lastmodifieddate: "2026-11-01T00:00:00Z" } },
+  { id: "12", properties: { dealname: "Office order", amount: "300.5", dealstage: "appointmentscheduled", hs_lastmodifieddate: "2026-11-20T00:00:00Z" } },
+  { id: "13", properties: { dealname: "Done deal", amount: "999", dealstage: "closedwon" } },
+  { id: "x", properties: { dealname: "bad", dealstage: "contractsent" } },
+], stages, HNOW, false);
+assert.deepEqual(deals.totals, { open_deals: 2, open_amount: 1500.5, gone_quiet: 1, quiet_days: 14 }, "closed deals don't count; amounts and quiet days counted in code");
+assert.deepEqual(deals.stages.map((x) => [x.stage, x.deals, x.amount]), [["Meeting booked", 1, 300.5], ["Contract sent", 1, 1200]]);
+assert.equal(deals.deals[0].id, "11");
+assert.equal(Hs.refuseMove({ stage: "contractsent", note: "Signed the quote on the call." }), null);
+assert.match(Hs.refuseMove({ stage: "contractsent", note: "x", amount: 5 }) ?? "", /allow-list/);
+assert.match(Hs.refuseMove({ stage: "../x", note: "x" }) ?? "", /stage id/);
+assert.match(Hs.refuseMove({ stage: "contractsent" }) ?? "", /needs a note/);
+assert.match(Hs.refuseMove({ stage: "contractsent", note: "see https://x.example" }) ?? "", /links/);
+assert.ok(Hs.dealIdOk("123") && !Hs.dealIdOk("12/notes") && !Hs.dealIdOk(12));
+assert.deepEqual(Hs.checkMoveArgs({ dealId: "11", stage: "contractsent", note: " Signed " }), { dealId: "11", stage: "contractsent", note: "Signed" });
+assert.ok("problem" in Hs.checkMoveArgs({ dealId: "../deals", stage: "contractsent", note: "x" }));
+assert.equal(Hs.noteBody("a < b\nc"), "a &lt; b<br>c");
+const hsrv = readFileSync("integrations/hubspot-server.ts", "utf8");
+assert.ok(!/"DELETE"|"PUT"|\/merge|\/batch|\/emails|\/sequences|\/communications|\/associations\/|\/objects\/(contacts|companies)\/(?!search)/.test(hsrv), "the HubSpot server has no delete, merge, batch, email, sequence or contact write");
+assert.equal((hsrv.match(/method: "PATCH"/g) ?? []).length, 2, "one PATCH for the permission probe, one for the move");
+assert.equal((hsrv.match(/\/crm\/v3\/objects\/notes"/g) ?? []).length, 1, "one note create, on the move");
+assert.match(hsrv, /redirect: "error"/);
+assert.match(Hs.HUBSPOT_API, /^https:\/\/api\.hubapi\.com$/);
 // every Gmail tool input is checked before it reaches a URL or a draft
 assert.deepEqual(checkGmailArgs("gmail_search", { q: "$12.50 after:2026/11/01" }), { tool: "gmail_search", q: "$12.50 after:2026/11/01", max: 3 });
 assert.deepEqual(checkGmailArgs("gmail_message", { id: "18c2a9f0e1b2c3d4" }), { tool: "gmail_message", id: "18c2a9f0e1b2c3d4", maxChars: 6000 });
@@ -629,6 +677,7 @@ assert.deepEqual(importers("calendar-api"), ["integrations/calendar-server.ts"])
 assert.deepEqual(importers("calendar-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mailchimp-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("woo-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("hubspot-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("shopify-api"), ["integrations/shopify-server.ts"]);
 assert.deepEqual(importers("shopify-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mercury-files-server"), ["integrations/mcp.ts"]);

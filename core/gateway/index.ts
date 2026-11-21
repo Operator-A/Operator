@@ -21,9 +21,10 @@ import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules"
 import { refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
 import { orderIdOk, refuseNote } from "@/core/woo-rules";
-import { ANNOTATE, CALENDAR_HOLD, MAILCHIMP_DRAFT, WOO_NOTE, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { dealIdOk, refuseMove } from "@/core/hubspot-rules";
+import { ANNOTATE, CALENDAR_HOLD, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE } from "./policy";
 
 export interface Proposal {
   agentId: string;
@@ -337,7 +338,7 @@ export async function writeBlocker(): Promise<string | null> {
 }
 
 /** A gateway sign-in is connected and not paused. */
-async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify" | "mailchimp_drafts" | "woo_notes"): Promise<boolean> {
+async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify" | "mailchimp_drafts" | "woo_notes" | "hubspot_deals"): Promise<boolean> {
   const s = await mcpStatus(id);
   return !!s?.connected && !s.paused;
 }
@@ -433,7 +434,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyMailchimp(ids), applyWooNotes(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -717,6 +718,49 @@ async function applyWooNote(a: ActionRow, runId: string) {
     const out = (await callWriteTool("woo_notes", "woo_add_order_note", { orderId: a.target, note: args.note })) as { noteId?: unknown; order?: unknown };
     if (!Number.isInteger(out?.noteId)) throw new Error("WooCommerce didn't return a note id");
     await done({ status: "applied", result_json: { woo_note_id: out.noteId, order: out.order ?? a.target, customer_note: false } });
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
+/** Approved HubSpot deal moves (card 253): a stage change and a note on the gateway's own key, at most max_deal_moves_per_run per agent. */
+async function applyHubSpotMoves(ids?: string[]) {
+  const rows = await approvedOf(HUBSPOT_MOVE, ids);
+  if (!rows.length) return null;
+  if (!(await ready("hubspot_deals"))) return { ok: true, text: "Approved, not in HubSpot yet: the HubSpot deal moves key isn't connected (Connections, HubSpot)." };
+  const cap = await numPolicy("max_deal_moves_per_run", 20);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyHubSpotMove(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway moved ${n.applied} approved HubSpot deal${n.applied === 1 ? "" : "s"}, each with its note${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved moves are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyHubSpotMove(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as Record<string, unknown>;
+    // the stage and note again (a granted action's agent was checked by refuseUngranted); the server
+    // checks the stage is in the deal's own pipeline, as HubSpot lists it, right before it writes
+    const no = dealIdOk(a.target) ? refuseMove(args) : "The target is not a HubSpot deal id.";
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const out = (await callWriteTool("hubspot_deals", "hubspot_move_deal", { dealId: a.target, stage: args.stage, note: args.note })) as { from?: unknown; fromLabel?: unknown; to?: unknown; toLabel?: unknown; noteId?: unknown };
+    if (out?.to !== args.stage) throw new Error("HubSpot didn't confirm the new stage");
+    await done({ status: "applied", diff_json: { before: { dealstage: out.from ?? null }, after: { dealstage: out.to } }, result_json: { from: out.fromLabel ?? out.from ?? null, to: out.toLabel ?? out.to, hubspot_note_id: out.noteId ?? null } });
     return "applied" as const;
   } catch (e) {
     await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });

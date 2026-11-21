@@ -37,6 +37,8 @@ async function check() {
     mailchimp_drafts: await localReady("mailchimp_drafts"),
     woo: await localReady("woo"),
     woo_notes: await localReady("woo_notes"),
+    hubspot: await localReady("hubspot"),
+    hubspot_deals: await localReady("hubspot_deals"),
   };
   let agents: { id: string; enabled: boolean }[] | string = "not checked";
   if (set.supabase) {

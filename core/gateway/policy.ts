@@ -8,6 +8,7 @@ import { SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, refuseTags, shopifyTarget } from "@/c
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
 import { NOTE_FIELDS, orderIdOk, refuseNote } from "@/core/woo-rules";
+import { MOVE_FIELDS, dealIdOk, refuseMove } from "@/core/hubspot-rules";
 
 export type Tier = "Report" | "Draft" | "Act";
 
@@ -47,6 +48,7 @@ export const MAILCHIMP_DRAFT = "mailchimp.campaign_draft";
  * write. Granted.
  */
 export const WOO_NOTE = "woocommerce.order_note";
+export const HUBSPOT_MOVE = "hubspot.deal_stage";
 
 /**
  * Who may propose an action type. A list names the only agents, by id (today's three action types;
@@ -95,6 +97,14 @@ export const TOOLS = {
     tier: "Draft" as Tier,
     fields: NOTE_FIELDS,
     // a note only the store's staff see: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [HUBSPOT_MOVE]: {
+    agents: "granted",
+    grant: "hubspot_move_deal",
+    tier: "Draft" as Tier,
+    fields: MOVE_FIELDS,
+    // a stage change and a note inside the business's own CRM, emailing no one: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
   [CALENDAR_HOLD]: {
@@ -191,6 +201,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (tool === CAMPAIGN_DRAFT) return listIdOk(target) ? refuseCampaign(args) : "The target is not a Klaviyo list id.";
   if (tool === MAILCHIMP_DRAFT) return audienceIdOk(target) ? refuseMailchimpCampaign(args) : "The target is not a Mailchimp audience id.";
   if (tool === WOO_NOTE) return orderIdOk(target) ? refuseNote(args) : "The target is not a WooCommerce order id.";
+  if (tool === HUBSPOT_MOVE) return dealIdOk(target) ? refuseMove(args) : "The target is not a HubSpot deal id.";
   if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
   if (tool === CALENDAR_HOLD) return target === `${args.start}/${args.end}` && isoMs(args.start) !== null ? refuseHold(args, now) : "The target is not the hold's own start and end.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";
