@@ -68,7 +68,7 @@ const NOT_AUDITED: Record<string, string> = {
   proposalCreate: "only a suggestion; accepting it is audited",
   sendToAvery: "a chat message, kept in the chat",
   sendSetup: "a setup message, kept in the chat; withRun logs the run",
-  setupOtherTool: "a request for a connector and a note that the part starts from an export, no access",
+  setupOtherTool: "a request for a connector and a note of the tool the business uses, no access",
 };
 
 const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupActions.ts"];

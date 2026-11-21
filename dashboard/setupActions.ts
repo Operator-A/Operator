@@ -221,8 +221,8 @@ export async function setupOtherTool(cat: string, name: string): Promise<ActionR
   if (r.kind === "known") return { ok: true, text: `${r.name} has its own server. Add it on Connections with its address filled in: you turn on each read-only tool yourself.`, href: r.href };
   try {
     await askFor({ name: r.name, what: "A tool the business already uses, named in setup", by: me.email });
-    if (await inSetup()) { await planCategory(cat, { kind: "export", tool: r.name }); await keepAnswerFact(cat, r.name); }
+    if (await inSetup()) { await planCategory(cat, { kind: "uses", tool: r.name }); await keepAnswerFact(cat, r.name); }
     revalidatePath("/start");
-    return { ok: true, href: "/start", follow: true, text: `There’s no direct line to ${r.name} yet, so this part starts from an export. I’ve put ${r.name} on our build list.` };
+    return { ok: true, href: "/start", follow: true, text: `Noted. There’s no direct line to ${r.name} yet, so it’s on our build list, and it starts working the day it connects.` };
   } catch (e) { return fail(e); }
 }

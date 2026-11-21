@@ -413,3 +413,13 @@ customer.
 `HOME_ORG_ID` is now only the fresh install's first business: the baseline makes its row, and while
 an address belongs to no business, `OPERATOR_OWNER_EMAIL` becomes its first owner
 (`dashboard/signin.ts`). `check:tenancy` fails on any other use.
+
+## The shared brain: counts across businesses
+
+The one read across orgs beyond their ids (card 231, `docs/shared-brain.md`). Each business keeps its own
+snapshot in `brain_snapshots` (only values from lists and counts, checked in code and by the table), written
+through `db()` like any row. `brain_patterns()` counts across those rows and returns a total only when at
+least 5 businesses that allow it share a pattern, never a row or an org id. Only the service role may run
+it, through `brainPatterns()` in `core/db.ts`, which only the cloud edition's `ee/brain.ts` calls
+(`check:brain`).
+

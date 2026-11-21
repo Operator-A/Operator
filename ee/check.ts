@@ -10,6 +10,8 @@ import { PLAN, monthlyUsd, planBlockFor, planState, planWords, type Subscription
 import type { PlanAsk } from "../core/extension-types";
 import { CREDITS_TAX_CODE, MIN_BALANCE_USD, PACKS_USD, packLineItem, balanceOf, creditBlock, creditFromSession, creditWords, isPack, mayUsePooledKey, packProblem, packReturn, runCharge, SETUP_FREE_USD, setupFreeLeft, setupRunCharge, usdWords } from "./credit-rules";
 import { billingFor } from "../core/cost-rules";
+import { BANK_DIRECTIVE, BANK_SETTINGS, PATTERN_PREFIX, RETAIN_BATCH, SYNC_EVERY_MS, cohortWords, docIdOf, statementOf, statementProblem, syncDue, syncPlan, syncWith, tagsOf, type Bank } from "./brain-rules";
+import type { PatternRow } from "../core/brain-rules";
 
 const now = Date.parse("2026-12-01T12:00:00Z");
 const DAY = 86_400_000;
@@ -253,4 +255,81 @@ assert.ok(packProblem("connections", "x".repeat(500)).length < 260, "the problem
 assert.match(readFileSync("ee/billing-actions.ts", "utf8"), /packReturn\(form\.get\("back"\)\)/, "buyCredits reads the return place through the allowlist");
 assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+HostedClaude,$/m, "the cloud edition fills the HostedClaude slot");
 
-console.log("check:ee ok (credits, plan, trial, grace, comped, Stripe signatures and rows, sign-up codes)");
+// the shared brain's bank (card 232): one plain statement per counted pattern, list words and counted numbers only
+{
+  const kits = { finance: "Finance", email_marketing: "Email marketing" };
+  const row = (cohort: string, pattern: string, orgs: number, hits: number, num: number | null = null, den: number | null = null): PatternRow => ({ cohort, pattern, orgs, hits, num, den });
+  assert.equal(cohortWords("all"), "Among businesses on OPERATOR");
+  assert.equal(cohortWords("kind:online_store|rev:under_10k"), "Among online stores under $10k a month on OPERATOR");
+  for (const bad of ["kind:nope", "kind:online_store|rev:unknown", "kind:online_store|rev:x", "name:Acme", "kind:online_store|rev:under_10k|x"]) assert.equal(cohortWords(bad), null, `${bad} is not a cohort from the lists`);
+  assert.equal(statementOf(row("kind:online_store|rev:under_10k", "tool:list:klaviyo", 26, 18), kits), "Among online stores under $10k a month on OPERATOR, 18 of 26 use Klaviyo for email marketing.");
+  assert.equal(statementOf(row("all", "dept:finance", 12, 7), kits), "Among businesses on OPERATOR, 7 of 12 that are 60 or more days in run a Finance department.");
+  assert.equal(statementOf(row("kind:services", "action:gmail.create_draft", 9, 9, 41, 50), kits), "Among service businesses on OPERATOR, 9 businesses decided 50 Gmail drafts to leads in the last 30 days, and 82% went through unedited.");
+  assert.equal(statementOf(row("all", "level:calendar.hold", 8, 5), kits), "Among businesses on OPERATOR, 5 of 8 that used calendar holds earned enough trust to let them act with an undo window or on their own.");
+  // under the floor, off a list, or numbers that don't add up: never a statement
+  for (const r of [row("all", "tool:list:klaviyo", 4, 4), row("all", "tool:list:klaviyo", 9, 4), row("all", "tool:list:klaviyo", 5, 6), row("all", "tool:list:acme_secret", 9, 6), row("all", "tool:nopart:klaviyo", 9, 6),
+    row("all", "dept:my_bespoke_team", 9, 6), row("all", "action:gmail.create_draft", 9, 9, 51, 50), row("all", "action:gmail.create_draft", 9, 9, null, 50), row("all", "free text", 9, 6), row("all", "tool:list:klaviyo:x", 9, 6)])
+    assert.equal(statementOf(r, kits), null, `${r.cohort} ${r.pattern} ${r.orgs}/${r.hits} is not said`);
+  assert.equal(statementProblem("Among businesses on OPERATOR, 5 of 8 use Klaviyo."), null);
+  for (const bad of ["", "x".repeat(301), "Reach me at a@b.co", "See https://x.co", "Line\nbreak", "Acme’s \"secret\""]) assert.ok(statementProblem(bad), `${bad.slice(0, 20)} is refused`);
+  // document ids are stable and tags carry cohort and kind
+  assert.equal(docIdOf({ cohort: "kind:online_store|rev:under_10k", pattern: "tool:list:klaviyo" }), "pat-kind:online_store--rev:under_10k--tool:list:klaviyo");
+  assert.ok(docIdOf({ cohort: "all", pattern: "dept:finance" }).startsWith(PATTERN_PREFIX));
+  assert.deepEqual(tagsOf({ cohort: "kind:services|rev:none", pattern: "action:calendar.hold" }), ["cohort:kind:services|rev:none", "pattern:action", "kind:services"]);
+  assert.deepEqual(tagsOf({ cohort: "all", pattern: "dept:finance" }), ["cohort:all", "pattern:dept"]);
+  // the plan: every pattern that can be said, and only stale pattern documents removed (the playbook stays)
+  const rows = [row("all", "tool:list:klaviyo", 10, 6), row("all", "dept:finance", 10, 5), row("all", "tool:list:acme_secret", 10, 6), row("all", "tool:list:mailchimp", 4, 4)];
+  const plan = syncPlan(rows, ["pat-all--tool:list:klaviyo", "pat-all--tool:list:mailchimp", "playbook-onboarding", "pat-all--dept:old"], kits);
+  assert.deepEqual(plan.retain.map((r) => r.documentId), ["pat-all--tool:list:klaviyo", "pat-all--dept:finance"]);
+  assert.deepEqual(plan.remove, ["pat-all--tool:list:mailchimp", "pat-all--dept:old"]);
+  for (const r of plan.retain) {
+    assert.equal(statementProblem(r.content), null);
+    assert.ok(!/acme|secret/i.test(JSON.stringify(r)), "nothing off a list is sent");
+    assert.deepEqual(Object.keys(r.metadata).sort(), ["cohort", "pattern"]);
+  }
+  // a sync against a fake bank: the bank is set first, the directive added once, retains in batches, stale deleted
+  const fake = (existing: string[], directives: string[] = []) => {
+    const calls: string[] = [];
+    const batches: number[] = [];
+    const bank: Bank = {
+      async setBank() { calls.push("setBank"); },
+      async directives() { calls.push("directives"); return directives; },
+      async addDirective(name) { calls.push(`addDirective:${name}`); directives.push(name); },
+      async documents() { calls.push("documents"); return existing; },
+      async retain(docs) { calls.push("retain"); batches.push(docs.length); },
+      async remove(id) { calls.push(`remove:${id}`); },
+    };
+    return { bank, calls, batches };
+  };
+  void (async () => {
+    const f = fake(["pat-all--dept:old", "playbook-onboarding"]);
+    const many = Array.from({ length: 120 }, (_, i) => row(i % 2 ? "all" : "kind:services", i < 60 ? "tool:list:klaviyo" : "dept:finance", 10 + i, 6));
+    const uniq = new Set(many.map((r) => docIdOf(r))).size;
+    const r = await syncWith(f.bank, many, kits);
+    assert.equal(f.calls[0], "setBank", "the bank is set before anything else");
+    assert.ok(f.calls.includes(`addDirective:${BANK_DIRECTIVE.name}`));
+    assert.ok(f.batches.every((n) => n <= RETAIN_BATCH) && f.batches.reduce((a, b) => a + b, 0) === 120, "every statement retained, at most a batch per call");
+    assert.ok(uniq <= 120);
+    assert.deepEqual(r, { retained: 120, removed: 1 });
+    assert.ok(f.calls.includes("remove:pat-all--dept:old") && !f.calls.some((c) => c.includes("playbook")), "only stale pattern documents are deleted");
+    const g = fake([], [BANK_DIRECTIVE.name]);
+    await syncWith(g.bank, [], kits);
+    assert.ok(!g.calls.some((c) => c.startsWith("addDirective")), "the directive is added once");
+  })().catch((e) => { console.error(e); process.exit(1); });
+  assert.equal(BANK_SETTINGS.retainExtractionMode, "verbatim", "statements kept word for word");
+  assert.equal(BANK_SETTINGS.enableObservations, false, "no model writes new memories from them");
+  // the weekly gate
+  const now = Date.parse("2026-12-01T00:00:00Z");
+  assert.equal(syncDue(null, now), true);
+  assert.equal(syncDue("not a date", now), true);
+  assert.equal(syncDue(new Date(now - SYNC_EVERY_MS).toISOString(), now), true);
+  assert.equal(syncDue(new Date(now - 6 * 864e5).toISOString(), now), false);
+  // Hindsight is reached from one file, and only with both settings and an admin business
+  const brain = readFileSync("ee/brain.ts", "utf8");
+  assert.match(brain, /if \(!hindsightReady\(\) \|\| !admin\) return "off";/);
+  assert.match(readFileSync("ee/index.ts", "utf8"), /afterSchedule: syncBrain/);
+  const callers = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.name === "node_modules" || e.name.startsWith(".") ? [] : e.isDirectory() ? callers(`${dir}/${e.name}`) : /\.(ts|tsx)$/.test(e.name) && /from "@vectorize-io\/hindsight-client"/.test(readFileSync(`${dir}/${e.name}`, "utf8")) ? [`${dir}/${e.name}`] : []);
+  assert.deepEqual(["app", "core", "dashboard", "ee", "integrations", "scripts"].flatMap((d) => { try { return callers(d); } catch { return []; } }), ["ee/brain.ts"], "only ee/brain.ts talks to Hindsight");
+}
+
+console.log("check:ee ok (credits, plan, trial, grace, comped, Stripe signatures and rows, sign-up codes, shared brain bank)");

@@ -617,7 +617,7 @@ a.goal-add:hover { text-decoration: none; color: var(--ink); }
    Always light, whatever the Control Room's theme. */
 .wg { --pg: #F4F4F8; --ws: #FFFFFF; --card: rgba(255, 255, 255, .78); --bd: rgba(20, 20, 26, .09); --ink: #14141A; --ink2: #4A4A55; --mut: #5F5F6B; --soft: rgba(20, 20, 26, .05);
   --mint-ink: #0B5D3F; --mint-soft: #D8F3E6; --yel-ink: #6B5200; --yel-soft: #FDF5D6; --red-ink: #B4232A; --red-soft: #FDE8E8; --line: rgba(20, 20, 26, .1);
-  color-scheme: light; position: relative; min-height: 100vh; overflow: hidden; background: var(--pg); color: var(--ink); display: flex; flex-direction: column; }
+  color-scheme: light; position: relative; min-height: 100vh; overflow: clip; background: var(--pg); color: var(--ink); display: flex; flex-direction: column; }
 .wg-blob { position: absolute; border-radius: 999px; filter: blur(90px); opacity: .55; pointer-events: none; transition: transform 1.6s cubic-bezier(.22, .8, .2, 1); }
 .wg-blob.b0 { width: 520px; height: 520px; background: #AEB8FF; top: -120px; left: -80px; }
 .wg-blob.b1 { width: 460px; height: 460px; background: #FFC9B8; bottom: -140px; right: -60px; }

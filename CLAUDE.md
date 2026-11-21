@@ -118,7 +118,11 @@ send, payment or publish action type is built, so no agent can send, pay or publ
   tables are read with a token for the current org, so the database refuses other orgs' rows. People sign in as themselves and every server
   action checks the member's role first with `asRole` (`check:roles` enforces it). Work that runs on
   its own is a job (`core/jobs.ts`), run by a worker (`/api/jobs`) as the job's org; only the
-  scheduler reads across orgs, and only their ids (`allOrgIds`). See `docs/tenancy.md`.
+  scheduler reads across orgs, and only their ids (`allOrgIds`). The one exception is the shared brain
+  (`ee/brain.ts`, cloud edition): it reads counts across businesses through one database function
+  (`brain_patterns`) that returns a total only when at least 5 businesses that allow it share a pattern,
+  never a row, name, text, address or amount from any one business. Nothing a business wrote, and nothing
+  a model wrote about one business, reaches another (`docs/shared-brain.md`). See `docs/tenancy.md`.
 
 ## Checks
 

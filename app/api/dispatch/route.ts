@@ -11,6 +11,8 @@ import { withOrg } from "@/core/tenancy";
 import { sendStatusAlerts } from "@/core/status";
 import { applyTrusted } from "@/core/gateway";
 import { controlsOn } from "@/dashboard/session";
+import { afterSchedule, edition } from "@/core/extensions";
+import { takeSnapshot } from "@/core/brain";
 
 export const maxDuration = 60;
 
@@ -23,7 +25,10 @@ export const maxDuration = 60;
 // lets only steps of a chain the owner started with Run chain go on. Last, it emails the owner any new
 // alert from the Status page (core/status.ts). In between, with DASHBOARD_CONTROLS on, it applies
 // what earned trust let through (core/gateway applyTrusted, card 7): actions whose undo window has
-// passed, and actions at Act, each re-checked and run as its agent.
+// passed, and actions at Act, each re-checked and run as its agent. On the cloud edition it also takes the
+// business's shared-brain snapshot once a day (core/brain.ts, docs/shared-brain.md): counts from the
+// business's own rows, kept in its own row; sharing off deletes it. After every business, the afterSchedule
+// slot runs the cloud edition's weekly sync of the counted patterns into Hindsight (card 232).
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const origin = new URL(req.url).origin;
@@ -36,7 +41,9 @@ export async function GET(req: Request) {
     try { orgs.push({ org, ...(await withOrg(org, () => schedule(origin, now))) }); }
     catch (e) { console.error(`[dispatch] ${org}`, e); orgs.push({ org, error: e instanceof Error ? e.message : String(e) }); }
   }
-  return NextResponse.json({ orgs });
+  // once per round, after every business: the cloud edition's weekly shared-brain sync (ee/brain.ts)
+  const brain = await afterSchedule(now);
+  return NextResponse.json({ orgs, brain });
 }
 
 async function schedule(origin: string, now: number) {
@@ -59,6 +66,8 @@ async function schedule(origin: string, now: number) {
   // trusted actions never stop the scheduler; with controls off they wait, as approved ones do
   const trusted = controlsOn() ? await applyTrusted(new Date(now)).catch((e) => { console.error("[dispatch] trusted", e instanceof Error ? e.message : e); return null; }) : null;
   // alerts read the state after this round's work, and never stop the scheduler
+  // the shared-brain snapshot never stops the scheduler either; at most one a day
+  const brain = edition() === "cloud" ? await takeSnapshot().catch((e) => { console.error("[dispatch] brain", e instanceof Error ? e.message : e); return "failed"; }) : null;
   const alerted = await sendStatusAlerts(origin, now).catch((e) => { console.error("[dispatch] alerts", e instanceof Error ? e.message : e); return []; });
-  return { on, started, kicked: due.length, stale, trusted, alerted, problems: flow.problems };
+  return { on, started, kicked: due.length, stale, trusted, brain, alerted, problems: flow.problems };
 }

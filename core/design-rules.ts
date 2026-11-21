@@ -29,6 +29,14 @@ export interface Design {
 export interface Kit { id: string; name: string; agentNames: readonly string[] }
 
 const one = (v: unknown, max: number) => String(v ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+/** A reason as said: outer quote marks dropped, so the card's own pair is the only one (card 196). */
+export function unquote(s: string): string {
+  let t = s.trim();
+  while (t.length > 2 && /^["“”'‘’]/.test(t) && /["“”'‘’]$/.test(t) && !/["“”]/.test(t.slice(1, -1).trim().slice(1, -1))) t = t.slice(1, -1).trim();
+  return t;
+}
+/** How a reason shows after "You said:": in one pair of quote marks, or as it is when it quotes inside. */
+export const saidLine = (s: string) => { const r = unquote(s); return /["“”]/.test(r) ? r : `“${r}”`; };
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 const LINK = /https?:\/\/|www\.|@|\.[a-z]{2,6}\/|[a-z0-9-]+\.(com|io|net|org|dev|app|ai|co|shop|store)\b/i;
 const DEPT = /^[A-Za-z][A-Za-z0-9 &'-]{1,39}$/;
@@ -59,7 +67,7 @@ export function applyDesign(designs: readonly Design[], input: Record<string, un
     return { designs: list, note: `took ${dept} off` };
   }
   if (part === "about") {
-    const reason = one(input.reason, REASON_MAX + 1);
+    const reason = unquote(one(input.reason, REASON_MAX + 1));
     if (reason && reason.length > REASON_MAX) return { problem: `keep the reason under ${REASON_MAX} characters` };
     if (reason && LINK.test(reason)) return { problem: "a reason can't hold a link or an address" };
     const purpose = one(input.purpose, 200);

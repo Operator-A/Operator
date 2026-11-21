@@ -55,6 +55,7 @@
     "check:signout": "npx --yes tsx scripts/check-signout.ts",
     "check:time-zone": "npx --yes tsx scripts/check-time-zone.ts",
     "check:on-duty": "npx --yes tsx scripts/check-on-duty.ts",
+    "check:brain": "npx --yes tsx scripts/check-brain.ts",
     "check:stripe": "npx --yes tsx --conditions=react-server scripts/check-stripe.ts",
     "check:ee": "npx --yes tsx ee/check.ts",
     "check:all": "node scripts/check-all.mjs",
@@ -71,6 +72,7 @@
     "@opentelemetry/sdk-metrics": "2.0.1",
     "@opentelemetry/sdk-trace-base": "2.0.1",
     "@supabase/supabase-js": "^2.118.0",
+    "@vectorize-io/hindsight-client": "1.2.0",
     "@vercel/oidc": "4.0.3",
     "@vercel/otel": "2.1.4",
     "@xyflow/react": "^12.12.1",
@@ -81,6 +83,7 @@
     "server-only": "^0.0.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.15",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
