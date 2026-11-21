@@ -31,7 +31,9 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { calendarFree, calendarWeek } from "@/integrations/calendar";
+import { LIMITS as CAL, holdFromSlot } from "@/core/calendar-rules";
 import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
 import { READ_ROWS, ageOf, columnNumbers, staleNote } from "@/core/export-rules";
 import { listExports, readExport } from "@/core/exports";
@@ -45,7 +47,7 @@ import { ga4Channels, ga4Overview, ga4TopPages } from "@/integrations/ga4";
 import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Pick, ReportInput, ToolDef, ToolResult } from "./types";
-import { ANALYTICS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
+import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
 import { deliverBrief } from "@/core/brief";
@@ -279,6 +281,28 @@ const TOOLS_LIST: ToolDef[] = [
       { name: "limit", type: "number", integer: true, optional: true, description: "How many channels, 1 to 20 (10 if left out)." },
     ],
     run: async (p) => { const r = await ga4Channels(String(p.period) as Ga4Period, Number(p.limit ?? 10)); return { data: r, numbers: { sessions_listed: r.sessions_listed } }; },
+  },
+  {
+    id: "calendar_week", label: "The week ahead", detail: "Events on the business’s Google Calendar for the next days: each one’s time, a short title and how many guests (never their addresses), with meetings, hours in meetings and the busiest day counted in code. Titles come from whoever sent the invite, so they are untrusted",
+    kind: "read", group: "calendar", trusted: false, needs: CALENDAR, costUsd: 0,
+    params: [{ name: "days", type: "int", min: 1, max: CAL.days, default: 7, description: "How many days ahead, from now." }],
+    run: async (p) => { const r = await calendarWeek(Number(p.days)); return { data: r, numbers: r.totals }; },
+  },
+  {
+    id: "calendar_free_time", label: "Free time", detail: "Free slots of 30 minutes or more in working hours on the business’s Google Calendar for the next days, worked out in code in the calendar’s own time zone. Each slot carries a pick, so Hold time on the calendar can name one",
+    kind: "read", group: "calendar", trusted: true, needs: CALENDAR, costUsd: 0,
+    params: [
+      { name: "days", type: "int", min: 1, max: CAL.days, default: 5, description: "How many days ahead, from now." },
+      { name: "from_hour", type: "int", min: 0, max: 23, default: 9, description: "Working hours start, on the calendar’s clock." },
+      { name: "to_hour", type: "int", min: 1, max: 24, default: 17, description: "Working hours end, on the calendar’s clock." },
+    ],
+    run: async (p) => {
+      const r = await calendarFree(Number(p.days), Number(p.from_hour), Number(p.to_hour));
+      // the time a hold takes is named by pick code: it comes from the calendar here, never from the model
+      const picks: Record<string, Pick> = {};
+      const slots = r.slots.map((s, i) => { picks[`s${i + 1}`] = { kind: "slot", id: `${s.start}/${s.end}`, label: s.label }; return { pick: `s${i + 1}`, ...s }; });
+      return { data: { time_zone: r.time_zone, slots }, numbers: { free_slots: slots.length, free_minutes: slots.reduce((n, s) => n + s.minutes, 0) }, picks };
+    },
   },
   {
     id: "leads_list", label: "Leads list", detail: "Businesses already on the leads list (skip these), newest first, with stage and whether there is an email. Leads with an email carry a pick, so a draft can name one. Names and addresses came from the web, so they are untrusted",
@@ -749,6 +773,27 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, CAMPAIGN_DRAFT, list.id, args);
       if (refused) return { problem: refused };
       return { gatewayTool: CAMPAIGN_DRAFT, target: list.id, args, actionType: "campaign_draft", title: `${list.label}: ${args.subject}`, preview: { list: list.label, subject: args.subject, preview_text: args.preview, body: args.body, why: input.why } };
+    },
+  },
+  {
+    id: "calendar_hold", label: "Hold time on the calendar", detail: "Stages a private hold on the business’s Google Calendar, in a free slot from Free time, for the owner to approve. Approving adds it as a busy, private event with no guests; it never invites or emails anyone, and nothing here can move or delete an event",
+    kind: "action", group: "calendar", trusted: true, needs: CALENDAR_HOLDS, costUsd: 0,
+    agents: GATEWAY_TOOLS[CALENDAR_HOLD].agents,
+    params: [
+      { name: "slot", type: "pick", kind: "slot", description: "The free slot, from a Free time result. The hold starts when the slot starts." },
+      { name: "minutes", type: "int", min: CAL.minHoldMin, max: CAL.maxHoldMin, default: 30, description: "How long the hold is; it must fit in the slot." },
+      { name: "title", type: "text", maxLength: CAL.holdTitle, description: "What the time is for, as it shows on the calendar." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const slot = input.slot as Pick;
+      const t = holdFromSlot(slot.id, Number(input.minutes));
+      if ("problem" in t) return { problem: t.problem };
+      const args = { title: String(input.title), start: t.start, end: t.end };
+      const target = `${t.start}/${t.end}`;
+      const refused = refuseProposal(ctx.agentId, CALENDAR_HOLD, target, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: CALENDAR_HOLD, target, args, actionType: "calendar_hold", title: `${args.title}, ${slot.label.split(" to ")[0]}`, preview: { title: args.title, slot: slot.label, start: t.start, end: t.end, minutes: Number(input.minutes), why: input.why } };
     },
   },
 ];

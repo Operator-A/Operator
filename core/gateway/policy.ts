@@ -4,6 +4,7 @@
 // after an approver approves (Draft tier). Nothing here can create, cancel or move money.
 
 import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-rules";
+import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 
 export type Tier = "Report" | "Draft" | "Act";
 
@@ -20,6 +21,12 @@ export const DRAFT_EMAIL = "gmail.create_draft";
  * picked from the business's Klaviyo lists by code and checked again right before the write.
  */
 export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
+/**
+ * A private hold on the business's primary Google Calendar (card 251): a title, a start and an end,
+ * no guests, made with sendUpdates=none so it emails no one. The time is a free slot code found, and
+ * the gateway checks it is still free right before the write. The first granted action type.
+ */
+export const CALENDAR_HOLD = "calendar.hold";
 
 /**
  * Who may propose an action type. A list names the only agents, by id (today's three action types;
@@ -52,6 +59,14 @@ export const TOOLS = {
     tier: "Draft" as Tier,
     fields: CAMPAIGN_FIELDS,
     // a draft to people who signed up to the list, never sent by the app: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [CALENDAR_HOLD]: {
+    agents: "granted",
+    grant: "calendar_hold",
+    tier: "Draft" as Tier,
+    fields: HOLD_FIELDS,
+    // blocks the owner's own time and contacts no one: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
 } as const satisfies Record<string, ActionDef>;
@@ -122,13 +137,14 @@ export function refuseDraftTo(lead: { email: string | null; stage: string } | nu
 }
 
 /** Why a proposed action is refused, or null when the gateway may queue it for approval. */
-export function refuseProposal(agentId: string, tool: string, target: string, args: Record<string, unknown>, memoMax = 200, grants: readonly string[] | null = null): string | null {
+export function refuseProposal(agentId: string, tool: string, target: string, args: Record<string, unknown>, memoMax = 200, grants: readonly string[] | null = null, now = Date.now()): string | null {
   const def = TOOLS[tool as ToolName] as ActionDef | undefined;
   if (!def) return `Unknown write tool "${tool}".`;
   const who = refuseAgent(def, tool, agentId, grants);
   if (who) return who;
   if (tool === DRAFT_EMAIL) return UUID.test(target) ? refuseDraft(args) : "The target is not a lead on the leads list.";
   if (tool === CAMPAIGN_DRAFT) return listIdOk(target) ? refuseCampaign(args) : "The target is not a Klaviyo list id.";
+  if (tool === CALENDAR_HOLD) return target === `${args.start}/${args.end}` && isoMs(args.start) !== null ? refuseHold(args, now) : "The target is not the hold's own start and end.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";
   const extra = Object.keys(args).filter((k) => !(def.fields as readonly string[]).includes(k));
   if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. Only receipt, category and memo can be written.`;

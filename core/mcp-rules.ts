@@ -192,6 +192,35 @@ export const MCP_SERVERS = {
     writeTools: [],
     signInHint: "Sign in with a Google account that can see the business’s Google Analytics, and leave the one box Google shows ticked.",
   },
+  calendar: {
+    id: "calendar",
+    name: "Google Calendar",
+    // Our own server (integrations/calendar-server.ts) over Google Calendar's API (card 251). Google's
+    // Calendar MCP server is a gated Developer Preview. This sign-in is granted calendar.events.readonly
+    // alone: it reads the primary calendar's events, and the server asks Google for no attendee email,
+    // description, place or link. Free slots are worked out in code (core/calendar-rules.ts).
+    auth: "google",
+    url: "https://www.googleapis.com/calendar/v3",
+    readTools: ["calendar_events", "calendar_free"],
+    reportTools: [],
+    scopes: ["https://www.googleapis.com/auth/calendar.events.readonly"],
+    writeTools: [],
+    signInHint: "Sign in with the Google account whose calendar the business runs on, and leave the one box Google shows ticked.",
+  },
+  calendar_holds: {
+    id: "calendar_holds",
+    name: "Calendar holds",
+    // A second Google sign-in, held only by the gateway: calendar.events, used for one tool, a private
+    // hold with no guests on the primary calendar after an approver approves, made with
+    // sendUpdates=none so it emails no one. Our server has no update, move or delete code.
+    auth: "google",
+    url: "https://www.googleapis.com/calendar/v3",
+    readTools: [],
+    reportTools: [],
+    scopes: ["https://www.googleapis.com/auth/calendar.events"],
+    writeTools: [{ tool: "calendar_create_hold", actionType: "calendar.hold" }],
+    signInHint: "Sign in with the same Google account. Only the gateway uses this sign-in, to put a private hold you approved on the calendar; it never invites or emails anyone.",
+  },
 } as const satisfies Record<string, McpServer>;
 export type McpId = keyof typeof MCP_SERVERS;
 export const MCP_IDS = Object.keys(MCP_SERVERS) as McpId[];
