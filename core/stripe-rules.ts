@@ -292,7 +292,7 @@ export const CUSTOMER_ID = /^cus_[A-Za-z0-9]{6,40}$/;
 export const REQUEST_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const INVOICE_CURRENCIES = ["usd", "cad", "gbp", "eur", "aud"] as const;
 export const INVOICE_LIMITS = { lines: 5, description: 100, memo: 500, minDays: 1, maxDays: 90 } as const;
-/** The most one draft invoice may ask for, in code (2026-11-21 spec; Zak to confirm). */
+/** The most one draft invoice may ask for, in code (2026-11-21 spec, to be confirmed). */
 export const MAX_INVOICE_USD = 5000;
 export const INVOICE_FIELDS = ["currency", "lines", "days_until_due", "memo"] as const;
 export interface InvoiceLine { description: string; amount: number }
