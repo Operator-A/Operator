@@ -24,9 +24,11 @@ export interface McpServer {
    * once on Connections, for a server we run ourselves in the app (integrations/mcp.ts LOCAL), used
    * where the service's hosted server would reach more than the profile needs. "google": a server we
    * run ourselves, signed in on Google's own page (Connect) with the business's own Google OAuth client
-   * (GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET), asking for the profile's one scope only.
+   * (GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET), asking for the profile's one scope only. "meta": a server
+   * we run ourselves, signed in on Facebook's own page (Connect) with OPERATOR's Meta app (META_APP_ID
+   * and META_APP_SECRET), asking for the profile's permissions only.
    */
-  auth: "oauth" | "token" | "google";
+  auth: "oauth" | "token" | "google" | "meta";
   /** The server's address (for a token server, the API our own server calls), with read-only switches on where it has them. */
   url: string;
   /** The only tools code may call on it, by the server's own names. Read tools only. */
@@ -341,6 +343,36 @@ export const MCP_SERVERS = {
     writeTools: [{ tool: "calendar_create_hold", actionType: "calendar.hold" }],
     signInHint: "Sign in with the same Google account. Only the gateway uses this sign-in, to put a private hold you approved on the calendar; it never invites or emails anyone.",
   },
+  meta: {
+    id: "meta",
+    name: "Meta Ads",
+    // Our own server (integrations/meta-server.ts) over the Marketing API (card 255). Meta's hosted Ads
+    // MCP server asks for ads_management on every sign-in. This sign-in asks for ads_read alone: ad
+    // accounts, and spend and results per ad, with cost per result worked out in code
+    // (core/meta-rules.ts). Meta grants permissions to a person and an app, not to one sign-in, so once
+    // the same person connects pauses this sign-in can manage ads too; our server only reads with it.
+    auth: "meta",
+    url: "https://graph.facebook.com/v26.0",
+    readTools: ["meta_ad_accounts", "meta_ad_results"],
+    reportTools: [],
+    scopes: ["ads_read"],
+    writeTools: [],
+    signInHint: "Sign in with a Facebook account that can see the business’s ad account, and allow OPERATOR to read your ads.",
+  },
+  meta_pauses: {
+    id: "meta_pauses",
+    name: "Meta Ads pauses",
+    // A second sign-in, held only by the gateway: ads_management, used for one tool, pausing one active
+    // ad that is over its cost target right now, after an approver approves. Our server has no budget,
+    // bid, create, resume or delete code: budget changes wait for a cap the owner sets.
+    auth: "meta",
+    url: "https://graph.facebook.com/v26.0",
+    readTools: [],
+    reportTools: [],
+    scopes: ["ads_management"],
+    writeTools: [{ tool: "meta_pause_ad", actionType: "meta.pause_ad" }],
+    signInHint: "Sign in with the same Facebook account and allow OPERATOR to manage your ads. Only the gateway uses this sign-in, to pause an ad you approved; it can’t change a budget or start anything.",
+  },
 } as const satisfies Record<string, McpServer>;
 export type McpId = keyof typeof MCP_SERVERS;
 export const MCP_IDS = Object.keys(MCP_SERVERS) as McpId[];
@@ -368,10 +400,17 @@ export function mayReport(id: string, tool: string): boolean {
 export const isHosted = (id: McpId) => MCP_SERVERS[id].auth === "oauth";
 /** Servers we run ourselves, signed in on Google's page with our own OAuth client. */
 export const isGoogle = (id: McpId) => MCP_SERVERS[id].auth === "google";
+export const isMeta = (id: McpId) => MCP_SERVERS[id].auth === "meta";
 /** Signed in with a Connect button (hosted or Google), not a pasted key. */
 export const usesConnect = (id: McpId) => MCP_SERVERS[id].auth !== "token";
 
 /** Google's fixed sign-in addresses (no discovery, no self-registration: our own OAuth client). */
+/** Facebook Login with OPERATOR's Meta app, on the one Graph API version our Meta server pins. No revoke address: a sign-in is removed in Facebook's own settings. */
+export const META_AUTH: AuthServer = {
+  authorization_endpoint: "https://www.facebook.com/v26.0/dialog/oauth",
+  token_endpoint: "https://graph.facebook.com/v26.0/oauth/access_token",
+};
+
 export const GOOGLE_AUTH: AuthServer = {
   authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
   token_endpoint: "https://oauth2.googleapis.com/token",

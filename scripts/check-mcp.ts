@@ -15,12 +15,13 @@ import * as Cal from "../core/calendar-rules";
 import * as Mc from "../core/mailchimp-rules";
 import * as Woo from "../core/woo-rules";
 import * as Hs from "../core/hubspot-rules";
+import * as Me from "../core/meta-rules";
 import { CAMPAIGN_LIMITS, campaignHtml, campaignText, checkDraftArgs, looksLikeKlaviyoKey } from "../core/klaviyo-draft-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { envWrapper, isBound, keyIdOf, newDataKey, open, seal, vaultKey } from "../core/vault";
 import * as C from "../core/custom-mcp-rules";
 import {
-  type McpServer, GOOGLE_AUTH, MCP_EVENTS, MCP_SERVERS, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isHosted, mayWrite, checkedTools, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
+  type McpServer, GOOGLE_AUTH, META_AUTH, isMeta, MCP_EVENTS, MCP_SERVERS, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isHosted, mayWrite, checkedTools, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
 } from "../core/mcp-rules";
 
 // only named read tools, never a write; the server's own read-only switch is on
@@ -602,6 +603,71 @@ assert.equal((hsrv.match(/method: "PATCH"/g) ?? []).length, 2, "one PATCH for th
 assert.equal((hsrv.match(/\/crm\/v3\/objects\/notes"/g) ?? []).length, 1, "one note create, on the move");
 assert.match(hsrv, /redirect: "error"/);
 assert.match(Hs.HUBSPOT_API, /^https:\/\/api\.hubapi\.com$/);
+// ---- Meta Ads on our own server, two sign-ins with OPERATOR's Meta app (card 255)
+assert.ok(isMeta("meta") && isMeta("meta_pauses") && usesConnect("meta") && !isHosted("meta") && !isGoogle("meta"));
+assert.deepEqual(checkedTools("meta"), [...Me.META_TOOLS], "what our server serves to the agents' sign-in");
+assert.deepEqual(checkedTools("meta_pauses"), [Me.PAUSE_TOOL], "what our server serves to the gateway's sign-in");
+assert.ok(mayWrite("meta_pauses", Me.PAUSE_TOOL) && !mayCall("meta_pauses", Me.PAUSE_TOOL) && !mayWrite("meta", Me.PAUSE_TOOL));
+assert.deepEqual([...MCP_SERVERS.meta.scopes], ["ads_read"], "the agents' sign-in asks for ads_read alone");
+assert.deepEqual([...MCP_SERVERS.meta_pauses.scopes], ["ads_management"]);
+assert.match(META_AUTH.authorization_endpoint, /^https:\/\/www\.facebook\.com\/v26\.0\/dialog\/oauth$/);
+assert.match(META_AUTH.token_endpoint, /^https:\/\/graph\.facebook\.com\/v26\.0\/oauth\/access_token$/);
+assert.ok(Me.META_API.startsWith("https://graph.facebook.com/v26.0") && META_AUTH.token_endpoint.startsWith(Me.META_API), "one pinned Graph API version");
+const perms = (...p: [string, string][]) => ({ data: p.map(([permission, status]) => ({ permission, status })) });
+assert.equal(Me.permissionProblem("meta", perms(["ads_read", "granted"], ["public_profile", "granted"])), null);
+assert.equal(Me.permissionProblem("meta", perms(["ads_read", "granted"], ["ads_management", "granted"])), null, "Meta grants per person: pauses add ads_management to the agents' sign-in, and our server is the limit");
+assert.match(Me.permissionProblem("meta", perms(["ads_read", "declined"])) ?? "", /doesn't hold ads_read/);
+assert.match(Me.permissionProblem("meta", perms(["ads_read", "granted"], ["pages_manage_posts", "granted"])) ?? "", /more than it needs: pages_manage_posts/);
+assert.match(Me.permissionProblem("meta_pauses", perms(["ads_read", "granted"])) ?? "", /doesn't hold ads_management/);
+assert.equal(Me.permissionProblem("meta_pauses", perms(["ads_management", "granted"], ["ads_read", "granted"])), null);
+assert.match(Me.permissionProblem("meta_pauses", perms(["ads_management", "granted"], ["business_management", "granted"])) ?? "", /more than it needs/);
+assert.deepEqual(Me.checkMetaArgs("meta_ad_accounts", {}), { tool: "meta_ad_accounts" });
+assert.deepEqual(Me.checkMetaArgs("meta_ad_results", { account: "act_123" }), { tool: "meta_ad_results", account: "act_123", period: "last_30_days", result: "purchase" });
+for (const [tool, args, why] of [
+  ["meta_ad_results", { account: "123" }, /ad account id/],
+  ["meta_ad_results", { account: "act_1/../me" }, /ad account id/],
+  ["meta_ad_results", { account: "act_1", period: "maximum" }, /period is one of/],
+  ["meta_ad_results", { account: "act_1", result: "reach" }, /result is one of/],
+  ["meta_ad_results", { account: "act_1", fields: "targeting" }, /unknown input/],
+  ["meta_update_budget", {}, /isn't a Meta Ads read tool/],
+] as const) { const r = Me.checkMetaArgs(tool, args); assert.ok("problem" in r && why.test(r.problem), `${tool} ${JSON.stringify(args)}`); }
+assert.ok(!/target|audience|creative|user|email|name_of_person/.test(Me.INSIGHT_FIELDS.join(",").replace("ad_name", "").replace("campaign_name", "")), "insights ask for numbers, no audience or creative");
+assert.equal(Me.resultsOf([{ action_type: "link_click", value: "40" }, { action_type: "omni_purchase", value: "3" }, { action_type: "purchase", value: "3" }], "purchase"), 3, "overlapping purchase types count once");
+assert.equal(Me.resultsOf([{ action_type: "offsite_conversion.fb_pixel_purchase", value: "2" }], "purchase"), 2);
+assert.equal(Me.resultsOf(null, "lead"), 0);
+assert.equal(Me.costPer(90, 3), 30);
+assert.equal(Me.costPer(25, 0), null, "no results is no cost per result, never a made-up number");
+assert.ok(Me.overTarget(100, 2, 40) && !Me.overTarget(60, 2, 40) && Me.overTarget(41, 0, 40) && !Me.overTarget(39, 0, 40), "over target: cost per result above it, or spend above it with no result");
+assert.deepEqual(Me.readAccounts([{ account_id: "123", name: "Shop", currency: "usd", account_status: 1, amount_spent: "12345" }, { account_id: "../x" }]), [{ id: "act_123", name: "Shop", currency: "USD", active: true, spent_all_time: 123.45 }]);
+const ads = Me.readResults([
+  { ad_id: "1", ad_name: "Spring A", campaign_name: "Spring", spend: "120.00", impressions: "5000", clicks: "80", actions: [{ action_type: "purchase", value: "2" }] },
+  { ad_id: "2", ad_name: "Spring B", campaign_name: "Spring", spend: "30.00", impressions: "900", clicks: "20", actions: [{ action_type: "purchase", value: "2" }] },
+  { ad_id: "3", ad_name: "Old", campaign_name: "Fall", spend: "50.00", actions: [] },
+  { ad_id: "x/1", spend: "999" },
+], new Map([["1", "ACTIVE"], ["2", "ACTIVE"], ["3", "PAUSED"]]), "purchase", false, 40);
+assert.deepEqual(ads.totals, { ads: 3, active_ads: 2, spend: 200, results: 4, cost_per_result: 50, active_over_target: 1 }, "spend, results and cost per result counted in code");
+assert.deepEqual(ads.ads.map((a) => [a.id, a.cost_per_result, a.over_target]), [["1", 60, true], ["3", null, true], ["2", 15, false]]);
+assert.equal(Me.readResults([], new Map(), "lead", false).target, null);
+assert.equal(Me.refusePause({ result: "purchase", period: "last_7_days", why: "Cost per purchase is double the target." }), null);
+assert.match(Me.refusePause({ result: "purchase", period: "last_7_days", why: "x", target: 999 }) ?? "", /allow-list/, "the target is the owner's, never the agent's");
+assert.match(Me.refusePause({ result: "purchase", period: "last_7_days", why: "x", daily_budget: 5 }) ?? "", /allow-list/);
+assert.match(Me.refusePause({ result: "reach", period: "last_7_days", why: "x" }) ?? "", /result is one of/);
+assert.match(Me.refusePause({ result: "purchase", period: "lifetime", why: "x" }) ?? "", /period is one of/);
+assert.match(Me.refusePause({ result: "purchase", period: "last_7_days" }) ?? "", /needs a reason/);
+assert.match(Me.refusePause({ result: "purchase", period: "last_7_days", why: "see www.x.example" }) ?? "", /links/);
+assert.ok(Me.adIdOk("120210000000001") && !Me.adIdOk("act_1") && !Me.adIdOk("1/insights"));
+assert.deepEqual(Me.checkPauseArgs({ adId: "1", result: "lead", period: "last_30_days", target: 12.5 }), { adId: "1", result: "lead", period: "last_30_days", target: 12.5 });
+for (const bad of [{ adId: "1", result: "lead", period: "last_30_days" }, { adId: "1", result: "lead", period: "last_30_days", target: 0 }, { adId: "1", result: "lead", period: "last_30_days", target: 1.234 }, { adId: "1", result: "lead", period: "last_30_days", target: 5, status: "ACTIVE" }, { adId: "act_1", result: "lead", period: "last_30_days", target: 5 }])
+  assert.ok("problem" in Me.checkPauseArgs(bad), JSON.stringify(bad));
+assert.equal(Me.readTarget(30), 30); assert.equal(Me.readTarget("12.50"), 12.5); assert.equal(Me.readTarget(-1), null); assert.equal(Me.readTarget(Me.TARGET_MAX + 1), null); assert.equal(Me.readTarget(null), null);
+assert.equal(Me.targetProblem(""), null); assert.equal(Me.targetProblem("$25"), null); assert.match(Me.targetProblem("0") ?? "", /above 0/); assert.match(Me.targetProblem("1.005") ?? "", /cents/);
+assert.equal(new Set(Object.values(Me.TARGET_KEYS)).size, Me.RESULT_KINDS.length);
+const mesrv = readFileSync("integrations/meta-server.ts", "utf8");
+assert.ok(!/budget|bid_amount|"DELETE"|copies|\/adsets"|\/campaigns"|\/adcreatives|status: "ACTIVE"/.test(mesrv.replace(/\/\/.*$/gm, "")), "the Meta server has no budget, bid, create, copy, delete or resume call");
+assert.equal((mesrv.match(/\{ status: "PAUSED" \}/g) ?? []).length, 1, "one write: the pause");
+assert.equal((mesrv.match(/fb\(token, [^)]*, \{/g) ?? []).length, 1, "only one request carries a body");
+assert.match(mesrv, /redirect: "error"/);
+assert.match(mesrv, /overTarget\(spend, results, a\.target\)/, "the server checks the ad is still over target right before the pause");
 // every Gmail tool input is checked before it reaches a URL or a draft
 assert.deepEqual(checkGmailArgs("gmail_search", { q: "$12.50 after:2026/11/01" }), { tool: "gmail_search", q: "$12.50 after:2026/11/01", max: 3 });
 assert.deepEqual(checkGmailArgs("gmail_message", { id: "18c2a9f0e1b2c3d4" }), { tool: "gmail_message", id: "18c2a9f0e1b2c3d4", maxChars: 6000 });

@@ -59,6 +59,17 @@ lists it, and refuses a stage outside that pipeline or the deal's current stage.
 after go into `diff_json`. It starts at Draft and may be promoted. It needs the HubSpot deal moves key
 on Connections; until that is connected, approved moves wait.
 
+## `meta.pause_ad` (card 255)
+
+Pauses one running ad in the business's Meta ad account whose cost per result is over the owner's
+target for that result (Connections > Meta Ads pauses). Granted: any agent an approver gives
+`meta_pause_ad` to. The ad is a pick from `meta_ad_results`; the proposal carries the result kind, the
+period and a reason, never a target or a budget (`refusePause`, on proposal and again in
+`applyMetaPause`). On apply the gateway reads the owner's target again (none: refused), and the server
+reads the ad again: still running and still over the target, or refused. The status before and after
+go into `diff_json`. It starts at Draft and may be promoted. It needs the Meta Ads pauses sign-in on
+Connections; until that is connected, approved pauses wait.
+
 ## `woocommerce.order_note` (card 254)
 
 One private note on one order in the business's WooCommerce store. Store staff see it; the customer

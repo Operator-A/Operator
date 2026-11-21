@@ -7,7 +7,7 @@ import { controlsOn } from "@/dashboard/session";
 import { ActionButton } from "@/dashboard/components/client";
 import { RejectButton } from "@/dashboard/components/react";
 import { Avatar, Empty } from "@/dashboard/components/ui";
-import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
+import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
 
 // Applying a batch calls Mercury once or twice per change.
 export const maxDuration = 300;
@@ -83,6 +83,18 @@ function DealMove({ i }: { i: ApprovalItem }) {
   );
 }
 
+const PERIOD_WORDS: Record<string, string> = { last_7_days: "the last 7 days", last_30_days: "the last 30 days", last_90_days: "the last 90 days" };
+/** A Meta ad pause (card 255): the ad, what it is judged on, and that only a fresh check against the owner's target pauses it. */
+function AdPause({ i }: { i: ApprovalItem }) {
+  const p = i.preview;
+  return (
+    <div style={{ borderRadius: 16, background: "var(--soft)", padding: "6px 16px" }}>
+      {([["Ad", p.ad ?? "?"], ["Judged on", `cost per ${p.result ?? "result"} over ${PERIOD_WORDS[p.period ?? ""] ?? p.period ?? "?"}`]] as [string, string][]).map(([k, v], n) => <div key={k} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13 }}><span className="muted">{k}</span><span style={{ fontWeight: 500, textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>{v}</span></div>)}
+      <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Approving pauses this ad in Meta, but only if it is still running and still over your cost target (Connections, Meta Ads pauses) when the numbers are read again. Budgets are never changed. You can turn it back on in Ads Manager.</div>
+    </div>
+  );
+}
+
 /** A WooCommerce order note (card 254): the order and the exact words. Approving adds a private note the customer doesn't see. */
 function OrderNote({ i }: { i: ApprovalItem }) {
   const p = i.preview;
@@ -106,7 +118,7 @@ function Tags({ i }: { i: ApprovalItem }) {
   );
 }
 
-const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [INVOICE_DRAFT]: "Stripe invoice draft", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note", [HUBSPOT_MOVE]: "HubSpot deal move" };
+const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [INVOICE_DRAFT]: "Stripe invoice draft", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note", [HUBSPOT_MOVE]: "HubSpot deal move", [META_PAUSE]: "Meta ad pause" };
 
 function Change({ i }: { i: ApprovalItem }) {
   const p = i.preview;
@@ -117,6 +129,7 @@ function Change({ i }: { i: ApprovalItem }) {
   if (i.tool === SHOPIFY_TAGS) return <Tags i={i} />;
   if (i.tool === WOO_NOTE) return <OrderNote i={i} />;
   if (i.tool === HUBSPOT_MOVE) return <DealMove i={i} />;
+  if (i.tool === META_PAUSE) return <AdPause i={i} />;
   const lines: [string, React.ReactNode][] = [
     p.charge && !p.merchant ? ["Charge", p.charge] : ["Charge", `${p.merchant ?? "?"} · ${p.amount_usd != null ? m2(p.amount_usd) : "?"} · ${p.date ? md(`${p.date}T12:00:00Z`, "UTC") : "?"}`],
     ...(p.receipt_path ? [["Attach receipt", i.receipt_url ? <a key="r" href={i.receipt_url} target="_blank" rel="noopener noreferrer">{p.receipt_path.split("/").pop()} (open)</a> : p.receipt_path.split("/").pop()] as [string, React.ReactNode]] : []),

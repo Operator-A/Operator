@@ -31,7 +31,7 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, DRAFT_EMAIL, INVOICE_DRAFT, DRAFT_LIMITS, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, DRAFT_LIMITS, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { SHOPIFY_TAGS_GRANT, TAG_LIMITS, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
@@ -40,6 +40,9 @@ import { wooLowStock, wooOrders } from "@/integrations/woo";
 import { NOTE_MAX, type WooPeriod } from "@/core/woo-rules";
 import { NOTE_MAX as MOVE_NOTE_MAX, type HsPeriod } from "@/core/hubspot-rules";
 import { hubspotContacts, hubspotDeals } from "@/integrations/hubspot";
+import { META_PERIODS, RESULT_KINDS, RESULT_LABEL, accountIdOk, overTarget, type MetaPeriod, type MetaResult } from "@/core/meta-rules";
+import { metaTargets } from "@/core/meta-targets";
+import { metaAdAccounts, metaAdResults } from "@/integrations/meta";
 import { LIMITS as CAL, holdFromSlot } from "@/core/calendar-rules";
 import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
 import { READ_ROWS, ageOf, columnNumbers, staleNote } from "@/core/export-rules";
@@ -56,7 +59,7 @@ import { INVOICE_CURRENCIES, INVOICE_LIMITS, MAX_INVOICE_USD, STRIPE_PERIODS, in
 import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Param, Pick, ReportInput, ToolDef, ToolResult } from "./types";
-import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, WOO, WOO_NOTES, HUBSPOT, HUBSPOT_DEALS, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, STRIPE, SUPABASE, daysParam, usd } from "./shared";
+import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, WOO, WOO_NOTES, HUBSPOT, HUBSPOT_DEALS, META, META_PAUSES, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, STRIPE, SUPABASE, daysParam, usd } from "./shared";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
 import { deliverBrief } from "@/core/brief";
@@ -366,6 +369,36 @@ const TOOLS_LIST: ToolDef[] = [
     kind: "read", group: "hubspot", trusted: false, needs: HUBSPOT, costUsd: 0,
     params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "The period for new contacts and companies." }],
     run: async (p) => { const r = await hubspotContacts(String(p.period) as HsPeriod); return { data: r, numbers: { contacts: r.contacts, new_contacts: r.new_contacts, companies: r.companies, new_companies: r.new_companies } }; },
+  },
+  {
+    id: "meta_ad_accounts", label: "Meta ad accounts", detail: "The Meta ad accounts the business’s sign-in sees: id (act_…), name, currency, whether it is active, and all-time spend. Use an id with Meta Ads results. Names were typed by people, so they are untrusted",
+    kind: "read", group: "meta", params: [], trusted: false, needs: META, costUsd: 0,
+    run: async () => { const r = await metaAdAccounts(); return { data: r, numbers: { accounts: r.accounts.length, active: r.accounts.filter((a) => a.active).length } }; },
+  },
+  {
+    id: "meta_ad_results", label: "Meta Ads results", detail: "Spend and results per ad in one Meta ad account over a period, with cost per result, all counted in code, plus totals. A result is a purchase, a lead or a link click, as you pick. When the owner set a cost target for that result (Connections, Meta Ads pauses), each ad says whether it is over it. Each ad carries a pick, so Pause a Meta ad can name it. No audiences or people. Ad and campaign names were typed by people, so they are untrusted",
+    kind: "read", group: "meta", trusted: false, needs: META, costUsd: 0,
+    params: [
+      { name: "account", type: "text", maxLength: 30, description: "The ad account id (act_ and digits), from a Meta ad accounts result." },
+      { name: "period", type: "enum", options: META_PERIODS, default: "last_30_days", description: "The period the numbers cover." },
+      { name: "result", type: "enum", options: RESULT_KINDS, default: "purchase", description: "What counts as one result." },
+    ],
+    run: async (p) => {
+      const account = String(p.account).trim();
+      if (!accountIdOk(account)) throw new Error("account must be an ad account id (act_ and digits) from Meta ad accounts");
+      const result = String(p.result) as MetaResult;
+      const [r, targets] = await Promise.all([metaAdResults(account, String(p.period) as MetaPeriod, result), metaTargets()]);
+      const target = targets[result];
+      // the ad a pause names is a pick code: its id comes from Meta here, never from the model
+      const picks: Record<string, Pick> = {};
+      const ads = r.ads.map((a, i) => {
+        const over = target === null ? null : overTarget(a.spend, a.results, target);
+        if (a.status === "ACTIVE") picks[`a${i + 1}`] = { kind: "ad", id: a.id, label: `${a.name || a.id} · ${a.campaign} · ${a.cost_per_result === null ? `no ${RESULT_LABEL[result]} yet` : `${a.cost_per_result} ${r.currency} per ${RESULT_LABEL[result]}`}` };
+        return { ...(a.status === "ACTIVE" ? { pick: `a${i + 1}` } : {}), ...a, over_target: over };
+      });
+      const overActive = ads.filter((a) => a.status === "ACTIVE" && a.over_target).length;
+      return { data: { account: r.account, currency: r.currency, period: r.period, result, target, ads, totals: { ...r.totals, active_over_target: overActive }, truncated: r.truncated }, numbers: { ads: r.totals.ads, active_ads: r.totals.active_ads, spend: r.totals.spend, results: r.totals.results, active_over_target: overActive, ...(r.totals.cost_per_result === null ? {} : { cost_per_result: r.totals.cost_per_result }), ...(target === null ? {} : { target }) }, picks };
+    },
   },
   {
     id: "woo_orders", label: "WooCommerce orders", detail: "Orders in the business’s WooCommerce store over a period: orders, paid orders, revenue, average order, repeat buyers and the ten best sellers, all counted in code, plus the latest 50 orders (number, status, total, date, items). No customer names or addresses. Each order carries a pick, so Note on a WooCommerce order can name one",
@@ -911,6 +944,24 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, HUBSPOT_MOVE, deal.id, args, 200, ctx.granted ?? null);
       if (refused) return { problem: refused };
       return { gatewayTool: HUBSPOT_MOVE, target: deal.id, args, actionType: "deal_stage", title: deal.label, preview: { deal: deal.label, stage: stage.label, note: args.note, why: input.why } };
+    },
+  },
+  {
+    id: "meta_pause_ad", label: "Pause a Meta ad", detail: "Stages pausing one active ad from Meta Ads results whose cost per result is over the owner’s target for that result (Connections, Meta Ads pauses), for the owner to approve. Approving pauses it in Meta if it is still running and still over the target then. Nothing here can change a budget or bid, start, resume, edit or delete anything",
+    kind: "action", group: "meta", trusted: true, needs: META_PAUSES, costUsd: 0,
+    agents: GATEWAY_TOOLS[META_PAUSE].agents,
+    params: [
+      { name: "ad", type: "pick", kind: "ad", description: "The ad, from a Meta Ads results result. Only running ads carry a pick." },
+      { name: "result", type: "enum", options: RESULT_KINDS, description: "The result it is judged on: the same one the Meta Ads results call used." },
+      { name: "period", type: "enum", options: META_PERIODS, description: "The period it is judged on: the same one the Meta Ads results call used." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const ad = input.ad as Pick;
+      const args = { result: String(input.result), period: String(input.period), why: String(input.why ?? "") };
+      const refused = refuseProposal(ctx.agentId, META_PAUSE, ad.id, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: META_PAUSE, target: ad.id, args, actionType: "pause_ad", title: ad.label, preview: { ad: ad.label, result: RESULT_LABEL[args.result as MetaResult], period: args.period, why: args.why } };
     },
   },
   {

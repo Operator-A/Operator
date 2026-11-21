@@ -9,7 +9,7 @@ import type { ToolDef, ToolGroup } from "@/core/tools/types";
 import type { IntegrationId } from "./crew";
 import type { McpId } from "@/core/mcp-rules";
 
-export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "mailchimp" | "woo" | "hubspot" | "email" | "web" | "agents" | "control_room" | "math" | "stripe";
+export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "mailchimp" | "woo" | "hubspot" | "meta" | "email" | "web" | "agents" | "control_room" | "math" | "stripe";
 /** A server the owner added by its address (docs/custom-servers.md): its id is the connection's. */
 export type CustomConnId = `c_${string}`;
 
@@ -66,6 +66,14 @@ export const CONNECTIONS: Connection[] = [
     id: "analytics", name: "Google Analytics", sub: "Visits, pages, channels", icon: "chart-line", builtIn: false, mcp: "ga4",
     about: "Our own Google Analytics server, run in the app. Google’s own Analytics MCP server runs on a person’s computer with their own credentials, so it isn’t used. One Google sign-in granted analytics.readonly alone, so Google refuses it any change. Each tool runs one fixed report on the property you pick below; agents never choose the property. Rates are worked out in code.",
     checks: [{ key: "ga4", label: "Property", setup: "Tap Connect, sign in with a Google account that can see the business’s Analytics, then pick the property below. Needs GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel, with the Analytics APIs turned on for that Google client." }],
+  },
+  {
+    id: "meta", name: "Meta Ads", sub: "Spend and cost per result per ad, pauses", icon: "chart-line", builtIn: false, mcp: "meta", mcpMore: ["meta_pauses"],
+    about: "Our own Meta Ads server, run in the app over Meta’s Marketing API. Meta’s hosted Ads MCP server asks to manage ads on every sign-in, so it isn’t used. Two sign-ins with OPERATOR’s Meta app: one that reads (ad accounts, and each ad’s spend, results and cost per result, worked out in code, never audiences or people), and one only the gateway uses, after you approve, to pause a running ad that is over the cost target you set below. Meta grants permissions to a person rather than to one sign-in, so once both are connected the reading sign-in could manage ads too: our server is the limit, and only reads with it. There is no code to change a budget or bid, or to start, resume, edit or delete anything.",
+    checks: [
+      { key: "meta", label: "Ads (read)", setup: "Tap Connect under Meta Ads and sign in with a Facebook account that can see the business’s ad account. Needs META_APP_ID and META_APP_SECRET in Vercel.", tools: ["meta_ad_accounts", "meta_ad_results"] },
+      { key: "meta_pauses", label: "Ad pauses", tools: ["meta_pause_ad"], setup: "Tap Connect under Meta Ads pauses with the same Facebook account, then set a cost target below. With no target, nothing is paused." },
+    ],
   },
   {
     id: "hubspot", name: "HubSpot", sub: "Deals by stage, contact counts, deal moves", icon: "users", builtIn: false, mcp: "hubspot", mcpMore: ["hubspot_deals"],
@@ -136,7 +144,7 @@ export const CONN_BY_ID = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c])) 
 /** Which connection each tool group belongs to. */
 type BuiltInGroup = Exclude<ToolGroup, "custom">;
 const GROUP_CONN: Record<BuiltInGroup, ConnId> = {
-  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", stripe: "stripe", mailchimp: "mailchimp", woo: "woo", hubspot: "hubspot", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
+  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", stripe: "stripe", mailchimp: "mailchimp", woo: "woo", hubspot: "hubspot", meta: "meta", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
 };
 /** For tools on the list in code. A custom server's tools belong to that server (dashboard/builder.ts customMenuFor). */
 export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group as BuiltInGroup];

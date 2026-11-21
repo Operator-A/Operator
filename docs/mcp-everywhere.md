@@ -391,6 +391,68 @@ and taps Create service key twice:
 To confirm on the first real key: HubSpot's docs don't name a scope for creating notes. If a move's
 note is refused, the error names the scope to add.
 
+## Meta Ads on our own server (card 255)
+
+Meta's hosted Ads MCP server (mcp.facebook.com/ads) asks for `ads_management` on every sign-in, which
+can change campaigns and budgets, so it can't give agents read access only. Our server runs in the app
+over the Marketing API (Graph API v26.0, one pinned version) with two sign-ins made with Connect on
+OPERATOR's own Meta app (Facebook Login, `META_APP_ID` and `META_APP_SECRET` in Vercel).
+
+- **Profiles** (`core/mcp-rules.ts`, auth `meta`):
+  - `meta`: asks for `ads_read` alone. Read tools `meta_ad_accounts` and `meta_ad_results`. No write tools.
+  - `meta_pauses`: asks for `ads_management`, held only by the gateway. One write tool, `meta_pause_ad`
+    (action type `meta.pause_ad`). No read tools.
+- **Meta grants permissions to a person and an app, not to one sign-in.** Once the same person connects
+  pauses, the agents' sign-in can manage ads too. So, as with Mailchimp keys, our own server is the
+  limit: the `meta` profile is served read tools only, and Connections says so. `permissionProblem`
+  allows `ads_read` and `ads_management` only (plus `public_profile`) and refuses a sign-in that lists
+  anything else, or lacks the one its profile needs. A refused sign-in isn't kept; nothing is cancelled
+  at Meta, since a cancel takes the whole app from that person, other sign-in included.
+- **The sign-in:** PKCE and a state check, then the short token is traded at once for Meta's long one
+  (`fb_exchange_token`, about 60 days). There is no refresh token: when it runs out, the sign-in pauses
+  until the owner signs in again. Disconnect forgets it here; Meta has no revoke address, so removing
+  OPERATOR entirely is done in Facebook (Settings > Business integrations).
+- **What the reads return** (`core/meta-rules.ts`): ad accounts (id, name, currency, active, all-time
+  spend), and per ad over 7, 30 or 90 days: spend, impressions, clicks and results of one kind
+  (purchase, lead or link click, first matching action type so overlapping ones count once). Cost per
+  result and totals are worked out in code; no results means no cost per result, never a guess.
+  Insights are asked for by fixed fields with no audience, targeting or creative. An account must be
+  one the sign-in lists.
+- **The owner's cost targets** (`TARGET_KEYS`, policies rows, set on Connections > Meta Ads pauses): a
+  cost per purchase, per lead and per link click, in the account's currency. Agents never set them.
+  `meta_ad_results` marks each ad over or under the target; with no target, nothing is paused on that
+  result.
+- **Agents** read them as `meta_ad_accounts` and `meta_ad_results` (each running ad carries a pick),
+  group `meta`, needing `META_CONNECTED`.
+- **The action** `meta_pause_ad` is granted (card 250):
+  - The ad is a pick; the proposal carries only the result kind, the period and a reason
+    (`refusePause` refuses a target, a budget or anything else).
+  - On apply the gateway reads the owner's target for that result again (none: refused), and the server
+    reads the ad again on the same sign-in: it must still be running, and its cost per result must still
+    be over the target, or its spend over the target with no result (`overTarget`). Otherwise refused.
+  - Then it sets the ad's status to `PAUSED`. The owner can turn it back on in Ads Manager.
+  - There is no budget, bid, create, copy, resume or delete call (`check:mcp` fails on one). Budget
+    changes wait for a cap the owner sets.
+  - At most `policies.max_ad_pauses_per_run` (default 10) per agent per apply.
+- **Files:** `integrations/meta-server.ts` is the only file that calls Meta, and only
+  `integrations/mcp.ts` reaches it (lint and `check:mcp`).
+
+**Setting it up (once, for OPERATOR's Meta app):**
+1. At developers.facebook.com, create an app with the use case "Create & manage ads with Marketing API"
+   and connect OPERATOR's business portfolio (Settings). This adds Facebook Login for Business.
+2. Facebook Login for Business > Settings: add `https://<domain>/connections/meta/callback` and
+   `https://<domain>/connections/meta_pauses/callback` as Redirect URIs, and save.
+3. Facebook Login for Business > Configurations: make two user access token configurations, one with
+   `ads_read` and one with `ads_management`. Put their ids in `META_CONFIG_READ` and
+   `META_CONFIG_PAUSES` (without them the classic `scope` is sent).
+4. App settings > Basic: put the App ID in `META_APP_ID` and the App secret in `META_APP_SECRET`.
+
+Until Meta grants the app full access (App Review > Permissions and Features, and the Marketing API
+access tier), only the app's admins and developers can connect, at low rate limits. That is enough for
+the business that owns the app. To confirm on the first real sign-in: Meta's docs don't say whether the
+dialog takes PKCE, or whether a token from a limited-access Marketing API app expires (when Meta sends
+no `expires_in`, the sign-in is kept with no expiry and pauses on Meta's first refusal).
+
 ## WooCommerce on our own server (card 254)
 
 WooCommerce's own MCP adapter is a plugin each store installs, still in preview, signed in with a

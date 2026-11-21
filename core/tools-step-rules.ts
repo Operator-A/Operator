@@ -6,7 +6,7 @@ import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import type { FactTopic } from "@/core/setup-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe" | "mailchimp" | "woo" | "hubspot";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe" | "mailchimp" | "woo" | "hubspot" | "meta";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -68,6 +68,16 @@ export const TOOL_TILES: readonly ToolTile[] = [
       "Google shows one box, to see your Analytics data. Leave it ticked and tap Continue.",
       "Back here, if the account sees more than one property, tap Use this one next to the business’s site.",
     ],
+  },
+  {
+    id: "meta", name: "Meta Ads", gives: "Spend and cost per result for each ad", icon: "chart-line", mcp: "meta",
+    steps: [
+      "Tap Connect Meta Ads below. Facebook’s own sign-in page opens.",
+      "Sign in with a Facebook account that can see the business’s ad account in Ads Manager.",
+      "Facebook asks to let OPERATOR read your ads. Tap Continue, then pick the business and its ad account if it asks.",
+      "Back here, it shows how many ad accounts it can see.",
+    ],
+    also: { mcp: "meta_pauses", label: "Meta Ads pauses", why: "An agent you give pauses to can pause a running ad whose cost per result is over the target you set, after you approve, with a second sign-in that only the gateway uses. It can’t change a budget or start anything." },
   },
   {
     id: "hubspot", name: "HubSpot", gives: "Deals by stage and who went quiet", icon: "users", mcp: "hubspot",
@@ -136,6 +146,8 @@ export const SCOPE_WORDS: Record<string, string> = {
   "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
   "a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts and campaign reports)": "read your audiences’ sizes and how each campaign did. Mailchimp keys reach the whole account, so our server is the limit: it has no other calls",
   "a second Mailchimp API key, used only to make a draft campaign you approved": "make a draft campaign you approved. Our server has no send or schedule call, so you send it from Mailchimp",
+  "ads_read": "read your ad accounts and each ad’s spend and results. Our server never asks for audiences or people.",
+  "ads_management": "pause a running ad you approved, when it is over your cost target. Only the gateway uses it; our server can’t change a budget, start, edit or delete anything.",
   "a HubSpot service key with crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read only (a key that can change deals is refused)": "read your deals and count your contacts and companies. Our server never asks for a contact list, an email or a phone number",
   "a second HubSpot service key with crm.objects.deals.read and crm.objects.deals.write, used only to move a deal you approved and note why": "move a deal you approved to another stage and log why. Only the gateway uses it; it can’t create, delete or merge records, or email anyone",
   "a WooCommerce REST key with Read permission (a Read/Write key is refused)": "read orders, best sellers and stock. Our server never asks for customer names, emails or addresses",
@@ -159,7 +171,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp", WOO_CONNECTED: "woo", WOO_NOTES_CONNECTED: "woo", HUBSPOT_CONNECTED: "hubspot", HUBSPOT_DEALS_CONNECTED: "hubspot", STRIPE_CONNECTED: "stripe",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp", WOO_CONNECTED: "woo", WOO_NOTES_CONNECTED: "woo", HUBSPOT_CONNECTED: "hubspot", HUBSPOT_DEALS_CONNECTED: "hubspot", META_CONNECTED: "meta", META_PAUSES_CONNECTED: "meta", STRIPE_CONNECTED: "stripe",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -248,7 +260,7 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
   part({ id: "leads", area: "Leads and customers", core: true, topic: "customers", learns: "your contacts, deals and who went quiet", question: "Where do you keep track of leads and customers?", value: "Follow-ups get drafted for the people who went quiet.", ready: "Your contacts and deals are in reach.",
     tools: [{ name: "HubSpot", tile: "hubspot" }, { name: "Salesforce" }, { name: "Pipedrive" }] }),
   part({ id: "ads", area: "Ads", core: false, topic: "channels", learns: "spend and what each ad brought in", question: "Where do you run ads?", value: "See what each dollar of ads brought back.", ready: "Your ad numbers are in reach.",
-    tools: [{ name: "Meta Ads" }, { name: "Google Ads" }, { name: "TikTok Ads" }] }),
+    tools: [{ name: "Meta Ads", tile: "meta" }, { name: "Google Ads" }, { name: "TikTok Ads" }] }),
   part({ id: "social", area: "Social", core: false, topic: "channels", learns: "posts and what people respond to", question: "Where do you post?", value: "Posts get drafted from what your customers respond to. You approve each one.", ready: "Your posts are in reach.",
     tools: [{ name: "Instagram" }, { name: "Facebook" }, { name: "TikTok" }] }),
   part({ id: "support", area: "Customer support", core: false, topic: "customers", learns: "what customers ask and how long they wait", question: "Where do customer questions land?", value: "Replies get drafted for the common questions.", ready: "Your support inbox is in reach.",

@@ -163,6 +163,13 @@ async function main() {
   const hstaged = TOOLS.hubspot_move_deal.stage!({ deal, stage: stg, note: "Signed the quote", why: "Call today" }, hctx2);
   assert.ok(!("problem" in hstaged) && hstaged.gatewayTool === "hubspot.deal_stage" && hstaged.target === "11" && JSON.stringify(hstaged.args) === '{"stage":"contractsent","note":"Signed the quote"}');
   assert.ok("problem" in TOOLS.hubspot_move_deal.stage!({ deal, stage: stg, note: "x", why: "z" }, { ...hctx2, granted: ["hubspot_deals"] }));
+  // card 255: a Meta pause names its ad by pick, only for an agent given it; the target never rides along
+  const adPick = { kind: "ad", id: "120210000000001", label: "Spring A · Spring · 60 USD per purchase" };
+  const pctx = { agentId: "b_mkt_1", notionPages: [], outputSources: [], granted: ["meta_ad_results", "meta_pause_ad"] };
+  const pstaged = TOOLS.meta_pause_ad.stage!({ ad: adPick, result: "purchase", period: "last_7_days", why: "Twice the target" }, pctx);
+  assert.ok(!("problem" in pstaged) && pstaged.gatewayTool === "meta.pause_ad" && pstaged.target === "120210000000001" && JSON.stringify(pstaged.args) === '{"result":"purchase","period":"last_7_days","why":"Twice the target"}');
+  assert.ok("problem" in TOOLS.meta_pause_ad.stage!({ ad: adPick, result: "purchase", period: "last_7_days", why: "x" }, { ...pctx, granted: ["meta_ad_results"] }));
+  assert.ok("problem" in TOOLS.meta_pause_ad.stage!({ ad: adPick, result: "purchase", period: "lifetime", why: "x" }, pctx));
   // card 254: a WooCommerce note names its order by pick, only for an agent given it
   const ord = { kind: "order", id: "1234", label: "#1001, Nov 2, $30.00" };
   const wctx = { agentId: "b_ops_1", notionPages: [], outputSources: [], granted: ["woo_orders", "woo_order_note"] };

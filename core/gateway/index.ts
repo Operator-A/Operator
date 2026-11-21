@@ -23,9 +23,11 @@ import { refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
 import { orderIdOk, refuseNote } from "@/core/woo-rules";
 import { dealIdOk, refuseMove } from "@/core/hubspot-rules";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { adIdOk, refusePause, RESULT_LABEL, type MetaResult } from "@/core/meta-rules";
+import { metaTargets } from "@/core/meta-targets";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE } from "./policy";
 
 export interface Proposal {
   agentId: string;
@@ -339,7 +341,7 @@ export async function writeBlocker(): Promise<string | null> {
 }
 
 /** A gateway sign-in is connected and not paused. */
-async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify" | "stripe_drafts" | "mailchimp_drafts" | "woo_notes" | "hubspot_deals"): Promise<boolean> {
+async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify" | "stripe_drafts" | "mailchimp_drafts" | "woo_notes" | "hubspot_deals" | "meta_pauses"): Promise<boolean> {
   const s = await mcpStatus(id);
   return !!s?.connected && !s.paused;
 }
@@ -435,7 +437,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids), applyMetaPauses(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -890,4 +892,54 @@ export async function paidVendorIds(): Promise<Set<string>> {
 export async function onBreach(b: { agentId: string; tool: string; target: string; reason: string; runId?: string | null }) {
   await db().from("agent_actions").insert({ agent_id: b.agentId, run_id: b.runId ?? null, tool: b.tool, action_type: "cap breach", target: b.target, args_json: {}, status: "refused", reason: b.reason });
   await demote(b.agentId, b.tool, `A cap was hit: ${b.reason}`.slice(0, 300)).catch(() => false);
+}
+
+/** Approved Meta Ads pauses (card 255): one ad paused on the gateway's own sign-in, at most max_ad_pauses_per_run per agent. */
+async function applyMetaPauses(ids?: string[]) {
+  const rows = await approvedOf(META_PAUSE, ids);
+  if (!rows.length) return null;
+  if (!(await ready("meta_pauses"))) return { ok: true, text: "Approved, not paused yet: the Meta Ads pauses sign-in isn't connected (Connections, Meta Ads)." };
+  const cap = await numPolicy("max_ad_pauses_per_run", 10);
+  const targets = await metaTargets();
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyMetaPause(a, runId, targets); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway paused ${n.applied} approved Meta ad${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} wait for the next run (cap ${cap})` : ""}.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved pauses are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyMetaPause(a: ActionRow, runId: string, targets: Record<MetaResult, number | null>) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as Record<string, unknown>;
+    // the fields and the ad id again (a granted action's agent was checked by refuseUngranted); the
+    // target is the owner's, read now; the server reads the ad's numbers right before it pauses
+    const no = adIdOk(a.target) ? refusePause(args) : "The target is not a Meta ad id.";
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const result = args.result as MetaResult;
+    const target = targets[result];
+    if (target === null) { await done({ status: "refused", reason: `There is no cost per ${RESULT_LABEL[result]} target on Connections (Meta Ads pauses), so nothing is paused on it.` }); return "refused" as const; }
+    const out = (await callWriteTool("meta_pauses", "meta_pause_ad", { adId: a.target, result, period: args.period, target })) as { now?: unknown; spend?: unknown; results?: unknown; cost_per_result?: unknown };
+    if (out?.now !== "PAUSED") throw new Error("Meta didn't confirm the pause");
+    await done({ status: "applied", diff_json: { before: { status: "ACTIVE" }, after: { status: "PAUSED" } }, result_json: { paused: true, spend: out.spend ?? null, results: out.results ?? null, cost_per_result: out.cost_per_result ?? null, target } });
+    return "applied" as const;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // no longer over target, or no longer running, is a fresh check refusing it, not a failure
+    if (/no longer over its target|isn't running/.test(msg)) { await done({ status: "refused", reason: msg.replace(/^.*?meta_pause_ad: /, "").slice(0, 300) }); return "refused" as const; }
+    await done({ status: "failed", reason: msg.slice(0, 300) });
+    return "failed" as const;
+  }
 }
