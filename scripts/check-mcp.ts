@@ -12,12 +12,16 @@ import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmai
 import { GA4_TOOLS, checkGa4Args, dateRange, rate, readChannels, readOverview, readProperties, readTopPages, reportBodies } from "../core/ga4-rules";
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
 import * as Cal from "../core/calendar-rules";
+import * as Mc from "../core/mailchimp-rules";
+import * as Woo from "../core/woo-rules";
+import * as Hs from "../core/hubspot-rules";
+import * as Me from "../core/meta-rules";
 import { CAMPAIGN_LIMITS, campaignHtml, campaignText, checkDraftArgs, looksLikeKlaviyoKey } from "../core/klaviyo-draft-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { envWrapper, isBound, keyIdOf, newDataKey, open, seal, vaultKey } from "../core/vault";
 import * as C from "../core/custom-mcp-rules";
 import {
-  type McpServer, GOOGLE_AUTH, MCP_EVENTS, MCP_SERVERS, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isHosted, mayWrite, checkedTools, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
+  type McpServer, GOOGLE_AUTH, META_AUTH, isMeta, MCP_EVENTS, MCP_SERVERS, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, listedTools, toolCheckNote, toolFingerprint, pickScopes, mayReport, isHosted, mayWrite, checkedTools, scrubSecrets, authorizeUrl, discoveryUrls, listSize, mayCall, namedRows, needsRefresh, nextCursor, parseRpc, readAuthServer, readTokens, reportRows, reportTotals, resourceOf, toolPayload,
 } from "../core/mcp-rules";
 
 // only named read tools, never a write; the server's own read-only switch is on
@@ -469,6 +473,201 @@ assert.ok(!/"DELETE"|"PUT"|"PATCH"|\/move|\/quickAdd|\/import|\/watch|acl|calend
 assert.match(capi, /calendars\/primary\/events/);
 assert.match(capi, /sendUpdates=none/);
 assert.ok(!/email|description|location|hangoutLink|conferenceData/.test(capi.match(/LIST_FIELDS = "([^"]+)"/)?.[1] ?? "email"), "the list asks Google for no email, description, place or link");
+// ---- Mailchimp on our own server, two keys (card 252)
+assert.ok(!usesConnect("mailchimp") && !usesConnect("mailchimp_drafts") && !isHosted("mailchimp"));
+assert.deepEqual(checkedTools("mailchimp"), [...Mc.MAILCHIMP_TOOLS], "what our server serves to the agents' key");
+assert.deepEqual(checkedTools("mailchimp_drafts"), [Mc.DRAFT_TOOL], "what our server serves to the drafts key");
+assert.ok(mayWrite("mailchimp_drafts", Mc.DRAFT_TOOL) && !mayCall("mailchimp_drafts", Mc.DRAFT_TOOL) && !mayWrite("mailchimp", Mc.DRAFT_TOOL));
+const HEX32 = "0123456789abcdef".repeat(2); // a made-up key, built here so it never reads as one
+const MCKEY = `${HEX32}-us21`;
+assert.ok(Mc.looksLikeMailchimpKey(MCKEY) && !Mc.looksLikeMailchimpKey(`${HEX32}-evil.example`) && !Mc.looksLikeMailchimpKey("pk_x"));
+assert.equal(Mc.baseOf(MCKEY), "https://us21.api.mailchimp.com/3.0", "the host comes from the key's own data centre");
+assert.throws(() => Mc.baseOf(`${HEX32}-us21.evil.example`));
+assert.deepEqual(Mc.checkMailchimpArgs("mailchimp_campaigns", {}), { tool: "mailchimp_campaigns", period: "last_90_days" });
+for (const [tool, args, why] of [
+  ["mailchimp_audiences", { list_id: "x" }, /unknown input/],
+  ["mailchimp_campaigns", { period: "forever" }, /period is one of/],
+  ["mailchimp_members", {}, /isn't a Mailchimp read tool/],
+] as const) { const r = Mc.checkMailchimpArgs(tool, args); assert.ok("problem" in r && why.test(r.problem), `${tool}`); }
+assert.ok(!/email_address|merge_fields|members\b|from_email/.test(Mc.AUDIENCE_FIELDS + Mc.REPORT_FIELDS), "no member or email address is asked for");
+assert.deepEqual(Mc.readAudiences({ lists: [{ id: "a1b2c3d4e5", name: "Newsletter", stats: { member_count: 120, unsubscribe_count: 4, campaign_count: 9 } }, { id: "../x", name: "bad" }] }), [{ id: "a1b2c3d4e5", name: "Newsletter", members: 120, unsubscribed: 4, campaigns: 9 }]);
+const rep = Mc.readReports({ reports: [{ campaign_title: "Nov", subject_line: "New roast", list_name: "Newsletter", send_time: "2026-11-02T15:00:00+00:00", emails_sent: 200, unsubscribed: 2, opens: { unique_opens: 90 }, clicks: { unique_subscriber_clicks: 12 }, ecommerce: { total_orders: 3, total_revenue: 81.5 } }] });
+assert.deepEqual([rep.campaigns[0].opens_per_100, rep.campaigns[0].clicks_per_100, rep.campaigns[0].unsubscribes_per_100], [45, 6, 1]);
+assert.deepEqual([rep.totals.campaigns, rep.totals.sent, rep.totals.revenue, rep.totals.opens_per_100], [1, 200, 81.5, 45]);
+const mcCamp = { subject: "New roast", preview: "Out Friday", body: "Hello\n\nIt's here." };
+assert.equal(Mc.refuseMailchimpCampaign(mcCamp), null);
+assert.match(Mc.refuseMailchimpCampaign({ ...mcCamp, body: "Hi *|FNAME|*" }) ?? "", /merge tags/);
+assert.match(Mc.refuseMailchimpCampaign({ ...mcCamp, body: "see www.x.example" }) ?? "", /links/);
+assert.match(Mc.refuseMailchimpCampaign({ ...mcCamp, send_time: "now" }) ?? "", /allow-list/);
+assert.ok("problem" in Mc.checkMcDraftArgs({ audienceId: "../lists", ...mcCamp }));
+const mcHtml = Mc.mcCampaignHtml("<b>hi</b>");
+assert.ok(mcHtml.includes("&lt;b&gt;hi&lt;/b&gt;") && mcHtml.includes("*|UNSUB|*"), "the body is escaped and code adds the unsubscribe link");
+const mcsrv = readFileSync("integrations/mailchimp-server.ts", "utf8");
+assert.ok(!/\/actions\/|"DELETE"|"PATCH"|\/members|\/test|\/schedule|\/send|replicate/.test(mcsrv), "the Mailchimp server has no send, schedule, test, member or delete call");
+assert.match(mcsrv, /redirect: "error"/);
+// ---- WooCommerce on our own server, a Read key and a Read/Write key (card 254)
+assert.ok(!usesConnect("woo") && !usesConnect("woo_notes") && !isHosted("woo"));
+assert.deepEqual(checkedTools("woo"), [...Woo.WOO_TOOLS], "what our server serves to the agents' key");
+assert.deepEqual(checkedTools("woo_notes"), [Woo.NOTE_TOOL], "what our server serves to the gateway's key");
+assert.ok(mayWrite("woo_notes", Woo.NOTE_TOOL) && !mayCall("woo_notes", Woo.NOTE_TOOL) && !mayWrite("woo", Woo.NOTE_TOOL));
+const CK = `ck_${"a".repeat(40)}`, CS = `cs_${"b".repeat(40)}`;
+assert.deepEqual(Woo.readWooKey(`https://shop.example/ ${CK}\n${CS}`), { store: "https://shop.example", key: CK, secret: CS });
+assert.equal(Woo.readWooKey(`https://shop.example/store/ ${CK} ${CS}`)?.store, "https://shop.example/store");
+for (const bad of [`http://shop.example ${CK} ${CS}`, `https://u:p@shop.example ${CK} ${CS}`, `https://shop.example:8443 ${CK} ${CS}`, `https://shop.example/?x=1 ${CK} ${CS}`, `https://shop.example ${CS} ${CK}`, `https://shop.example ${CK}`, `https://shop.example ck_short ${CS}`])
+  assert.equal(Woo.readWooKey(bad), null, bad);
+assert.equal(Woo.restBase(Woo.readWooKey(`https://shop.example ${CK} ${CS}`)!), "https://shop.example/wp-json/wc/v3");
+assert.deepEqual(Woo.checkWooArgs("woo_orders", {}), { tool: "woo_orders", period: "last_30_days" });
+assert.deepEqual(Woo.checkWooArgs("woo_low_stock", { at_or_below: 3 }), { tool: "woo_low_stock", atOrBelow: 3 });
+for (const [tool, args, why] of [
+  ["woo_orders", { status: "any" }, /unknown input/],
+  ["woo_orders", { period: "forever" }, /period is one of/],
+  ["woo_low_stock", { at_or_below: -1 }, /whole number/],
+  ["woo_customers", {}, /isn't a WooCommerce read tool/],
+] as const) { const r = Woo.checkWooArgs(tool, args); assert.ok("problem" in r && why.test(r.problem), `${tool}`); }
+assert.ok(!/billing|shipping|email|first_name|last_name|phone|customer_note|address/.test(Woo.ORDER_FIELDS + Woo.PRODUCT_FIELDS), "no customer name, email, phone or address is asked for");
+assert.equal(Woo.afterOf("last_7_days", Date.parse("2026-11-21T12:00:00Z")), "2026-11-14T12:00:00");
+const wo = Woo.readOrders([
+  { id: 1, number: "1001", status: "completed", total: "30.00", currency: "USD", date_created: "2026-11-02T10:00:00", customer_id: 7, line_items: [{ product_id: 11, name: "Blend A", quantity: 2, total: "24.00" }] },
+  { id: 2, number: "1002", status: "processing", total: "15.50", currency: "USD", date_created: "2026-11-03T10:00:00", customer_id: 7, line_items: [{ product_id: 12, name: "Blend B", quantity: 1, total: "15.50" }] },
+  { id: 3, number: "1003", status: "cancelled", total: "99.00", currency: "USD", date_created: "2026-11-04T10:00:00", customer_id: 8, line_items: [{ product_id: 12, name: "Blend B", quantity: 5, total: "99.00" }] },
+  { id: "x", number: "bad" },
+], false);
+assert.deepEqual(wo.totals, { orders: 3, paid_orders: 2, revenue: 45.5, average_order: 22.75, repeat_buyers: 1, buyers_with_account: 1 }, "cancelled orders aren't sales; totals counted in code");
+assert.deepEqual(wo.best_sellers.map((b) => [b.product, b.quantity]), [["Blend A", 2], ["Blend B", 1]]);
+assert.ok(!JSON.stringify(wo).includes("customer_id"), "a customer stays an id inside the server");
+assert.deepEqual(Woo.readLowStock([
+  { name: "Blend A", sku: "A", stock_quantity: 2, stock_status: "instock", manage_stock: true },
+  { name: "Blend B", sku: "B", stock_quantity: 40, stock_status: "instock", manage_stock: true },
+  { name: "Mug", sku: "M", stock_quantity: null, stock_status: "outofstock", manage_stock: true },
+  { name: "Gift card", sku: "G", stock_quantity: null, stock_status: "instock", manage_stock: false },
+], 5).map((p) => p.product), ["Mug", "Blend A"]);
+assert.equal(Woo.refuseNote({ note: "Packed with extra care, shipped Monday." }), null);
+assert.match(Woo.refuseNote({ note: "x", customer_note: true }) ?? "", /allow-list/);
+assert.match(Woo.refuseNote({ note: "see https://x.example" }) ?? "", /links/);
+assert.match(Woo.refuseNote({ note: "<b>hi</b>" }) ?? "", /markup/);
+assert.match(Woo.refuseNote({ note: "x".repeat(501) }) ?? "", /longer/);
+assert.match(Woo.refuseNote({ note: "  " }) ?? "", /needs text/);
+assert.ok(Woo.orderIdOk("1234") && !Woo.orderIdOk("12/notes") && !Woo.orderIdOk(1234));
+assert.deepEqual(Woo.checkNoteArgs({ orderId: "1234", note: " Ship Monday " }), { orderId: "1234", note: "Ship Monday" });
+assert.ok("problem" in Woo.checkNoteArgs({ orderId: "../orders", note: "x" }));
+const wsrv = readFileSync("integrations/woo-server.ts", "utf8");
+assert.ok(!/"DELETE"|"PUT"|"PATCH"|\/refunds|\/coupons|\/customers|\/products\/\$|\/batch|status: "|stock_quantity: \d/.test(wsrv), "the WooCommerce server has no order, product, stock, refund, coupon or customer write");
+assert.equal((wsrv.match(/, \{ body: \{/g) ?? []).length, 2, "one POST for the permission probe, one for the note");
+assert.ok(/customer_note: false/.test(wsrv) && !/customer_note: true/.test(wsrv), "a note is always private");
+assert.match(wsrv, /redirect: "error"/);
+assert.match(wsrv, /await check\(url\)/, "the store address is checked as a public https host before every request");
+// ---- HubSpot on our own server, two service keys (card 253)
+assert.ok(!usesConnect("hubspot") && !usesConnect("hubspot_deals") && !isHosted("hubspot"));
+assert.deepEqual(checkedTools("hubspot"), [...Hs.HUBSPOT_TOOLS], "what our server serves to the agents' key");
+assert.deepEqual(checkedTools("hubspot_deals"), [Hs.MOVE_TOOL], "what our server serves to the gateway's key");
+assert.ok(mayWrite("hubspot_deals", Hs.MOVE_TOOL) && !mayCall("hubspot_deals", Hs.MOVE_TOOL) && !mayWrite("hubspot", Hs.MOVE_TOOL));
+const HSKEY = ["pat", "na1", "0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0"].join("-"); // made up, built here so it never reads as one
+assert.ok(Hs.looksLikeHubSpotKey(HSKEY) && Hs.looksLikeHubSpotKey(` ${HSKEY}\n`) && !Hs.looksLikeHubSpotKey("pat-na1-xyz") && !Hs.looksLikeHubSpotKey(HSKEY + "@evil.example"));
+assert.deepEqual(Hs.checkHubSpotArgs("hubspot_deals", {}), { tool: "hubspot_deals" });
+assert.deepEqual(Hs.checkHubSpotArgs("hubspot_contacts", {}), { tool: "hubspot_contacts", period: "last_30_days" });
+for (const [tool, args, why] of [
+  ["hubspot_deals", { owner: "x" }, /unknown input/],
+  ["hubspot_contacts", { period: "forever" }, /period is one of/],
+  ["hubspot_emails", {}, /isn't a HubSpot read tool/],
+] as const) { const r = Hs.checkHubSpotArgs(tool, args); assert.ok("problem" in r && why.test(r.problem), `${tool}`); }
+assert.ok(!/email|phone|contact|owner|description/.test(Hs.DEAL_PROPS.join(",")), "deals are asked for with no contact, email, phone or owner");
+const stages = Hs.readPipelines({ results: [{ id: "default", label: "Sales", stages: [
+  { id: "appointmentscheduled", label: "Meeting booked", displayOrder: 0, metadata: { isClosed: "false" } },
+  { id: "contractsent", label: "Contract sent", displayOrder: 1, metadata: { isClosed: "false" } },
+  { id: "closedwon", label: "Won", displayOrder: 2, metadata: { isClosed: "true" } },
+  { id: "../x", label: "bad" },
+] }, { id: "../p", label: "bad", stages: [] }] });
+assert.deepEqual(stages.map((x) => [x.id, x.closed]), [["appointmentscheduled", false], ["contractsent", false], ["closedwon", true]]);
+const HNOW = Date.parse("2026-11-21T12:00:00Z");
+const deals = Hs.readDeals([
+  { id: "11", properties: { dealname: "Cafe Uno wholesale", amount: "1200", dealstage: "contractsent", hs_lastmodifieddate: "2026-11-01T00:00:00Z" } },
+  { id: "12", properties: { dealname: "Office order", amount: "300.5", dealstage: "appointmentscheduled", hs_lastmodifieddate: "2026-11-20T00:00:00Z" } },
+  { id: "13", properties: { dealname: "Done deal", amount: "999", dealstage: "closedwon" } },
+  { id: "x", properties: { dealname: "bad", dealstage: "contractsent" } },
+], stages, HNOW, false);
+assert.deepEqual(deals.totals, { open_deals: 2, open_amount: 1500.5, gone_quiet: 1, quiet_days: 14 }, "closed deals don't count; amounts and quiet days counted in code");
+assert.deepEqual(deals.stages.map((x) => [x.stage, x.deals, x.amount]), [["Meeting booked", 1, 300.5], ["Contract sent", 1, 1200]]);
+assert.equal(deals.deals[0].id, "11");
+assert.equal(Hs.refuseMove({ stage: "contractsent", note: "Signed the quote on the call." }), null);
+assert.match(Hs.refuseMove({ stage: "contractsent", note: "x", amount: 5 }) ?? "", /allow-list/);
+assert.match(Hs.refuseMove({ stage: "../x", note: "x" }) ?? "", /stage id/);
+assert.match(Hs.refuseMove({ stage: "contractsent" }) ?? "", /needs a note/);
+assert.match(Hs.refuseMove({ stage: "contractsent", note: "see https://x.example" }) ?? "", /links/);
+assert.ok(Hs.dealIdOk("123") && !Hs.dealIdOk("12/notes") && !Hs.dealIdOk(12));
+assert.deepEqual(Hs.checkMoveArgs({ dealId: "11", stage: "contractsent", note: " Signed " }), { dealId: "11", stage: "contractsent", note: "Signed" });
+assert.ok("problem" in Hs.checkMoveArgs({ dealId: "../deals", stage: "contractsent", note: "x" }));
+assert.equal(Hs.noteBody("a < b\nc"), "a &lt; b<br>c");
+const hsrv = readFileSync("integrations/hubspot-server.ts", "utf8");
+assert.ok(!/"DELETE"|"PUT"|\/merge|\/batch|\/emails|\/sequences|\/communications|\/associations\/|\/objects\/(contacts|companies)\/(?!search)/.test(hsrv), "the HubSpot server has no delete, merge, batch, email, sequence or contact write");
+assert.equal((hsrv.match(/method: "PATCH"/g) ?? []).length, 2, "one PATCH for the permission probe, one for the move");
+assert.equal((hsrv.match(/\/crm\/v3\/objects\/notes"/g) ?? []).length, 1, "one note create, on the move");
+assert.match(hsrv, /redirect: "error"/);
+assert.match(Hs.HUBSPOT_API, /^https:\/\/api\.hubapi\.com$/);
+// ---- Meta Ads on our own server, two sign-ins with OPERATOR's Meta app (card 255)
+assert.ok(isMeta("meta") && isMeta("meta_pauses") && usesConnect("meta") && !isHosted("meta") && !isGoogle("meta"));
+assert.deepEqual(checkedTools("meta"), [...Me.META_TOOLS], "what our server serves to the agents' sign-in");
+assert.deepEqual(checkedTools("meta_pauses"), [Me.PAUSE_TOOL], "what our server serves to the gateway's sign-in");
+assert.ok(mayWrite("meta_pauses", Me.PAUSE_TOOL) && !mayCall("meta_pauses", Me.PAUSE_TOOL) && !mayWrite("meta", Me.PAUSE_TOOL));
+assert.deepEqual([...MCP_SERVERS.meta.scopes], ["ads_read"], "the agents' sign-in asks for ads_read alone");
+assert.deepEqual([...MCP_SERVERS.meta_pauses.scopes], ["ads_management"]);
+assert.match(META_AUTH.authorization_endpoint, /^https:\/\/www\.facebook\.com\/v26\.0\/dialog\/oauth$/);
+assert.match(META_AUTH.token_endpoint, /^https:\/\/graph\.facebook\.com\/v26\.0\/oauth\/access_token$/);
+assert.ok(Me.META_API.startsWith("https://graph.facebook.com/v26.0") && META_AUTH.token_endpoint.startsWith(Me.META_API), "one pinned Graph API version");
+const perms = (...p: [string, string][]) => ({ data: p.map(([permission, status]) => ({ permission, status })) });
+assert.equal(Me.permissionProblem("meta", perms(["ads_read", "granted"], ["public_profile", "granted"])), null);
+assert.equal(Me.permissionProblem("meta", perms(["ads_read", "granted"], ["ads_management", "granted"])), null, "Meta grants per person: pauses add ads_management to the agents' sign-in, and our server is the limit");
+assert.match(Me.permissionProblem("meta", perms(["ads_read", "declined"])) ?? "", /doesn't hold ads_read/);
+assert.match(Me.permissionProblem("meta", perms(["ads_read", "granted"], ["pages_manage_posts", "granted"])) ?? "", /more than it needs: pages_manage_posts/);
+assert.match(Me.permissionProblem("meta_pauses", perms(["ads_read", "granted"])) ?? "", /doesn't hold ads_management/);
+assert.equal(Me.permissionProblem("meta_pauses", perms(["ads_management", "granted"], ["ads_read", "granted"])), null);
+assert.match(Me.permissionProblem("meta_pauses", perms(["ads_management", "granted"], ["business_management", "granted"])) ?? "", /more than it needs/);
+assert.deepEqual(Me.checkMetaArgs("meta_ad_accounts", {}), { tool: "meta_ad_accounts" });
+assert.deepEqual(Me.checkMetaArgs("meta_ad_results", { account: "act_123" }), { tool: "meta_ad_results", account: "act_123", period: "last_30_days", result: "purchase" });
+for (const [tool, args, why] of [
+  ["meta_ad_results", { account: "123" }, /ad account id/],
+  ["meta_ad_results", { account: "act_1/../me" }, /ad account id/],
+  ["meta_ad_results", { account: "act_1", period: "maximum" }, /period is one of/],
+  ["meta_ad_results", { account: "act_1", result: "reach" }, /result is one of/],
+  ["meta_ad_results", { account: "act_1", fields: "targeting" }, /unknown input/],
+  ["meta_update_budget", {}, /isn't a Meta Ads read tool/],
+] as const) { const r = Me.checkMetaArgs(tool, args); assert.ok("problem" in r && why.test(r.problem), `${tool} ${JSON.stringify(args)}`); }
+assert.ok(!/target|audience|creative|user|email|name_of_person/.test(Me.INSIGHT_FIELDS.join(",").replace("ad_name", "").replace("campaign_name", "")), "insights ask for numbers, no audience or creative");
+assert.equal(Me.resultsOf([{ action_type: "link_click", value: "40" }, { action_type: "omni_purchase", value: "3" }, { action_type: "purchase", value: "3" }], "purchase"), 3, "overlapping purchase types count once");
+assert.equal(Me.resultsOf([{ action_type: "offsite_conversion.fb_pixel_purchase", value: "2" }], "purchase"), 2);
+assert.equal(Me.resultsOf(null, "lead"), 0);
+assert.equal(Me.costPer(90, 3), 30);
+assert.equal(Me.costPer(25, 0), null, "no results is no cost per result, never a made-up number");
+assert.ok(Me.overTarget(100, 2, 40) && !Me.overTarget(60, 2, 40) && Me.overTarget(41, 0, 40) && !Me.overTarget(39, 0, 40), "over target: cost per result above it, or spend above it with no result");
+assert.deepEqual(Me.readAccounts([{ account_id: "123", name: "Shop", currency: "usd", account_status: 1, amount_spent: "12345" }, { account_id: "../x" }]), [{ id: "act_123", name: "Shop", currency: "USD", active: true, spent_all_time: 123.45 }]);
+const ads = Me.readResults([
+  { ad_id: "1", ad_name: "Spring A", campaign_name: "Spring", spend: "120.00", impressions: "5000", clicks: "80", actions: [{ action_type: "purchase", value: "2" }] },
+  { ad_id: "2", ad_name: "Spring B", campaign_name: "Spring", spend: "30.00", impressions: "900", clicks: "20", actions: [{ action_type: "purchase", value: "2" }] },
+  { ad_id: "3", ad_name: "Old", campaign_name: "Fall", spend: "50.00", actions: [] },
+  { ad_id: "x/1", spend: "999" },
+], new Map([["1", "ACTIVE"], ["2", "ACTIVE"], ["3", "PAUSED"]]), "purchase", false, 40);
+assert.deepEqual(ads.totals, { ads: 3, active_ads: 2, spend: 200, results: 4, cost_per_result: 50, active_over_target: 1 }, "spend, results and cost per result counted in code");
+assert.deepEqual(ads.ads.map((a) => [a.id, a.cost_per_result, a.over_target]), [["1", 60, true], ["3", null, true], ["2", 15, false]]);
+assert.equal(Me.readResults([], new Map(), "lead", false).target, null);
+assert.equal(Me.refusePause({ result: "purchase", period: "last_7_days", why: "Cost per purchase is double the target." }), null);
+assert.match(Me.refusePause({ result: "purchase", period: "last_7_days", why: "x", target: 999 }) ?? "", /allow-list/, "the target is the owner's, never the agent's");
+assert.match(Me.refusePause({ result: "purchase", period: "last_7_days", why: "x", daily_budget: 5 }) ?? "", /allow-list/);
+assert.match(Me.refusePause({ result: "reach", period: "last_7_days", why: "x" }) ?? "", /result is one of/);
+assert.match(Me.refusePause({ result: "purchase", period: "lifetime", why: "x" }) ?? "", /period is one of/);
+assert.match(Me.refusePause({ result: "purchase", period: "last_7_days" }) ?? "", /needs a reason/);
+assert.match(Me.refusePause({ result: "purchase", period: "last_7_days", why: "see www.x.example" }) ?? "", /links/);
+assert.ok(Me.adIdOk("120210000000001") && !Me.adIdOk("act_1") && !Me.adIdOk("1/insights"));
+assert.deepEqual(Me.checkPauseArgs({ adId: "1", result: "lead", period: "last_30_days", target: 12.5 }), { adId: "1", result: "lead", period: "last_30_days", target: 12.5 });
+for (const bad of [{ adId: "1", result: "lead", period: "last_30_days" }, { adId: "1", result: "lead", period: "last_30_days", target: 0 }, { adId: "1", result: "lead", period: "last_30_days", target: 1.234 }, { adId: "1", result: "lead", period: "last_30_days", target: 5, status: "ACTIVE" }, { adId: "act_1", result: "lead", period: "last_30_days", target: 5 }])
+  assert.ok("problem" in Me.checkPauseArgs(bad), JSON.stringify(bad));
+assert.equal(Me.readTarget(30), 30); assert.equal(Me.readTarget("12.50"), 12.5); assert.equal(Me.readTarget(-1), null); assert.equal(Me.readTarget(Me.TARGET_MAX + 1), null); assert.equal(Me.readTarget(null), null);
+assert.equal(Me.targetProblem(""), null); assert.equal(Me.targetProblem("$25"), null); assert.match(Me.targetProblem("0") ?? "", /above 0/); assert.match(Me.targetProblem("1.005") ?? "", /cents/);
+assert.equal(new Set(Object.values(Me.TARGET_KEYS)).size, Me.RESULT_KINDS.length);
+const mesrv = readFileSync("integrations/meta-server.ts", "utf8");
+assert.ok(!/budget|bid_amount|"DELETE"|copies|\/adsets"|\/campaigns"|\/adcreatives|status: "ACTIVE"/.test(mesrv.replace(/\/\/.*$/gm, "")), "the Meta server has no budget, bid, create, copy, delete or resume call");
+assert.equal((mesrv.match(/\{ status: "PAUSED" \}/g) ?? []).length, 1, "one write: the pause");
+assert.equal((mesrv.match(/fb\(token, [^)]*, \{/g) ?? []).length, 1, "only one request carries a body");
+assert.match(mesrv, /redirect: "error"/);
+assert.match(mesrv, /overTarget\(spend, results, a\.target\)/, "the server checks the ad is still over target right before the pause");
 // every Gmail tool input is checked before it reaches a URL or a draft
 assert.deepEqual(checkGmailArgs("gmail_search", { q: "$12.50 after:2026/11/01" }), { tool: "gmail_search", q: "$12.50 after:2026/11/01", max: 3 });
 assert.deepEqual(checkGmailArgs("gmail_message", { id: "18c2a9f0e1b2c3d4" }), { tool: "gmail_message", id: "18c2a9f0e1b2c3d4", maxChars: 6000 });
@@ -542,6 +741,9 @@ assert.deepEqual(importers("ga4-api"), ["integrations/ga4-server.ts"]);
 assert.deepEqual(importers("ga4-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("calendar-api"), ["integrations/calendar-server.ts"]);
 assert.deepEqual(importers("calendar-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("mailchimp-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("woo-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("hubspot-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("shopify-api"), ["integrations/shopify-server.ts"]);
 assert.deepEqual(importers("shopify-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mercury-files-server"), ["integrations/mcp.ts"]);

@@ -163,6 +163,9 @@ export function factsLine(facts: readonly Pick<Fact, "topic" | "text" | "state">
  * The parts of the business a tool runs, for the directive (card 195): each id with its state, so Avery
  * asks about a part only while it is open. She names the id; code draws the card and writes the tools.
  */
+/** Avery's last message of setup (card 197), written by code: the Desk panel opens on it instead of a stale interview question. */
+export const SETUP_HANDOFF = "Setup is done and your company is in place. From here, ask me what needs you today, how the goals are going, or tell me something new about the business.";
+
 /** Said of a part none of whose tools connect yet (card 196), so Avery never promises a connection there. */
 export const NOTHING_CONNECTS = "nothing connects yet: the card only records which one they use";
 

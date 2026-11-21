@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import {
   FACT_MAX, FACT_TOPICS, MAX_FACTS, SETUP_AGENT, SETUP_TEMPLATE, STAGES, STAGE_WORDS,
   shownStage, wrapScreen, INTERVIEW_AREAS, SETUP_EFFORT, SETUP_MODEL, coverage, leaningOf, type Fact,
-  cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
+  SETUP_HANDOFF, cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
 } from "../core/setup-rules";
 import { MAX_DESIGNS, REASON_MAX, applyDesign, saidLine, unquote, designGaps, designKey, pickId, readDesigns, type Design, type Kit } from "../core/design-rules";
 import { peopleOf, type DraftCtx } from "../core/department-rules";
@@ -27,6 +27,14 @@ assert.equal(factProblem("sells", "Coffee blends", 0), null);
 assert.match(factProblem("price", "x", 0)!, /topic/);
 assert.match(factProblem("sells", "   ", 0)!, /needs words/);
 assert.match(factProblem("sells", "x".repeat(FACT_MAX + 5), 0)!, /at most/);
+// card 197: setup ends on code's own hand-off line, kept once, never a model's words
+assert.ok(!/https?:|Shopify|Klaviyo|Mercury/.test(SETUP_HANDOFF) && SETUP_HANDOFF.length < 200);
+{
+  const src = read("core/setup.ts");
+  const fin = src.slice(src.indexOf("export async function finishSetup"), src.indexOf("export async function endWrapUp"));
+  assert.match(fin, /const was = await setupState\(\)/);
+  assert.match(fin, /if \(!was\.done\) await keepChat\(\{ role: "avery", text: SETUP_HANDOFF \}\)\.catch\(/, "only the first time setup ends, and a missing chat table never stops it");
+}
 // card 196: a fact cut off mid-sentence is refused, so Avery sends the whole line
 assert.match(factProblem("goals", "Greg doesn't know whether the van pays for itself and wants to", 0)!, /stops mid-sentence/);
 for (const end of ["and", "or", "the", "a", "of", "for", "with", "because"]) assert.ok(factProblem("other", `Something about ${end}`, 0), `ends on "${end}"`);

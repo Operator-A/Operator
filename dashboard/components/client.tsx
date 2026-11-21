@@ -236,6 +236,20 @@ export function LiveRefresher({ runs }: { runs: RecentRun[] }) {
 
 
 /** Pastes a key into the token vault. The field is a password field, cleared once the key is kept; the key is never shown back. */
+/** One cost target (card 255): an amount, or blank for none. Saving checks it again on the server. */
+export function TargetForm({ label, current, save }: { label: string; current: number | null; save: (v: string) => Promise<ActionResult> }) {
+  const [v, setV] = useState(current === null ? "" : String(current));
+  const same = v.trim() === (current === null ? "" : String(current));
+  return (
+    <span className="row wrap" style={{ gap: 8, alignItems: "center" }}>
+      <span style={{ flex: "1 1 160px", fontSize: 13 }}>{label}</span>
+      <input className="input" inputMode="decimal" autoComplete="off" value={v} onChange={(e) => setV(e.target.value)} placeholder="No target" aria-label={label}
+        style={{ width: 120, background: "var(--card)", border: "1px solid var(--bd)", fontSize: 14 }} />
+      <ActionButton className="btn outline sm" disabled={same} action={() => save(v)}>{v.trim() ? "Save" : "Clear"}</ActionButton>
+    </span>
+  );
+}
+
 export function KeyForm({ label, save, replace, placeholder = "ntn_…" }: { label: string; save: (key: string) => Promise<ActionResult>; replace?: boolean; placeholder?: string }) {
   const [v, setV] = useState("");
   return (

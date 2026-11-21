@@ -21,9 +21,14 @@ import { refuseTags, shopifyTarget } from "@/core/shopify-actions";
 import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
 import { refuseHold } from "@/core/calendar-rules";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, INVOICE_DRAFT, QBO_CATEGORIZE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
+import { orderIdOk, refuseNote } from "@/core/woo-rules";
+import { dealIdOk, refuseMove } from "@/core/hubspot-rules";
+import { adIdOk, refusePause, RESULT_LABEL, type MetaResult } from "@/core/meta-rules";
+import { metaTargets } from "@/core/meta-targets";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, SHOPIFY_TAGS } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE } from "./policy";
 
 export interface Proposal {
   agentId: string;
@@ -337,7 +342,7 @@ export async function writeBlocker(): Promise<string | null> {
 }
 
 /** A gateway sign-in is connected and not paused. */
-async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify" | "stripe_drafts" | "quickbooks"): Promise<boolean> {
+async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify" | "stripe_drafts" | "mailchimp_drafts" | "woo_notes" | "hubspot_deals" | "meta_pauses" | "quickbooks"): Promise<boolean> {
   const s = await mcpStatus(id);
   return !!s?.connected && !s.paused;
 }
@@ -433,7 +438,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyInvoices(ids), applyCategorize(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids), applyMetaPauses(ids), applyCategorize(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -749,6 +754,135 @@ async function applyOneCategory(a: ActionRow, runId: string) {
 }
 const CATEGORIZE_GRANT = TOOLS[QBO_CATEGORIZE].grant;
 
+/** Approved Mailchimp campaigns (card 252): drafts in Mailchimp on the gateway's own key, at most max_campaign_drafts_per_run per agent. */
+async function applyMailchimp(ids?: string[]) {
+  const rows = await approvedOf(MAILCHIMP_DRAFT, ids);
+  if (!rows.length) return null;
+  if (!(await ready("mailchimp_drafts"))) return { ok: true, text: "Approved, not in Mailchimp yet: the Mailchimp campaign drafts key isn't connected (Connections, Mailchimp)." };
+  const cap = await numPolicy("max_campaign_drafts_per_run", 3);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyMailchimpOne(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway made ${n.applied} approved Mailchimp campaign draft${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}. The owner sends them from Mailchimp.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved campaigns are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyMailchimpOne(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as CampaignArgs;
+    // the words and the audience id again (a granted action's agent was checked by refuseUngranted);
+    // the server checks the audience is still the business's own right before it writes
+    const no = audienceIdOk(a.target) ? refuseMailchimpCampaign(args as unknown as Record<string, unknown>) : "The target is not a Mailchimp audience id.";
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const out = (await callWriteTool("mailchimp_drafts", "mailchimp_create_draft", { audienceId: a.target, subject: args.subject, preview: args.preview, body: args.body })) as { campaignId?: unknown; audience?: unknown };
+    if (typeof out?.campaignId !== "string" || !out.campaignId) throw new Error("Mailchimp didn't return a campaign id");
+    await done({ status: "applied", result_json: { mailchimp_campaign_id: out.campaignId, audience: out.audience ?? null, sent: false } });
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
+/** Approved WooCommerce order notes (card 254): private notes on the gateway's own key, at most max_order_notes_per_run per agent. */
+async function applyWooNotes(ids?: string[]) {
+  const rows = await approvedOf(WOO_NOTE, ids);
+  if (!rows.length) return null;
+  if (!(await ready("woo_notes"))) return { ok: true, text: "Approved, not in WooCommerce yet: the WooCommerce order notes key isn't connected (Connections, WooCommerce)." };
+  const cap = await numPolicy("max_order_notes_per_run", 20);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyWooNote(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway added ${n.applied} approved private order note${n.applied === 1 ? "" : "s"} in WooCommerce${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}. Customers don't see them.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved notes are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyWooNote(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as Record<string, unknown>;
+    // the note and the order id again (a granted action's agent was checked by refuseUngranted);
+    // the server checks the order still exists right before it writes
+    const no = orderIdOk(a.target) ? refuseNote(args) : "The target is not a WooCommerce order id.";
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const out = (await callWriteTool("woo_notes", "woo_add_order_note", { orderId: a.target, note: args.note })) as { noteId?: unknown; order?: unknown };
+    if (!Number.isInteger(out?.noteId)) throw new Error("WooCommerce didn't return a note id");
+    await done({ status: "applied", result_json: { woo_note_id: out.noteId, order: out.order ?? a.target, customer_note: false } });
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
+/** Approved HubSpot deal moves (card 253): a stage change and a note on the gateway's own key, at most max_deal_moves_per_run per agent. */
+async function applyHubSpotMoves(ids?: string[]) {
+  const rows = await approvedOf(HUBSPOT_MOVE, ids);
+  if (!rows.length) return null;
+  if (!(await ready("hubspot_deals"))) return { ok: true, text: "Approved, not in HubSpot yet: the HubSpot deal moves key isn't connected (Connections, HubSpot)." };
+  const cap = await numPolicy("max_deal_moves_per_run", 20);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyHubSpotMove(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway moved ${n.applied} approved HubSpot deal${n.applied === 1 ? "" : "s"}, each with its note${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved moves are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyHubSpotMove(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as Record<string, unknown>;
+    // the stage and note again (a granted action's agent was checked by refuseUngranted); the server
+    // checks the stage is in the deal's own pipeline, as HubSpot lists it, right before it writes
+    const no = dealIdOk(a.target) ? refuseMove(args) : "The target is not a HubSpot deal id.";
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const out = (await callWriteTool("hubspot_deals", "hubspot_move_deal", { dealId: a.target, stage: args.stage, note: args.note })) as { from?: unknown; fromLabel?: unknown; to?: unknown; toLabel?: unknown; noteId?: unknown };
+    if (out?.to !== args.stage) throw new Error("HubSpot didn't confirm the new stage");
+    await done({ status: "applied", diff_json: { before: { dealstage: out.from ?? null }, after: { dealstage: out.to } }, result_json: { from: out.fromLabel ?? out.from ?? null, to: out.toLabel ?? out.to, hubspot_note_id: out.noteId ?? null } });
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
 /** Approved Mercury changes, at most max_mercury_writes_per_run per agent. */
 async function applyMercury(ids?: string[]) {
   const rows = await approvedOf(ANNOTATE, ids);
@@ -821,4 +955,54 @@ export async function paidVendorIds(): Promise<Set<string>> {
 export async function onBreach(b: { agentId: string; tool: string; target: string; reason: string; runId?: string | null }) {
   await db().from("agent_actions").insert({ agent_id: b.agentId, run_id: b.runId ?? null, tool: b.tool, action_type: "cap breach", target: b.target, args_json: {}, status: "refused", reason: b.reason });
   await demote(b.agentId, b.tool, `A cap was hit: ${b.reason}`.slice(0, 300)).catch(() => false);
+}
+
+/** Approved Meta Ads pauses (card 255): one ad paused on the gateway's own sign-in, at most max_ad_pauses_per_run per agent. */
+async function applyMetaPauses(ids?: string[]) {
+  const rows = await approvedOf(META_PAUSE, ids);
+  if (!rows.length) return null;
+  if (!(await ready("meta_pauses"))) return { ok: true, text: "Approved, not paused yet: the Meta Ads pauses sign-in isn't connected (Connections, Meta Ads)." };
+  const cap = await numPolicy("max_ad_pauses_per_run", 10);
+  const targets = await metaTargets();
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyMetaPause(a, runId, targets); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway paused ${n.applied} approved Meta ad${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} wait for the next run (cap ${cap})` : ""}.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved pauses are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyMetaPause(a: ActionRow, runId: string, targets: Record<MetaResult, number | null>) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as Record<string, unknown>;
+    // the fields and the ad id again (a granted action's agent was checked by refuseUngranted); the
+    // target is the owner's, read now; the server reads the ad's numbers right before it pauses
+    const no = adIdOk(a.target) ? refusePause(args) : "The target is not a Meta ad id.";
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const result = args.result as MetaResult;
+    const target = targets[result];
+    if (target === null) { await done({ status: "refused", reason: `There is no cost per ${RESULT_LABEL[result]} target on Connections (Meta Ads pauses), so nothing is paused on it.` }); return "refused" as const; }
+    const out = (await callWriteTool("meta_pauses", "meta_pause_ad", { adId: a.target, result, period: args.period, target })) as { now?: unknown; spend?: unknown; results?: unknown; cost_per_result?: unknown };
+    if (out?.now !== "PAUSED") throw new Error("Meta didn't confirm the pause");
+    await done({ status: "applied", diff_json: { before: { status: "ACTIVE" }, after: { status: "PAUSED" } }, result_json: { paused: true, spend: out.spend ?? null, results: out.results ?? null, cost_per_result: out.cost_per_result ?? null, target } });
+    return "applied" as const;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // no longer over target, or no longer running, is a fresh check refusing it, not a failure
+    if (/no longer over its target|isn't running/.test(msg)) { await done({ status: "refused", reason: msg.replace(/^.*?meta_pause_ad: /, "").slice(0, 300) }); return "refused" as const; }
+    await done({ status: "failed", reason: msg.slice(0, 300) });
+    return "failed" as const;
+  }
 }

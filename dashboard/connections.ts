@@ -9,7 +9,7 @@ import type { ToolDef, ToolGroup } from "@/core/tools/types";
 import type { IntegrationId } from "./crew";
 import type { McpId } from "@/core/mcp-rules";
 
-export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "email" | "web" | "agents" | "control_room" | "math" | "stripe" | "quickbooks";
+export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "mailchimp" | "woo" | "hubspot" | "meta" | "email" | "web" | "agents" | "control_room" | "math" | "stripe" | "quickbooks";
 /** A server the owner added by its address (docs/custom-servers.md): its id is the connection's. */
 export type CustomConnId = `c_${string}`;
 
@@ -68,6 +68,38 @@ export const CONNECTIONS: Connection[] = [
     checks: [{ key: "ga4", label: "Property", setup: "Tap Connect, sign in with a Google account that can see the business’s Analytics, then pick the property below. Needs GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in Vercel, with the Analytics APIs turned on for that Google client." }],
   },
   {
+    id: "meta", name: "Meta Ads", sub: "Spend and cost per result per ad, pauses", icon: "chart-line", builtIn: false, mcp: "meta", mcpMore: ["meta_pauses"],
+    about: "Our own Meta Ads server, run in the app over Meta’s Marketing API. Meta’s hosted Ads MCP server asks to manage ads on every sign-in, so it isn’t used. Two sign-ins with OPERATOR’s Meta app: one that reads (ad accounts, and each ad’s spend, results and cost per result, worked out in code, never audiences or people), and one only the gateway uses, after you approve, to pause a running ad that is over the cost target you set below. Meta grants permissions to a person rather than to one sign-in, so once both are connected the reading sign-in could manage ads too: our server is the limit, and only reads with it. There is no code to change a budget or bid, or to start, resume, edit or delete anything.",
+    checks: [
+      { key: "meta", label: "Ads (read)", setup: "Tap Connect under Meta Ads and sign in with a Facebook account that can see the business’s ad account. Needs META_APP_ID and META_APP_SECRET in Vercel.", tools: ["meta_ad_accounts", "meta_ad_results"] },
+      { key: "meta_pauses", label: "Ad pauses", tools: ["meta_pause_ad"], setup: "Tap Connect under Meta Ads pauses with the same Facebook account, then set a cost target below. With no target, nothing is paused." },
+    ],
+  },
+  {
+    id: "hubspot", name: "HubSpot", sub: "Deals by stage, contact counts, deal moves", icon: "users", builtIn: false, mcp: "hubspot", mcpMore: ["hubspot_deals"],
+    about: "Our own HubSpot server, run in the app over HubSpot’s CRM API. HubSpot’s hosted MCP server asks for write access on every sign-in, so it isn’t used. Two service keys you make in HubSpot: a read key for agents (open deals by stage with amounts, deals gone quiet, and how many contacts and companies you have, never a contact list, email or phone), and a key that can change deals, which only the gateway uses, after you approve, to move a deal to another stage of its own pipeline and log a note on it. A key that can write is refused for agents. There is no code to create, delete or merge a record, or to email anyone.",
+    checks: [
+      { key: "hubspot", label: "CRM (read only)", setup: "In HubSpot: Development, Keys, Service keys, Create service key, with the scopes crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read. Paste it under HubSpot below.", tools: ["hubspot_deals", "hubspot_contacts"] },
+      { key: "hubspot_deals", label: "Deal moves", tools: ["hubspot_move_deal"], setup: "Make a second service key with crm.objects.deals.read and crm.objects.deals.write and paste it under HubSpot deal moves." },
+    ],
+  },
+  {
+    id: "woo", name: "WooCommerce", sub: "Orders, best sellers, stock, order notes", icon: "shopping-bag", builtIn: false, mcp: "woo", mcpMore: ["woo_notes"],
+    about: "Our own WooCommerce server, run in the app over your store’s REST API. WooCommerce’s MCP plugin is a preview with no read-only mode, so it isn’t used. Two keys you make in WooCommerce: a Read key for agents (orders, best sellers, repeat buyers and low stock, with no customer names, emails or addresses), and a Read/Write key only the gateway uses, after you approve, to add a private note to an order. A key with the wrong permission is refused. There is no code to change an order, product, stock or customer. Your store’s address is checked as a public https site before every request.",
+    checks: [
+      { key: "woo", label: "Store (read only)", setup: "In WordPress: WooCommerce, Settings, Advanced, REST API, Add key, with Permissions set to Read. Paste your store’s address, the consumer key and the consumer secret under WooCommerce below.", tools: ["woo_orders", "woo_low_stock"] },
+      { key: "woo_notes", label: "Order notes", tools: ["woo_order_note"], setup: "Make a second key with Permissions set to Read/Write and paste it the same way under WooCommerce order notes." },
+    ],
+  },
+  {
+    id: "mailchimp", name: "Mailchimp", sub: "Audiences, campaign results, drafts", icon: "send", builtIn: false, mcp: "mailchimp", mcpMore: ["mailchimp_drafts"],
+    about: "Our own Mailchimp server, run in the app. Mailchimp’s hosted MCP server isn’t documented for other apps. Mailchimp keys can’t be narrowed, so every key reaches your whole account; our server is the limit. Agents’ key: audience counts and campaign results only, with no member or email address, and rates worked out in code. After you approve a campaign, the gateway makes it a draft in Mailchimp with a second key, locked in the vault, that only it uses. Nothing in the app can send or schedule a campaign: you send it from Mailchimp.",
+    checks: [
+      { key: "mailchimp", label: "Account (reads)", setup: "In Mailchimp, open your profile, Extras, API keys, and tap Create A Key. Paste it under Mailchimp below.", tools: ["mailchimp_audiences", "mailchimp_results"] },
+      { key: "mailchimp_drafts", label: "Campaign drafts", tools: ["mailchimp_campaign_draft"], setup: "Make a second key the same way and paste it under Mailchimp campaign drafts." },
+    ],
+  },
+  {
     id: "calendar", name: "Google Calendar", sub: "Your week, free time, holds", icon: "calendar", builtIn: false, mcp: "calendar", mcpMore: ["calendar_holds"],
     about: "Our own Google Calendar server, run in the app. Google’s Calendar MCP server is a gated preview, so it isn’t used. Two separate Google sign-ins to the business’s calendar, each granted one scope: one only reads events (and our server never asks Google for guests’ email addresses, descriptions, places or links), one only puts a private hold you approved on the calendar and is used only by the gateway. A hold has no guests and emails no one; there is no code to change or delete an event. Free time is worked out in code. Event titles come from whoever sent the invite, so they are untrusted data.",
     checks: [
@@ -117,7 +149,7 @@ export const CONN_BY_ID = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c])) 
 /** Which connection each tool group belongs to. */
 type BuiltInGroup = Exclude<ToolGroup, "custom">;
 const GROUP_CONN: Record<BuiltInGroup, ConnId> = {
-  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", stripe: "stripe", quickbooks: "quickbooks", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
+  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", stripe: "stripe", quickbooks: "quickbooks", mailchimp: "mailchimp", woo: "woo", hubspot: "hubspot", meta: "meta", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
 };
 /** For tools on the list in code. A custom server's tools belong to that server (dashboard/builder.ts customMenuFor). */
 export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group as BuiltInGroup];

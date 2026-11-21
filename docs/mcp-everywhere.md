@@ -315,6 +315,185 @@ client in `GMAIL_CLIENT_ID`. Turn on **Google Calendar API** (APIs & Services > 
 scopes `.../auth/calendar.events.readonly` and `.../auth/calendar.events` under Google Auth platform >
 Data access.
 
+## Mailchimp on our own server (card 252)
+
+Mailchimp's hosted MCP server isn't documented for other apps, and Mailchimp has no narrower key or
+OAuth scope: every key reaches the whole account. So our server is the limit.
+
+- **Profiles** (`core/mcp-rules.ts`), both a pasted Mailchimp API key, sealed in the vault:
+  - `mailchimp`: the agents' key. Read tools `mailchimp_audiences` (each audience's members,
+    unsubscribes and campaigns) and `mailchimp_campaigns` (reports for a period). No write tools.
+  - `mailchimp_drafts`: a second key, held only by the gateway. One write tool,
+    `mailchimp_create_draft` (action type `mailchimp.campaign_draft`). No read tools.
+- **The host** comes from the key's own data-centre suffix, checked against `-us<digits>`
+  (`baseOf`), so nothing can steer a request elsewhere. Requests never follow redirects.
+- **What the reads return** (`core/mailchimp-rules.ts`): a fixed field list with no member, email
+  address or merge field. Rates per 100 sent and totals are worked out in code.
+- **Agents** read them as `mailchimp_audiences` (each audience carries a pick) and
+  `mailchimp_results`, group `mailchimp`, needing `MAILCHIMP_CONNECTED`.
+- **The action** `mailchimp_campaign_draft` is granted (card 250): the audience is a pick, the words
+  are the Klaviyo draft's rules plus no Mailchimp merge tags (`refuseMailchimpCampaign`). On apply the
+  server reads the audience again, creates a regular campaign with the audience's own default sender,
+  and sets the HTML (body escaped, then `*|UNSUB|*` and the audience's address, added by code). There
+  is no send, schedule, test, member or delete call (`check:mcp` fails on one). At most
+  `policies.max_campaign_drafts_per_run` (default 3) per agent per apply.
+- **Files:** `integrations/mailchimp-server.ts` is the only file that calls Mailchimp, and only
+  `integrations/mcp.ts` reaches it (lint and `check:mcp`).
+
+**Setting it up:** nothing in Vercel. The business makes two keys in Mailchimp (profile, Extras, API
+keys, Create A Key) and pastes them on Connections > Mailchimp.
+
+## HubSpot on our own server (card 253)
+
+HubSpot's hosted MCP server (mcp.hubspot.com) takes its scopes from its own tool list, writes
+included, so it can't give agents read access only. Our server runs in the app over HubSpot's CRM API
+with two **service keys** the owner makes in HubSpot (Development > Keys > Service keys). HubSpot
+stopped new legacy private apps in October 2026, and service keys take exact scopes for one account.
+Keys are pasted for now. A HubSpot app for one-tap Connect is a later card (253.5).
+
+- **Profiles** (`core/mcp-rules.ts`), both a pasted service key sealed in the vault:
+  - `hubspot`: the agents' key, with `crm.objects.deals.read`, `crm.objects.contacts.read` and
+    `crm.objects.companies.read`. Read tools `hubspot_deals` and `hubspot_contacts`. No write tools.
+  - `hubspot_deals`: a second key, held only by the gateway, with `crm.objects.deals.read` and
+    `crm.objects.deals.write`. One write tool, `hubspot_move_deal` (action type `hubspot.deal_stage`).
+- **Which key is which** is checked when it is pasted (`checkHubSpotKey`). The server asks to change no
+  property on deal 0, which doesn't exist. A key without deal write gets 403 for the missing scope, and
+  a key with it gets 400 or 404, so nothing is written either way. A key that can write is refused for
+  `hubspot`, and one that can't is refused for `hubspot_deals`. HubSpot has no documented way to list a
+  service key's scopes, so this probe is the check.
+- **The host** is fixed (`https://api.hubapi.com`), and requests never follow redirects.
+- **What the reads return** (`core/hubspot-rules.ts`):
+  - Deals come back with fixed properties (name, amount, stage, pipeline, close date, last change), and
+    no contact, owner or email.
+  - Code works out open deals per stage, amounts, and the deals untouched for 14 days or more, using the
+    pipelines as HubSpot lists them.
+  - Contacts and companies are counts only, all-time and new in a period, from HubSpot's search
+    `total`.
+- **Agents** read them as `hubspot_deals` (each deal and each open stage carries a pick) and
+  `hubspot_contacts`, group `hubspot`, needing `HUBSPOT_CONNECTED`.
+- **The action** `hubspot_move_deal` is granted (card 250):
+  - The deal and the stage are picks. The note is plain text up to 500 characters, with no links
+    (`refuseMove`).
+  - On apply, the server reads the deal and its pipeline's stages again on the same key. It refuses a
+    stage that isn't in the deal's own pipeline, or the stage the deal is already in.
+  - It then changes `dealstage` and logs the note on the deal (association type 214).
+  - There is no create, delete, merge, contact, company, email or sequence call (`check:mcp` fails on
+    one).
+  - At most `policies.max_deal_moves_per_run` (default 20) moves per agent per apply.
+- **Files:** `integrations/hubspot-server.ts` is the only file that calls HubSpot, and only
+  `integrations/mcp.ts` reaches it (lint and `check:mcp`).
+
+**Setting it up:** nothing in Vercel. A super admin in HubSpot opens Development > Keys > Service keys
+and taps Create service key twice:
+- "OPERATOR agents", with the three read scopes, pasted on Connections > HubSpot.
+- "OPERATOR deal moves", with deal read and write, pasted on Connections > HubSpot deal moves.
+
+To confirm on the first real key: HubSpot's docs don't name a scope for creating notes. If a move's
+note is refused, the error names the scope to add.
+
+## Meta Ads on our own server (card 255)
+
+Meta's hosted Ads MCP server (mcp.facebook.com/ads) asks for `ads_management` on every sign-in, which
+can change campaigns and budgets, so it can't give agents read access only. Our server runs in the app
+over the Marketing API (Graph API v26.0, one pinned version) with two sign-ins made with Connect on
+OPERATOR's own Meta app (Facebook Login, `META_APP_ID` and `META_APP_SECRET` in Vercel).
+
+- **Profiles** (`core/mcp-rules.ts`, auth `meta`):
+  - `meta`: asks for `ads_read` alone. Read tools `meta_ad_accounts` and `meta_ad_results`. No write tools.
+  - `meta_pauses`: asks for `ads_management`, held only by the gateway. One write tool, `meta_pause_ad`
+    (action type `meta.pause_ad`). No read tools.
+- **Meta grants permissions to a person and an app, not to one sign-in.** Once the same person connects
+  pauses, the agents' sign-in can manage ads too. So, as with Mailchimp keys, our own server is the
+  limit: the `meta` profile is served read tools only, and Connections says so. `permissionProblem`
+  allows `ads_read` and `ads_management` only (plus `public_profile`) and refuses a sign-in that lists
+  anything else, or lacks the one its profile needs. A refused sign-in isn't kept; nothing is cancelled
+  at Meta, since a cancel takes the whole app from that person, other sign-in included.
+- **The sign-in:** PKCE and a state check, then the short token is traded at once for Meta's long one
+  (`fb_exchange_token`, about 60 days). There is no refresh token: when it runs out, the sign-in pauses
+  until the owner signs in again. Disconnect forgets it here; Meta has no revoke address, so removing
+  OPERATOR entirely is done in Facebook (Settings > Business integrations).
+- **What the reads return** (`core/meta-rules.ts`): ad accounts (id, name, currency, active, all-time
+  spend), and per ad over 7, 30 or 90 days: spend, impressions, clicks and results of one kind
+  (purchase, lead or link click, first matching action type so overlapping ones count once). Cost per
+  result and totals are worked out in code; no results means no cost per result, never a guess.
+  Insights are asked for by fixed fields with no audience, targeting or creative. An account must be
+  one the sign-in lists.
+- **The owner's cost targets** (`TARGET_KEYS`, policies rows, set on Connections > Meta Ads pauses): a
+  cost per purchase, per lead and per link click, in the account's currency. Agents never set them.
+  `meta_ad_results` marks each ad over or under the target; with no target, nothing is paused on that
+  result.
+- **Agents** read them as `meta_ad_accounts` and `meta_ad_results` (each running ad carries a pick),
+  group `meta`, needing `META_CONNECTED`.
+- **The action** `meta_pause_ad` is granted (card 250):
+  - The ad is a pick; the proposal carries only the result kind, the period and a reason
+    (`refusePause` refuses a target, a budget or anything else).
+  - On apply the gateway reads the owner's target for that result again (none: refused), and the server
+    reads the ad again on the same sign-in: it must still be running, and its cost per result must still
+    be over the target, or its spend over the target with no result (`overTarget`). Otherwise refused.
+  - Then it sets the ad's status to `PAUSED`. The owner can turn it back on in Ads Manager.
+  - There is no budget, bid, create, copy, resume or delete call (`check:mcp` fails on one). Budget
+    changes wait for a cap the owner sets.
+  - At most `policies.max_ad_pauses_per_run` (default 10) per agent per apply.
+- **Files:** `integrations/meta-server.ts` is the only file that calls Meta, and only
+  `integrations/mcp.ts` reaches it (lint and `check:mcp`).
+
+**Setting it up (once, for OPERATOR's Meta app):**
+1. At developers.facebook.com, create an app with the use case "Create & manage ads with Marketing API"
+   and connect OPERATOR's business portfolio (Settings). This adds Facebook Login for Business.
+2. Facebook Login for Business > Settings: add `https://<domain>/connections/meta/callback` and
+   `https://<domain>/connections/meta_pauses/callback` as Redirect URIs, and save.
+3. Facebook Login for Business > Configurations: make two user access token configurations, one with
+   `ads_read` and one with `ads_management`. Put their ids in `META_CONFIG_READ` and
+   `META_CONFIG_PAUSES` (without them the classic `scope` is sent).
+4. App settings > Basic: put the App ID in `META_APP_ID` and the App secret in `META_APP_SECRET`.
+
+Until Meta grants the app full access (App Review > Permissions and Features, and the Marketing API
+access tier), only the app's admins and developers can connect, at low rate limits. That is enough for
+the business that owns the app. To confirm on the first real sign-in: Meta's docs don't say whether the
+dialog takes PKCE, or whether a token from a limited-access Marketing API app expires (when Meta sends
+no `expires_in`, the sign-in is kept with no expiry and pauses on Meta's first refusal).
+
+## WooCommerce on our own server (card 254)
+
+WooCommerce's own MCP adapter is a plugin each store installs, still in preview, signed in with a
+WordPress password and with no read-only mode. So our server runs in the app over the store's REST
+API, with two keys the owner makes in WooCommerce.
+
+- **Profiles** (`core/mcp-rules.ts`), both pasted as the store's address, the consumer key and the
+  consumer secret, sealed in the vault:
+  - `woo`: the agents' key, a **Read** key. Read tools `woo_orders` (orders in a period) and
+    `woo_low_stock`. No write tools.
+  - `woo_notes`: a **Read/Write** key, held only by the gateway. One write tool, `woo_add_order_note`
+    (action type `woocommerce.order_note`). No read tools.
+- **Which key is which** is checked when it is pasted (`checkWooKey`): the server asks to add a note
+  to order 0, which doesn't exist. A Read key is refused at sign-in (401) and a Read/Write key gets
+  "no such order" (400 or 404), so nothing is written either way. A key that can write is refused
+  for `woo`, and a Read key for `woo_notes`.
+- **The store address** is the owner's, so it is held to a custom server's rule: https, no
+  credentials, port, query or hash (`readWooKey`), and a public host, checked (`assertPublic`) right
+  before every request. Requests never follow redirects.
+- **What the reads return** (`core/woo-rules.ts`): orders asked for with a fixed field list with no
+  billing, shipping, name, email, phone or note. Revenue, average order, repeat buyers and best sellers
+  are counted in code, and only paid orders (processing, completed, on hold) count as sales. A
+  customer is an id inside the server and never leaves it. At most 5 pages of 100 are read, and a
+  longer period says it was cut (`truncated`).
+- **Agents** read them as `woo_orders` (each order carries a pick) and `woo_low_stock`, group `woo`,
+  needing `WOO_CONNECTED`.
+- **The action** `woo_order_note` is granted (card 250): the order is a pick, the note is plain text
+  up to 500 characters with no links or markup (`refuseNote`), and it is always private
+  (`customer_note: false`): store staff see it, the customer doesn't. On apply the server reads the
+  order again on the same key, then adds the note. There is no order, status, product, stock,
+  refund, coupon or customer write (`check:mcp` fails on one). At most
+  `policies.max_order_notes_per_run` (default 20) per agent per apply.
+- **Files:** `integrations/woo-server.ts` is the only file that calls a WooCommerce store, and only
+  `integrations/mcp.ts` reaches it (lint and `check:mcp`).
+
+**Setting it up:** nothing in Vercel. In WordPress: WooCommerce > Settings > Advanced > REST API >
+Add key. For the agents' key, Description "OPERATOR agents", Permissions **Read**, Generate API key,
+then paste the store's address, the Consumer key and the Consumer secret on Connections >
+WooCommerce. For the notes key, do the same with Permissions **Read/Write** and paste it on
+Connections > WooCommerce order notes.
+
 ## Klaviyo campaign drafts on our own server (card 159b)
 
 Klaviyo's hosted MCP server stays read-only for agents (`read-only=true`). The one write the Campaign

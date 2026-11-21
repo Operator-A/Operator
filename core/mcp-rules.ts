@@ -25,11 +25,13 @@ export interface McpServer {
    * once on Connections, for a server we run ourselves in the app (integrations/mcp.ts LOCAL), used
    * where the service's hosted server would reach more than the profile needs. "google": a server we
    * run ourselves, signed in on Google's own page (Connect) with the business's own Google OAuth client
-   * (GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET), asking for the profile's one scope only. "intuit": the
-   * same, on Intuit's own page with the app's Intuit OAuth client (QUICKBOOKS_CLIENT_ID and
+   * (GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET), asking for the profile's one scope only. "meta": a server
+   * we run ourselves, signed in on Facebook's own page (Connect) with OPERATOR's Meta app (META_APP_ID
+   * and META_APP_SECRET), asking for the profile's permissions only. "intuit": a server we run ourselves,
+   * signed in on Intuit's own page with the app's Intuit OAuth client (QUICKBOOKS_CLIENT_ID and
    * QUICKBOOKS_CLIENT_SECRET), for QuickBooks Online.
    */
-  auth: "oauth" | "token" | "google" | "intuit";
+  auth: "oauth" | "token" | "google" | "meta" | "intuit";
   /** The server's address (for a token server, the API our own server calls), with read-only switches on where it has them. */
   url: string;
   /** The only tools code may call on it, by the server's own names. Read tools only. */
@@ -199,6 +201,92 @@ export const MCP_SERVERS = {
     writeTools: [],
     signInHint: "Sign in with a Google account that can see the business’s Google Analytics, and leave the one box Google shows ticked.",
   },
+  mailchimp: {
+    id: "mailchimp",
+    name: "Mailchimp",
+    // Our own server (integrations/mailchimp-server.ts) over Mailchimp's Marketing API (card 252).
+    // Mailchimp's hosted MCP server isn't documented for other apps, and Mailchimp has no narrower key:
+    // every key reaches the whole account. So our server is the limit: these two reads, asking
+    // Mailchimp for counts and names only, never a member or an email address.
+    auth: "token",
+    url: "https://mailchimp.com/developer/marketing/api/",
+    readTools: ["mailchimp_audiences", "mailchimp_campaigns"],
+    reportTools: [],
+    scopes: ["a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts and campaign reports)"],
+    writeTools: [],
+    signInHint: "In Mailchimp: your profile picture, Profile, Extras, API keys, Create A Key, name it OPERATOR agents, Generate Key, then copy it (it ends in -us and a number) and paste it here.",
+  },
+  mailchimp_drafts: {
+    id: "mailchimp_drafts",
+    name: "Mailchimp campaign drafts",
+    // A second key, held only by the gateway: one tool, a draft campaign to one of the business's own
+    // audiences after an approver approves. Our server has no send, schedule or delete code, so the
+    // owner sends every campaign from Mailchimp.
+    auth: "token",
+    url: "https://mailchimp.com/developer/marketing/api/",
+    readTools: [],
+    reportTools: [],
+    scopes: ["a second Mailchimp API key, used only to make a draft campaign you approved"],
+    writeTools: [{ tool: "mailchimp_create_draft", actionType: "mailchimp.campaign_draft" }],
+    signInHint: "Make a second key the same way (name it OPERATOR drafts) and paste it here. Only the gateway uses it, after you approve; you send from Mailchimp.",
+  },
+  woo: {
+    id: "woo",
+    name: "WooCommerce",
+    // Our own server (integrations/woo-server.ts) over the store's REST API (card 254). WooCommerce's MCP
+    // adapter is a per-store plugin in preview with no read-only mode. This key is a WooCommerce Read
+    // key (a Read/Write key is refused when pasted); the server asks the store for no customer name,
+    // email, phone or address. The store address must be a public https host, checked before every request.
+    auth: "token",
+    url: "https://woocommerce.github.io/woocommerce-rest-api-docs/",
+    readTools: ["woo_orders", "woo_low_stock"],
+    reportTools: [],
+    scopes: ["a WooCommerce REST key with Read permission (a Read/Write key is refused)"],
+    writeTools: [],
+    signInHint: "In WordPress: WooCommerce, Settings, Advanced, REST API, Add key. Name it OPERATOR agents, pick your user, set Permissions to Read, tap Generate API key. Paste your store’s address, the Consumer key and the Consumer secret here, separated by spaces.",
+  },
+  woo_notes: {
+    id: "woo_notes",
+    name: "WooCommerce order notes",
+    // A second key, held only by the gateway: a Read/Write key (a Read key is refused), used for one tool,
+    // a private note on an order after an approver approves. Our server has no other write.
+    auth: "token",
+    url: "https://woocommerce.github.io/woocommerce-rest-api-docs/",
+    readTools: [],
+    reportTools: [],
+    scopes: ["a WooCommerce REST key with Read/Write permission, used only to add a private note you approved"],
+    writeTools: [{ tool: "woo_add_order_note", actionType: "woocommerce.order_note" }],
+    signInHint: "Make a second key the same way, named OPERATOR order notes, with Permissions set to Read/Write. Paste the store’s address, Consumer key and Consumer secret here. Only the gateway uses it, to add a private note you approved.",
+  },
+  hubspot: {
+    id: "hubspot",
+    name: "HubSpot",
+    // Our own server (integrations/hubspot-server.ts) over HubSpot's CRM API (card 253). HubSpot's hosted
+    // MCP server takes its scopes from its own tool list, writes included. This is a service key with
+    // read scopes only (a key that can change deals is refused when pasted); the server asks HubSpot for
+    // no contact list, email or phone, only deals and counts.
+    auth: "token",
+    url: "https://developers.hubspot.com/docs/api-reference/latest/crm/objects/deals/guide",
+    readTools: ["hubspot_deals", "hubspot_contacts"],
+    reportTools: [],
+    scopes: ["a HubSpot service key with crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read only (a key that can change deals is refused)"],
+    writeTools: [],
+    signInHint: "In HubSpot: Development, Keys, Service keys, Create service key. Name it OPERATOR agents, add the scopes crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read, tap Create, then copy the key here.",
+  },
+  hubspot_deals: {
+    id: "hubspot_deals",
+    name: "HubSpot deal moves",
+    // A second service key, held only by the gateway: deal read and write (a key that can't change deals
+    // is refused), used for one tool, moving a deal to another stage of its own pipeline with a note,
+    // after an approver approves. Our server has no other write.
+    auth: "token",
+    url: "https://developers.hubspot.com/docs/api-reference/latest/crm/objects/deals/guide",
+    readTools: [],
+    reportTools: [],
+    scopes: ["a second HubSpot service key with crm.objects.deals.read and crm.objects.deals.write, used only to move a deal you approved and note why"],
+    writeTools: [{ tool: "hubspot_move_deal", actionType: "hubspot.deal_stage" }],
+    signInHint: "Make a second service key named OPERATOR deal moves with the scopes crm.objects.deals.read and crm.objects.deals.write, and paste it here. Only the gateway uses it, after you approve.",
+  },
   stripe: {
     id: "stripe",
     name: "Stripe",
@@ -274,6 +362,36 @@ export const MCP_SERVERS = {
     writeTools: [{ tool: "calendar_create_hold", actionType: "calendar.hold" }],
     signInHint: "Sign in with the same Google account. Only the gateway uses this sign-in, to put a private hold you approved on the calendar; it never invites or emails anyone.",
   },
+  meta: {
+    id: "meta",
+    name: "Meta Ads",
+    // Our own server (integrations/meta-server.ts) over the Marketing API (card 255). Meta's hosted Ads
+    // MCP server asks for ads_management on every sign-in. This sign-in asks for ads_read alone: ad
+    // accounts, and spend and results per ad, with cost per result worked out in code
+    // (core/meta-rules.ts). Meta grants permissions to a person and an app, not to one sign-in, so once
+    // the same person connects pauses this sign-in can manage ads too; our server only reads with it.
+    auth: "meta",
+    url: "https://graph.facebook.com/v26.0",
+    readTools: ["meta_ad_accounts", "meta_ad_results"],
+    reportTools: [],
+    scopes: ["ads_read"],
+    writeTools: [],
+    signInHint: "Sign in with a Facebook account that can see the business’s ad account, and allow OPERATOR to read your ads.",
+  },
+  meta_pauses: {
+    id: "meta_pauses",
+    name: "Meta Ads pauses",
+    // A second sign-in, held only by the gateway: ads_management, used for one tool, pausing one active
+    // ad that is over its cost target right now, after an approver approves. Our server has no budget,
+    // bid, create, resume or delete code: budget changes wait for a cap the owner sets.
+    auth: "meta",
+    url: "https://graph.facebook.com/v26.0",
+    readTools: [],
+    reportTools: [],
+    scopes: ["ads_management"],
+    writeTools: [{ tool: "meta_pause_ad", actionType: "meta.pause_ad" }],
+    signInHint: "Sign in with the same Facebook account and allow OPERATOR to manage your ads. Only the gateway uses this sign-in, to pause an ad you approved; it can’t change a budget or start anything.",
+  },
 } as const satisfies Record<string, McpServer>;
 export type McpId = keyof typeof MCP_SERVERS;
 export const MCP_IDS = Object.keys(MCP_SERVERS) as McpId[];
@@ -301,12 +419,19 @@ export function mayReport(id: string, tool: string): boolean {
 export const isHosted = (id: McpId) => MCP_SERVERS[id].auth === "oauth";
 /** Servers we run ourselves, signed in on Google's page with our own OAuth client. */
 export const isGoogle = (id: McpId) => MCP_SERVERS[id].auth === "google";
-/** Servers we run ourselves, signed in on the service's own page with the app's own OAuth client: Google and Intuit. */
-export const isAppSignIn = (id: McpId) => MCP_SERVERS[id].auth === "google" || MCP_SERVERS[id].auth === "intuit";
+/** Servers we run ourselves, signed in on the service's own page with the app's own OAuth client or app: Google, Meta and Intuit. */
+export const isAppSignIn = (id: McpId) => ["google", "meta", "intuit"].includes(MCP_SERVERS[id].auth);
+export const isMeta = (id: McpId) => MCP_SERVERS[id].auth === "meta";
 /** Signed in with a Connect button (hosted or Google), not a pasted key. */
 export const usesConnect = (id: McpId) => MCP_SERVERS[id].auth !== "token";
 
 /** Google's fixed sign-in addresses (no discovery, no self-registration: our own OAuth client). */
+/** Facebook Login with OPERATOR's Meta app, on the one Graph API version our Meta server pins. No revoke address: a sign-in is removed in Facebook's own settings. */
+export const META_AUTH: AuthServer = {
+  authorization_endpoint: "https://www.facebook.com/v26.0/dialog/oauth",
+  token_endpoint: "https://graph.facebook.com/v26.0/oauth/access_token",
+};
+
 export const GOOGLE_AUTH: AuthServer = {
   authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
   token_endpoint: "https://oauth2.googleapis.com/token",

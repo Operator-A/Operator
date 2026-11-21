@@ -6,7 +6,7 @@ import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import type { FactTopic } from "@/core/setup-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe" | "quickbooks";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe" | "mailchimp" | "woo" | "hubspot" | "meta" | "quickbooks";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -70,6 +70,46 @@ export const TOOL_TILES: readonly ToolTile[] = [
     ],
   },
   {
+    id: "meta", name: "Meta Ads", gives: "Spend and cost per result for each ad", icon: "chart-line", mcp: "meta",
+    steps: [
+      "Tap Connect Meta Ads below. Facebook’s own sign-in page opens.",
+      "Sign in with a Facebook account that can see the business’s ad account in Ads Manager.",
+      "Facebook asks to let OPERATOR read your ads. Tap Continue, then pick the business and its ad account if it asks.",
+      "Back here, it shows how many ad accounts it can see.",
+    ],
+    also: { mcp: "meta_pauses", label: "Meta Ads pauses", why: "An agent you give pauses to can pause a running ad whose cost per result is over the target you set, after you approve, with a second sign-in that only the gateway uses. It can’t change a budget or start anything." },
+  },
+  {
+    id: "hubspot", name: "HubSpot", gives: "Deals by stage and who went quiet", icon: "users", mcp: "hubspot",
+    steps: [
+      "In HubSpot, open Development > Keys > Service keys and tap Create service key. You need to be a super admin.",
+      "Name it OPERATOR agents and tap Add new scope.",
+      "Tick crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read, tap Update, then Create.",
+      "Copy the key (it starts with pat-) and paste it below.",
+    ],
+    also: { mcp: "hubspot_deals", label: "HubSpot deal moves", why: "An agent you give deal moves to can move a deal to another stage and log why, after you approve, with a second key that can change deals and that only the gateway uses. It never emails anyone." },
+  },
+  {
+    id: "woo", name: "WooCommerce", gives: "Orders, best sellers and stock", icon: "shopping-bag", mcp: "woo",
+    steps: [
+      "In WordPress, open WooCommerce > Settings > Advanced > REST API and tap Add key.",
+      "Name it OPERATOR agents, pick your own user, and set Permissions to Read.",
+      "Tap Generate API key. WooCommerce shows the consumer key and secret once.",
+      "Paste your store’s address (https://…), the consumer key and the consumer secret below, separated by spaces.",
+    ],
+    also: { mcp: "woo_notes", label: "WooCommerce order notes", why: "An agent you give order notes to can add a private note you approved to an order, with a second Read/Write key only the gateway uses. Customers never see these notes." },
+  },
+  {
+    id: "mailchimp", name: "Mailchimp", gives: "Audiences and campaign results", icon: "send", mcp: "mailchimp",
+    steps: [
+      "In Mailchimp, tap your profile picture, then Profile.",
+      "Open Extras, then API keys, and tap Create A Key.",
+      "Name it OPERATOR agents and tap Generate Key.",
+      "Copy the key (it ends in -us and a number) and paste it below. Mailchimp shows it only once.",
+    ],
+    also: { mcp: "mailchimp_drafts", label: "Mailchimp campaign drafts", why: "An agent you give campaign drafts to can put a campaign you approved in Mailchimp as a draft, with a second key only the gateway uses. You send every campaign from Mailchimp." },
+  },
+  {
     id: "calendar", name: "Google Calendar", gives: "Your week and free time", icon: "calendar", mcp: "calendar",
     steps: [
       "Tap Connect Google Calendar below. Google’s own sign-in page opens.",
@@ -113,6 +153,14 @@ export const SCOPE_WORDS: Record<string, string> = {
   offline_access: "stay signed in, so morning runs work while you sleep",
   "https://www.googleapis.com/auth/gmail.readonly": "search and read email. Google refuses it anything that drafts, sends, labels or deletes",
   "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
+  "a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts and campaign reports)": "read your audiences’ sizes and how each campaign did. Mailchimp keys reach the whole account, so our server is the limit: it has no other calls",
+  "a second Mailchimp API key, used only to make a draft campaign you approved": "make a draft campaign you approved. Our server has no send or schedule call, so you send it from Mailchimp",
+  "ads_read": "read your ad accounts and each ad’s spend and results. Our server never asks for audiences or people.",
+  "ads_management": "pause a running ad you approved, when it is over your cost target. Only the gateway uses it; our server can’t change a budget, start, edit or delete anything.",
+  "a HubSpot service key with crm.objects.deals.read, crm.objects.contacts.read and crm.objects.companies.read only (a key that can change deals is refused)": "read your deals and count your contacts and companies. Our server never asks for a contact list, an email or a phone number",
+  "a second HubSpot service key with crm.objects.deals.read and crm.objects.deals.write, used only to move a deal you approved and note why": "move a deal you approved to another stage and log why. Only the gateway uses it; it can’t create, delete or merge records, or email anyone",
+  "a WooCommerce REST key with Read permission (a Read/Write key is refused)": "read orders, best sellers and stock. Our server never asks for customer names, emails or addresses",
+  "a WooCommerce REST key with Read/Write permission, used only to add a private note you approved": "add a private note you approved to an order. Our server has no other write, so it can’t change orders, products or stock",
   "https://www.googleapis.com/auth/calendar.events.readonly": "see the events on your calendars. It can’t change, add or delete anything",
   "https://www.googleapis.com/auth/calendar.events": "add a private hold you approved to your calendar. Our server has no code to change or delete an event, or to invite anyone",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
@@ -133,7 +181,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", STRIPE_CONNECTED: "stripe", QUICKBOOKS_CONNECTED: "quickbooks",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp", WOO_CONNECTED: "woo", WOO_NOTES_CONNECTED: "woo", HUBSPOT_CONNECTED: "hubspot", HUBSPOT_DEALS_CONNECTED: "hubspot", META_CONNECTED: "meta", META_PAUSES_CONNECTED: "meta", STRIPE_CONNECTED: "stripe", QUICKBOOKS_CONNECTED: "quickbooks",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -189,7 +237,7 @@ type Def = Omit<ToolCategory, "tiles">;
 const part = (d: Def): ToolCategory => ({ ...d, tiles: d.tools.flatMap((t) => (t.tile ? [t.tile] : [])) });
 export const TOOL_CATEGORIES: readonly ToolCategory[] = [
   part({ id: "store", area: "Where you sell", core: true, topic: "channels", learns: "orders, products and stock", question: "Where do you sell?", value: "Your agents read orders, products and stock, and tell you what sold in plain words.", ready: "Your agents can see your orders, products and stock.",
-    tools: [{ name: "Shopify", tile: "shopify" }, { name: "WooCommerce" }, { name: "Square Online" }, { name: "Wix" }, { name: "Squarespace" }, { name: "Etsy" }] }),
+    tools: [{ name: "Shopify", tile: "shopify" }, { name: "WooCommerce", tile: "woo" }, { name: "Square Online" }, { name: "Wix" }, { name: "Squarespace" }, { name: "Etsy" }] }),
   part({ id: "payments", area: "Payments", core: true, topic: "sells", learns: "what you’re paid, refunds and unpaid invoices", question: "How do people pay you?", value: "Know what came in, what’s owed and what got refunded, without opening another dashboard.", ready: "Your payments are in reach.",
     tools: [{ name: "Stripe", tile: "stripe" }, { name: "Square" }, { name: "PayPal" }] }),
   part({ id: "money", area: "Bank", core: true, topic: "other", learns: "balances and every charge", question: "Where does the money live?", value: "Your bookkeeper categorizes every charge and matches the receipts.", ready: "Your books can start from your real transactions.",
@@ -197,7 +245,7 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
   part({ id: "books", area: "Books", core: true, topic: "other", learns: "profit and loss, bills and what’s owed to you", question: "What do you keep your books in?", value: "Monthly numbers come from your own books, not a guess.", ready: "Your books are in reach.",
     tools: [{ name: "QuickBooks Online", tile: "quickbooks" }, { name: "Xero" }, { name: "Wave" }] }),
   part({ id: "list", area: "Email marketing", core: true, topic: "channels", learns: "your lists and how campaigns did", question: "What do you use for email marketing?", value: "Campaigns get drafted from what sold best. You press send.", ready: "Your lists and past campaigns are in reach.",
-    tools: [{ name: "Klaviyo", tile: "klaviyo" }, { name: "Mailchimp" }, { name: "Shopify Email" }, { name: "Kit" }],
+    tools: [{ name: "Klaviyo", tile: "klaviyo" }, { name: "Mailchimp", tile: "mailchimp" }, { name: "Shopify Email" }, { name: "Kit" }],
     starter: { tile: "klaviyo", name: "Klaviyo", promise: "The free plan needs no card. It’s your account, I show you each tap, then you connect it here.", steps: [
       "Open klaviyo.com and tap Sign up.",
       "Type your email, your business’s name and your store’s address, and choose a password. Klaviyo shows its terms: read them and accept them yourself.",
@@ -220,9 +268,9 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
       "Come back here and tap Connect Google Analytics.",
     ] } }),
   part({ id: "leads", area: "Leads and customers", core: true, topic: "customers", learns: "your contacts, deals and who went quiet", question: "Where do you keep track of leads and customers?", value: "Follow-ups get drafted for the people who went quiet.", ready: "Your contacts and deals are in reach.",
-    tools: [{ name: "HubSpot" }, { name: "Salesforce" }, { name: "Pipedrive" }] }),
+    tools: [{ name: "HubSpot", tile: "hubspot" }, { name: "Salesforce" }, { name: "Pipedrive" }] }),
   part({ id: "ads", area: "Ads", core: false, topic: "channels", learns: "spend and what each ad brought in", question: "Where do you run ads?", value: "See what each dollar of ads brought back.", ready: "Your ad numbers are in reach.",
-    tools: [{ name: "Meta Ads" }, { name: "Google Ads" }, { name: "TikTok Ads" }] }),
+    tools: [{ name: "Meta Ads", tile: "meta" }, { name: "Google Ads" }, { name: "TikTok Ads" }] }),
   part({ id: "social", area: "Social", core: false, topic: "channels", learns: "posts and what people respond to", question: "Where do you post?", value: "Posts get drafted from what your customers respond to. You approve each one.", ready: "Your posts are in reach.",
     tools: [{ name: "Instagram" }, { name: "Facebook" }, { name: "TikTok" }] }),
   part({ id: "support", area: "Customer support", core: false, topic: "customers", learns: "what customers ask and how long they wait", question: "Where do customer questions land?", value: "Replies get drafted for the common questions.", ready: "Your support inbox is in reach.",
