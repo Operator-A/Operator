@@ -23,6 +23,7 @@ import {
   FACT_TOPICS, MAX_FACTS_PER_MESSAGE, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
   cleanFact, coverage, factProblem, SETUP_EFFORT, SETUP_MODEL, isStage, isTopic, MAX_FACTS, needsSetup, readAsked, readSetupState, setupDirective, setupPrompt, stateFor,
   type Fact, type FactState, type SetupState, type Stage,
+  SETUP_HANDOFF,
 } from "@/core/setup-rules";
 import { applyDesign, designGaps, pickId, BESPOKE_PREFIX, DESIGN_PARTS, MAX_DESIGN_PARTS, MAX_DESIGNS, REASON_MAX, type Design, type Kit } from "@/core/design-rules";
 
@@ -85,8 +86,11 @@ export async function startCompany(ids: readonly string[], by: string): Promise<
 }
 
 export async function finishSetup(offer = false): Promise<void> {
+  const was = await setupState();
   // with departments installed, /start keeps the founder for the wrap-up: credits, then the first job (card 186)
-  await saveSetupState({ ...(await setupState()), done: true, offer, wrapUp: offer, ...(offer ? { stage: "first" as const } : {}) });
+  await saveSetupState({ ...was, done: true, offer, wrapUp: offer, ...(offer ? { stage: "first" as const } : {}) });
+  // card 197: the interview's last question would stay as Avery's latest message on the Desk; code's own hand-off line closes it, once
+  if (!was.done) await keepChat({ role: "avery", text: SETUP_HANDOFF }).catch(() => false);
 }
 
 /** Go to your Desk (card 186): the wrap-up ends, and /start sends the founder to the Desk from now on. */

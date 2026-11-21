@@ -140,6 +140,9 @@ that connect, their steps and what each permission is for are still `TOOL_TILES`
   they confirm it with a tap; an "only if it fits" part fits once the founder names it (Instagram means
   social). A fact that stops mid-sentence is refused (`factProblem`), and a department's reason keeps
   one pair of quote marks (`unquote`, `saidLine`).
+- **The hand-off** (card 197). When setup ends (`finishSetup`), code keeps one fixed Avery line
+  (`SETUP_HANDOFF`) in the chat, once, so the Desk panel opens on it and not on the interview's last
+  question.
 - **Your tools**, beside the chat (`partsShown`): every core part, and any other once Avery asked
   about it or it has an answer. Tapping one opens its card (`?q=`), even when answered, with **Change
   my answer** (`setupPlanClear`).
