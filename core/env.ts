@@ -6,6 +6,10 @@ const v = (k: string) => process.env[k]?.trim() || undefined;
 export const env = {
   // Vercel Cron sends this as a bearer token; manual runs use the same header.
   cronSecret: v("CRON_SECRET"),
+  // Vercel's Protection Bypass for Automation (a system variable Vercel adds once it is turned on in
+  // Deployment Protection). The scheduler's kicks to /api/jobs send it, so Vercel Authentication
+  // lets them through. Blank (self-host, or not turned on) = not sent.
+  vercelBypass: v("VERCEL_AUTOMATION_BYPASS_SECRET"),
 
   // The first owner (docs/tenancy.md, slice 2): while the org has no members, this address becomes
   // its owner on first sign-in. After that, owners add people on Settings > People.

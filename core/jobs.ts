@@ -7,7 +7,8 @@ import "server-only";
 // A claimed job that never finishes is marked failed, not retried: a run may have half happened.
 import { db } from "@/core/db";
 import { env } from "@/core/env";
-import { DUE_LIMIT, STALE_MS, outcomeText, type JobKind } from "@/core/job-rules";
+import { DUE_LIMIT, MISSED_MS, MISSED_OUTCOME, STALE_MS, fetchFailure, kickHeaders, outcomeText, type JobKind } from "@/core/job-rules";
+import { scrubSecrets } from "@/core/mcp-rules";
 import { orgId } from "@/core/tenancy";
 
 export interface Job { id: string; kind: JobKind; payload: unknown; attempts: number }
@@ -53,6 +54,16 @@ export async function failStale(now = Date.now()): Promise<number> {
   return data?.length ?? 0;
 }
 
+/** Waiting jobs more than MISSED_MS past their start time: marked failed, never started late. Returns how many. */
+export async function failMissed(now = Date.now()): Promise<number> {
+  const { data, error } = await db().from("jobs")
+    .update({ failed_at: new Date(now).toISOString(), outcome: MISSED_OUTCOME })
+    .lt("run_after", new Date(now - MISSED_MS).toISOString()).is("claimed_at", null).is("done_at", null).is("failed_at", null)
+    .select("id");
+  if (error) throw new Error(error.message);
+  return data?.length ?? 0;
+}
+
 /** Ids of the current org's jobs that are waiting and due, oldest first. */
 export async function dueJobs(now = Date.now()): Promise<string[]> {
   const { data, error } = await db().from("jobs").select("id")
@@ -71,7 +82,11 @@ export async function kick(origin: string, id: string): Promise<void> {
   if (!env.cronSecret || !origin) return;
   const org = await orgId();
   try {
-    const res = await fetch(`${origin}/api/jobs/${id}?org=${org}`, { headers: { authorization: `Bearer ${env.cronSecret}` }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(20_000) });
+    // a request carrying a secret never follows a redirect; Vercel Authentication answers one unless the bypass is sent
+    const res = await fetch(`${origin}/api/jobs/${id}?org=${org}`, { headers: kickHeaders(env.cronSecret, env.vercelBypass), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(20_000) });
     if (!res.ok) console.error(`[jobs] ${id} answered ${res.status}`);
-  } catch (e) { console.error(`[jobs] ${id} could not be started`, e instanceof Error ? e.message : e); }
+  } catch (e) {
+    const why = scrubSecrets(fetchFailure(e), [env.cronSecret, env.vercelBypass]);
+    console.error(`[jobs] ${id} could not be started: ${why}${/redirect/i.test(why) ? " (on Vercel: turn on Protection Bypass for Automation, docs/tenancy.md)" : ""}`);
+  }
 }
