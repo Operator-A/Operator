@@ -119,7 +119,9 @@ export const SCOPE_WORDS: Record<string, string> = {
   "https://www.googleapis.com/auth/calendar.events.readonly": "see the events on your calendars. It can’t change, add or delete anything",
   "https://www.googleapis.com/auth/calendar.events": "add a private hold you approved to your calendar. Our server has no code to change or delete an event, or to invite anyone",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
-  "the read-only app’s read scopes (a key with any write scope is refused)": "read orders, products and stock. A key that can change anything is refused",
+  "the app’s read scopes": "read orders, products and stock",
+  write_orders: "add tags to an order, only after you approve",
+  write_customers: "add tags to a customer, only after you approve",
 };
 
 /** The permissions a tile asks for, each with what it is for. */

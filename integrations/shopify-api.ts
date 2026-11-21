@@ -2,11 +2,13 @@ import "server-only";
 // Shopify's Admin GraphQL API for our own Shopify MCP server (docs/mcp-everywhere.md, slice 7).
 // Every call takes the pasted key as an argument: integrations/mcp.ts opens it from the token vault
 // for each call. Only the documents listed in core/shopify-queries.ts run here, each checked to be a single
-// query first. Only integrations/shopify-server.ts imports this (lint enforces it).
+// query first, plus the fixed store actions in core/shopify-actions.ts, each checked to be one of them.
+// Only integrations/shopify-server.ts imports this (lint enforces it).
 import { createHash } from "node:crypto";
 import { env } from "@/core/env";
 import { settings } from "@/core/settings";
 import { WHO, assertReadOnly, shopifyKeyKind } from "@/core/shopify-queries";
+import { assertFixedMutation } from "@/core/shopify-actions";
 
 const TIMEOUT_MS = 25_000;
 // the store and the app's client id are the business's own (Settings), not the app's
@@ -57,11 +59,21 @@ async function post<T>(token: string, query: string, variables: Record<string, u
 /** Runs one read query with the pasted key. A token issued earlier is renewed once if Shopify refuses it. */
 export async function shopifyQuery<T>(key: string, doc: string, variables: Record<string, unknown>): Promise<T> {
   assertReadOnly(doc);
+  return withRenewal(key, (token) => post<T>(token, doc, variables));
+}
+
+/** Runs one of the fixed store actions (core/shopify-actions.ts) with the pasted key. Nothing else can change the store. */
+export async function shopifyMutate<T>(key: string, doc: string, variables: Record<string, unknown>): Promise<T> {
+  assertFixedMutation(doc);
+  return withRenewal(key, (token) => post<T>(token, doc, variables));
+}
+
+async function withRenewal<T>(key: string, run: (token: string) => Promise<T>): Promise<T> {
   try {
-    return await post<T>(await tokenFor(key), doc, variables);
+    return await run(await tokenFor(key));
   } catch (e) {
     if (shopifyKeyKind(key) !== "secret" || !/^Shopify 401\b|access denied/i.test(e instanceof Error ? e.message : "")) throw e;
-    return post<T>(await tokenFor(key, true), doc, variables);
+    return run(await tokenFor(key, true));
   }
 }
 

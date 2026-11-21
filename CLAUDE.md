@@ -14,15 +14,16 @@ They hold for every business on OPERATOR. "The owner" is the business's owner; "
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
-The tool gateway (`core/gateway`) has six action types so far, all Draft: receipt, category
+The tool gateway (`core/gateway`) has seven action types so far, all starting at Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), a Gmail draft to a lead
 on the leads list (the prospecting lead finder; the owner sends it from Gmail), a draft email campaign
 to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), a draft
 campaign to one of the business's own Mailchimp audiences (any agent an approver gives it to; the owner
 sends it from Mailchimp), a
 private hold with no guests on the business's Google Calendar (any agent an approver gives it to; it emails
-no one), and a private note on an order in the business's WooCommerce store (any agent an approver gives
-it to; the customer doesn't see it). No send,
+no one), tags added to a Shopify order or customer (any agent an approver grants it to), and a private
+note on an order in the business's WooCommerce store (any agent an approver gives it to; the customer
+doesn't see it). No send,
 payment or publish action type is built, so no agent can send, pay or publish.
 
 
@@ -41,10 +42,15 @@ payment or publish action type is built, so no agent can send, pay or publish.
   by the gateway through `callWriteTool`: category and memo on the `mercury_write` sign-in
   (Mercury's MCP, scope `transactions:update` only), receipt files on the `mercury_files` key
   (our own server, attach only).
-- Shopify is read-only here: our own MCP server (`integrations/shopify-server.ts`), one fixed
-  read query per tool, all in `core/shopify-rules.ts`, a key with any write scope is refused, and
-  `scripts/validate-graphql.mjs` fails on any mutation. An agent that needs Shopify writes gets
-  its own separately scoped app.
+- Shopify reads and writes go through our own MCP server (`integrations/shopify-server.ts`). Reads are
+  one fixed query per tool (`core/shopify-rules.ts`). Writes are one fixed mutation per write tool
+  (`core/shopify-actions.ts`), each a gateway action type that starts at Draft, called only by
+  `core/gateway` through `callWriteTool`; `scripts/validate-graphql.mjs` fails on any mutation outside
+  that file and `check:mcp` on one not named on the Shopify profile. The key may carry read scopes and
+  only the write scopes the profile names; any other write scope is refused. A store action is granted
+  to an agent only by an approver on the builder's Tools step, never by a proposal. No agent deletes a
+  product, customer or order, cancels an order, or moves money from Shopify (refunds, gift cards,
+  prices) until that action type has its own cap in code.
 - Email: first contact with a person who has never heard from the business is always Draft
   and never promoted. Follow-ups and replies on an existing thread can be promoted. Daily
   cap `policies.max_emails_per_day` (start 20); an unsubscribe or "stop" reply ends all
@@ -75,7 +81,7 @@ payment or publish action type is built, so no agent can send, pay or publish.
   and are never promoted. A custom tool's reply is untrusted data and never chooses a recipient,
   URL, product or category. Hosted servers (Klaviyo, Mercury) are used where they fit;
   where one reaches more than the profile needs or doesn't fit, we run our own in the app
-  (Notion, Gmail with no send tool, Google Analytics read only, Google Calendar with one private hold tool, Shopify with one fixed query per tool,
+  (Notion, Gmail with no send tool, Google Analytics read only, Google Calendar with one private hold tool, Shopify with one fixed query or mutation per tool,
   Mercury receipt files, Klaviyo campaign drafts, Mailchimp reads and campaign drafts, WooCommerce reads and private order notes).
   Each of our own servers is the only file that calls its service's API, and only
   `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).

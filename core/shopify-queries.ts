@@ -3,7 +3,7 @@
 // (core/mcp-rules.ts) are exactly these names.
 import { CORE_SHOPIFY, type ShopifyCtx, type ShopifyQuery } from "@/core/shopify-rules";
 
-export { WHO, assertReadOnly, gql, shopifyKeyKind, writeScopes } from "@/core/shopify-rules";
+export { WHO, assertReadOnly, gql, shopifyKeyKind, scopesBeyond } from "@/core/shopify-rules";
 
 /** Core's tools, each named shopify_… and served once. */
 export const SHOPIFY_QUERIES: readonly ShopifyQuery[] = (() => {

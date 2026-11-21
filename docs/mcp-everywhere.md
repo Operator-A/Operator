@@ -214,7 +214,8 @@ store, so Shopify runs on our own server in the app, like Notion and Gmail:
 - **The key** (the read-only app's Admin API access token, or a Dev Dashboard app's client secret
   with `SHOPIFY_CLIENT_ID` in Vercel) is pasted on Connections into the vault. Before it is kept, the
   server asks Shopify which shop it opens and every scope the app was granted: a key for another
-  store, or one whose app has **any** scope that isn't a read, is refused. A key Shopify stops
+  store, or one whose app has a write scope the profile doesn't name, is refused. (Until
+  2026-11-21 any write scope was refused; store actions are in `docs/shopify-actions.md`.) A key Shopify stops
   accepting pauses the connection.
 - Removed: `integrations/shopify/client.ts`, `SHOPIFY_ADMIN_ACCESS_TOKEN` and `SHOPIFY_CLIENT_SECRET`.
   `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION` and `SHOPIFY_CLIENT_ID` stay: none is a secret.

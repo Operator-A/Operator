@@ -64,3 +64,23 @@ export async function openOrders(since: string): Promise<OpenOrder[]> {
   } while (after && ++pages < 10);
   return out.filter((o) => !o.cancelledAt);
 }
+
+// ---------- recent orders with their ids (store actions, docs/shopify-actions.md) ----------
+export type RecentOrder = {
+  id: string; name: string; createdAt: string; tags: string[]; cancelledAt: string | null; displayFulfillmentStatus: string;
+  totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
+  customer: { id: string; numberOfOrders: string; tags: string[] } | null;
+};
+
+/** The latest orders placed since a day, newest first, up to `max`: ids, number, date, total, tags, status and the customer by id only. */
+export async function recentOrders(since: string, max = 50): Promise<RecentOrder[]> {
+  const out: RecentOrder[] = [];
+  let after: string | null = null, pages = 0;
+  do {
+    type R = { orders: { nodes: RecentOrder[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
+    const r = (await callMcpTool("shopify", "shopify_recent_orders", { since, after })) as R;
+    out.push(...r.orders.nodes);
+    after = r.orders.pageInfo.hasNextPage ? r.orders.pageInfo.endCursor : null;
+  } while (after && out.length < max && ++pages < 4);
+  return out.slice(0, max);
+}

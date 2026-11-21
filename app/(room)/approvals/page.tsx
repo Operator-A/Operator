@@ -7,7 +7,7 @@ import { controlsOn } from "@/dashboard/session";
 import { ActionButton } from "@/dashboard/components/client";
 import { RejectButton } from "@/dashboard/components/react";
 import { Avatar, Empty } from "@/dashboard/components/ui";
-import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, DRAFT_EMAIL, writeBlocker } from "@/core/gateway";
+import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, DRAFT_EMAIL, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
 
 // Applying a batch calls Mercury once or twice per change.
 export const maxDuration = 300;
@@ -34,7 +34,7 @@ function Draft({ i }: { i: ApprovalItem }) {
   );
 }
 
-/** A Klaviyo or Mailchimp campaign: the list, subject, preview text and exact body. Approving makes a draft in Klaviyo; the owner sends it there. */
+/** A Klaviyo campaign (the Campaign writer): the list, subject, preview text and exact body. Approving makes a draft in Klaviyo; the owner sends it there. */
 function Campaign({ i }: { i: ApprovalItem }) {
   const p = i.preview;
   return (
@@ -69,13 +69,25 @@ function OrderNote({ i }: { i: ApprovalItem }) {
   );
 }
 
-const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note" };
+/** A Shopify tag change: the order or customer, and the exact tags it adds. */
+function Tags({ i }: { i: ApprovalItem }) {
+  const p = i.preview;
+  return (
+    <div style={{ borderRadius: 16, background: "var(--soft)", padding: "6px 16px" }}>
+      {([["Record", p.record ?? "?"], ["Add tags", (p.tags ?? []).join(", ") || "?"]] as [string, string][]).map(([k, v], n) => <div key={k} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13 }}><span className="muted">{k}</span><span style={{ fontWeight: 500, textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>{v}</span></div>)}
+      <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Adds only, never removes a tag. A tag already there is left as it is.</div>
+    </div>
+  );
+}
+
+const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note" };
 
 function Change({ i }: { i: ApprovalItem }) {
   const p = i.preview;
   if (i.tool === DRAFT_EMAIL) return <Draft i={i} />;
   if (i.tool === CAMPAIGN_DRAFT || i.tool === MAILCHIMP_DRAFT) return <Campaign i={i} />;
   if (i.tool === CALENDAR_HOLD) return <Hold i={i} />;
+  if (i.tool === SHOPIFY_TAGS) return <Tags i={i} />;
   if (i.tool === WOO_NOTE) return <OrderNote i={i} />;
   const lines: [string, React.ReactNode][] = [
     p.charge && !p.merchant ? ["Charge", p.charge] : ["Charge", `${p.merchant ?? "?"} · ${p.amount_usd != null ? m2(p.amount_usd) : "?"} · ${p.date ? md(`${p.date}T12:00:00Z`, "UTC") : "?"}`],
