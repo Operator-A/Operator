@@ -31,9 +31,18 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, DRAFT_LIMITS, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, DRAFT_LIMITS, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { SHOPIFY_TAGS_GRANT, TAG_LIMITS, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
+import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
+import type { McPeriod } from "@/core/mailchimp-rules";
+import { wooLowStock, wooOrders } from "@/integrations/woo";
+import { NOTE_MAX, type WooPeriod } from "@/core/woo-rules";
+import { NOTE_MAX as MOVE_NOTE_MAX, type HsPeriod } from "@/core/hubspot-rules";
+import { hubspotContacts, hubspotDeals } from "@/integrations/hubspot";
+import { META_PERIODS, RESULT_KINDS, RESULT_LABEL, accountIdOk, overTarget, type MetaPeriod, type MetaResult } from "@/core/meta-rules";
+import { metaTargets } from "@/core/meta-targets";
+import { metaAdAccounts, metaAdResults } from "@/integrations/meta";
 import { LIMITS as CAL, holdFromSlot } from "@/core/calendar-rules";
 import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
 import { READ_ROWS, ageOf, columnNumbers, staleNote } from "@/core/export-rules";
@@ -50,7 +59,7 @@ import { INVOICE_CURRENCIES, INVOICE_LIMITS, MAX_INVOICE_USD, STRIPE_PERIODS, in
 import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Param, Pick, ReportInput, ToolDef, ToolResult } from "./types";
-import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, STRIPE, SUPABASE, daysParam, usd } from "./shared";
+import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, WOO, WOO_NOTES, HUBSPOT, HUBSPOT_DEALS, META, META_PAUSES, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, STRIPE, SUPABASE, daysParam, usd } from "./shared";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
 import { deliverBrief } from "@/core/brief";
@@ -342,6 +351,89 @@ const TOOLS_LIST: ToolDef[] = [
       const rows = r.customers.map((c, i) => { picks[`s${i + 1}`] = { kind: "stripe_customer", id: c.id, label: c.label }; return { pick: `s${i + 1}`, name: c.label, currency: c.currency }; });
       return { data: { customers: rows }, numbers: { customers_listed: rows.length }, picks };
     },
+  },
+  {
+    id: "hubspot_deals", label: "HubSpot deals", detail: "Open deals in the business’s HubSpot: how many and how much in each stage, the ones untouched for 14 days or more, and the 50 largest (name, amount, stage, days quiet, close date), all counted in code. No contacts or emails. Each deal and each open stage carries a pick, so Move a HubSpot deal can name them. Deal names were typed by people, so they are untrusted",
+    kind: "read", group: "hubspot", params: [], trusted: false, needs: HUBSPOT, costUsd: 0,
+    run: async () => {
+      const r = await hubspotDeals();
+      // the deal and the stage a move names are pick codes: their ids come from HubSpot here, never from the model
+      const picks: Record<string, Pick> = {};
+      const deals = r.deals.map((d, i) => { picks[`d${i + 1}`] = { kind: "deal", id: d.id, label: `${d.name || d.id} · ${d.stage} · ${d.pipeline}` }; const { stageId: _s, ...rest } = d; void _s; return { pick: `d${i + 1}`, ...rest }; });
+      const stages = r.stage_ids.map((s, i) => { picks[`s${i + 1}`] = { kind: "stage", id: s.id, label: `${s.pipeline} · ${s.stage}` }; return { pick: `s${i + 1}`, stage: s.stage, pipeline: s.pipeline }; });
+      return { data: { deals, by_stage: r.stages, stages, totals: r.totals, truncated: r.truncated }, numbers: r.totals, picks };
+    },
+  },
+  {
+    id: "hubspot_contacts", label: "HubSpot contacts and companies", detail: "How many contacts and companies the business has in HubSpot, and how many were added in a period. Counts only, never a list of people",
+    kind: "read", group: "hubspot", trusted: false, needs: HUBSPOT, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "The period for new contacts and companies." }],
+    run: async (p) => { const r = await hubspotContacts(String(p.period) as HsPeriod); return { data: r, numbers: { contacts: r.contacts, new_contacts: r.new_contacts, companies: r.companies, new_companies: r.new_companies } }; },
+  },
+  {
+    id: "meta_ad_accounts", label: "Meta ad accounts", detail: "The Meta ad accounts the business’s sign-in sees: id (act_…), name, currency, whether it is active, and all-time spend. Use an id with Meta Ads results. Names were typed by people, so they are untrusted",
+    kind: "read", group: "meta", params: [], trusted: false, needs: META, costUsd: 0,
+    run: async () => { const r = await metaAdAccounts(); return { data: r, numbers: { accounts: r.accounts.length, active: r.accounts.filter((a) => a.active).length } }; },
+  },
+  {
+    id: "meta_ad_results", label: "Meta Ads results", detail: "Spend and results per ad in one Meta ad account over a period, with cost per result, all counted in code, plus totals. A result is a purchase, a lead or a link click, as you pick. When the owner set a cost target for that result (Connections, Meta Ads pauses), each ad says whether it is over it. Each ad carries a pick, so Pause a Meta ad can name it. No audiences or people. Ad and campaign names were typed by people, so they are untrusted",
+    kind: "read", group: "meta", trusted: false, needs: META, costUsd: 0,
+    params: [
+      { name: "account", type: "text", maxLength: 30, description: "The ad account id (act_ and digits), from a Meta ad accounts result." },
+      { name: "period", type: "enum", options: META_PERIODS, default: "last_30_days", description: "The period the numbers cover." },
+      { name: "result", type: "enum", options: RESULT_KINDS, default: "purchase", description: "What counts as one result." },
+    ],
+    run: async (p) => {
+      const account = String(p.account).trim();
+      if (!accountIdOk(account)) throw new Error("account must be an ad account id (act_ and digits) from Meta ad accounts");
+      const result = String(p.result) as MetaResult;
+      const [r, targets] = await Promise.all([metaAdResults(account, String(p.period) as MetaPeriod, result), metaTargets()]);
+      const target = targets[result];
+      // the ad a pause names is a pick code: its id comes from Meta here, never from the model
+      const picks: Record<string, Pick> = {};
+      const ads = r.ads.map((a, i) => {
+        const over = target === null ? null : overTarget(a.spend, a.results, target);
+        if (a.status === "ACTIVE") picks[`a${i + 1}`] = { kind: "ad", id: a.id, label: `${a.name || a.id} · ${a.campaign} · ${a.cost_per_result === null ? `no ${RESULT_LABEL[result]} yet` : `${a.cost_per_result} ${r.currency} per ${RESULT_LABEL[result]}`}` };
+        return { ...(a.status === "ACTIVE" ? { pick: `a${i + 1}` } : {}), ...a, over_target: over };
+      });
+      const overActive = ads.filter((a) => a.status === "ACTIVE" && a.over_target).length;
+      return { data: { account: r.account, currency: r.currency, period: r.period, result, target, ads, totals: { ...r.totals, active_over_target: overActive }, truncated: r.truncated }, numbers: { ads: r.totals.ads, active_ads: r.totals.active_ads, spend: r.totals.spend, results: r.totals.results, active_over_target: overActive, ...(r.totals.cost_per_result === null ? {} : { cost_per_result: r.totals.cost_per_result }), ...(target === null ? {} : { target }) }, picks };
+    },
+  },
+  {
+    id: "woo_orders", label: "WooCommerce orders", detail: "Orders in the business’s WooCommerce store over a period: orders, paid orders, revenue, average order, repeat buyers and the ten best sellers, all counted in code, plus the latest 50 orders (number, status, total, date, items). No customer names or addresses. Each order carries a pick, so Note on a WooCommerce order can name one",
+    kind: "read", group: "woo", trusted: false, needs: WOO, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "How far back to look." }],
+    run: async (p) => {
+      const r = await wooOrders(String(p.period) as WooPeriod);
+      // the order a note goes on is named by pick code: its id comes from the store here, never from the model
+      const picks: Record<string, Pick> = {};
+      const orders = r.orders.map((o, i) => { picks[`o${i + 1}`] = { kind: "order", id: String(o.id), label: `#${o.number} · ${o.total} ${o.currency} · ${o.date.slice(0, 10)} · ${o.status}` }; return { pick: `o${i + 1}`, ...o }; });
+      return { data: { ...r, orders }, numbers: r.totals, picks };
+    },
+  },
+  {
+    id: "woo_low_stock", label: "WooCommerce low stock", detail: "Products the business’s WooCommerce store tracks stock for that are at or below a level, or out of stock, lowest first",
+    kind: "read", group: "woo", trusted: false, needs: WOO, costUsd: 0,
+    params: [{ name: "at_or_below", type: "int", min: 0, max: 1000, default: 5, description: "Stock level at or below which a product is listed." }],
+    run: async (p) => { const r = await wooLowStock(Number(p.at_or_below)); return { data: r, numbers: { low_stock_products: r.products.length } }; },
+  },
+  {
+    id: "mailchimp_audiences", label: "Mailchimp audiences", detail: "Every audience in the business’s Mailchimp with its member count, unsubscribes and campaigns sent. Each carries a pick, so Draft a Mailchimp campaign can name one. Names were typed in Mailchimp, so they are untrusted",
+    kind: "read", group: "mailchimp", params: [], trusted: false, needs: MAILCHIMP, costUsd: 0,
+    run: async () => {
+      const r = await mailchimpAudiences();
+      // the audience a campaign goes to is named by pick code: its id comes from Mailchimp here, never from the model
+      const picks: Record<string, Pick> = {};
+      const audiences = r.audiences.map((a, i) => { picks[`a${i + 1}`] = { kind: "audience", id: a.id, label: a.name || a.id }; return { pick: `a${i + 1}`, ...a }; });
+      return { data: { audiences }, numbers: { audiences: audiences.length, members: r.members }, picks };
+    },
+  },
+  {
+    id: "mailchimp_results", label: "Mailchimp campaign results", detail: "Mailchimp campaigns sent in a period: sent, opens, clicks, unsubscribes, orders and revenue, each with rates per 100 sent and totals worked out in code. Subjects can quote anyone, so they are untrusted",
+    kind: "read", group: "mailchimp", trusted: false, needs: MAILCHIMP, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_90_days", description: "How far back to look." }],
+    run: async (p) => { const r = await mailchimpCampaigns(String(p.period) as McPeriod); return { data: r, numbers: r.totals }; },
   },
   {
     id: "calendar_week", label: "The week ahead", detail: "Events on the business’s Google Calendar for the next days: each one’s time, a short title and how many guests (never their addresses), with meetings, hours in meetings and the busiest day counted in code. Titles come from whoever sent the invite, so they are untrusted",
@@ -834,6 +926,78 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, CAMPAIGN_DRAFT, list.id, args);
       if (refused) return { problem: refused };
       return { gatewayTool: CAMPAIGN_DRAFT, target: list.id, args, actionType: "campaign_draft", title: `${list.label}: ${args.subject}`, preview: { list: list.label, subject: args.subject, preview_text: args.preview, body: args.body, why: input.why } };
+    },
+  },
+  {
+    id: "hubspot_move_deal", label: "Move a HubSpot deal", detail: "Stages moving one deal from HubSpot deals to another stage of its own pipeline, with a note saying why, for the owner to approve. Approving changes the stage in HubSpot and logs the note on the deal. Nothing here can create, delete or merge a record, change an amount or owner, or email anyone",
+    kind: "action", group: "hubspot", trusted: true, needs: HUBSPOT_DEALS, costUsd: 0,
+    agents: GATEWAY_TOOLS[HUBSPOT_MOVE].agents,
+    params: [
+      { name: "deal", type: "pick", kind: "deal", description: "The deal, from a HubSpot deals result." },
+      { name: "stage", type: "pick", kind: "stage", description: "The stage it moves to, from the same HubSpot deals result. It must be in the deal’s own pipeline." },
+      { name: "note", type: "text", maxLength: MOVE_NOTE_MAX, multiline: true, description: "The note logged on the deal, saying why, plain text." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const deal = input.deal as Pick, stage = input.stage as Pick;
+      const args = { stage: stage.id, note: String(input.note) };
+      const refused = refuseProposal(ctx.agentId, HUBSPOT_MOVE, deal.id, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: HUBSPOT_MOVE, target: deal.id, args, actionType: "deal_stage", title: deal.label, preview: { deal: deal.label, stage: stage.label, note: args.note, why: input.why } };
+    },
+  },
+  {
+    id: "meta_pause_ad", label: "Pause a Meta ad", detail: "Stages pausing one active ad from Meta Ads results whose cost per result is over the owner’s target for that result (Connections, Meta Ads pauses), for the owner to approve. Approving pauses it in Meta if it is still running and still over the target then. Nothing here can change a budget or bid, start, resume, edit or delete anything",
+    kind: "action", group: "meta", trusted: true, needs: META_PAUSES, costUsd: 0,
+    agents: GATEWAY_TOOLS[META_PAUSE].agents,
+    params: [
+      { name: "ad", type: "pick", kind: "ad", description: "The ad, from a Meta Ads results result. Only running ads carry a pick." },
+      { name: "result", type: "enum", options: RESULT_KINDS, description: "The result it is judged on: the same one the Meta Ads results call used." },
+      { name: "period", type: "enum", options: META_PERIODS, description: "The period it is judged on: the same one the Meta Ads results call used." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const ad = input.ad as Pick;
+      const args = { result: String(input.result), period: String(input.period), why: String(input.why ?? "") };
+      const refused = refuseProposal(ctx.agentId, META_PAUSE, ad.id, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: META_PAUSE, target: ad.id, args, actionType: "pause_ad", title: ad.label, preview: { ad: ad.label, result: RESULT_LABEL[args.result as MetaResult], period: args.period, why: args.why } };
+    },
+  },
+  {
+    id: "woo_order_note", label: "Note on a WooCommerce order", detail: "Stages a private note on one order from WooCommerce orders, for the owner to approve. Approving adds it in WooCommerce, where store staff see it and the customer doesn’t. Nothing here can change an order, its status, stock or a customer",
+    kind: "action", group: "woo", trusted: true, needs: WOO_NOTES, costUsd: 0,
+    agents: GATEWAY_TOOLS[WOO_NOTE].agents,
+    params: [
+      { name: "order", type: "pick", kind: "order", description: "The order, from a WooCommerce orders result." },
+      { name: "note", type: "text", maxLength: NOTE_MAX, multiline: true, description: "The note for the store’s staff, plain text." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const order = input.order as Pick;
+      const args = { note: String(input.note) };
+      const refused = refuseProposal(ctx.agentId, WOO_NOTE, order.id, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: WOO_NOTE, target: order.id, args, actionType: "order_note", title: order.label, preview: { order: order.label, note: args.note, why: input.why } };
+    },
+  },
+  {
+    id: "mailchimp_campaign_draft", label: "Draft a Mailchimp campaign", detail: "Stages one email campaign to one of the business’s Mailchimp audiences, for the owner to approve. Approving makes it a draft in Mailchimp; the owner sends it from Mailchimp. Nothing here can send or schedule a campaign. Claims about products come only from Product facts",
+    kind: "action", group: "mailchimp", trusted: true, needs: MAILCHIMP_DRAFTS, costUsd: 0,
+    agents: GATEWAY_TOOLS[MAILCHIMP_DRAFT].agents,
+    params: [
+      { name: "audience", type: "pick", kind: "audience", description: "The audience it goes to, from a Mailchimp audiences result." },
+      { name: "subject", type: "text", maxLength: CAMPAIGN_LIMITS.subject, description: "The subject line." },
+      { name: "preview", type: "text", maxLength: CAMPAIGN_LIMITS.preview, description: "The preview text shown after the subject in the inbox." },
+      { name: "body", type: "text", maxLength: CAMPAIGN_LIMITS.body, multiline: true, description: "The email, plain text, paragraphs split by a blank line. No links or merge tags; code adds the unsubscribe line." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why this campaign now, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const aud = input.audience as Pick;
+      const args = { subject: String(input.subject), preview: String(input.preview), body: String(input.body) };
+      const refused = refuseProposal(ctx.agentId, MAILCHIMP_DRAFT, aud.id, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: MAILCHIMP_DRAFT, target: aud.id, args, actionType: "mailchimp_draft", title: `${aud.label}: ${args.subject}`, preview: { list: aud.label, subject: args.subject, preview_text: args.preview, body: args.body, why: input.why } };
     },
   },
   {
