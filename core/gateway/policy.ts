@@ -6,6 +6,7 @@
 import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-rules";
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
+import { NOTE_FIELDS, orderIdOk, refuseNote } from "@/core/woo-rules";
 
 export type Tier = "Report" | "Draft" | "Act";
 
@@ -34,6 +35,12 @@ export const CALENDAR_HOLD = "calendar.hold";
  * the business's Mailchimp audiences by code and checked again right before the write. Granted.
  */
 export const MAILCHIMP_DRAFT = "mailchimp.campaign_draft";
+/**
+ * A private note on one WooCommerce order (card 254): store staff see it, the customer doesn't. The
+ * order is a pick from the store's own orders, and the gateway checks it still exists right before the
+ * write. Granted.
+ */
+export const WOO_NOTE = "woocommerce.order_note";
 
 /**
  * Who may propose an action type. A list names the only agents, by id (today's three action types;
@@ -74,6 +81,14 @@ export const TOOLS = {
     tier: "Draft" as Tier,
     fields: CAMPAIGN_FIELDS,
     // a draft to people who signed up to the audience, never sent by the app: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [WOO_NOTE]: {
+    agents: "granted",
+    grant: "woo_order_note",
+    tier: "Draft" as Tier,
+    fields: NOTE_FIELDS,
+    // a note only the store's staff see: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
   [CALENDAR_HOLD]: {
@@ -160,6 +175,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (tool === DRAFT_EMAIL) return UUID.test(target) ? refuseDraft(args) : "The target is not a lead on the leads list.";
   if (tool === CAMPAIGN_DRAFT) return listIdOk(target) ? refuseCampaign(args) : "The target is not a Klaviyo list id.";
   if (tool === MAILCHIMP_DRAFT) return audienceIdOk(target) ? refuseMailchimpCampaign(args) : "The target is not a Mailchimp audience id.";
+  if (tool === WOO_NOTE) return orderIdOk(target) ? refuseNote(args) : "The target is not a WooCommerce order id.";
   if (tool === CALENDAR_HOLD) return target === `${args.start}/${args.end}` && isoMs(args.start) !== null ? refuseHold(args, now) : "The target is not the hold's own start and end.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";
   const extra = Object.keys(args).filter((k) => !(def.fields as readonly string[]).includes(k));

@@ -12,6 +12,7 @@ import { GA4_TOOLS, checkGa4Args, dateRange, rate, readChannels, readOverview, r
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
 import * as Cal from "../core/calendar-rules";
 import * as Mc from "../core/mailchimp-rules";
+import * as Woo from "../core/woo-rules";
 import { CAMPAIGN_LIMITS, campaignHtml, campaignText, checkDraftArgs, looksLikeKlaviyoKey } from "../core/klaviyo-draft-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { envWrapper, isBound, keyIdOf, newDataKey, open, seal, vaultKey } from "../core/vault";
@@ -484,6 +485,57 @@ assert.ok(mcHtml.includes("&lt;b&gt;hi&lt;/b&gt;") && mcHtml.includes("*|UNSUB|*
 const mcsrv = readFileSync("integrations/mailchimp-server.ts", "utf8");
 assert.ok(!/\/actions\/|"DELETE"|"PATCH"|\/members|\/test|\/schedule|\/send|replicate/.test(mcsrv), "the Mailchimp server has no send, schedule, test, member or delete call");
 assert.match(mcsrv, /redirect: "error"/);
+// ---- WooCommerce on our own server, a Read key and a Read/Write key (card 254)
+assert.ok(!usesConnect("woo") && !usesConnect("woo_notes") && !isHosted("woo"));
+assert.deepEqual(checkedTools("woo"), [...Woo.WOO_TOOLS], "what our server serves to the agents' key");
+assert.deepEqual(checkedTools("woo_notes"), [Woo.NOTE_TOOL], "what our server serves to the gateway's key");
+assert.ok(mayWrite("woo_notes", Woo.NOTE_TOOL) && !mayCall("woo_notes", Woo.NOTE_TOOL) && !mayWrite("woo", Woo.NOTE_TOOL));
+const CK = `ck_${"a".repeat(40)}`, CS = `cs_${"b".repeat(40)}`;
+assert.deepEqual(Woo.readWooKey(`https://shop.example/ ${CK}\n${CS}`), { store: "https://shop.example", key: CK, secret: CS });
+assert.equal(Woo.readWooKey(`https://shop.example/store/ ${CK} ${CS}`)?.store, "https://shop.example/store");
+for (const bad of [`http://shop.example ${CK} ${CS}`, `https://u:p@shop.example ${CK} ${CS}`, `https://shop.example:8443 ${CK} ${CS}`, `https://shop.example/?x=1 ${CK} ${CS}`, `https://shop.example ${CS} ${CK}`, `https://shop.example ${CK}`, `https://shop.example ck_short ${CS}`])
+  assert.equal(Woo.readWooKey(bad), null, bad);
+assert.equal(Woo.restBase(Woo.readWooKey(`https://shop.example ${CK} ${CS}`)!), "https://shop.example/wp-json/wc/v3");
+assert.deepEqual(Woo.checkWooArgs("woo_orders", {}), { tool: "woo_orders", period: "last_30_days" });
+assert.deepEqual(Woo.checkWooArgs("woo_low_stock", { at_or_below: 3 }), { tool: "woo_low_stock", atOrBelow: 3 });
+for (const [tool, args, why] of [
+  ["woo_orders", { status: "any" }, /unknown input/],
+  ["woo_orders", { period: "forever" }, /period is one of/],
+  ["woo_low_stock", { at_or_below: -1 }, /whole number/],
+  ["woo_customers", {}, /isn't a WooCommerce read tool/],
+] as const) { const r = Woo.checkWooArgs(tool, args); assert.ok("problem" in r && why.test(r.problem), `${tool}`); }
+assert.ok(!/billing|shipping|email|first_name|last_name|phone|customer_note|address/.test(Woo.ORDER_FIELDS + Woo.PRODUCT_FIELDS), "no customer name, email, phone or address is asked for");
+assert.equal(Woo.afterOf("last_7_days", Date.parse("2026-11-21T12:00:00Z")), "2026-11-14T12:00:00");
+const wo = Woo.readOrders([
+  { id: 1, number: "1001", status: "completed", total: "30.00", currency: "USD", date_created: "2026-11-02T10:00:00", customer_id: 7, line_items: [{ product_id: 11, name: "Blend A", quantity: 2, total: "24.00" }] },
+  { id: 2, number: "1002", status: "processing", total: "15.50", currency: "USD", date_created: "2026-11-03T10:00:00", customer_id: 7, line_items: [{ product_id: 12, name: "Blend B", quantity: 1, total: "15.50" }] },
+  { id: 3, number: "1003", status: "cancelled", total: "99.00", currency: "USD", date_created: "2026-11-04T10:00:00", customer_id: 8, line_items: [{ product_id: 12, name: "Blend B", quantity: 5, total: "99.00" }] },
+  { id: "x", number: "bad" },
+], false);
+assert.deepEqual(wo.totals, { orders: 3, paid_orders: 2, revenue: 45.5, average_order: 22.75, repeat_buyers: 1, buyers_with_account: 1 }, "cancelled orders aren't sales; totals counted in code");
+assert.deepEqual(wo.best_sellers.map((b) => [b.product, b.quantity]), [["Blend A", 2], ["Blend B", 1]]);
+assert.ok(!JSON.stringify(wo).includes("customer_id"), "a customer stays an id inside the server");
+assert.deepEqual(Woo.readLowStock([
+  { name: "Blend A", sku: "A", stock_quantity: 2, stock_status: "instock", manage_stock: true },
+  { name: "Blend B", sku: "B", stock_quantity: 40, stock_status: "instock", manage_stock: true },
+  { name: "Mug", sku: "M", stock_quantity: null, stock_status: "outofstock", manage_stock: true },
+  { name: "Gift card", sku: "G", stock_quantity: null, stock_status: "instock", manage_stock: false },
+], 5).map((p) => p.product), ["Mug", "Blend A"]);
+assert.equal(Woo.refuseNote({ note: "Packed with extra care, shipped Monday." }), null);
+assert.match(Woo.refuseNote({ note: "x", customer_note: true }) ?? "", /allow-list/);
+assert.match(Woo.refuseNote({ note: "see https://x.example" }) ?? "", /links/);
+assert.match(Woo.refuseNote({ note: "<b>hi</b>" }) ?? "", /markup/);
+assert.match(Woo.refuseNote({ note: "x".repeat(501) }) ?? "", /longer/);
+assert.match(Woo.refuseNote({ note: "  " }) ?? "", /needs text/);
+assert.ok(Woo.orderIdOk("1234") && !Woo.orderIdOk("12/notes") && !Woo.orderIdOk(1234));
+assert.deepEqual(Woo.checkNoteArgs({ orderId: "1234", note: " Ship Monday " }), { orderId: "1234", note: "Ship Monday" });
+assert.ok("problem" in Woo.checkNoteArgs({ orderId: "../orders", note: "x" }));
+const wsrv = readFileSync("integrations/woo-server.ts", "utf8");
+assert.ok(!/"DELETE"|"PUT"|"PATCH"|\/refunds|\/coupons|\/customers|\/products\/\$|\/batch|status: "|stock_quantity: \d/.test(wsrv), "the WooCommerce server has no order, product, stock, refund, coupon or customer write");
+assert.equal((wsrv.match(/, \{ body: \{/g) ?? []).length, 2, "one POST for the permission probe, one for the note");
+assert.ok(/customer_note: false/.test(wsrv) && !/customer_note: true/.test(wsrv), "a note is always private");
+assert.match(wsrv, /redirect: "error"/);
+assert.match(wsrv, /await check\(url\)/, "the store address is checked as a public https host before every request");
 // every Gmail tool input is checked before it reaches a URL or a draft
 assert.deepEqual(checkGmailArgs("gmail_search", { q: "$12.50 after:2026/11/01" }), { tool: "gmail_search", q: "$12.50 after:2026/11/01", max: 3 });
 assert.deepEqual(checkGmailArgs("gmail_message", { id: "18c2a9f0e1b2c3d4" }), { tool: "gmail_message", id: "18c2a9f0e1b2c3d4", maxChars: 6000 });
@@ -558,6 +610,7 @@ assert.deepEqual(importers("ga4-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("calendar-api"), ["integrations/calendar-server.ts"]);
 assert.deepEqual(importers("calendar-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mailchimp-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("woo-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("shopify-api"), ["integrations/shopify-server.ts"]);
 assert.deepEqual(importers("shopify-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mercury-files-server"), ["integrations/mcp.ts"]);

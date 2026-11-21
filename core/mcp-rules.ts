@@ -221,6 +221,34 @@ export const MCP_SERVERS = {
     writeTools: [{ tool: "mailchimp_create_draft", actionType: "mailchimp.campaign_draft" }],
     signInHint: "Make a second key the same way (name it OPERATOR drafts) and paste it here. Only the gateway uses it, after you approve; you send from Mailchimp.",
   },
+  woo: {
+    id: "woo",
+    name: "WooCommerce",
+    // Our own server (integrations/woo-server.ts) over the store's REST API (card 254). WooCommerce's MCP
+    // adapter is a per-store plugin in preview with no read-only mode. This key is a WooCommerce Read
+    // key (a Read/Write key is refused when pasted); the server asks the store for no customer name,
+    // email, phone or address. The store address must be a public https host, checked before every request.
+    auth: "token",
+    url: "https://woocommerce.github.io/woocommerce-rest-api-docs/",
+    readTools: ["woo_orders", "woo_low_stock"],
+    reportTools: [],
+    scopes: ["a WooCommerce REST key with Read permission (a Read/Write key is refused)"],
+    writeTools: [],
+    signInHint: "In WordPress: WooCommerce, Settings, Advanced, REST API, Add key. Name it OPERATOR agents, pick your user, set Permissions to Read, tap Generate API key. Paste your store’s address, the Consumer key and the Consumer secret here, separated by spaces.",
+  },
+  woo_notes: {
+    id: "woo_notes",
+    name: "WooCommerce order notes",
+    // A second key, held only by the gateway: a Read/Write key (a Read key is refused), used for one tool,
+    // a private note on an order after an approver approves. Our server has no other write.
+    auth: "token",
+    url: "https://woocommerce.github.io/woocommerce-rest-api-docs/",
+    readTools: [],
+    reportTools: [],
+    scopes: ["a WooCommerce REST key with Read/Write permission, used only to add a private note you approved"],
+    writeTools: [{ tool: "woo_add_order_note", actionType: "woocommerce.order_note" }],
+    signInHint: "Make a second key the same way, named OPERATOR order notes, with Permissions set to Read/Write. Paste the store’s address, Consumer key and Consumer secret here. Only the gateway uses it, to add a private note you approved.",
+  },
   calendar: {
     id: "calendar",
     name: "Google Calendar",

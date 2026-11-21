@@ -342,6 +342,47 @@ OAuth scope: every key reaches the whole account. So our server is the limit.
 **Setting it up:** nothing in Vercel. The business makes two keys in Mailchimp (profile, Extras, API
 keys, Create A Key) and pastes them on Connections > Mailchimp.
 
+## WooCommerce on our own server (card 254)
+
+WooCommerce's own MCP adapter is a plugin each store installs, still in preview, signed in with a
+WordPress password and with no read-only mode. So our server runs in the app over the store's REST
+API, with two keys the owner makes in WooCommerce.
+
+- **Profiles** (`core/mcp-rules.ts`), both pasted as the store's address, the consumer key and the
+  consumer secret, sealed in the vault:
+  - `woo`: the agents' key, a **Read** key. Read tools `woo_orders` (orders in a period) and
+    `woo_low_stock`. No write tools.
+  - `woo_notes`: a **Read/Write** key, held only by the gateway. One write tool, `woo_add_order_note`
+    (action type `woocommerce.order_note`). No read tools.
+- **Which key is which** is checked when it is pasted (`checkWooKey`): the server asks to add a note
+  to order 0, which doesn't exist. A Read key is refused at sign-in (401) and a Read/Write key gets
+  "no such order" (400 or 404), so nothing is written either way. A key that can write is refused
+  for `woo`, and a Read key for `woo_notes`.
+- **The store address** is the owner's, so it is held to a custom server's rule: https, no
+  credentials, port, query or hash (`readWooKey`), and a public host, checked (`assertPublic`) right
+  before every request. Requests never follow redirects.
+- **What the reads return** (`core/woo-rules.ts`): orders asked for with a fixed field list with no
+  billing, shipping, name, email, phone or note. Revenue, average order, repeat buyers and best sellers
+  are counted in code, and only paid orders (processing, completed, on hold) count as sales. A
+  customer is an id inside the server and never leaves it. At most 5 pages of 100 are read, and a
+  longer period says it was cut (`truncated`).
+- **Agents** read them as `woo_orders` (each order carries a pick) and `woo_low_stock`, group `woo`,
+  needing `WOO_CONNECTED`.
+- **The action** `woo_order_note` is granted (card 250): the order is a pick, the note is plain text
+  up to 500 characters with no links or markup (`refuseNote`), and it is always private
+  (`customer_note: false`): store staff see it, the customer doesn't. On apply the server reads the
+  order again on the same key, then adds the note. There is no order, status, product, stock,
+  refund, coupon or customer write (`check:mcp` fails on one). At most
+  `policies.max_order_notes_per_run` (default 20) per agent per apply.
+- **Files:** `integrations/woo-server.ts` is the only file that calls a WooCommerce store, and only
+  `integrations/mcp.ts` reaches it (lint and `check:mcp`).
+
+**Setting it up:** nothing in Vercel. In WordPress: WooCommerce > Settings > Advanced > REST API >
+Add key. For the agents' key, Description "OPERATOR agents", Permissions **Read**, Generate API key,
+then paste the store's address, the Consumer key and the Consumer secret on Connections >
+WooCommerce. For the notes key, do the same with Permissions **Read/Write** and paste it on
+Connections > WooCommerce order notes.
+
 ## Klaviyo campaign drafts on our own server (card 159b)
 
 Klaviyo's hosted MCP server stays read-only for agents (`read-only=true`). The one write the Campaign

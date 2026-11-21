@@ -19,9 +19,10 @@ import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
 import { refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
-import { ANNOTATE, CALENDAR_HOLD, MAILCHIMP_DRAFT, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { orderIdOk, refuseNote } from "@/core/woo-rules";
+import { ANNOTATE, CALENDAR_HOLD, MAILCHIMP_DRAFT, WOO_NOTE, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CALENDAR_HOLD, MAILCHIMP_DRAFT, CAMPAIGN_DRAFT, DRAFT_EMAIL } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, MAILCHIMP_DRAFT, WOO_NOTE, CAMPAIGN_DRAFT, DRAFT_EMAIL } from "./policy";
 
 export interface Proposal {
   agentId: string;
@@ -335,7 +336,7 @@ export async function writeBlocker(): Promise<string | null> {
 }
 
 /** A gateway sign-in is connected and not paused. */
-async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "mailchimp_drafts"): Promise<boolean> {
+async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "mailchimp_drafts" | "woo_notes"): Promise<boolean> {
   const s = await mcpStatus(id);
   return !!s?.connected && !s.paused;
 }
@@ -431,7 +432,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyMailchimp(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyMailchimp(ids), applyWooNotes(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -620,6 +621,49 @@ async function applyMailchimpOne(a: ActionRow, runId: string) {
     const out = (await callWriteTool("mailchimp_drafts", "mailchimp_create_draft", { audienceId: a.target, subject: args.subject, preview: args.preview, body: args.body })) as { campaignId?: unknown; audience?: unknown };
     if (typeof out?.campaignId !== "string" || !out.campaignId) throw new Error("Mailchimp didn't return a campaign id");
     await done({ status: "applied", result_json: { mailchimp_campaign_id: out.campaignId, audience: out.audience ?? null, sent: false } });
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
+/** Approved WooCommerce order notes (card 254): private notes on the gateway's own key, at most max_order_notes_per_run per agent. */
+async function applyWooNotes(ids?: string[]) {
+  const rows = await approvedOf(WOO_NOTE, ids);
+  if (!rows.length) return null;
+  if (!(await ready("woo_notes"))) return { ok: true, text: "Approved, not in WooCommerce yet: the WooCommerce order notes key isn't connected (Connections, WooCommerce)." };
+  const cap = await numPolicy("max_order_notes_per_run", 20);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyWooNote(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway added ${n.applied} approved private order note${n.applied === 1 ? "" : "s"} in WooCommerce${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}. Customers don't see them.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved notes are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyWooNote(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as Record<string, unknown>;
+    // the note and the order id again (a granted action's agent was checked by refuseUngranted);
+    // the server checks the order still exists right before it writes
+    const no = orderIdOk(a.target) ? refuseNote(args) : "The target is not a WooCommerce order id.";
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const out = (await callWriteTool("woo_notes", "woo_add_order_note", { orderId: a.target, note: args.note })) as { noteId?: unknown; order?: unknown };
+    if (!Number.isInteger(out?.noteId)) throw new Error("WooCommerce didn't return a note id");
+    await done({ status: "applied", result_json: { woo_note_id: out.noteId, order: out.order ?? a.target, customer_note: false } });
     return "applied" as const;
   } catch (e) {
     await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });

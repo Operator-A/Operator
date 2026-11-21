@@ -49,6 +49,15 @@ from `mailchimp_audiences`; `refuseMailchimpCampaign` checks the words on propos
 `applyMailchimpOne`, and the server reads the audience again right before it writes. Needs the
 Mailchimp campaign drafts key on Connections; until then approved drafts wait.
 
+## `woocommerce.order_note` (card 254)
+
+One private note on one order in the business's WooCommerce store. Store staff see it; the customer
+doesn't, and isn't emailed. Granted: any agent an approver gives `woo_order_note` to. The order is a
+pick from `woo_orders`; `refuseNote` checks the note on proposal and again in `applyWooNote`, and the
+server reads the order again on the same key right before it writes. Starts at Draft and may be
+promoted (28 of the last 30 approvals unedited). Needs the WooCommerce order notes key on
+Connections; until then approved notes wait.
+
 ## `calendar.hold` (card 251)
 
 A private hold on the business's primary Google Calendar: a title, a start and an end, nothing else.

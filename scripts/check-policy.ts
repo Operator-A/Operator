@@ -1,5 +1,5 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, DRAFT_EMAIL, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, DRAFT_EMAIL, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -95,6 +95,14 @@ t("mailchimp: ok for an agent given it", refuseProposal("b_mkt_1", MAILCHIMP_DRA
 t("mailchimp: refused for an agent not given it", refuseProposal("campaign_writer", MAILCHIMP_DRAFT, "a1b2c3d4e5", camp, 200, []) !== null);
 t("mailchimp: refused on a non-audience target", refuseProposal("b_mkt_1", MAILCHIMP_DRAFT, "../lists", camp, 200, ["mailchimp_campaign_draft"]) !== null);
 t("mailchimp: refused with a merge tag", refuseProposal("b_mkt_1", MAILCHIMP_DRAFT, "a1b2c3d4e5", { ...camp, body: "Hi *|FNAME|*" }, 200, ["mailchimp_campaign_draft"]) !== null);
+
+// WooCommerce order notes (card 254): granted, one private note on one order
+t("woo: granted, Draft, promotable", TOOLS[WOO_NOTE].agents === "granted" && TOOLS[WOO_NOTE].grant === "woo_order_note" && TOOLS[WOO_NOTE].tier === "Draft" && TOOLS[WOO_NOTE].promotable);
+t("woo: ok for an agent given it", refuseProposal("b_ops_1", WOO_NOTE, "1234", { note: "Ship Monday" }, 200, ["woo_order_note"]) === null);
+t("woo: refused for an agent not given it", refuseProposal("b_ops_1", WOO_NOTE, "1234", { note: "Ship Monday" }, 200, ["woo_orders"]) !== null);
+t("woo: refused on a non-order target", refuseProposal("b_ops_1", WOO_NOTE, "1234/refunds", { note: "x" }, 200, ["woo_order_note"]) !== null);
+t("woo: refused when it would tell the customer", refuseProposal("b_ops_1", WOO_NOTE, "1234", { note: "x", customer_note: true }, 200, ["woo_order_note"]) !== null);
+t("woo: refused with a link", refuseProposal("b_ops_1", WOO_NOTE, "1234", { note: "www.x.example" }, 200, ["woo_order_note"]) !== null);
 
 console.log(fails ? `${fails} FAILED` : "all passed");
 if (fails) process.exit(1);

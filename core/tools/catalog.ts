@@ -31,10 +31,12 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
 import type { McPeriod } from "@/core/mailchimp-rules";
+import { wooLowStock, wooOrders } from "@/integrations/woo";
+import { NOTE_MAX, type WooPeriod } from "@/core/woo-rules";
 import { LIMITS as CAL, holdFromSlot } from "@/core/calendar-rules";
 import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
 import { READ_ROWS, ageOf, columnNumbers, staleNote } from "@/core/export-rules";
@@ -49,7 +51,7 @@ import { ga4Channels, ga4Overview, ga4TopPages } from "@/integrations/ga4";
 import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Pick, ReportInput, ToolDef, ToolResult } from "./types";
-import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
+import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, WOO, WOO_NOTES, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
 import { deliverBrief } from "@/core/brief";
@@ -283,6 +285,24 @@ const TOOLS_LIST: ToolDef[] = [
       { name: "limit", type: "number", integer: true, optional: true, description: "How many channels, 1 to 20 (10 if left out)." },
     ],
     run: async (p) => { const r = await ga4Channels(String(p.period) as Ga4Period, Number(p.limit ?? 10)); return { data: r, numbers: { sessions_listed: r.sessions_listed } }; },
+  },
+  {
+    id: "woo_orders", label: "WooCommerce orders", detail: "Orders in the business’s WooCommerce store over a period: orders, paid orders, revenue, average order, repeat buyers and the ten best sellers, all counted in code, plus the latest 50 orders (number, status, total, date, items). No customer names or addresses. Each order carries a pick, so Note on a WooCommerce order can name one",
+    kind: "read", group: "woo", trusted: false, needs: WOO, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "How far back to look." }],
+    run: async (p) => {
+      const r = await wooOrders(String(p.period) as WooPeriod);
+      // the order a note goes on is named by pick code: its id comes from the store here, never from the model
+      const picks: Record<string, Pick> = {};
+      const orders = r.orders.map((o, i) => { picks[`o${i + 1}`] = { kind: "order", id: String(o.id), label: `#${o.number} · ${o.total} ${o.currency} · ${o.date.slice(0, 10)} · ${o.status}` }; return { pick: `o${i + 1}`, ...o }; });
+      return { data: { ...r, orders }, numbers: r.totals, picks };
+    },
+  },
+  {
+    id: "woo_low_stock", label: "WooCommerce low stock", detail: "Products the business’s WooCommerce store tracks stock for that are at or below a level, or out of stock, lowest first",
+    kind: "read", group: "woo", trusted: false, needs: WOO, costUsd: 0,
+    params: [{ name: "at_or_below", type: "int", min: 0, max: 1000, default: 5, description: "Stock level at or below which a product is listed." }],
+    run: async (p) => { const r = await wooLowStock(Number(p.at_or_below)); return { data: r, numbers: { low_stock_products: r.products.length } }; },
   },
   {
     id: "mailchimp_audiences", label: "Mailchimp audiences", detail: "Every audience in the business’s Mailchimp with its member count, unsubscribes and campaigns sent. Each carries a pick, so Draft a Mailchimp campaign can name one. Names were typed in Mailchimp, so they are untrusted",
@@ -792,6 +812,23 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, CAMPAIGN_DRAFT, list.id, args);
       if (refused) return { problem: refused };
       return { gatewayTool: CAMPAIGN_DRAFT, target: list.id, args, actionType: "campaign_draft", title: `${list.label}: ${args.subject}`, preview: { list: list.label, subject: args.subject, preview_text: args.preview, body: args.body, why: input.why } };
+    },
+  },
+  {
+    id: "woo_order_note", label: "Note on a WooCommerce order", detail: "Stages a private note on one order from WooCommerce orders, for the owner to approve. Approving adds it in WooCommerce, where store staff see it and the customer doesn’t. Nothing here can change an order, its status, stock or a customer",
+    kind: "action", group: "woo", trusted: true, needs: WOO_NOTES, costUsd: 0,
+    agents: GATEWAY_TOOLS[WOO_NOTE].agents,
+    params: [
+      { name: "order", type: "pick", kind: "order", description: "The order, from a WooCommerce orders result." },
+      { name: "note", type: "text", maxLength: NOTE_MAX, multiline: true, description: "The note for the store’s staff, plain text." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const order = input.order as Pick;
+      const args = { note: String(input.note) };
+      const refused = refuseProposal(ctx.agentId, WOO_NOTE, order.id, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: WOO_NOTE, target: order.id, args, actionType: "order_note", title: order.label, preview: { order: order.label, note: args.note, why: input.why } };
     },
   },
   {

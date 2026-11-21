@@ -5,7 +5,7 @@
 import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "mailchimp";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "mailchimp" | "woo";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -69,6 +69,16 @@ export const TOOL_TILES: readonly ToolTile[] = [
     ],
   },
   {
+    id: "woo", name: "WooCommerce", gives: "Orders, best sellers and stock", icon: "shopping-bag", mcp: "woo",
+    steps: [
+      "In WordPress, open WooCommerce > Settings > Advanced > REST API and tap Add key.",
+      "Name it OPERATOR agents, pick your own user, and set Permissions to Read.",
+      "Tap Generate API key. WooCommerce shows the consumer key and secret once.",
+      "Paste your store’s address (https://…), the consumer key and the consumer secret below, separated by spaces.",
+    ],
+    also: { mcp: "woo_notes", label: "WooCommerce order notes", why: "An agent you give order notes to can add a private note you approved to an order, with a second Read/Write key only the gateway uses. Customers never see these notes." },
+  },
+  {
     id: "mailchimp", name: "Mailchimp", gives: "Audiences and campaign results", icon: "send", mcp: "mailchimp",
     steps: [
       "In Mailchimp, tap your profile picture, then Profile.",
@@ -104,6 +114,8 @@ export const SCOPE_WORDS: Record<string, string> = {
   "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
   "a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts and campaign reports)": "read your audiences’ sizes and how each campaign did. Mailchimp keys reach the whole account, so our server is the limit: it has no other calls",
   "a second Mailchimp API key, used only to make a draft campaign you approved": "make a draft campaign you approved. Our server has no send or schedule call, so you send it from Mailchimp",
+  "a WooCommerce REST key with Read permission (a Read/Write key is refused)": "read orders, best sellers and stock. Our server never asks for customer names, emails or addresses",
+  "a WooCommerce REST key with Read/Write permission, used only to add a private note you approved": "add a private note you approved to an order. Our server has no other write, so it can’t change orders, products or stock",
   "https://www.googleapis.com/auth/calendar.events.readonly": "see the events on your calendars. It can’t change, add or delete anything",
   "https://www.googleapis.com/auth/calendar.events": "add a private hold you approved to your calendar. Our server has no code to change or delete an event, or to invite anyone",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
@@ -119,7 +131,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp", WOO_CONNECTED: "woo", WOO_NOTES_CONNECTED: "woo",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -153,7 +165,7 @@ export type CategoryId = (typeof CATEGORY_IDS)[number];
 export interface Starter { tile: ToolTileId; name: string; promise: string; steps: readonly string[] }
 export interface ToolCategory { id: CategoryId; area: string; question: string; value: string; ready: string; tiles: readonly ToolTileId[]; starter?: Starter }
 export const TOOL_CATEGORIES: readonly ToolCategory[] = [
-  { id: "store", area: "Store", question: "Where do you sell?", value: "Your agents read orders, products and stock, and tell you what sold in plain words.", ready: "Your agents can see your orders, products and stock.", tiles: ["shopify"] },
+  { id: "store", area: "Store", question: "Where do you sell?", value: "Your agents read orders, products and stock, and tell you what sold in plain words.", ready: "Your agents can see your orders, products and stock.", tiles: ["shopify", "woo"] },
   { id: "site", area: "Website", question: "How do you track your website?", value: "Know where visitors come from and where they drop off.", ready: "Visits and conversions go into your summaries.", tiles: ["analytics"],
     starter: { tile: "analytics", name: "Google Analytics", promise: "It’s free. You create the property, I show you each tap, then you connect it here.", steps: [
       "Open analytics.google.com and sign in with the Google account you use for the business.",

@@ -157,6 +157,12 @@ async function main() {
   const mstaged = TOOLS.mailchimp_campaign_draft.stage!({ audience: aud, subject: "New roast", preview: "Out Friday", body: "Hello", why: "Friday" }, mctx);
   assert.ok(!("problem" in mstaged) && mstaged.gatewayTool === "mailchimp.campaign_draft" && mstaged.target === "a1b2c3d4e5");
   assert.ok("problem" in TOOLS.mailchimp_campaign_draft.stage!({ audience: aud, subject: "x", preview: "y", body: "Hello", why: "z" }, { ...mctx, granted: [] }));
+  // card 254: a WooCommerce note names its order by pick, only for an agent given it
+  const ord = { kind: "order", id: "1234", label: "#1001, Nov 2, $30.00" };
+  const wctx = { agentId: "b_ops_1", notionPages: [], outputSources: [], granted: ["woo_orders", "woo_order_note"] };
+  const wstaged = TOOLS.woo_order_note.stage!({ order: ord, note: "Ship Monday", why: "Customer asked" }, wctx);
+  assert.ok(!("problem" in wstaged) && wstaged.gatewayTool === "woocommerce.order_note" && wstaged.target === "1234" && JSON.stringify(wstaged.args) === '{"note":"Ship Monday"}');
+  assert.ok("problem" in TOOLS.woo_order_note.stage!({ order: ord, note: "Ship Monday", why: "z" }, { ...wctx, granted: ["woo_orders"] }));
   assert.ok(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["report_notion_page"] }).problems.some((p) => /no page to write under/.test(p)));
   const rep1 = readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["report_email_owner"] }).spec;
   assert.deepEqual(rep1.reportPage, null);
