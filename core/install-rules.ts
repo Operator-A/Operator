@@ -26,6 +26,8 @@ export function crewProblems(crew: Crew): string[] {
     const { spec, problems } = readSpec(crew.specs[a.id], a.id);
     if (!crew.specs[a.id]) out.push(`agent ${a.id}: no spec`);
     for (const p of problems) out.push(`agent ${a.id}: ${p}`);
+    // a granted action is given only by an approver on the Tools step, never by a template (card 210)
+    for (const t of spec.tools) if (TOOLS[t]?.kind === "action" && TOOLS[t]?.agents === "granted") out.push(`agent ${a.id}: ${TOOLS[t].label} is given only by an approver on the builder's Tools step`);
     if (crew.specs[a.id] && spec.model !== a.model) out.push(`agent ${a.id}: its spec's model isn't the agent's`);
     for (const s of crew.playbooks[a.id] ?? []) {
       if (!TOOLS[s.tool]) out.push(`agent ${a.id}: playbook step ${s.tool} isn't a tool`);

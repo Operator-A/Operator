@@ -7,6 +7,7 @@ import { db } from "@/core/db";
 import { modelDef } from "@/integrations/models";
 import { TOOLS } from "@/core/tools/catalog";
 import { MAX_CUSTOM_GRANTS, isCustomToolId } from "@/core/custom-mcp-rules";
+import { actionOpenTo, actionWho } from "@/core/tools/types";
 
 export const EFFORTS = ["low", "medium", "high"] as const;
 export type Effort = (typeof EFFORTS)[number];
@@ -75,7 +76,7 @@ export function readSpec(raw: unknown, agentId?: string): { spec: AgentSpec; pro
     const t = typeof id === "string" ? TOOLS[id] : undefined;
     if (!t) { problems.push(`tool "${String(id).slice(0, 40)}" is not on the tool list`); continue; }
     if (!GRANTABLE_KINDS.has(t.kind)) { problems.push(`${t.label} is a ${t.kind} tool, not available yet`); continue; }
-    if (t.kind === "action" && agentId && !t.agents?.includes(agentId)) { problems.push(`${t.label}: the gateway lets only ${t.agents?.join(" and ") ?? "no agent"} use it`); continue; }
+    if (t.kind === "action" && agentId && !actionOpenTo(t, agentId)) { problems.push(`${t.label}: the gateway lets only ${actionWho(t)} use it`); continue; }
     if (!tools.includes(t.id)) tools.push(t.id);
   }
   const notionPages = (Array.isArray(r.notionPages) ? r.notionPages : []).flatMap((p) => {

@@ -17,7 +17,7 @@ import { klaviyoLists } from "@/integrations/klaviyo";
 import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
 import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
-import { ANNOTATE, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, refuseCampaignTo, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { ANNOTATE, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
 export { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL } from "./policy";
 
@@ -47,7 +47,8 @@ async function numPolicy(key: string, d: number) {
  */
 export async function propose(p: Proposal): Promise<{ status: "queued" | "scheduled" | "refused" | "duplicate"; reason?: string; actionId?: string }> {
   const memoMax = await numPolicy("mercury_memo_max_chars", 200);
-  const refused = refuseProposal(p.agentId, p.tool, p.target, p.args as Record<string, unknown>, memoMax) ?? (p.tool === DRAFT_EMAIL ? await refuseLead(p.target) : p.tool === CAMPAIGN_DRAFT ? await refuseList(p.target) : null);
+  const grants = isGranted(p.tool) ? await grantsOf(p.agentId) : null;
+  const refused = refuseProposal(p.agentId, p.tool, p.target, p.args as Record<string, unknown>, memoMax, grants) ?? (p.tool === DRAFT_EMAIL ? await refuseLead(p.target) : p.tool === CAMPAIGN_DRAFT ? await refuseList(p.target) : null);
   const base = { agent_id: p.agentId, run_id: p.runId ?? null, tool: p.tool, action_type: p.actionType, target: p.target, args_json: p.args };
   if (refused) {
     await db().from("agent_actions").insert({ ...base, status: "refused", reason: refused });
@@ -79,6 +80,38 @@ export async function propose(p: Proposal): Promise<{ status: "queued" | "schedu
     if (e2) { await db().from("agent_actions").delete().eq("id", action.id); throw new Error(`Gateway: could not queue the approval: ${e2.message}`); }
   }
   return { status: "queued", actionId: action.id };
+}
+
+// ---- Granted actions (card 210): any agent an approver gave the action's tool on the Tools step
+
+const isGranted = (tool: string) => (TOOLS[tool as ToolName] as ActionDef | undefined)?.agents === "granted";
+
+/** The catalog tools the agent's active spec holds, or null when it has none or it can't be read. */
+async function grantsOf(agentId: string): Promise<string[] | null> {
+  // imported here, not at the top: agent-spec reads the tool list, which imports the gateway
+  try { const { loadSpec } = await import("@/core/agent-spec"); return (await loadSpec(agentId))?.spec.tools ?? null; } catch { return null; }
+}
+
+/**
+ * Right before anything is applied: an approved or scheduled granted action whose agent no longer holds
+ * the tool (an approver took it away, or a new version went live without it) is refused, not applied.
+ */
+async function refuseUngranted(ids?: string[]) {
+  const granted = (Object.keys(TOOLS) as ToolName[]).filter(isGranted);
+  if (!granted.length) return 0;
+  let q = db().from("agent_actions").select("id, agent_id, tool").eq("status", "approved").in("tool", granted);
+  if (ids?.length) q = q.in("id", ids);
+  const { data } = await q.limit(500);
+  let n = 0;
+  const memo = new Map<string, Promise<string[] | null>>();
+  for (const a of (data ?? []) as { id: string; agent_id: string; tool: ToolName }[]) {
+    if (!memo.has(a.agent_id)) memo.set(a.agent_id, grantsOf(a.agent_id));
+    const why = refuseAgent(TOOLS[a.tool] as ActionDef, a.tool, a.agent_id, await memo.get(a.agent_id)!);
+    if (!why) continue;
+    const { error } = await db().from("agent_actions").update({ status: "refused", reason: `Not applied: ${why}` }).eq("id", a.id).eq("status", "approved");
+    if (!error) n++;
+  }
+  return n;
 }
 
 // ---- Gmail drafts: the recipient always comes from the leads list
@@ -395,6 +428,7 @@ export async function applyApproved(ids?: string[]) {
   // an apply that died mid-way: mark it failed; a retry checks again first, so nothing is written twice
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
+  await refuseUngranted(ids);
   const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };

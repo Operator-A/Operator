@@ -21,6 +21,16 @@ export const DRAFT_EMAIL = "gmail.create_draft";
  */
 export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
 
+/**
+ * Who may propose an action type. A list names the only agents, by id (today's three action types;
+ * Mercury writes are CFO and Bookkeeper by hard rule). "granted" (card 210): any agent whose active
+ * saved spec holds the action's catalog tool (`grant`), which only an approver gives, on the builder's
+ * Tools step. A template, a proposal or one of Avery's designs never hands one out. The gateway checks
+ * the grant when the action is proposed and again right before it is applied.
+ */
+export type ActionAgents = readonly string[] | "granted";
+export interface ActionDef { agents: ActionAgents; grant?: string; tier: Tier; fields: readonly string[]; promotable: boolean }
+
 /** Every write tool the gateway knows. A tool not listed here is refused. */
 export const TOOLS = {
   [ANNOTATE]: {
@@ -44,8 +54,20 @@ export const TOOLS = {
     // a draft to people who signed up to the list, never sent by the app: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
-} as const;
+} as const satisfies Record<string, ActionDef>;
 export type ToolName = keyof typeof TOOLS;
+
+/**
+ * Why this agent may not propose this action type, or null. `grants` is the catalog tools the agent's
+ * active spec holds (null when it couldn't be read, which refuses a granted action).
+ */
+export function refuseAgent(def: ActionDef, tool: string, agentId: string, grants: readonly string[] | null): string | null {
+  if (def.agents === "granted") {
+    if (!def.grant) return `${tool} names no tool to grant.`;
+    return grants?.includes(def.grant) ? null : `${agentId} hasn't been given ${def.grant} on the builder's Tools step.`;
+  }
+  return def.agents.includes(agentId) ? null : `${agentId} may not use ${tool}.`;
+}
 
 export interface AnnotateArgs {
   attach?: boolean;
@@ -100,10 +122,11 @@ export function refuseDraftTo(lead: { email: string | null; stage: string } | nu
 }
 
 /** Why a proposed action is refused, or null when the gateway may queue it for approval. */
-export function refuseProposal(agentId: string, tool: string, target: string, args: Record<string, unknown>, memoMax = 200): string | null {
-  const def = TOOLS[tool as ToolName];
+export function refuseProposal(agentId: string, tool: string, target: string, args: Record<string, unknown>, memoMax = 200, grants: readonly string[] | null = null): string | null {
+  const def = TOOLS[tool as ToolName] as ActionDef | undefined;
   if (!def) return `Unknown write tool "${tool}".`;
-  if (!(def.agents as readonly string[]).includes(agentId)) return `${agentId} may not use ${tool}.`;
+  const who = refuseAgent(def, tool, agentId, grants);
+  if (who) return who;
   if (tool === DRAFT_EMAIL) return UUID.test(target) ? refuseDraft(args) : "The target is not a lead on the leads list.";
   if (tool === CAMPAIGN_DRAFT) return listIdOk(target) ? refuseCampaign(args) : "The target is not a Klaviyo list id.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";

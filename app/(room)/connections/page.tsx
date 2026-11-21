@@ -170,7 +170,7 @@ function Tile({ c, f, on }: { c: Connection; f: Floor; on: boolean }) {
 
 function ToolRow({ t, f, locked }: { t: ToolDef; f: Floor; locked?: boolean }) {
   const has = Object.keys(f.grants).filter((a) => f.grants[a].includes(t.id));
-  const only = t.agents?.length ? t.agents.map((id) => f.byId[id]?.name ?? id) : null;
+  const only = Array.isArray(t.agents) && t.agents.length ? t.agents.map((id) => f.byId[id]?.name ?? id) : null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px", borderRadius: 14, background: "var(--soft)", border: locked ? "1px dashed var(--mut2)" : undefined }}>
       <span className="row" style={{ gap: 8, alignItems: "flex-start" }}>

@@ -1,5 +1,5 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { CAMPAIGN_DRAFT, DRAFT_EMAIL, TOOLS, refuseCampaignTo, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -65,5 +65,17 @@ t("lead with address ok", refuseDraftTo({ email: "Ana@Fleet.coffee", stage: "new
 t("lead without address refused", refuseDraftTo({ email: null, stage: "new" }, new Set()) !== null);
 t("suppressed lead refused", refuseDraftTo({ email: "ana@fleet.coffee", stage: "new" }, new Set(["ana@fleet.coffee"])) !== null);
 t("lost lead refused", refuseDraftTo({ email: "ana@fleet.coffee", stage: "lost" }, new Set()) !== null);
+// granted actions (card 210): any agent whose active spec holds the action's tool, refused otherwise
+const granted: ActionDef = { agents: "granted", grant: "calendar_hold", tier: "Draft", fields: ["title"], promotable: true };
+t("granted: agent holding the tool may propose", refuseAgent(granted, "calendar.hold", "b_sales_3", ["calendar_events", "calendar_hold"]) === null);
+t("granted: agent without the tool refused", refuseAgent(granted, "calendar.hold", "b_sales_3", ["calendar_events"]) !== null);
+t("granted: unreadable spec refused", refuseAgent(granted, "calendar.hold", "b_sales_3", null) !== null);
+t("granted: no tool named refused", refuseAgent({ ...granted, grant: undefined }, "calendar.hold", "b_sales_3", ["calendar_hold"]) !== null);
+t("named: grants never widen a named action", refuseAgent(TOOLS[ANNOTATE], ANNOTATE, "b_sales_3", ["mercury_propose_annotation"]) !== null);
+t("named: Mercury writes stay CFO and Bookkeeper only", JSON.stringify(TOOLS[ANNOTATE].agents) === JSON.stringify(["bookkeeper", "cfo"]));
+t("named: a granted spec doesn't let Rowan annotate", refuseProposal("wholesale_hunter", ANNOTATE, "00000000-0000-0000-0000-000000000000", { note: "x" }, 200, ["mercury_propose_annotation"]) !== null);
+t("every action type starts at Draft", Object.values(TOOLS).every((d) => d.tier === "Draft"));
+t("every granted action names its tool", Object.values(TOOLS as Record<string, ActionDef>).every((d) => d.agents !== "granted" || !!d.grant));
+
 console.log(fails ? `${fails} FAILED` : "all passed");
 if (fails) process.exit(1);
