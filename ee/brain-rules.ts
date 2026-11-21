@@ -2,7 +2,7 @@
 // The shared brain, slice 3 (docs/shared-brain.md, card 232): how a counted pattern becomes one plain
 // statement in the Hindsight bank. Pure, so `npm run check:ee` can test it. Words come only from lists
 // in code; numbers only from the count (brain_patterns(), over the floor). Nothing else is ever sent.
-import { BRAIN_FLOOR, isKind, toolSlug, type BusinessKind, type PatternRow, type RevenueBand } from "@/core/brain-rules";
+import { BRAIN_FLOOR, SIMILAR_COUNTS, SIMILAR_LESSONS, isKind, patternOnTopic, toolSlug, type BusinessKind, type PatternRow, type RevenueBand, type Similar, type SimilarAsk } from "@/core/brain-rules";
 import { TOOL_CATEGORIES } from "@/core/tools-step-rules";
 
 export const BANK_ID = "operator-patterns";
@@ -155,4 +155,47 @@ export async function syncWith(bank: Bank, rows: readonly PatternRow[], kits: Re
   for (let i = 0; i < plan.retain.length; i += RETAIN_BATCH) await bank.retain(plan.retain.slice(i, i + RETAIN_BATCH));
   for (const id of plan.remove) await bank.remove(id);
   return { retained: plan.retain.length, removed: plan.remove.length };
+}
+
+/** The cohorts a business counts under, most specific first: kind and revenue band, then kind, then every business. */
+export function cohortsFor(kind: BusinessKind | null, revenue: RevenueBand): string[] {
+  if (!kind) return ["all"];
+  return [...(REVENUE_PHRASE[revenue] ? [`kind:${kind}|rev:${revenue}`] : []), `kind:${kind}`, "all"];
+}
+
+/** Tags a recall is limited to: this kind's patterns and lessons, and those for every business. */
+export const recallTags = (kind: BusinessKind | null) => (kind ? [`kind:${kind}`, "kind:all", "cohort:all"] : ["kind:all", "cohort:all"]);
+
+/**
+ * What Avery is given (slice 4, card 233). Hindsight only orders what fits (`ranked`, document ids,
+ * best first; null when it can't be asked); every count is said again by code from the live count, so
+ * one that has fallen under the floor is dropped, and every lesson is the playbook table's own text.
+ * Each pattern shows once, for the most specific cohort the business is in.
+ */
+export function pickSimilar(o: {
+  ask: SimilarAsk; rows: readonly PatternRow[]; lessons: readonly { id: string; title: string; body: string; kind: BusinessKind | null }[];
+  kits: Readonly<Record<string, string>>; ranked: readonly string[] | null;
+}): Similar {
+  const cohorts = cohortsFor(o.ask.kind, o.ask.revenue);
+  const rank = new Map((o.ranked ?? []).map((id, i) => [id, i]));
+  const best = new Map<string, PatternRow>();
+  for (const r of o.rows) {
+    const at = cohorts.indexOf(r.cohort);
+    if (at < 0 || !patternOnTopic(r.pattern, o.ask.topic) || !statementOf(r, o.kits)) continue;
+    const had = best.get(r.pattern);
+    if (!had || at < cohorts.indexOf(had.cohort)) best.set(r.pattern, r);
+  }
+  const order = (id: string, fallback: number) => (rank.has(id) ? rank.get(id)! : 1e6 + fallback);
+  const counts = [...best.values()]
+    .sort((a, b) => order(docIdOf(a), -a.hits / a.orgs) - order(docIdOf(b), -b.hits / b.orgs) || b.orgs - a.orgs)
+    .slice(0, SIMILAR_COUNTS)
+    .map((r) => ({ statement: statementOf(r, o.kits)!, cohort: r.cohort, pattern: r.pattern, orgs: r.orgs, hits: r.hits }));
+  // a lesson carries no topic: with Hindsight, only the lessons it found for this topic; without, this kind's first
+  const lessons = o.lessons.filter((l) => (!l.kind || l.kind === o.ask.kind) && (!o.ranked || rank.has(`play-${l.id}`)));
+  const playbook = lessons
+    .map((l, i) => ({ l, at: order(`play-${l.id}`, (l.kind ? 0 : 1000) + i) }))
+    .sort((a, b) => a.at - b.at)
+    .slice(0, SIMILAR_LESSONS)
+    .map(({ l }) => ({ title: l.title, lesson: l.body, for: l.kind ? KIND_PHRASE[l.kind] : "every business" }));
+  return { counts, playbook };
 }

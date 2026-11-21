@@ -9,7 +9,8 @@ import { brainPatterns, db } from "@/core/db";
 import { withOrg } from "@/core/tenancy";
 import { TEMPLATES } from "@/core/templates";
 import { adminOrgId } from "./admin";
-import { BANK_ID, BANK_SETTINGS, SYNC_KEY, syncDue, syncWith, type Bank } from "./brain-rules";
+import { BANK_ID, BANK_SETTINGS, SYNC_KEY, pickSimilar, recallTags, syncDue, syncWith, type Bank } from "./brain-rules";
+import { topicWords, type Similar, type SimilarAsk } from "@/core/brain-rules";
 import { syncPlaybook } from "./playbook-rules";
 import { publishedLessons } from "./playbook";
 
@@ -75,4 +76,25 @@ export async function pushPlaybook(): Promise<"off" | "pushed"> {
   await bank.setBank();
   await syncPlaybook(bank, (await publishedLessons()) ?? []);
   return "pushed";
+}
+
+/**
+ * Businesses like this one (slice 4, card 233), for Avery's tool, asked as the current business. Hindsight
+ * is searched with the topic's words from code and this kind's tags, and only orders what fits; code says
+ * every count again from the live count (brainPatterns, over the floor) and gives each lesson's text from
+ * the playbook table. Without Hindsight, or if it fails, code orders them itself. Nothing the business
+ * wrote is sent anywhere.
+ */
+export async function similarBusinesses(ask: SimilarAsk): Promise<Similar | null> {
+  const [rows, lessons] = await Promise.all([brainPatterns(), publishedLessons().then((l) => l ?? [])]);
+  let ranked: string[] | null = null;
+  if (hindsightReady()) {
+    try {
+      const c = new HindsightClient({ baseUrl: url(), apiKey: key(), userAgent: "operator-shared-brain" });
+      const r = await c.recall(BANK_ID, topicWords(ask.topic), { tags: recallTags(ask.kind), tagsMatch: "any_strict", maxTokens: 2048, budget: "low" });
+      const ids = [...new Set(r.results.map((x) => x.document_id).filter((d): d is string => typeof d === "string"))];
+      ranked = ids.length ? ids : null;
+    } catch { ranked = null; }
+  }
+  return pickSimilar({ ask, rows, lessons, kits: kitNames(), ranked });
 }

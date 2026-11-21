@@ -165,3 +165,43 @@ export function snapshotProblem(s: Snapshot): string | null {
   if (s.levels.length > 30 || s.levels.some((l) => !/^[a-z0-9_.]{2,60}:(act_undo|act)$/.test(l))) return "a level isn't type:level";
   return null;
 }
+
+// ---- slice 4 (card 233): what Avery may ask the shared brain, and what comes back ----
+
+/** What Avery may ask about: a fixed list, so nothing the founder typed is ever sent to the shared brain. */
+export const BRAIN_TOPICS = ["starting", ...TOOL_CATEGORIES.map((c) => c.id), "approvals"] as const;
+export type BrainTopic = (typeof BRAIN_TOPICS)[number];
+export const isTopic = (t: unknown): t is BrainTopic => typeof t === "string" && (BRAIN_TOPICS as readonly string[]).includes(t);
+
+/** The topic in words, from lists in code only: what the shared brain is searched with. */
+export function topicWords(t: BrainTopic): string {
+  if (t === "starting") return "What to set up first: which departments and tools a business starts with";
+  if (t === "approvals") return "Approvals: drafts that go through unedited, and action types that earn trust to act on their own";
+  const c = TOOL_CATEGORIES.find((x) => x.id === t)!;
+  return `${c.area}: which tools businesses use for it (${c.tools.map((x) => x.name).join(", ")})`;
+}
+
+/** Which counted patterns a topic covers: starting covers kits and tools, a part its own tools, approvals the action types. */
+export function patternOnTopic(pattern: string, t: BrainTopic): boolean {
+  const [kind, a] = pattern.split(":");
+  if (t === "starting") return kind === "dept" || kind === "tool";
+  if (t === "approvals") return kind === "action" || kind === "level";
+  return kind === "tool" && a === t;
+}
+
+/** What the business asks with: its topic, and the kind and revenue band it counts under (never a name). */
+export interface SimilarAsk { topic: BrainTopic; kind: BusinessKind | null; revenue: RevenueBand }
+/** A count, said in code from the live count, and a lesson from OPERATOR's playbook, as written by staff. */
+export interface SimilarCount { statement: string; cohort: string; pattern: string; orgs: number; hits: number }
+export interface SimilarLesson { title: string; lesson: string; for: string }
+export interface Similar { counts: SimilarCount[]; playbook: SimilarLesson[] }
+export const SIMILAR_COUNTS = 5;
+export const SIMILAR_LESSONS = 3;
+export const NOTE_LINES = 3;
+
+/** The note under Avery's reply: what she was given, in code's words, at most three lines. Null when nothing came back. */
+export function similarNote(s: Similar | null): string | null {
+  if (!s) return null;
+  const lines = [...s.counts.map((c) => c.statement), ...s.playbook.map((l) => `OPERATOR's playbook: ${l.title}.`)].slice(0, NOTE_LINES);
+  return lines.length ? `Businesses like yours: ${lines.join(" ")}` : null;
+}

@@ -7,7 +7,7 @@ import { stripeWebhook, syncSeats } from "./billing";
 import { SignupPage } from "./signup-page";
 import { chargeRun, pooledKey } from "./credits";
 import { HostedClaude } from "./hosted-claude";
-import { syncBrain } from "./brain";
+import { similarBusinesses, syncBrain } from "./brain";
 
 const cloud: Extensions = {
   edition: "cloud",
@@ -20,6 +20,7 @@ const cloud: Extensions = {
   pooledKey,
   afterRun: chargeRun,
   afterSchedule: syncBrain,
+  similarBusinesses,
 };
 
 export default cloud;
