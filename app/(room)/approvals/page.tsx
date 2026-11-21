@@ -7,7 +7,7 @@ import { controlsOn } from "@/dashboard/session";
 import { ActionButton } from "@/dashboard/components/client";
 import { RejectButton } from "@/dashboard/components/react";
 import { Avatar, Empty } from "@/dashboard/components/ui";
-import { CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
+import { CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
 
 // Applying a batch calls Mercury once or twice per change.
 export const maxDuration = 300;
@@ -60,6 +60,19 @@ function Invoice({ i }: { i: ApprovalItem }) {
   );
 }
 
+/** A QuickBooks category (card 241): the expense as code read it, and where it moves. Approving changes the category only. */
+function Category({ i }: { i: ApprovalItem }) {
+  const p = i.preview;
+  const rows: [string, string][] = [["Expense", p.record ?? "?"], ["From", "Uncategorized Expense"], ["To", p.category ?? "?"]];
+  return (
+    <div style={{ borderRadius: 16, background: "var(--soft)", padding: "6px 16px" }}>
+      {rows.map(([k, v], n) => <div key={n} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13 }}><span className="muted">{k}</span><span style={{ fontWeight: 500, textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>{v}</span></div>)}
+      {p.why && <div className="rule" style={{ padding: "10px 0", fontSize: 13, lineHeight: 1.55, overflowWrap: "anywhere" }}>{p.why}</div>}
+      <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Approving moves this one line in QuickBooks. The amount, payee, date and other lines stay exactly as they are.</div>
+    </div>
+  );
+}
+
 /** A calendar hold (card 251): the title and the exact time. Approving adds a private event with no guests; no one is emailed. */
 function Hold({ i }: { i: ApprovalItem }) {
   const p = i.preview;
@@ -82,13 +95,14 @@ function Tags({ i }: { i: ApprovalItem }) {
   );
 }
 
-const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [INVOICE_DRAFT]: "Stripe invoice draft" };
+const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [INVOICE_DRAFT]: "Stripe invoice draft", [QBO_CATEGORIZE]: "QuickBooks category" };
 
 function Change({ i }: { i: ApprovalItem }) {
   const p = i.preview;
   if (i.tool === DRAFT_EMAIL) return <Draft i={i} />;
   if (i.tool === CAMPAIGN_DRAFT) return <Campaign i={i} />;
   if (i.tool === INVOICE_DRAFT) return <Invoice i={i} />;
+  if (i.tool === QBO_CATEGORIZE) return <Category i={i} />;
   if (i.tool === CALENDAR_HOLD) return <Hold i={i} />;
   if (i.tool === SHOPIFY_TAGS) return <Tags i={i} />;
   const lines: [string, React.ReactNode][] = [

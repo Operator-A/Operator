@@ -31,7 +31,7 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, DRAFT_LIMITS, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { SHOPIFY_TAGS_GRANT, TAG_LIMITS, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { LIMITS as CAL, holdFromSlot } from "@/core/calendar-rules";
@@ -50,7 +50,9 @@ import { INVOICE_CURRENCIES, INVOICE_LIMITS, MAX_INVOICE_USD, STRIPE_PERIODS, in
 import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Param, Pick, ReportInput, ToolDef, ToolResult } from "./types";
-import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, STRIPE, SUPABASE, daysParam, usd } from "./shared";
+import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, QUICKBOOKS, SHOPIFY, STRIPE, SUPABASE, daysParam, usd } from "./shared";
+import { qboExpenseAccounts, qboProfitLoss, qboUncategorized } from "@/integrations/quickbooks";
+import { MAX_DAYS as QBO_MAX_DAYS, MAX_ROWS as QBO_MAX_ROWS, QBO_PERIODS, type QboPeriod } from "@/core/quickbooks-rules";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
 import { deliverBrief } from "@/core/brief";
@@ -917,8 +919,66 @@ const STRIPE_ACTIONS: ToolDef[] = [
   },
 ];
 
+// ---- QuickBooks Online (card 241): our own server on the business's Intuit sign-in. Sums in code.
+const QUICKBOOKS_TOOLS: ToolDef[] = [
+  {
+    id: "quickbooks_profit_loss", label: "QuickBooks profit and loss", detail: "Profit and loss from the business's own QuickBooks for a period, on its own fiscal year: income, cost of goods, gross profit, expenses by account and net income, with the totals read and checked in code",
+    kind: "read", group: "quickbooks", trusted: true, needs: QUICKBOOKS, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: QBO_PERIODS, default: "last_month", description: "Which period." }],
+    run: async (p) => {
+      const r = await qboProfitLoss(String(p.period) as QboPeriod);
+      return { data: r, numbers: { qbo_income: r.totals.income, qbo_cost_of_goods: r.totals.cost_of_goods, qbo_gross_profit: r.totals.gross_profit, qbo_expenses: r.totals.expenses, qbo_net_income: r.totals.net_income } };
+    },
+  },
+  {
+    id: "quickbooks_uncategorized", label: "Uncategorized expenses", detail: "Expense lines in QuickBooks still sitting in Uncategorized Expense, newest first: date, payee, amount and what account paid it, each with a pick so a categorize action can name one. Count and total are worked out in code. Payees and descriptions come from bank feeds, so they are untrusted",
+    kind: "read", group: "quickbooks", trusted: false, needs: QUICKBOOKS, costUsd: 0,
+    params: [
+      { name: "days", type: "int", min: 1, max: QBO_MAX_DAYS, default: 90, description: "How far back to look, in days." },
+      { name: "limit", type: "int", min: 1, max: QBO_MAX_ROWS, default: 25, description: "How many lines to list." },
+    ],
+    run: async (p) => {
+      const r = await qboUncategorized(Number(p.days), Number(p.limit));
+      const picks: Record<string, Pick> = {};
+      const rows = r.lines.map((l, i) => {
+        const label = `${l.date} ${l.payee} ${l.currency} ${l.amount.toFixed(2)}`;
+        picks[`q${i + 1}`] = { kind: "qbo_expense", id: `${l.purchaseId}:${l.lineId}`, label };
+        return { pick: `q${i + 1}`, date: l.date, payee: l.payee, amount: l.amount, currency: l.currency, description: l.description, paid_from: l.paid_from };
+      });
+      return { data: { lines: rows, count: r.count, total: r.total, more_than_read: r.cut }, numbers: { qbo_uncategorized: r.count, qbo_uncategorized_total: r.total }, picks };
+    },
+  },
+  {
+    id: "quickbooks_expense_accounts", label: "QuickBooks expense accounts", detail: "The business's active expense accounts in QuickBooks (cost of goods included), each with a pick so a categorize action can name one",
+    kind: "read", group: "quickbooks", trusted: true, needs: QUICKBOOKS, costUsd: 0, params: [],
+    run: async () => {
+      const r = await qboExpenseAccounts();
+      const picks: Record<string, Pick> = {};
+      const rows = r.accounts.map((a, i) => { picks[`a${i + 1}`] = { kind: "qbo_account", id: a.id, label: a.name }; return { pick: `a${i + 1}`, name: a.name, type: a.type }; });
+      return { data: { accounts: rows }, numbers: { qbo_expense_accounts: rows.length }, picks };
+    },
+  },
+  {
+    id: "quickbooks_categorize_expense", label: "Categorize a QuickBooks expense", detail: "Stages moving one expense line out of Uncategorized Expense into one of the business's expense accounts, for the owner to approve (later on its own, once it has earned trust). Changes the category only: never an amount, payee, date or other line, and never creates or deletes anything",
+    kind: "action", group: "quickbooks", trusted: true, needs: QUICKBOOKS, costUsd: 0,
+    agents: GATEWAY_TOOLS[QBO_CATEGORIZE].agents,
+    params: [
+      { name: "expense", type: "pick", kind: "qbo_expense", description: "The expense line, from an Uncategorized expenses result." },
+      { name: "account", type: "pick", kind: "qbo_account", description: "The account to move it to, from a QuickBooks expense accounts result." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why this account, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const expense = input.expense as Pick, account = input.account as Pick;
+      const args = { accountId: account.id, account: account.label };
+      const refused = refuseProposal(ctx.agentId, QBO_CATEGORIZE, expense.id, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: QBO_CATEGORIZE, target: expense.id, args, actionType: "qbo_categorize", title: `${expense.label} to ${account.label}`, preview: { record: expense.label, category: account.label, why: input.why } };
+    },
+  },
+];
+
 /** Every tool. An id is never used twice. */
-const ALL: ToolDef[] = [...TOOLS_LIST, ...STRIPE_ACTIONS];
+const ALL: ToolDef[] = [...TOOLS_LIST, ...STRIPE_ACTIONS, ...QUICKBOOKS_TOOLS];
 const dupes = ALL.map((t) => t.id).filter((id, i, a) => a.indexOf(id) !== i);
 if (dupes.length) throw new Error(`Tool ids used twice: ${dupes.join(", ")}`);
 export const TOOLS: Readonly<Record<string, ToolDef>> = Object.fromEntries(ALL.map((t) => [t.id, t]));

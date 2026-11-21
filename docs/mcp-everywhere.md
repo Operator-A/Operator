@@ -381,3 +381,62 @@ copy it. In the Control Room, open **Connections > Stripe**, paste it under **Re
 **Save**. For invoice drafts, make a second restricted key named "OPERATOR invoice drafts" with
 **Invoices** (and **Invoice items**, if listed) on **Write** and **Customers** on **Read**, and paste it
 under **Stripe invoice drafts**.
+
+## QuickBooks Online on our own server (card 241)
+
+A business's own QuickBooks Online company. Intuit's QuickBooks MCP server runs on a person's own
+machine with their credentials and can create, change and delete almost everything (invoices, bills,
+customers, journal entries), so it can't be a business's connection or held to a profile. Our own server
+runs in the app, signed in on Intuit's own page.
+
+- **Sign-in** (`auth: "intuit"`): the app's own Intuit OAuth client, like Google's. `QUICKBOOKS_CLIENT_ID`
+  and `QUICKBOOKS_CLIENT_SECRET` live in Vercel; the secret is never put in the vault, a cookie or the
+  browser. Connect asks for `com.intuit.quickbooks.accounting` only. Intuit has no read-only accounting
+  scope: that one scope reads and writes everything, so the limits are in our code (below). Intuit sends
+  the company id (`realmId`) on the redirect; the company's name is read with the new token and both are
+  kept on the connection's row, so Connections shows which company it is. The sign-in is cancelled at
+  Intuit and not kept when either is missing. Access tokens last an hour; every refresh hands back a new
+  refresh token, which replaces the old one at once. Disconnect asks Intuit to revoke it.
+- **Profile** `quickbooks` (`core/mcp-rules.ts`): three read tools, each one fixed request in
+  `core/quickbooks-rules.ts`: `quickbooks_profit_loss` (Intuit's ProfitAndLoss report for a period named
+  with Intuit's own date macros, so the company's fiscal year applies; income, cost of goods, gross profit,
+  expenses by account, net income, and a check that the parts add up), `quickbooks_uncategorized` (expense
+  lines still in Uncategorized Expense, newest first, with picks) and `quickbooks_expense_accounts` (active
+  expense accounts, with picks). Query text is written in the rules file; the only values in it are a
+  date code made and a fixed account name. Every sum is made in code, in cents.
+- **One write** `quickbooks_categorize_expense`, the gateway action type `quickbooks.categorize_expense`
+  (Draft), offered only on the gateway's `callWriteTool` path. The server re-reads the account (it must be
+  the company's own, active and an expense account, never Uncategorized Expense) and the purchase (the
+  line must still be in Uncategorized Expense; one already in the approved account is a retry and nothing
+  is written), sends a sparse update with the Line list exactly as read and only that line's account
+  changed, then reads the purchase back: the total, every line's amount and every other line's account
+  must be unchanged, or the action is marked partly applied. There is no create, delete or void call and
+  nothing sends an amount; `check:quickbooks` fails on one.
+- **Who categorizes:** no agent is named in code. An approver gives `quickbooks_categorize_expense` to an
+  agent on the builder's Tools step (granted actions); the gateway checks the agent's active spec at
+  propose and apply. At most `policies.max_qbo_categorize_per_run` (20) per apply.
+- **Files:** `integrations/quickbooks-api.ts` is the only file that calls QuickBooks for a business, only
+  `integrations/quickbooks-server.ts` imports it, and only `integrations/mcp.ts` imports the server (lint
+  and `check:quickbooks`). Minor version pinned to 75; requests never follow redirects; a 401 pauses the
+  sign-in. `QUICKBOOKS_SANDBOX=1` points the server at Intuit's test companies while the app is on its
+  development keys.
+
+**Setting up the Intuit app (once, for the whole app):**
+
+1. Go to **developer.intuit.com** and sign in. Open the **Apps** tab in your Workspace (some accounts
+   show **My Hub > App dashboard**) and click the **+** tile.
+2. Choose **QuickBooks Online and Payments**, then **Next**. Name it "OPERATOR", then **Next**.
+3. Under **Authorization scopes**, tick only **com.intuit.quickbooks.accounting** and click **Done**.
+4. In the app's left menu, open **Settings > Redirect URIs**. On **Development** and on **Production**,
+   click **Add URI**, paste `https://<Control Room domain>/connections/quickbooks/callback`, and **Save**.
+5. Open **Keys & credentials**, turn on **Show credentials**, and copy the **Client ID** and **Client
+   Secret**. In Vercel, add them as `QUICKBOOKS_CLIENT_ID` and `QUICKBOOKS_CLIENT_SECRET` (secret marked
+   Sensitive). Development keys work only with test companies: add `QUICKBOOKS_SANDBOX=1` until the
+   production keys are in.
+6. For production keys, open **App Overview > Get production keys** and fill in the **App details** and
+   **Compliance** questionnaires. Then swap in the production Client ID and Secret and remove
+   `QUICKBOOKS_SANDBOX`.
+
+**Connecting a business:** in the Control Room, open **Connections > QuickBooks Online**, tap
+**Connect**, sign in to Intuit as an admin of the company, pick the company and tap **Connect**. Back on
+Connections, check that the company name shown is the business.

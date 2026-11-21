@@ -38,6 +38,13 @@ export const env = {
   gmailClientId: v("GMAIL_CLIENT_ID"),
   gmailClientSecret: v("GMAIL_CLIENT_SECRET"),
 
+  // the app's Intuit OAuth client (card 241), for the QuickBooks sign-in made with Connect on Connections.
+  // Like Google's, the sign-in lives in the token vault and the secret stays here. QUICKBOOKS_SANDBOX=1
+  // points our server at Intuit's test companies, while the app is on its development keys.
+  quickbooksClientId: v("QUICKBOOKS_CLIENT_ID"),
+  quickbooksClientSecret: v("QUICKBOOKS_CLIENT_SECRET"),
+  quickbooksSandbox: v("QUICKBOOKS_SANDBOX") === "1",
+
   // Email to the owner only (morning brief, alerts) through Resend. Each business picks its owner
   // email on Settings (core/settings.ts).
   // BRIEF_FROM is a sender on a domain verified in Resend. Blank = no email.

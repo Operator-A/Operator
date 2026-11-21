@@ -16,20 +16,21 @@ import { hasGmail } from "@/integrations/gmail";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
 import { invoiceCents, type InvoiceArgs } from "@/core/stripe-rules";
+import { QBO_CATEGORIZE_TOOL, UNCATEGORIZED, type CategorizeArgs } from "@/core/quickbooks-rules";
 import { refuseTags, shopifyTarget } from "@/core/shopify-actions";
 import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
 import { refuseHold } from "@/core/calendar-rules";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, INVOICE_DRAFT, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, INVOICE_DRAFT, QBO_CATEGORIZE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_TAGS } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, SHOPIFY_TAGS } from "./policy";
 
 export interface Proposal {
   agentId: string;
   runId?: string | null;
   tool: ToolName;
   target: string;
-  args: AnnotateArgs | DraftArgs | CampaignArgs | InvoiceArgs;
+  args: AnnotateArgs | DraftArgs | CampaignArgs | InvoiceArgs | CategorizeArgs;
   actionType: string;
   title: string;
   reasoning?: string;
@@ -336,7 +337,7 @@ export async function writeBlocker(): Promise<string | null> {
 }
 
 /** A gateway sign-in is connected and not paused. */
-async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify" | "stripe_drafts"): Promise<boolean> {
+async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify" | "stripe_drafts" | "quickbooks"): Promise<boolean> {
   const s = await mcpStatus(id);
   return !!s?.connected && !s.paused;
 }
@@ -432,7 +433,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyInvoices(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyInvoices(ids), applyCategorize(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -685,6 +686,68 @@ async function applyInvoice(a: ActionRow, runId: string) {
   }
 }
 const INVOICE_GRANT = TOOLS[INVOICE_DRAFT].grant;
+
+/** Approved QuickBooks categories: each expense line moved on the business's Intuit sign-in, at most max_qbo_categorize_per_run per agent. */
+async function applyCategorize(ids?: string[]) {
+  const rows = await approvedOf(QBO_CATEGORIZE, ids);
+  if (!rows.length) return null;
+  if (!(await ready("quickbooks"))) return { ok: true, text: "Approved, not in QuickBooks yet: QuickBooks Online isn't connected (Connections, QuickBooks)." };
+  const cap = await numPolicy("max_qbo_categorize_per_run", 20);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyOneCategory(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway categorized ${n.applied} approved QuickBooks expense${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved categories are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyOneCategory(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as CategorizeArgs;
+    // the allow-list again at execution time (the grant was checked by refuseUngranted); the server re-reads the line and the account
+    const no = refuseProposal(a.agent_id, QBO_CATEGORIZE, a.target, args as unknown as Record<string, unknown>, 200, [CATEGORIZE_GRANT]);
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const [purchaseId, lineId] = a.target.split(":");
+    let out: { already?: unknown; checked?: unknown; problem?: unknown; amount?: unknown; uncategorizedId?: unknown };
+    try {
+      out = (await callWriteTool("quickbooks", QBO_CATEGORIZE_TOOL, { purchaseId, lineId, accountId: args.accountId })) as typeof out;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // the line was categorized by hand, or the account is gone: refused on the fresh check, nothing written
+      if (/isn't in Uncategorized Expense any more|isn't in the business's QuickBooks|inactive|isn't an expense account|isn't on the expense any more/.test(msg)) { await done({ status: "refused", reason: msg.slice(0, 300) }); return "refused" as const; }
+      throw e;
+    }
+    const diff = { before: { account: UNCATEGORIZED }, after: { account: args.account } };
+    const result = { amount: typeof out?.amount === "number" ? out.amount : null, account: args.account, already: out?.already === true };
+    // the write went through: a check that doesn't match is shown, never retried
+    if (out?.checked === false) { await done({ status: "partial", reason: `${String(out.problem ?? "The read-back didn't match")} Check the expense in QuickBooks.`, diff_json: diff, result_json: result }); return "applied" as const; }
+    await done({
+      status: "applied",
+      reason: out?.already === true ? `Already in ${args.account}, left as is.` : null,
+      diff_json: diff,
+      // what to put back: the same line, back into Uncategorized Expense
+      undo_json: out?.already === true || typeof out?.uncategorizedId !== "string" ? null : { accountId: out.uncategorizedId, account: UNCATEGORIZED },
+      result_json: result,
+    });
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+const CATEGORIZE_GRANT = TOOLS[QBO_CATEGORIZE].grant;
 
 /** Approved Mercury changes, at most max_mercury_writes_per_run per agent. */
 async function applyMercury(ids?: string[]) {

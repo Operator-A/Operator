@@ -15,7 +15,7 @@ import { lookup } from "node:dns/promises";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import {
-  GOOGLE_AUTH, MCP_IDS, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, isMcpId, authorizeUrl, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, checkedTools, isHosted, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
+  GOOGLE_AUTH, INTUIT_AUTH, MCP_IDS, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, isMcpId, authorizeUrl, grantedScopes, isAppSignIn, scopeProblem, usesConnect, checkTools, checkedTools, isHosted, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
   type AuthServer, type McpEvent, type McpId, type Tokens, statusMap, type StatusRow,
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
@@ -32,6 +32,8 @@ import { gmailMailbox, gmailServer } from "./gmail-server";
 import { ga4Properties, ga4Server } from "./ga4-server";
 import { calendarServer, calendarWho } from "./calendar-server";
 import { checkStripeDraftsKey, checkStripeReadKey, stripeServer } from "./stripe-server";
+import { quickbooksCompany, quickbooksServer } from "./quickbooks-server";
+import { QBO_BASE, QBO_SANDBOX_BASE, realmOk } from "@/core/quickbooks-rules";
 import { looksLikeStripeKey } from "@/core/stripe-rules";
 import {
   CUSTOM_ID, MAX_CUSTOM_SERVERS, acceptTools, cantTurnOn, customArgs, customReply, checkAddress, checkCustomTools, checkLabel, checkLine, checkPins, checkScopes, checkServerName, customCheckNote, isCustomId, isPublicIp, looksLikeKey, readToolList,
@@ -139,7 +141,7 @@ async function openSecret<T>(sealed: string): Promise<T | null> {
 
 // ---- Who a connection is for: a built-in server's profile in code, or a custom server's row.
 
-interface Prof { id: string; name: string; url: string; kind: "oauth" | "google" | "token" | "custom"; customAuth?: CustomAuth; scopes: readonly string[] }
+interface Prof { id: string; name: string; url: string; kind: "oauth" | "google" | "intuit" | "token" | "custom"; customAuth?: CustomAuth; scopes: readonly string[] }
 const builtIn = (id: McpId): Prof => ({ id, name: MCP_SERVERS[id].name, url: MCP_SERVERS[id].url, kind: MCP_SERVERS[id].auth, scopes: MCP_SERVERS[id].scopes });
 const customProf = (c: CustomServer): Prof => ({ id: c.id, name: c.name, url: c.url, kind: "custom", customAuth: c.auth, scopes: c.scopes });
 /** Signed in on the server's own page with dynamic client registration: hosted servers and custom ones that use it. */
@@ -313,6 +315,7 @@ async function disconnectProf(p: Prof): Promise<{ revoked: boolean; note: string
         // Google: cancelling the refresh token cancels its access tokens too, and takes only the token
         const res = p.kind === "google"
           ? [await fetchJson(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: tries[0].token }) })]
+          : p.kind === "intuit" ? [await intuitRevoke(tries[0].token)]
           : await Promise.all(tries.map((t) => tokenRequest(endpoint!, s.clientId, s.clientSecret, t)));
         revoked = res.every((x) => x.ok);
         if (!revoked) note = scrubSecrets(`${p.name} didn't confirm the cancel (${res.map((x) => x.status).join(", ")}). Remove the app in its own settings too.`, secrets);
@@ -410,6 +413,13 @@ export async function startConnect(id: string, redirectUri: string): Promise<{ u
     const p: Pending = { id, state, verifier, clientId: env.gmailClientId, clientSecret: null, tokenEndpoint: GOOGLE_AUTH.token_endpoint, revocationEndpoint: GOOGLE_AUTH.revocation_endpoint ?? null, redirectUri, at: Date.now() };
     return { url, pending: seal(p) };
   }
+  if (prof.kind === "intuit") {
+    // the app's own Intuit OAuth client, like Google's: the secret stays in Vercel, never in the cookie or the vault
+    if (!env.quickbooksClientId || !env.quickbooksClientSecret) throw new Error("set QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET in Vercel (the app's Intuit OAuth client) first");
+    const url = authorizeUrl(INTUIT_AUTH, { clientId: env.quickbooksClientId, redirectUri, challenge, state, scope: prof.scopes.join(" ") });
+    const p: Pending = { id, state, verifier, clientId: env.quickbooksClientId, clientSecret: null, tokenEndpoint: INTUIT_AUTH.token_endpoint, revocationEndpoint: INTUIT_AUTH.revocation_endpoint ?? null, redirectUri, at: Date.now() };
+    return { url, pending: seal(p) };
+  }
   const custom = prof.kind === "custom";
   const a = await discover(prof.url, custom);
   // a custom server: only the scopes the owner ticked, or none at all; never the server's whole list
@@ -427,10 +437,17 @@ export async function startConnect(id: string, redirectUri: string): Promise<{ u
   return { url, pending: seal(p) };
 }
 
-/** The client secret for a token request: Google's lives only in Vercel (GMAIL_CLIENT_SECRET). */
-const clientSecretOf = (p: Prof, stored: string | null) => (p.kind === "google" ? env.gmailClientSecret ?? null : stored);
+/** The client secret for a token request: Google's and Intuit's live only in Vercel (GMAIL_CLIENT_SECRET, QUICKBOOKS_CLIENT_SECRET). */
+const clientSecretOf = (p: Prof, stored: string | null) => (p.kind === "google" ? env.gmailClientSecret ?? null : p.kind === "intuit" ? env.quickbooksClientSecret ?? null : stored);
 /** RFC 8707 resource: servers that sign in on their own page only (Google doesn't take it). The token is for that address alone. */
 const resourceFor = (p: Prof): Record<string, string> => (signsInOwnPage(p) ? { resource: resourceOf(p.url) } : {});
+
+/** Intuit's revoke: JSON with the app's client id and secret as Basic auth. Cancelling the refresh token cancels its access tokens too. */
+async function intuitRevoke(token: string) {
+  if (!env.quickbooksClientId || !env.quickbooksClientSecret) return { ok: false, status: 0, json: null, text: "" };
+  const basic = Buffer.from(`${env.quickbooksClientId}:${env.quickbooksClientSecret}`).toString("base64");
+  return fetchJson(INTUIT_AUTH.revocation_endpoint!, { method: "POST", headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ token }) });
+}
 
 async function tokenRequest(endpoint: string, clientId: string, clientSecret: string | null, form: Record<string, string>) {
   const body = new URLSearchParams({ ...form, client_id: clientId, ...(clientSecret ? { client_secret: clientSecret } : {}) });
@@ -438,7 +455,7 @@ async function tokenRequest(endpoint: string, clientId: string, clientSecret: st
 }
 
 /** Back from the sign-in page: checks the state, trades the code for a token and keeps it. */
-export async function finishConnect(id: string, sealedPending: string | undefined, q: { code?: string | null; state?: string | null; error?: string | null }) {
+export async function finishConnect(id: string, sealedPending: string | undefined, q: { code?: string | null; state?: string | null; error?: string | null; realmId?: string | null }) {
   if (q.error) throw new Error(`the sign-in was not finished (${q.error.slice(0, 80)})`);
   const p = sealedPending ? open<Pending>(sealedPending) : null;
   if (!p || p.id !== id || Date.now() - p.at > PENDING_MINUTES * 60_000) throw new Error("the sign-in took too long or was started elsewhere. Tap Connect again.");
@@ -449,15 +466,20 @@ export async function finishConnect(id: string, sealedPending: string | undefine
   const r = await tokenRequest(p.tokenEndpoint, p.clientId, secret, { grant_type: "authorization_code", code: q.code, redirect_uri: p.redirectUri, code_verifier: p.verifier, ...resourceFor(prof) });
   const tokens = r.ok ? readTokens(r.json, Date.now()) : null;
   if (!tokens) throw new Error(`the server didn't hand over a token (${r.status}): ${scrubSecrets(r.text, [q.code, secret, p.verifier]).slice(0, 160)}`);
-  if (prof.kind === "google") {
-    // exactly the profile's scope, or the sign-in is cancelled at Google and not kept
+  if (prof.kind === "google" || prof.kind === "intuit") {
+    // Google: exactly the profile's scope, or the sign-in is cancelled there and not kept. Intuit's token
+    // reply names no scope (we asked for the profile's one) but must name the company it was granted for.
     const secrets = [tokens.accessToken, tokens.refreshToken, secret];
-    const problem = scopeProblem(grantedScopes(r.json), prof.scopes) ?? (tokens.refreshToken ? null : "Google didn't hand over a refresh token");
-    const g = GOOGLE[id as McpId];
-    let who: GoogleWho | null = null;
-    if (!problem && g) { try { who = await g.who(tokens.accessToken); } catch (e) { who = null; await logEvent(id, "refused", `couldn't read whose sign-in this is: ${e instanceof Error ? e.message : String(e)}`, secrets); } }
+    const vendor = prof.kind === "google" ? "Google" : "Intuit";
+    const problem = (prof.kind === "google" ? scopeProblem(grantedScopes(r.json), prof.scopes) : realmOk(q.realmId) ? null : "Intuit didn't say which QuickBooks company this is")
+      ?? (tokens.refreshToken ? null : `${vendor} didn't hand over a refresh token`);
+    const g = APP[id as McpId];
+    let who: AppWho | null = null;
+    if (!problem && g) { try { who = await g.who(tokens.accessToken, { realmId: q.realmId ?? null }); } catch (e) { who = null; await logEvent(id, "refused", `couldn't read whose sign-in this is: ${e instanceof Error ? e.message : String(e)}`, secrets); } }
     if (problem || !who || "problem" in who) {
-      await fetchJson(GOOGLE_AUTH.revocation_endpoint!, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: tokens.refreshToken ?? tokens.accessToken }) }).catch(() => undefined);
+      const t = tokens.refreshToken ?? tokens.accessToken;
+      if (prof.kind === "google") await fetchJson(GOOGLE_AUTH.revocation_endpoint!, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: t }) }).catch(() => undefined);
+      else await intuitRevoke(t).catch(() => undefined);
       const why = problem ?? (who && "problem" in who ? who.problem : `${prof.name} didn't say whose sign-in this is`);
       await logEvent(id, "refused", why, secrets);
       throw new Error(`${why}, so it was cancelled. Tap Connect again.`);
@@ -613,7 +635,7 @@ const stale = (at: string | null) => !at || Date.now() - Date.parse(at) > TOOL_C
 export async function callMcpTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   if (!mayCall(id, tool)) throw new Error(`${tool} isn't on the list of ${MCP_SERVERS[id].name} tools code may call.`);
   return traced("tool_call", { "operator.server": id, "operator.tool": tool, "operator.tool_kind": "read" }, () => {
-    if (isGoogle(id)) return callGoogleTool(id, tool, args);
+    if (isAppSignIn(id)) return callAppTool(id, tool, args, false);
     if (!isHosted(id)) return callLocalTool(id, tool, args);
     return callRemote(id, tool, args);
   });
@@ -626,21 +648,26 @@ export async function callMcpTool(id: McpId, tool: string, args: Record<string, 
 export async function callWriteTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   if (!mayWrite(id, tool)) throw new Error(`${tool} isn't a write tool the gateway may call on ${MCP_SERVERS[id].name}.`);
   return traced("tool_call", { "operator.server": id, "operator.tool": tool, "operator.tool_kind": "write" }, () => {
-    if (isGoogle(id)) return callGoogleTool(id, tool, args);
+    if (isAppSignIn(id)) return callAppTool(id, tool, args, true);
     if (isHosted(id)) return callRemote(id, tool, args);
     return localCall(id, tool, args, true);
   });
 }
 
-/** Who a Google sign-in belongs to, checked right after Connect, with the settings kept on its row; or why it can't be kept. */
-type GoogleWho = { label: string; settings: Record<string, string> } | { problem: string };
-const gmailWho = async (token: string): Promise<GoogleWho> => { const box = await gmailMailbox(token); return box ? { label: `as ${box}`, settings: { mailbox: box } } : { problem: "Gmail didn't say which mailbox this is" }; };
-const calendarSignIn = async (token: string): Promise<GoogleWho> => {
+/** Who a Google or Intuit sign-in belongs to, checked right after Connect, with the settings kept on its row; or why it can't be kept. */
+type AppWho = { label: string; settings: Record<string, string> } | { problem: string };
+const gmailWho = async (token: string): Promise<AppWho> => { const box = await gmailMailbox(token); return box ? { label: `as ${box}`, settings: { mailbox: box } } : { problem: "Gmail didn't say which mailbox this is" }; };
+const calendarSignIn = async (token: string): Promise<AppWho> => {
   const c = await calendarWho(token);
   return c.calendar ? { label: `as ${c.calendar}`, settings: { calendar: c.calendar, ...(c.timeZone ? { timeZone: c.timeZone } : {}) } } : { problem: "Google Calendar didn't say whose calendar this is" };
 };
-/** Our own servers signed in with Google: Gmail (slice 6), Google Analytics (card 152b) and Google Calendar (card 251). */
-const GOOGLE: Partial<Record<McpId, { server: (profile: McpId, token: string, settings: Record<string, string>) => Handler; who: (token: string) => Promise<GoogleWho> }>> = {
+const qboBase = () => (env.quickbooksSandbox ? QBO_SANDBOX_BASE : QBO_BASE);
+/**
+ * Our own servers signed in on the service's page with the app's own OAuth client: Gmail (slice 6), Google
+ * Analytics (card 152b) and Google Calendar (card 251) with Google's, QuickBooks Online (card 241) with Intuit's.
+ * `write` is true only from callWriteTool, so a server serving reads and a write offers the write to the gateway alone.
+ */
+const APP: Partial<Record<McpId, { server: (profile: McpId, token: string, settings: Record<string, string>, write: boolean) => Handler; who: (token: string, q: { realmId: string | null }) => Promise<AppWho> }>> = {
   gmail_read: { server: (p, t) => gmailServer(p, t), who: gmailWho },
   gmail: { server: (p, t) => gmailServer(p, t), who: gmailWho },
   ga4: {
@@ -655,26 +682,36 @@ const GOOGLE: Partial<Record<McpId, { server: (profile: McpId, token: string, se
   },
   calendar: { server: (p, t) => calendarServer(p, t), who: calendarSignIn },
   calendar_holds: { server: (p, t) => calendarServer(p, t), who: calendarSignIn },
+  quickbooks: {
+    server: (_p, t, s, write) => quickbooksServer({ base: qboBase(), realm: s.realmId ?? null, token: t, write }),
+    // the company comes back on the redirect; its name is read with the new token, so a realm the token can't reach isn't kept
+    who: async (token, q) => {
+      if (!realmOk(q.realmId)) return { problem: "Intuit didn't say which QuickBooks company this is" };
+      const name = await quickbooksCompany(qboBase(), q.realmId, token);
+      return name ? { label: `for ${name}`, settings: { realmId: q.realmId, company: name } } : { problem: "QuickBooks didn't say which company this is" };
+    },
+  },
 };
 
 /**
- * One tools/call to our own Gmail, Google Analytics or Google Calendar server (slice 6, cards 152b, 251), with an access token the vault opens and renews
+ * One tools/call to our own Gmail, Google Analytics, Google Calendar or QuickBooks server (slice 6, cards 152b, 251, 241), with an access token the vault opens and renews
  * for this profile's sign-in. The server serves only this profile's tools. Errors are scrubbed; a
- * token Google no longer accepts pauses the sign-in.
+ * token the service no longer accepts pauses the sign-in.
  */
-async function callGoogleTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
+async function callAppTool(id: McpId, tool: string, args: Record<string, unknown>, write: boolean): Promise<unknown> {
   const name = MCP_SERVERS[id].name;
   const { token, secrets, row } = await accessToken(builtIn(id));
   const n = ++localSeq;
   const request = JSON.stringify({ jsonrpc: "2.0", id: n, method: "tools/call", params: { name: tool, arguments: args } });
-  const g = GOOGLE[id];
+  const g = APP[id];
   if (!g) throw new Error(`${name} has no server here.`);
-  const body = JSON.stringify(await g.server(id, token, row.settings ?? {})(JSON.parse(request)));
+  const body = JSON.stringify(await g.server(id, token, row.settings ?? {}, write)(JSON.parse(request)));
   const rep = parseRpc("application/json", body, n);
   const out = "error" in rep ? { error: rep.error } : toolPayload(rep.result);
   if ("error" in out) {
     const msg = scrubSecrets(out.error, secrets);
-    if (/^(Gmail|Analytics|Calendar) 401\b/.test(msg)) { await pause(id, `Google refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: Google refused the sign-in. Tap Sign in again on Connections.`); }
+    const vendor = MCP_SERVERS[id].auth === "intuit" ? "Intuit" : "Google";
+    if (/^(Gmail|Analytics|Calendar|QuickBooks) 401\b/.test(msg)) { await pause(id, `${vendor} refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: ${vendor} refused the sign-in. Tap Sign in again on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;

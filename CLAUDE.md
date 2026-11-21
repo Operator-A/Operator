@@ -14,14 +14,16 @@ They hold for every business on OPERATOR. "The owner" is the business's owner; "
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
-The tool gateway (`core/gateway`) has six action types so far, all starting at Draft: receipt, category
+The tool gateway (`core/gateway`) has seven action types so far, all starting at Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), a Gmail draft to a lead
 on the leads list (the prospecting lead finder; the owner sends it from Gmail), a draft email campaign
 to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), a
 private hold with no guests on the business's Google Calendar (any agent an approver gives it to; it emails
-no one), tags added to a Shopify order or customer (any agent an approver grants it to), and a draft
+no one), tags added to a Shopify order or customer (any agent an approver grants it to), a draft
 invoice to one of the business's existing Stripe customers (any agent an approver gives it to; the owner
-finalizes and sends it from Stripe). No send, payment or publish action type is built, so no agent can send,
+finalizes and sends it from Stripe), and moving one QuickBooks expense line out of Uncategorized Expense into one
+of the business's own expense accounts (any agent an approver gives it to; never an amount, and nothing is created or
+deleted). No send, payment or publish action type is built, so no agent can send,
 pay or publish.
 
 
@@ -81,7 +83,8 @@ pay or publish.
   where one reaches more than the profile needs or doesn't fit, we run our own in the app
   (Notion, Gmail with no send tool, Google Analytics read only, Google Calendar with one private hold tool, Shopify with one fixed query or mutation per tool,
   Mercury receipt files, Klaviyo campaign drafts, Stripe with one fixed request per read tool and a
-  drafts-only invoice key).
+  drafts-only invoice key, QuickBooks Online with one fixed request per read tool and one write that only moves an
+  expense out of Uncategorized Expense, because Intuit's one accounting scope reads and writes everything).
   Each of our own servers is the only file that calls its service's API, and only
   `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).
 - One tool path: agents read only through `callMcpTool` (read tools), or a turned-on custom tool
@@ -94,7 +97,7 @@ pay or publish.
   wrapped by `MCP_SECRET_KEY` (never derived from another secret), connected on Connections.
   Only `integrations/mcp.ts` and `core/gateway` import the vault (lint enforces it). Settings in
   Vercel hold only the app's own infrastructure (Supabase, Claude, Resend for emails to the owner, Stripe
-  for the hosted edition's own billing, which no agent calls, the vault key, the app's Google OAuth client) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
+  for the hosted edition's own billing, which no agent calls, the vault key, the app's Google and Intuit OAuth clients) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
   that carries more (Google scopes, Shopify write scopes). No token in a prompt, log, error or the
   browser (`scrubSecrets`); requests carrying a token or code never follow redirects. A refused or
   expired sign-in pauses until the owner signs in again. See `docs/mcp-everywhere.md`.
