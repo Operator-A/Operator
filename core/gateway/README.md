@@ -105,6 +105,19 @@ Mercury endpoints used (the only writes in the repo): `PATCH /api/v1/transaction
 `note` and/or `categoryId`, and `POST /api/v1/transaction/{id}/attachments` (multipart,
 `attachmentType=receipt`). `GET /api/v1/transaction/{id}` (read token) for the live check.
 
+## `shopify.add_tags` (docs/shopify-actions.md)
+
+Tags added to one Shopify order or customer. Any agent an approver grants "Tag an order or customer"
+on the Tools step. Draft tier, `promotable: true` (a label on the business's own records, fully undoable).
+
+- The target is a Shopify order or customer id, a pick from a Recent orders result. The proposal holds
+  only `tags` (1 to 5, short, plain: `refuseTags` in `core/shopify-actions.ts`).
+- Applying needs Shopify connected with `write_orders` (orders) or `write_customers` (customers) on the
+  app, through `callWriteTool("shopify", "shopify_add_tags")`, `DASHBOARD_CONTROLS=on` and the agent on
+  duty; at most `policies.max_shopify_writes_per_run` (25) per apply. The server re-checks the scopes and
+  the live tags, adds only the missing ones (Shopify's `tagsAdd`), and the action stores
+  `undo_json.tags_remove` with exactly those.
+
 ## Caps, vendors and suppressed addresses
 
 The fences the payment and email action types will have to pass. Neither action type exists yet.

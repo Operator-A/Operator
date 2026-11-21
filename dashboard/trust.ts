@@ -5,7 +5,7 @@ import "server-only";
 import { db } from "@/core/db";
 import { agentNames } from "@/core/org";
 import { loadCaps } from "@/core/gateway";
-import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, TOOLS } from "@/core/gateway/policy";
+import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS } from "@/core/gateway/policy";
 import { listTrust, standingOf, TRUST_MISSING } from "@/core/trust";
 import { LEVEL_WORDS, offerWords, standingWords, type Level } from "@/core/trust-rules";
 
@@ -14,6 +14,7 @@ export const WHAT: Record<string, string> = {
   [ANNOTATE]: "receipt and category changes",
   [DRAFT_EMAIL]: "first-email drafts",
   [CAMPAIGN_DRAFT]: "campaign drafts",
+  [SHOPIFY_TAGS]: "Shopify order and customer tags",
 };
 
 export interface TrustLine { agentId: string; tool: string; name: string; what: string; level: Level; levelWords: string; words: string; reason: string | null; changedAt: string | null; clean: number }

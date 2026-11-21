@@ -84,7 +84,9 @@ export const SCOPE_WORDS: Record<string, string> = {
   "https://www.googleapis.com/auth/gmail.readonly": "search and read email. Google refuses it anything that drafts, sends, labels or deletes",
   "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
-  "the read-only app’s read scopes (a key with any write scope is refused)": "read orders, products and stock. A key that can change anything is refused",
+  "the app’s read scopes": "read orders, products and stock",
+  write_orders: "add tags to an order, only after you approve",
+  write_customers: "add tags to a customer, only after you approve",
 };
 
 /** The permissions a tile asks for, each with what it is for. */

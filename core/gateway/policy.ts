@@ -4,6 +4,7 @@
 // after an approver approves (Draft tier). Nothing here can create, cancel or move money.
 
 import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-rules";
+import { SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, refuseTags, shopifyTarget } from "@/core/shopify-actions";
 
 export type Tier = "Report" | "Draft" | "Act";
 
@@ -20,6 +21,11 @@ export const DRAFT_EMAIL = "gmail.create_draft";
  * picked from the business's Klaviyo lists by code and checked again right before the write.
  */
 export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
+/**
+ * Tags added to one Shopify order or customer (docs/shopify-actions.md). Adds only; undo removes
+ * exactly the tags it added. The target is a Shopify id from a Recent orders result.
+ */
+export { SHOPIFY_TAGS };
 
 /**
  * Who may propose an action type. A list names the only agents, by id (today's three action types;
@@ -52,6 +58,15 @@ export const TOOLS = {
     tier: "Draft" as Tier,
     fields: CAMPAIGN_FIELDS,
     // a draft to people who signed up to the list, never sent by the app: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [SHOPIFY_TAGS]: {
+    // any agent an approver grants "Tag an order or customer" on the Tools step; never a proposal
+    agents: "granted",
+    grant: SHOPIFY_TAGS_GRANT,
+    tier: "Draft" as Tier,
+    fields: ["tags"],
+    // a label on the business's own records, fully undoable: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
 } as const satisfies Record<string, ActionDef>;
@@ -129,6 +144,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (who) return who;
   if (tool === DRAFT_EMAIL) return UUID.test(target) ? refuseDraft(args) : "The target is not a lead on the leads list.";
   if (tool === CAMPAIGN_DRAFT) return listIdOk(target) ? refuseCampaign(args) : "The target is not a Klaviyo list id.";
+  if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";
   const extra = Object.keys(args).filter((k) => !(def.fields as readonly string[]).includes(k));
   if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. Only receipt, category and memo can be written.`;

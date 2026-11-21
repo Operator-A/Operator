@@ -120,7 +120,7 @@ property, the panel asks which one agents report on.
   comes up and the box says Later. When every part is connected, planned or skipped, the card says so and Next
   reads "Show me my company".
 - **The panel.** Numbered steps, then what each permission is for (from the profile's scopes,
-  `SCOPE_WORDS`), then the Connect button or, for Shopify, the store's address and the read-only key.
+  `SCOPE_WORDS`), then the Connect button or, for Shopify, the store's address and the app's key.
   Gmail also offers the drafts sign-in once the read-only one is connected.
 - **Back to setup.** Connect from here goes to `/connections/<id>/connect?from=start`. The route
   takes only `start` and keeps it in its own short-lived cookie; the callback returns to

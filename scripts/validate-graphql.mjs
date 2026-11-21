@@ -1,5 +1,6 @@
-// Validates every gql`…` document against Shopify's Admin 2026-07 schema. The agents
-// only ever talk to the Admin API, read-only. Fetch the schema once: npm run schemas
+// Validates every gql`…` document against Shopify's Admin 2026-07 schema. Reads anywhere; a
+// mutation only in core/shopify-actions.ts, the fixed store actions the gateway runs (check:mcp
+// checks each is named on the Shopify profile). No subscriptions. Fetch the schema once: npm run schemas
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { buildClientSchema, parse, validate } from "graphql";
@@ -17,6 +18,7 @@ for (const d of ["agents", "templates", "integrations", "core"]) walk(join(root,
 const fragments = new Map();
 for (const f of files) for (const m of readFileSync(f, "utf8").matchAll(/const (\w+) = gql`(\s*fragment[\s\S]*?)`/g)) fragments.set(m[1], m[2]);
 
+const ACTIONS = "core/shopify-actions.ts";
 let docs = 0, bad = 0;
 for (const f of files) {
   const rel = relative(root, f);
@@ -26,9 +28,11 @@ for (const f of files) {
     try {
       const doc = m[1].replace(/\$\{(\w+)\}/g, (_, n) => { if (!fragments.has(n)) throw new Error(`unknown fragment \${${n}}`); return fragments.get(n); });
       const ast = parse(doc);
-      // Read-only by construction: no mutations or subscriptions anywhere in this repo.
-      const op = ast.definitions.find((d) => d.kind === "OperationDefinition" && d.operation !== "query");
-      if (op) throw new Error(`${op.operation} found; agents may only query Shopify`);
+      // Store actions live in one file; everywhere else is read-only. No subscriptions anywhere.
+      const ops = ast.definitions.filter((d) => d.kind === "OperationDefinition");
+      if (ops.length !== 1) throw new Error("one operation per document");
+      if (ops[0].operation === "subscription") throw new Error("subscription found; nothing here subscribes to Shopify");
+      if (ops[0].operation === "mutation" && rel !== ACTIONS) throw new Error(`mutation found outside ${ACTIONS}; store actions are fixed mutations there, run only by the gateway`);
       const errs = validate(schema, ast);
       if (errs.length) { bad++; console.error(`✗ ${rel}\n  ${errs.map((e) => e.message).join("\n  ")}`); }
     } catch (e) { bad++; console.error(`✗ ${rel}: ${e.message}`); }
