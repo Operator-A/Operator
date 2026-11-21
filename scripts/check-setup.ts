@@ -38,22 +38,22 @@ assert.equal(stateFor(false), "known");
 
 // the stored sketch reads back checked; the leaning is derived from it (a kit Avery chose is a strong fit)
 assert.ok(deptIds.length >= 2, "there are department templates to start from");
-const EMPTY = { done: false, stage: "business", skipped: [], plans: {}, designs: [], leaning: [], offer: false, firstJob: null, wrapUp: false };
+const EMPTY = { done: false, stage: "business", skipped: [], plans: {}, designs: [], asked: [], leaning: [], offer: false, firstJob: null, wrapUp: false };
 assert.deepEqual(readSetupState(null, deptIds), EMPTY);
 assert.deepEqual(readSetupState({ done: true, designs: [{ key: "x", name: "Shop accounts", purpose: "p", reason: "You said so.", kit: "nope", draft: null }] }, deptIds), { ...EMPTY, done: true }, "a stored design with a kit that isn't on the list is dropped, not trusted");
 assert.deepEqual(readSetupState({ leaning: [{ id: deptIds[0], fit: "strong" }] }, deptIds).leaning, [], "an old stored leaning isn't read: only the sketch counts");
 
 // one guided flow (card 181): the step is kept in the setup state, and only a step on the list counts
-assert.deepEqual([...STAGES], ["business", "tools", "company", "first"]);
-assert.equal(readStage("tools"), "tools");
+assert.deepEqual([...STAGES], ["business", "company", "first"], "card 195: tools are asked inside the interview, not a step of their own");
+assert.equal(readStage("tools"), "business", "a business saved on the old tools step opens on the interview");
 for (const bad of [undefined, null, "", "credits", "TOOLS", 2, { stage: "tools" }]) assert.equal(readStage(bad), "business", `an unknown step (${String(bad)}) opens on the first one`);
 assert.equal(readSetupState({ stage: "company" }, deptIds).stage, "company", "the saved state keeps its step");
 assert.equal(readSetupState({ stage: "nope" }, deptIds).stage, "business");
 assert.equal(prevStage("business"), null, "nothing before the first step");
 assert.equal(nextStage("first"), null, "nothing after the last step");
-assert.deepEqual(STAGES.map((s) => nextStage(s)), ["tools", "company", "first", null]);
-assert.deepEqual(STAGES.map((s) => prevStage(s)), [null, "business", "tools", "company"]);
-assert.deepEqual(STAGES.map(stageProgress), [25, 50, 75, 100]);
+assert.deepEqual(STAGES.map((s) => nextStage(s)), ["company", "first", null]);
+assert.deepEqual(STAGES.map((s) => prevStage(s)), [null, "business", "company"]);
+assert.deepEqual(STAGES.map(stageProgress), [33, 67, 100]);
 for (const s of STAGES) assert.ok(STAGE_WORDS[s], `${s} has a name`);
 {
   const page = read("app/start/page.tsx"), parts = read("dashboard/components/setup.tsx"), acts = read("dashboard/setupActions.ts");
@@ -183,7 +183,7 @@ const unknownCost = monthCost({ run: runCost(null, null), cap: null, runsPerMont
 assert.deepEqual(deptMonth({ agents: [{ ...fin.agents[0], name: "X", cost: unknownCost }] }).unknown, ["X"], "an agent with no estimate is named, not counted as zero");
 const page184 = read("app/start/page.tsx");
 assert.match(page184, /Meet your company\./, "step 3 is the reveal");
-assert.match(page184, /back=\{setupGo\.bind\(null, "tools"\)\}/, "Change something goes back to the tools questions");
+assert.match(page184, /back=\{setupGo\.bind\(null, "business"\)\}/, "Change something goes back to the conversation");
 assert.match(page184, /empty=\{<ActionButton[^>]*action=\{setupStartEmpty\}/, "Start empty stays, as a quiet link");
 assert.doesNotMatch(read("dashboard/components/setup.tsx"), /role="tree"/, "the old tree chart is gone");
 
@@ -306,9 +306,9 @@ assert.equal(wrapScreen({ firstJob: null, needCredits: true, jobReady: true }), 
 assert.equal(wrapScreen({ firstJob: null, needCredits: false, jobReady: true }), "job", "then the first job");
 assert.equal(wrapScreen({ firstJob: null, needCredits: false, jobReady: false }), "waits", "with no agent ready, what each department waits on");
 assert.equal(wrapScreen({ firstJob: { agentId: "x", at: "y" }, needCredits: true, jobReady: false }), "working", "once it started, the company at work");
-assert.equal(shownStage({ stage: "tools", wrapUp: true }), "first", "the wrap-up is always the last step");
+assert.equal(shownStage({ stage: "business", wrapUp: true }), "first", "the wrap-up is always the last step");
 assert.equal(shownStage({ stage: "first", wrapUp: false }), "company", "the last step before installing is the company");
-assert.equal(shownStage({ stage: "tools", wrapUp: false }), "tools");
+assert.equal(shownStage({ stage: "business", wrapUp: false }), "business");
 const setup186 = read("core/setup.ts"), page186 = read("app/start/page.tsx"), acts186 = read("dashboard/setupActions.ts");
 assert.match(setup186, /wrapUp: offer/, "Start this company opens the wrap-up; Start empty doesn't");
 assert.match(page186, /if \(!setup && !state\.wrapUp\) redirect\("\/"\)/, "/start keeps the founder for the wrap-up");

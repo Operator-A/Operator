@@ -33,7 +33,7 @@ export interface CompanyDept {
   agents: CompanyAgent[];
   /** Seats with no agent yet, by title. */
   openSeats: string[];
-  /** Tools it still waits on (names), from the tools step. */
+  /** Tools it still waits on (names), from the tiles’ needs. */
   waitsOn: string[];
   /** What the founder planned for a tool it waits on (card 183), by tool name: a full sentence. */
   waitNotes: Record<string, string>;

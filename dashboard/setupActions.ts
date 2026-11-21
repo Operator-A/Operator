@@ -2,7 +2,7 @@
 // First-run setup actions (card 151, docs/setup.md). Each checks the login and role again. A message to
 // Avery makes real model calls, so it also needs DASHBOARD_CONTROLS=on, like her chat.
 import { revalidatePath } from "next/cache";
-import { addFact, askSetup, confirmFact, editFact, endWrapUp, finishSetup, startCompany, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, type SetupAnswer } from "@/core/setup";
+import { addFact, answerCategory, askSetup, takeSnapshot, confirmFact, editFact, endWrapUp, finishSetup, keepAnswerFact, startCompany, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, type SetupAnswer } from "@/core/setup";
 import { isStage } from "@/core/setup-rules";
 import { readPick } from "@/core/company-rules";
 import { companyChart } from "./company";
@@ -12,8 +12,10 @@ import { audit } from "@/core/audit";
 import { saveSettingsFields, settings } from "@/core/settings";
 import { validTz } from "@/core/time";
 import { askFor } from "@/core/connector-requests";
-import { TOOL_CATEGORIES, isCategory, routeUnlisted } from "@/core/tools-step-rules";
-import { asRole } from "./data";
+import { isCategory, routeUnlisted } from "@/core/tools-step-rules";
+import { hasSnapshot } from "@/core/snapshot-rules";
+import { asRole, getHealth } from "./data";
+import { connectedTiles } from "./toolsStep";
 import { controlsOn } from "./session";
 import type { ActionResult } from "./actions";
 
@@ -34,7 +36,7 @@ export async function setupGo(stage: string): Promise<ActionResult> {
   } catch (e) { return fail(e); }
 }
 
-/** The tools step (card 182): this part of the company waits. Saved, so the flow moves to the next question. */
+/** Skip for now on a part's card (card 195): nothing is saved but the skip, and the part stays in the Your tools panel to tap later. */
 export async function setupSkipTool(cat: string): Promise<ActionResult & { href?: string }> {
   const { no } = await asRole("approver"); if (no) return no;
   if (!isCategory(cat)) return { ok: false, text: "Unknown part of the company." };
@@ -42,21 +44,46 @@ export async function setupSkipTool(cat: string): Promise<ActionResult & { href?
     if (!(await inSetup())) return { ok: false, text: "Setup is finished for this business." };
     await skipCategory(cat);
     revalidatePath("/start");
-    return { ok: true, href: "/start", text: "Left for later. Tap its box any time to connect it." };
+    return { ok: true, href: "/start", text: "Left for later. Tap it under Your tools any time." };
   } catch (e) { return fail(e); }
 }
 
-/** "Nothing yet" (card 183): the part is marked for Avery to walk the founder into its starter tool after setup. Creates no account. */
-export async function setupPlanGuide(cat: string): Promise<ActionResult & { href?: string }> {
-  const { no } = await asRole("approver"); if (no) return no;
-  if (!isCategory(cat)) return { ok: false, text: "Unknown part of the company." };
-  const starter = TOOL_CATEGORIES.find((c) => c.id === cat)?.starter;
-  if (!starter) return { ok: false, text: "There’s no tool to set up for this part yet." };
+/**
+ * The founder's answer on a part's card in the chat (card 195): a tool from the part's list, or None yet
+ * (null). Saved as a fact and the part's plan in code; a listed tool that doesn't connect yet goes on our
+ * build list. A tool that connects opens its steps on the card. No model call, nothing connected here.
+ */
+export async function setupAnswerTool(cat: string, tool: string | null): Promise<ActionResult & { href?: string }> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!isCategory(cat)) return { ok: false, text: "Unknown part of the business." };
+  if (tool !== null && typeof tool !== "string") return { ok: false, text: "Unknown tool." };
   try {
     if (!(await inSetup())) return { ok: false, text: "Setup is finished for this business." };
-    await planCategory(cat, { kind: "guide" });
+    const r = await answerCategory(cat, tool);
+    await audit(me, "answer_tool", cat, { tool: r.name });
     revalidatePath("/start");
-    return { ok: true, href: `/start?q=${cat}`, text: `Noted. The steps for ${starter.name} wait on your Desk after setup.` };
+    if (r.tile) return { ok: true, href: `/start?c=${r.tile}`, text: "" };
+    if (r.name) {
+      await askFor({ name: r.name, what: "A tool the business already uses, picked in setup", by: me.email });
+      return { ok: true, href: "/start", text: `Noted. There’s no direct line to ${r.name} yet, so it’s on our build list, and it starts working the day it connects.` };
+    }
+    return { ok: true, href: "/start", text: "Noted." };
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * The snapshot (card 195 slice B): once a tool is connected in setup, its card asks code for a few
+ * numbers from it, saved as facts. Only a connected tile with a snapshot; no model call.
+ */
+export async function setupSnapshot(tile: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!hasSnapshot(tile)) return { ok: false, text: "That tool has no snapshot." };
+  try {
+    if (!(await inSetup())) return { ok: false, text: "Setup is finished for this business." };
+    if (!(await connectedTiles(await getHealth())).has(tile)) return { ok: false, text: "Connect it first." };
+    const facts = await takeSnapshot(tile);
+    await audit(me, "snapshot_tool", tile, { facts: facts.length });
+    return done(facts.length ? `Saved ${facts.length} fact${facts.length === 1 ? "" : "s"} from it.` : "Nothing to save from it yet.");
   } catch (e) { return fail(e); }
 }
 
@@ -82,7 +109,9 @@ export async function sendSetup(raw: string, site: string): Promise<SetupAnswer>
   if (typeof site !== "string" || site.length > 300) return none("That site address is too long.");
   try {
     if (!(await inSetup())) return none("Setup is finished for this business. Talk to me from the chat on any page.");
-    const a = await withActor(me.email, () => askSetup(m.text, site));
+    // which parts are connected, so Avery asks only about open ones (card 195)
+    const connected = await connectedTiles(await getHealth()).catch(() => new Set<never>());
+    const a = await withActor(me.email, () => askSetup(m.text, site, connected));
     revalidatePath("/start");
     return a;
   } catch (e) { return none(`Something went wrong: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`); }
@@ -187,13 +216,13 @@ export async function setupOtherTool(cat: string, name: string): Promise<ActionR
   if (!isCategory(cat)) return { ok: false, text: "Unknown part of the company." };
   const r = routeUnlisted(String(name ?? ""));
   if ("problem" in r) return { ok: false, text: r.problem };
-  if (r.kind === "tile") return { ok: true, text: `${r.name} connects right here.`, href: `/start?c=${r.id}` };
+  if (r.kind === "tile") return { ok: true, text: `${r.name} connects right here.`, href: `/start?c=${r.id}`, follow: true };
   if (r.kind === "builtIn") return { ok: true, text: `${r.name} connects on Connections.`, href: r.href };
   if (r.kind === "known") return { ok: true, text: `${r.name} has its own server. Add it on Connections with its address filled in: you turn on each read-only tool yourself.`, href: r.href };
   try {
     await askFor({ name: r.name, what: "A tool the business already uses, named in setup", by: me.email });
-    if (await inSetup()) await planCategory(cat, { kind: "export", tool: r.name });
+    if (await inSetup()) { await planCategory(cat, { kind: "export", tool: r.name }); await keepAnswerFact(cat, r.name); }
     revalidatePath("/start");
-    return { ok: true, href: `/start?q=${cat}`, follow: true, text: `There’s no direct line to ${r.name} yet, so this part starts from an export. I’ve put ${r.name} on our build list.` };
+    return { ok: true, href: "/start", follow: true, text: `There’s no direct line to ${r.name} yet, so this part starts from an export. I’ve put ${r.name} on our build list.` };
   } catch (e) { return fail(e); }
 }
