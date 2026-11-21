@@ -97,3 +97,43 @@ goes on) and the Settings card shows nothing saved.
 
 Hindsight and the weekly job (slice 3), anything Avery or an agent sees (slices 4 and 4b), the setup notice
 (slice 3), goal measures' direction (later, with 4b's results loop).
+
+## Slice 3: the Hindsight bank (card 232)
+
+The counted patterns go into one Hindsight bank so agents can find the right ones by meaning (slice 4).
+Still nothing private: only rows `brain_patterns()` returned, all over the floor.
+
+### What it does
+
+- **`ee/brain.ts`** is the only file that talks to Hindsight (`@vectorize-io/hindsight-client`), on the
+  cloud edition only, with `HINDSIGHT_API_URL` and `HINDSIGHT_API_KEY` (Vercel settings). Without both,
+  nothing runs and nothing fails.
+- **One bank, `operator-patterns`**, set from code each sync: retain mode `verbatim` (each statement kept
+  word for word, so no model rewrites a number), observations off, a mission and one directive (never
+  name a business, never state a number that isn't in a memory).
+- **The weekly sync** (`syncBrain`): reads `brainPatterns()`, turns each row into one plain statement in
+  code (`ee/brain-rules.ts`), and retains it as its own document, id `cohort|pattern`, so a re-retain
+  replaces it. Documents in the bank that are no longer in the count (fell under the floor, or the
+  businesses left) are deleted for good. Every statement is checked before it is sent: only words from
+  the lists in code and numbers from the count.
+- **When**: a new slot, `afterSchedule(now)`, told once per scheduler round after every business's turn.
+  The cloud edition syncs when the last sync is 7 days old, recorded in the admin business's `policies`
+  under `brain_sync` (`OPERATOR_ADMIN_ORG_ID`); with no admin business set, it doesn't sync. It never
+  stops the scheduler.
+- **Setup says so once**: under the company chart, one line on the cloud edition that the business adds
+  counts, never names or amounts, and where to turn it off.
+
+### A statement
+
+`Among online stores under $10k a month on OPERATOR, 18 of 26 use Klaviyo for email marketing.` Words
+come from `KIND_WORDS`, the revenue bands, the parts' lists and the kits' names; numbers from `orgs`,
+`hits`, `num` and `den`. Avery and agents never quote a figure from Hindsight's text: slice 4 re-counts
+each cited document's key in code.
+
+### Tests (`npm run check:ee`)
+
+Statements and document ids for each kind of pattern; a row under the floor never becomes a statement;
+statements hold only list words and the counted numbers; the sync with a fake bank retains every pattern
+over the floor, deletes the documents no longer counted, sets the bank first, and does nothing without
+both settings; the weekly gate.
+

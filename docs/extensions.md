@@ -21,6 +21,7 @@ each slot has a do-nothing default in core:
 | `HostedClaude` | setup step 1 and Connections > Claude, when the founder picks OPERATOR's Claude (card 162): balance, price, Buy buttons | none, so only the own-key option is offered |
 | `pooledKey()` | by `integrations/anthropic.ts`, only when the business has no Claude key of its own | none, so the run is refused |
 | `afterRun({ runId, costUsd, billing })` | after every run that cost something (`core/runs.ts`) | nothing |
+| `afterSchedule(now)` | once per scheduler round, after every business's turn (`/api/dispatch`): the cloud edition's weekly shared-brain sync to Hindsight (card 232) | nothing |
 | `edition` | for anything that needs to say which edition it is | `"open"` |
 
 ## How the swap works

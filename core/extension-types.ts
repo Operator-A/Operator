@@ -56,7 +56,12 @@ export interface Extensions {
    * the model. Credits take the run's charge here, once per run. Never stops or changes the run.
    */
   afterRun(run: { runId: string; costUsd: number; billing: Billing }): Promise<void>;
+  /**
+   * Told once per scheduler round, after every business's turn, as no business (card 232): the cloud
+   * edition's weekly shared-brain sync. Never stops the scheduler; says what it did in a few words.
+   */
+  afterSchedule(now: number): Promise<string | null>;
 }
 
 /** Every slot, so check:open-core can make sure each edition fills each one. */
-export const SLOTS = ["edition", "planBlock", "SettingsCards", "HostedClaude", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun"] as const satisfies readonly (keyof Extensions)[];
+export const SLOTS = ["edition", "planBlock", "SettingsCards", "HostedClaude", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun", "afterSchedule"] as const satisfies readonly (keyof Extensions)[];

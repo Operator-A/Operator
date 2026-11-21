@@ -15,6 +15,8 @@ const none: Extensions = {
   // the open edition has no key of its own: every business uses its own Claude key
   pooledKey: async () => null,
   afterRun: async () => undefined,
+  // no shared brain: a self-hosted OPERATOR is one company, with nobody to learn from
+  afterSchedule: async () => null,
 };
 
 export default none;
