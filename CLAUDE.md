@@ -14,12 +14,12 @@ They hold for every business on OPERATOR. "The owner" is the business's owner; "
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
-The tool gateway (`core/gateway`) has four action types so far, all Draft: receipt, category
+The tool gateway (`core/gateway`) has five action types so far, all Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), a Gmail draft to a lead
 on the leads list (the prospecting lead finder; the owner sends it from Gmail), a draft email campaign
-to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), and a
+to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), a
 private hold with no guests on the business's Google Calendar (any agent an approver gives it to; it emails
-no one), and a draft invoice to one of the business's existing Stripe customers (any agent the owner gives
+no one), and a draft invoice to one of the business's existing Stripe customers (any agent an approver gives
 it to; the owner finalizes and sends it from Stripe). No send, payment or publish action type is built, so no
 agent can send, pay or publish.
 
