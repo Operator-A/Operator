@@ -15,7 +15,7 @@ import { lookup } from "node:dns/promises";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import {
-  GOOGLE_AUTH, MCP_IDS, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, isMcpId, authorizeUrl, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, checkedTools, isHosted, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
+  GOOGLE_AUTH, META_AUTH, isMeta, MCP_IDS, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, isMcpId, authorizeUrl, grantedScopes, isGoogle, scopeProblem, usesConnect, checkTools, checkedTools, isHosted, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
   type AuthServer, type McpEvent, type McpId, type Tokens, statusMap, type StatusRow,
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
@@ -31,6 +31,13 @@ import { shopifyKeyKind } from "@/core/shopify-queries";
 import { gmailMailbox, gmailServer } from "./gmail-server";
 import { ga4Properties, ga4Server } from "./ga4-server";
 import { calendarServer, calendarWho } from "./calendar-server";
+import { checkMailchimpKey, mailchimpServer } from "./mailchimp-server";
+import { checkWooKey, wooServer } from "./woo-server";
+import { checkHubSpotKey, hubspotServer } from "./hubspot-server";
+import { checkMetaSignIn, metaServer } from "./meta-server";
+import { looksLikeHubSpotKey } from "@/core/hubspot-rules";
+import { looksLikeWooKey } from "@/core/woo-rules";
+import { looksLikeMailchimpKey } from "@/core/mailchimp-rules";
 import { checkStripeDraftsKey, checkStripeReadKey, stripeServer } from "./stripe-server";
 import { looksLikeStripeKey } from "@/core/stripe-rules";
 import {
@@ -139,7 +146,7 @@ async function openSecret<T>(sealed: string): Promise<T | null> {
 
 // ---- Who a connection is for: a built-in server's profile in code, or a custom server's row.
 
-interface Prof { id: string; name: string; url: string; kind: "oauth" | "google" | "token" | "custom"; customAuth?: CustomAuth; scopes: readonly string[] }
+interface Prof { id: string; name: string; url: string; kind: "oauth" | "google" | "meta" | "token" | "custom"; customAuth?: CustomAuth; scopes: readonly string[] }
 const builtIn = (id: McpId): Prof => ({ id, name: MCP_SERVERS[id].name, url: MCP_SERVERS[id].url, kind: MCP_SERVERS[id].auth, scopes: MCP_SERVERS[id].scopes });
 const customProf = (c: CustomServer): Prof => ({ id: c.id, name: c.name, url: c.url, kind: "custom", customAuth: c.auth, scopes: c.scopes });
 /** Signed in on the server's own page with dynamic client registration: hosted servers and custom ones that use it. */
@@ -410,6 +417,16 @@ export async function startConnect(id: string, redirectUri: string): Promise<{ u
     const p: Pending = { id, state, verifier, clientId: env.gmailClientId, clientSecret: null, tokenEndpoint: GOOGLE_AUTH.token_endpoint, revocationEndpoint: GOOGLE_AUTH.revocation_endpoint ?? null, redirectUri, at: Date.now() };
     return { url, pending: seal(p) };
   }
+  if (prof.kind === "meta") {
+    // OPERATOR's Meta app: its secret stays in Vercel and is never put in the cookie or the vault
+    if (!env.metaAppId || !env.metaAppSecret) throw new Error("set META_APP_ID and META_APP_SECRET in Vercel (OPERATOR's Meta app) first");
+    // Facebook Login for Business names the permissions by a configuration on the app (one per profile);
+    // without one, the classic scope. Either way the grant is checked against the profile after.
+    const config = id === "meta" ? env.metaConfigRead : env.metaConfigPauses;
+    const url = authorizeUrl(META_AUTH, { clientId: env.metaAppId, redirectUri, challenge, state, ...(config ? { extra: { config_id: config } } : { scope: prof.scopes.join(","), extra: { auth_type: "rerequest" } }) });
+    const p: Pending = { id, state, verifier, clientId: env.metaAppId, clientSecret: null, tokenEndpoint: META_AUTH.token_endpoint, revocationEndpoint: null, redirectUri, at: Date.now() };
+    return { url, pending: seal(p) };
+  }
   const custom = prof.kind === "custom";
   const a = await discover(prof.url, custom);
   // a custom server: only the scopes the owner ticked, or none at all; never the server's whole list
@@ -427,8 +444,8 @@ export async function startConnect(id: string, redirectUri: string): Promise<{ u
   return { url, pending: seal(p) };
 }
 
-/** The client secret for a token request: Google's lives only in Vercel (GMAIL_CLIENT_SECRET). */
-const clientSecretOf = (p: Prof, stored: string | null) => (p.kind === "google" ? env.gmailClientSecret ?? null : stored);
+/** The client secret for a token request: Google's and Meta's live only in Vercel (GMAIL_CLIENT_SECRET, META_APP_SECRET). */
+const clientSecretOf = (p: Prof, stored: string | null) => (p.kind === "google" ? env.gmailClientSecret ?? null : p.kind === "meta" ? env.metaAppSecret ?? null : stored);
 /** RFC 8707 resource: servers that sign in on their own page only (Google doesn't take it). The token is for that address alone. */
 const resourceFor = (p: Prof): Record<string, string> => (signsInOwnPage(p) ? { resource: resourceOf(p.url) } : {});
 
@@ -453,8 +470,8 @@ export async function finishConnect(id: string, sealedPending: string | undefine
     // exactly the profile's scope, or the sign-in is cancelled at Google and not kept
     const secrets = [tokens.accessToken, tokens.refreshToken, secret];
     const problem = scopeProblem(grantedScopes(r.json), prof.scopes) ?? (tokens.refreshToken ? null : "Google didn't hand over a refresh token");
-    const g = GOOGLE[id as McpId];
-    let who: GoogleWho | null = null;
+    const g = OWN_SIGN_IN[id as McpId];
+    let who: OwnWho | null = null;
     if (!problem && g) { try { who = await g.who(tokens.accessToken); } catch (e) { who = null; await logEvent(id, "refused", `couldn't read whose sign-in this is: ${e instanceof Error ? e.message : String(e)}`, secrets); } }
     if (problem || !who || "problem" in who) {
       await fetchJson(GOOGLE_AUTH.revocation_endpoint!, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: tokens.refreshToken ?? tokens.accessToken }) }).catch(() => undefined);
@@ -463,6 +480,25 @@ export async function finishConnect(id: string, sealedPending: string | undefine
       throw new Error(`${why}, so it was cancelled. Tap Connect again.`);
     }
     await store(id, { clientId: p.clientId, clientSecret: null, tokenEndpoint: p.tokenEndpoint, revocationEndpoint: p.revocationEndpoint, tokens });
+    await db().from("mcp_connections").update({ settings: who.settings }).eq("id", id);
+    await logEvent(id, "connected", who.label, secrets);
+    return;
+  }
+  if (prof.kind === "meta") {
+    // a short sign-in is traded at once for Meta's long one (about 60 days, with no refresh token: when
+    // it runs out the sign-in pauses until the owner signs in again), then held to the profile exactly
+    const long = await tokenRequest(p.tokenEndpoint, p.clientId, secret, { grant_type: "fb_exchange_token", fb_exchange_token: tokens.accessToken });
+    const lt = long.ok ? readTokens(long.json, Date.now()) : null;
+    const secrets = [tokens.accessToken, lt?.accessToken, secret];
+    if (!lt) { await logEvent(id, "refused", `Meta didn't hand over a long sign-in (${long.status})`, secrets); throw new Error(`Meta didn't hand over a long sign-in (${long.status}). Tap Connect again.`); }
+    let who: OwnWho;
+    try { who = await metaWho(id as McpId, lt.accessToken); } catch (e) { who = { problem: scrubSecrets(e instanceof Error ? e.message : String(e), secrets) }; }
+    if ("problem" in who) {
+      // not kept. Nothing is cancelled at Meta: a cancel takes the whole app from this person, other sign-in included
+      await logEvent(id, "refused", who.problem, secrets);
+      throw new Error(`${who.problem}, so it wasn't kept. Tap Connect again.`);
+    }
+    await store(id, { clientId: p.clientId, clientSecret: null, tokenEndpoint: p.tokenEndpoint, revocationEndpoint: null, tokens: lt });
     await db().from("mcp_connections").update({ settings: who.settings }).eq("id", id);
     await logEvent(id, "connected", who.label, secrets);
     return;
@@ -613,7 +649,7 @@ const stale = (at: string | null) => !at || Date.now() - Date.parse(at) > TOOL_C
 export async function callMcpTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   if (!mayCall(id, tool)) throw new Error(`${tool} isn't on the list of ${MCP_SERVERS[id].name} tools code may call.`);
   return traced("tool_call", { "operator.server": id, "operator.tool": tool, "operator.tool_kind": "read" }, () => {
-    if (isGoogle(id)) return callGoogleTool(id, tool, args);
+    if (isGoogle(id) || isMeta(id)) return callOwnSignInTool(id, tool, args);
     if (!isHosted(id)) return callLocalTool(id, tool, args);
     return callRemote(id, tool, args);
   });
@@ -626,21 +662,26 @@ export async function callMcpTool(id: McpId, tool: string, args: Record<string, 
 export async function callWriteTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   if (!mayWrite(id, tool)) throw new Error(`${tool} isn't a write tool the gateway may call on ${MCP_SERVERS[id].name}.`);
   return traced("tool_call", { "operator.server": id, "operator.tool": tool, "operator.tool_kind": "write" }, () => {
-    if (isGoogle(id)) return callGoogleTool(id, tool, args);
+    if (isGoogle(id) || isMeta(id)) return callOwnSignInTool(id, tool, args);
     if (isHosted(id)) return callRemote(id, tool, args);
     return localCall(id, tool, args, true);
   });
 }
 
 /** Who a Google sign-in belongs to, checked right after Connect, with the settings kept on its row; or why it can't be kept. */
-type GoogleWho = { label: string; settings: Record<string, string> } | { problem: string };
-const gmailWho = async (token: string): Promise<GoogleWho> => { const box = await gmailMailbox(token); return box ? { label: `as ${box}`, settings: { mailbox: box } } : { problem: "Gmail didn't say which mailbox this is" }; };
-const calendarSignIn = async (token: string): Promise<GoogleWho> => {
+type OwnWho = { label: string; settings: Record<string, string> } | { problem: string };
+const gmailWho = async (token: string): Promise<OwnWho> => { const box = await gmailMailbox(token); return box ? { label: `as ${box}`, settings: { mailbox: box } } : { problem: "Gmail didn't say which mailbox this is" }; };
+const calendarSignIn = async (token: string): Promise<OwnWho> => {
   const c = await calendarWho(token);
   return c.calendar ? { label: `as ${c.calendar}`, settings: { calendar: c.calendar, ...(c.timeZone ? { timeZone: c.timeZone } : {}) } } : { problem: "Google Calendar didn't say whose calendar this is" };
 };
-/** Our own servers signed in with Google: Gmail (slice 6), Google Analytics (card 152b) and Google Calendar (card 251). */
-const GOOGLE: Partial<Record<McpId, { server: (profile: McpId, token: string, settings: Record<string, string>) => Handler; who: (token: string) => Promise<GoogleWho> }>> = {
+/** Whose Meta sign-in this is: Meta's list of what it granted must fit the profile, and it must see an ad account. */
+const metaWho = async (id: McpId, token: string): Promise<OwnWho> => {
+  const c = await checkMetaSignIn(id, token);
+  return { label: `${c.name}, ${c.workspace}`, settings: {} };
+};
+/** Our own servers signed in on the service's own page: Gmail (slice 6), Google Analytics (card 152b), Google Calendar (card 251) and Meta Ads (card 255). */
+const OWN_SIGN_IN: Partial<Record<McpId, { server: (profile: McpId, token: string, settings: Record<string, string>) => Handler; who: (token: string) => Promise<OwnWho> }>> = {
   gmail_read: { server: (p, t) => gmailServer(p, t), who: gmailWho },
   gmail: { server: (p, t) => gmailServer(p, t), who: gmailWho },
   ga4: {
@@ -655,6 +696,8 @@ const GOOGLE: Partial<Record<McpId, { server: (profile: McpId, token: string, se
   },
   calendar: { server: (p, t) => calendarServer(p, t), who: calendarSignIn },
   calendar_holds: { server: (p, t) => calendarServer(p, t), who: calendarSignIn },
+  meta: { server: (p, t) => metaServer(p, t), who: (t) => metaWho("meta", t) },
+  meta_pauses: { server: (p, t) => metaServer(p, t), who: (t) => metaWho("meta_pauses", t) },
 };
 
 /**
@@ -662,19 +705,19 @@ const GOOGLE: Partial<Record<McpId, { server: (profile: McpId, token: string, se
  * for this profile's sign-in. The server serves only this profile's tools. Errors are scrubbed; a
  * token Google no longer accepts pauses the sign-in.
  */
-async function callGoogleTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
+async function callOwnSignInTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   const name = MCP_SERVERS[id].name;
   const { token, secrets, row } = await accessToken(builtIn(id));
   const n = ++localSeq;
   const request = JSON.stringify({ jsonrpc: "2.0", id: n, method: "tools/call", params: { name: tool, arguments: args } });
-  const g = GOOGLE[id];
+  const g = OWN_SIGN_IN[id];
   if (!g) throw new Error(`${name} has no server here.`);
   const body = JSON.stringify(await g.server(id, token, row.settings ?? {})(JSON.parse(request)));
   const rep = parseRpc("application/json", body, n);
   const out = "error" in rep ? { error: rep.error } : toolPayload(rep.result);
   if ("error" in out) {
     const msg = scrubSecrets(out.error, secrets);
-    if (/^(Gmail|Analytics|Calendar) 401\b/.test(msg)) { await pause(id, `Google refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: Google refused the sign-in. Tap Sign in again on Connections.`); }
+    if (/^(Gmail|Analytics|Calendar|Meta) 401\b/.test(msg)) { const by = isMeta(id) ? "Meta" : "Google"; await pause(id, `${by} refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: ${by} refused the sign-in. Tap Sign in again on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;
@@ -699,6 +742,13 @@ const LOCAL: Partial<Record<McpId, { server: (key: string) => Handler; looksRigh
   shopify: { server: shopifyServer, looksRight: (k) => !!shopifyKeyKind(k), who: checkShopifyKey },
   mercury_files: { server: mercuryFilesServer, looksRight: looksLikeMercuryToken, who: checkMercuryFilesKey },
   klaviyo_drafts: { server: klaviyoDraftsServer, looksRight: looksLikeKlaviyoKey, who: checkKlaviyoDraftsKey },
+  mailchimp: { server: (k) => mailchimpServer("mailchimp", k), looksRight: looksLikeMailchimpKey, who: checkMailchimpKey },
+  mailchimp_drafts: { server: (k) => mailchimpServer("mailchimp_drafts", k), looksRight: looksLikeMailchimpKey, who: checkMailchimpKey },
+  // the store address is the owner's: a public https host, checked right before every request
+  woo: { server: (k) => wooServer("woo", k, assertPublic), looksRight: looksLikeWooKey, who: (k) => checkWooKey("woo", k, assertPublic) },
+  woo_notes: { server: (k) => wooServer("woo_notes", k, assertPublic), looksRight: looksLikeWooKey, who: (k) => checkWooKey("woo_notes", k, assertPublic) },
+  hubspot: { server: (k) => hubspotServer("hubspot", k), looksRight: looksLikeHubSpotKey, who: (k) => checkHubSpotKey("hubspot", k) },
+  hubspot_deals: { server: (k) => hubspotServer("hubspot_deals", k), looksRight: looksLikeHubSpotKey, who: (k) => checkHubSpotKey("hubspot_deals", k) },
   // a secret key (sk_) passes looksRight so the check can say why it is refused
   stripe: { server: (k) => stripeServer("stripe", k), looksRight: (k) => looksLikeStripeKey(k) || /^sk_(live|test)_/.test(k), who: checkStripeReadKey },
   stripe_drafts: { server: (k) => stripeServer("stripe_drafts", k), looksRight: (k) => looksLikeStripeKey(k) || /^sk_(live|test)_/.test(k), who: checkStripeDraftsKey },
@@ -756,7 +806,7 @@ async function localCall(id: McpId, tool: string, args: Record<string, unknown>,
   if ("error" in out) {
     const msg = scrubSecrets(out.error, [s.key]);
     // 401 is a key the service no longer accepts; Notion's 403 and 404 are a page not shared with the integration
-    if (/^(Notion|Shopify|Mercury|Klaviyo|Stripe) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
+    if (/^(Notion|Shopify|Mercury|Klaviyo|Stripe|Mailchimp|WooCommerce|HubSpot) 401\b/.test(msg)) { await pause(id, `${name} refused the key (401)`, "refused", [s.key]); throw new Error(`${name} refused the key. Paste a new one on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;

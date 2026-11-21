@@ -38,6 +38,15 @@ export const env = {
   gmailClientId: v("GMAIL_CLIENT_ID"),
   gmailClientSecret: v("GMAIL_CLIENT_SECRET"),
 
+  // OPERATOR's own Meta app (Facebook Login), for the two Meta Ads sign-ins made with Connect on
+  // Connections (card 255). The sign-ins live in the token vault; the secret stays here only.
+  metaAppId: v("META_APP_ID"),
+  metaAppSecret: v("META_APP_SECRET"),
+  // Facebook Login for Business asks for permissions by a configuration made on the app, not a scope:
+  // one with ads_read (the agents' sign-in), one with ads_management (the gateway's). Not secret.
+  metaConfigRead: v("META_CONFIG_READ"),
+  metaConfigPauses: v("META_CONFIG_PAUSES"),
+
   // Email to the owner only (morning brief, alerts) through Resend. Each business picks its owner
   // email on Settings (core/settings.ts).
   // BRIEF_FROM is a sender on a domain verified in Resend. Blank = no email.

@@ -15,6 +15,8 @@ import { EXPORT_LIMITS } from "@/core/export-rules";
 import { controlsOn } from "./session";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import { ga4PropertyList } from "@/integrations/ga4";
+import { db } from "@/core/db";
+import { RESULT_KINDS, RESULT_LABEL, TARGET_KEYS, targetProblem, type MetaResult } from "@/core/meta-rules";
 import type { ActionResult } from "./actions";
 import { asRole } from "./data";
 
@@ -85,6 +87,29 @@ export async function ga4PickProperty(propertyId: string): Promise<ActionResult>
     await audit(me, "pick_ga4_property", p.id);
     revalidatePath("/start");
     return done(`Analytics now reports on “${p.name}”.`);
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * A Meta Ads cost target (card 255): an owner sets the most one result may cost before an agent may
+ * propose pausing the ad. Blank clears it, and then nothing is paused on that result. Agents never set it.
+ */
+export async function metaSetTarget(result: string, value: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    if (!RESULT_KINDS.includes(result as MetaResult)) return { ok: false, text: "Unknown kind of result." };
+    const problem = targetProblem(String(value));
+    if (problem) return { ok: false, text: problem };
+    const key = TARGET_KEYS[result as MetaResult];
+    const v = String(value).trim() ? Number(String(value).trim().replace(/^\$/, "")) : null;
+    const { data: old } = await db().from("policies").select("value_json").eq("key", key).maybeSingle();
+    const { error } = v === null
+      ? await db().from("policies").delete().eq("key", key)
+      : await db().from("policies").upsert({ key, value_json: v, updated_at: new Date().toISOString() });
+    if (error) return fail(error.message);
+    await db().from("policy_log").insert({ key, old_value: old?.value_json ?? null, new_value: v, changed_by: me.email });
+    await audit(me, "set_meta_target", key, { value: v });
+    return done(v === null ? `No cost per ${RESULT_LABEL[result as MetaResult]} target: nothing is paused on it.` : `Cost per ${RESULT_LABEL[result as MetaResult]} target: ${v}. Agents given pauses can propose pausing ads over it.`);
   } catch (e) { return fail(e); }
 }
 
