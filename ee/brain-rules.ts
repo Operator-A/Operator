@@ -15,8 +15,8 @@ export const STATEMENT_MAX = 300;
 
 /** How the bank is set, from code on every sync (createBank creates or updates). */
 export const BANK_SETTINGS = {
-  reflectMission: "I help small businesses on OPERATOR decide what to set up and how to run it, from patterns counted across many businesses. Each memory is a count over at least five businesses, never one business.",
-  retainMission: "Keep each statement exactly as written. Each one is a pattern counted across at least five businesses.",
+  reflectMission: "I help small businesses on OPERATOR decide what to set up and how to run it. Each memory is either a pattern counted across at least five businesses (never one business), or a lesson from OPERATOR's playbook written by OPERATOR staff (tagged source:playbook).",
+  retainMission: "Keep each statement exactly as written. Each one is a pattern counted across at least five businesses, or a lesson from OPERATOR's playbook.",
   retainExtractionMode: "verbatim",
   enableObservations: false,
 } as const;
@@ -36,6 +36,8 @@ const KIND_PHRASE: Record<BusinessKind, string> = {
   creator: "creators and media businesses",
   other: "businesses",
 };
+/** "online stores": a kind of business in words, plural. */
+export const kindPhrase = (k: BusinessKind) => KIND_PHRASE[k];
 const REVENUE_PHRASE: Partial<Record<RevenueBand, string>> = {
   none: "with no revenue yet",
   under_10k: "under $10k a month",
@@ -114,7 +116,7 @@ export function tagsOf(r: Pick<PatternRow, "cohort" | "pattern">): string[] {
   return tags;
 }
 
-export interface Retain { documentId: string; content: string; tags: string[]; metadata: { cohort: string; pattern: string } }
+export interface Retain { documentId: string; content: string; tags: string[]; metadata: Record<string, string> }
 
 /** This week's sync: one document per pattern that can be said, and every older pattern document that is no longer counted. */
 export function syncPlan(rows: readonly PatternRow[], existing: readonly string[], kits: Readonly<Record<string, string>>): { retain: Retain[]; remove: string[] } {
