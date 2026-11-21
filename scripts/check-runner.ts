@@ -151,6 +151,12 @@ async function main() {
   assert.ok(!("problem" in staged) && JSON.stringify(Object.keys(staged.args)) === JSON.stringify(["title", "start", "end"]));
   assert.ok("problem" in TOOLS.calendar_hold.stage!({ slot, minutes: 90, title: "Write the newsletter", why: "x" }, { ...hctx, granted: ["calendar_free_time"] }), "not given the hold: refused");
   assert.ok("problem" in TOOLS.calendar_hold.stage!({ slot, minutes: 400, title: "Too long", why: "x" }, hctx), "longer than the slot: refused");
+  // card 252: a Mailchimp draft names its audience by pick, only for an agent given it
+  const aud = { kind: "audience", id: "a1b2c3d4e5", label: "Newsletter" };
+  const mctx = { agentId: "b_mkt_1", notionPages: [], outputSources: [], granted: ["mailchimp_audiences", "mailchimp_campaign_draft"] };
+  const mstaged = TOOLS.mailchimp_campaign_draft.stage!({ audience: aud, subject: "New roast", preview: "Out Friday", body: "Hello", why: "Friday" }, mctx);
+  assert.ok(!("problem" in mstaged) && mstaged.gatewayTool === "mailchimp.campaign_draft" && mstaged.target === "a1b2c3d4e5");
+  assert.ok("problem" in TOOLS.mailchimp_campaign_draft.stage!({ audience: aud, subject: "x", preview: "y", body: "Hello", why: "z" }, { ...mctx, granted: [] }));
   assert.ok(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["report_notion_page"] }).problems.some((p) => /no page to write under/.test(p)));
   const rep1 = readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["report_email_owner"] }).spec;
   assert.deepEqual(rep1.reportPage, null);

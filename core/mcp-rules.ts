@@ -192,6 +192,35 @@ export const MCP_SERVERS = {
     writeTools: [],
     signInHint: "Sign in with a Google account that can see the business’s Google Analytics, and leave the one box Google shows ticked.",
   },
+  mailchimp: {
+    id: "mailchimp",
+    name: "Mailchimp",
+    // Our own server (integrations/mailchimp-server.ts) over Mailchimp's Marketing API (card 252).
+    // Mailchimp's hosted MCP server isn't documented for other apps, and Mailchimp has no narrower key:
+    // every key reaches the whole account. So our server is the limit: these two reads, asking
+    // Mailchimp for counts and names only, never a member or an email address.
+    auth: "token",
+    url: "https://mailchimp.com/developer/marketing/api/",
+    readTools: ["mailchimp_audiences", "mailchimp_campaigns"],
+    reportTools: [],
+    scopes: ["a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts and campaign reports)"],
+    writeTools: [],
+    signInHint: "In Mailchimp: your profile picture, Profile, Extras, API keys, Create A Key, name it OPERATOR agents, Generate Key, then copy it (it ends in -us and a number) and paste it here.",
+  },
+  mailchimp_drafts: {
+    id: "mailchimp_drafts",
+    name: "Mailchimp campaign drafts",
+    // A second key, held only by the gateway: one tool, a draft campaign to one of the business's own
+    // audiences after an approver approves. Our server has no send, schedule or delete code, so the
+    // owner sends every campaign from Mailchimp.
+    auth: "token",
+    url: "https://mailchimp.com/developer/marketing/api/",
+    readTools: [],
+    reportTools: [],
+    scopes: ["a second Mailchimp API key, used only to make a draft campaign you approved"],
+    writeTools: [{ tool: "mailchimp_create_draft", actionType: "mailchimp.campaign_draft" }],
+    signInHint: "Make a second key the same way (name it OPERATOR drafts) and paste it here. Only the gateway uses it, after you approve; you send from Mailchimp.",
+  },
   calendar: {
     id: "calendar",
     name: "Google Calendar",

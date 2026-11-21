@@ -41,6 +41,14 @@ The gateway checks a granted action twice: `propose` reads the agent's active sp
 and `applyApproved` refuses, rather than applies, any approved granted action whose agent no longer
 holds the tool (`refuseUngranted`). That covers actions released from the undo window too.
 
+## `mailchimp.campaign_draft` (card 252)
+
+A draft campaign in the business's Mailchimp, to one of its own audiences, for the owner to send from
+Mailchimp. Granted: any agent an approver gives `mailchimp_campaign_draft` to. The audience is a pick
+from `mailchimp_audiences`; `refuseMailchimpCampaign` checks the words on proposal and again in
+`applyMailchimpOne`, and the server reads the audience again right before it writes. Needs the
+Mailchimp campaign drafts key on Connections; until then approved drafts wait.
+
 ## `calendar.hold` (card 251)
 
 A private hold on the business's primary Google Calendar: a title, a start and an end, nothing else.

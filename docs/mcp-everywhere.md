@@ -314,6 +314,34 @@ client in `GMAIL_CLIENT_ID`. Turn on **Google Calendar API** (APIs & Services > 
 scopes `.../auth/calendar.events.readonly` and `.../auth/calendar.events` under Google Auth platform >
 Data access.
 
+## Mailchimp on our own server (card 252)
+
+Mailchimp's hosted MCP server isn't documented for other apps, and Mailchimp has no narrower key or
+OAuth scope: every key reaches the whole account. So our server is the limit.
+
+- **Profiles** (`core/mcp-rules.ts`), both a pasted Mailchimp API key, sealed in the vault:
+  - `mailchimp`: the agents' key. Read tools `mailchimp_audiences` (each audience's members,
+    unsubscribes and campaigns) and `mailchimp_campaigns` (reports for a period). No write tools.
+  - `mailchimp_drafts`: a second key, held only by the gateway. One write tool,
+    `mailchimp_create_draft` (action type `mailchimp.campaign_draft`). No read tools.
+- **The host** comes from the key's own data-centre suffix, checked against `-us<digits>`
+  (`baseOf`), so nothing can steer a request elsewhere. Requests never follow redirects.
+- **What the reads return** (`core/mailchimp-rules.ts`): a fixed field list with no member, email
+  address or merge field. Rates per 100 sent and totals are worked out in code.
+- **Agents** read them as `mailchimp_audiences` (each audience carries a pick) and
+  `mailchimp_results`, group `mailchimp`, needing `MAILCHIMP_CONNECTED`.
+- **The action** `mailchimp_campaign_draft` is granted (card 250): the audience is a pick, the words
+  are the Klaviyo draft's rules plus no Mailchimp merge tags (`refuseMailchimpCampaign`). On apply the
+  server reads the audience again, creates a regular campaign with the audience's own default sender,
+  and sets the HTML (body escaped, then `*|UNSUB|*` and the audience's address, added by code). There
+  is no send, schedule, test, member or delete call (`check:mcp` fails on one). At most
+  `policies.max_campaign_drafts_per_run` (default 3) per agent per apply.
+- **Files:** `integrations/mailchimp-server.ts` is the only file that calls Mailchimp, and only
+  `integrations/mcp.ts` reaches it (lint and `check:mcp`).
+
+**Setting it up:** nothing in Vercel. The business makes two keys in Mailchimp (profile, Extras, API
+keys, Create A Key) and pastes them on Connections > Mailchimp.
+
 ## Klaviyo campaign drafts on our own server (card 159b)
 
 Klaviyo's hosted MCP server stays read-only for agents (`read-only=true`). The one write the Campaign

@@ -14,10 +14,12 @@ They hold for every business on OPERATOR. "The owner" is the business's owner; "
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
-The tool gateway (`core/gateway`) has four action types so far, all Draft: receipt, category
+The tool gateway (`core/gateway`) has five action types so far, all Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), a Gmail draft to a lead
 on the leads list (the prospecting lead finder; the owner sends it from Gmail), a draft email campaign
-to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), and a
+to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), a draft
+campaign to one of the business's own Mailchimp audiences (any agent an approver gives it to; the owner
+sends it from Mailchimp), and a
 private hold with no guests on the business's Google Calendar (any agent an approver gives it to; it emails
 no one). No send,
 payment or publish action type is built, so no agent can send, pay or publish.
@@ -73,7 +75,7 @@ payment or publish action type is built, so no agent can send, pay or publish.
   URL, product or category. Hosted servers (Klaviyo, Mercury) are used where they fit;
   where one reaches more than the profile needs or doesn't fit, we run our own in the app
   (Notion, Gmail with no send tool, Google Analytics read only, Google Calendar with one private hold tool, Shopify with one fixed query per tool,
-  Mercury receipt files, Klaviyo campaign drafts).
+  Mercury receipt files, Klaviyo campaign drafts, Mailchimp reads and campaign drafts).
   Each of our own servers is the only file that calls its service's API, and only
   `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).
 - One tool path: agents read only through `callMcpTool` (read tools), or a turned-on custom tool
@@ -87,7 +89,8 @@ payment or publish action type is built, so no agent can send, pay or publish.
   Only `integrations/mcp.ts` and `core/gateway` import the vault (lint enforces it). Settings in
   Vercel hold only the app's own infrastructure (Supabase, Claude, Resend for emails to the owner, Stripe
   for the hosted edition's own billing, which no agent calls, the vault key, the app's Google OAuth client) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
-  that carries more (Google scopes, Shopify write scopes). No token in a prompt, log, error or the
+  that carries more (Google scopes, Shopify write scopes). Where a service offers nothing narrower
+(Mailchimp keys reach the whole account), our own server is the limit and Connections says so. No token in a prompt, log, error or the
   browser (`scrubSecrets`); requests carrying a token or code never follow redirects. A refused or
   expired sign-in pauses until the owner signs in again. See `docs/mcp-everywhere.md`.
 - Every run goes through `withRun` so it is logged in `agent_runs` and respects

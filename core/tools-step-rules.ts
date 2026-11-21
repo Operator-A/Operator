@@ -5,7 +5,7 @@
 import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "mailchimp";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -69,6 +69,16 @@ export const TOOL_TILES: readonly ToolTile[] = [
     ],
   },
   {
+    id: "mailchimp", name: "Mailchimp", gives: "Audiences and campaign results", icon: "send", mcp: "mailchimp",
+    steps: [
+      "In Mailchimp, tap your profile picture, then Profile.",
+      "Open Extras, then API keys, and tap Create A Key.",
+      "Name it OPERATOR agents and tap Generate Key.",
+      "Copy the key (it ends in -us and a number) and paste it below. Mailchimp shows it only once.",
+    ],
+    also: { mcp: "mailchimp_drafts", label: "Mailchimp campaign drafts", why: "An agent you give campaign drafts to can put a campaign you approved in Mailchimp as a draft, with a second key only the gateway uses. You send every campaign from Mailchimp." },
+  },
+  {
     id: "calendar", name: "Google Calendar", gives: "Your week and free time", icon: "calendar", mcp: "calendar",
     steps: [
       "Tap Connect Google Calendar below. Google’s own sign-in page opens.",
@@ -92,6 +102,8 @@ export const SCOPE_WORDS: Record<string, string> = {
   offline_access: "stay signed in, so morning runs work while you sleep",
   "https://www.googleapis.com/auth/gmail.readonly": "search and read email. Google refuses it anything that drafts, sends, labels or deletes",
   "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
+  "a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts and campaign reports)": "read your audiences’ sizes and how each campaign did. Mailchimp keys reach the whole account, so our server is the limit: it has no other calls",
+  "a second Mailchimp API key, used only to make a draft campaign you approved": "make a draft campaign you approved. Our server has no send or schedule call, so you send it from Mailchimp",
   "https://www.googleapis.com/auth/calendar.events.readonly": "see the events on your calendars. It can’t change, add or delete anything",
   "https://www.googleapis.com/auth/calendar.events": "add a private hold you approved to your calendar. Our server has no code to change or delete an event, or to invite anyone",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
@@ -107,7 +119,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -153,7 +165,7 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
       "Come back here and tap Connect Google Analytics.",
     ] } },
   { id: "money", area: "Books", question: "Where does the money live?", value: "Your bookkeeper categorizes every charge and matches the receipts.", ready: "Your books can start from your real transactions.", tiles: ["mercury"] },
-  { id: "list", area: "Email marketing", question: "What do you use for email marketing?", value: "Campaigns get drafted from what sold best. You press send.", ready: "Your lists and past campaigns are in reach.", tiles: ["klaviyo"],
+  { id: "list", area: "Email marketing", question: "What do you use for email marketing?", value: "Campaigns get drafted from what sold best. You press send.", ready: "Your lists and past campaigns are in reach.", tiles: ["klaviyo", "mailchimp"],
     starter: { tile: "klaviyo", name: "Klaviyo", promise: "The free plan needs no card. It’s your account, I show you each tap, then you connect it here.", steps: [
       "Open klaviyo.com and tap Sign up.",
       "Type your email, your business’s name and your store’s address, and choose a password. Klaviyo shows its terms: read them and accept them yourself.",

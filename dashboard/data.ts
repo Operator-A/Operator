@@ -170,6 +170,9 @@ export function health(): Record<IntegrationId, boolean> {
     // both Google Calendar sign-ins (reads, the gateway's holds) are made on Connections
     calendar: false,
     calendar_holds: false,
+    // both Mailchimp keys (reads, the gateway's drafts) are pasted on Connections
+    mailchimp: false,
+    mailchimp_drafts: false,
   };
 }
 

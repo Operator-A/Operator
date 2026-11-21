@@ -11,6 +11,7 @@ import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmai
 import { GA4_TOOLS, checkGa4Args, dateRange, rate, readChannels, readOverview, readProperties, readTopPages, reportBodies } from "../core/ga4-rules";
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
 import * as Cal from "../core/calendar-rules";
+import * as Mc from "../core/mailchimp-rules";
 import { CAMPAIGN_LIMITS, campaignHtml, campaignText, checkDraftArgs, looksLikeKlaviyoKey } from "../core/klaviyo-draft-rules";
 import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
 import { envWrapper, isBound, keyIdOf, newDataKey, open, seal, vaultKey } from "../core/vault";
@@ -451,6 +452,38 @@ assert.ok(!/"DELETE"|"PUT"|"PATCH"|\/move|\/quickAdd|\/import|\/watch|acl|calend
 assert.match(capi, /calendars\/primary\/events/);
 assert.match(capi, /sendUpdates=none/);
 assert.ok(!/email|description|location|hangoutLink|conferenceData/.test(capi.match(/LIST_FIELDS = "([^"]+)"/)?.[1] ?? "email"), "the list asks Google for no email, description, place or link");
+// ---- Mailchimp on our own server, two keys (card 252)
+assert.ok(!usesConnect("mailchimp") && !usesConnect("mailchimp_drafts") && !isHosted("mailchimp"));
+assert.deepEqual(checkedTools("mailchimp"), [...Mc.MAILCHIMP_TOOLS], "what our server serves to the agents' key");
+assert.deepEqual(checkedTools("mailchimp_drafts"), [Mc.DRAFT_TOOL], "what our server serves to the drafts key");
+assert.ok(mayWrite("mailchimp_drafts", Mc.DRAFT_TOOL) && !mayCall("mailchimp_drafts", Mc.DRAFT_TOOL) && !mayWrite("mailchimp", Mc.DRAFT_TOOL));
+const HEX32 = "0123456789abcdef".repeat(2); // a made-up key, built here so it never reads as one
+const MCKEY = `${HEX32}-us21`;
+assert.ok(Mc.looksLikeMailchimpKey(MCKEY) && !Mc.looksLikeMailchimpKey(`${HEX32}-evil.example`) && !Mc.looksLikeMailchimpKey("pk_x"));
+assert.equal(Mc.baseOf(MCKEY), "https://us21.api.mailchimp.com/3.0", "the host comes from the key's own data centre");
+assert.throws(() => Mc.baseOf(`${HEX32}-us21.evil.example`));
+assert.deepEqual(Mc.checkMailchimpArgs("mailchimp_campaigns", {}), { tool: "mailchimp_campaigns", period: "last_90_days" });
+for (const [tool, args, why] of [
+  ["mailchimp_audiences", { list_id: "x" }, /unknown input/],
+  ["mailchimp_campaigns", { period: "forever" }, /period is one of/],
+  ["mailchimp_members", {}, /isn't a Mailchimp read tool/],
+] as const) { const r = Mc.checkMailchimpArgs(tool, args); assert.ok("problem" in r && why.test(r.problem), `${tool}`); }
+assert.ok(!/email_address|merge_fields|members\b|from_email/.test(Mc.AUDIENCE_FIELDS + Mc.REPORT_FIELDS), "no member or email address is asked for");
+assert.deepEqual(Mc.readAudiences({ lists: [{ id: "a1b2c3d4e5", name: "Newsletter", stats: { member_count: 120, unsubscribe_count: 4, campaign_count: 9 } }, { id: "../x", name: "bad" }] }), [{ id: "a1b2c3d4e5", name: "Newsletter", members: 120, unsubscribed: 4, campaigns: 9 }]);
+const rep = Mc.readReports({ reports: [{ campaign_title: "Nov", subject_line: "New roast", list_name: "Newsletter", send_time: "2026-11-02T15:00:00+00:00", emails_sent: 200, unsubscribed: 2, opens: { unique_opens: 90 }, clicks: { unique_subscriber_clicks: 12 }, ecommerce: { total_orders: 3, total_revenue: 81.5 } }] });
+assert.deepEqual([rep.campaigns[0].opens_per_100, rep.campaigns[0].clicks_per_100, rep.campaigns[0].unsubscribes_per_100], [45, 6, 1]);
+assert.deepEqual([rep.totals.campaigns, rep.totals.sent, rep.totals.revenue, rep.totals.opens_per_100], [1, 200, 81.5, 45]);
+const mcCamp = { subject: "New roast", preview: "Out Friday", body: "Hello\n\nIt's here." };
+assert.equal(Mc.refuseMailchimpCampaign(mcCamp), null);
+assert.match(Mc.refuseMailchimpCampaign({ ...mcCamp, body: "Hi *|FNAME|*" }) ?? "", /merge tags/);
+assert.match(Mc.refuseMailchimpCampaign({ ...mcCamp, body: "see www.x.example" }) ?? "", /links/);
+assert.match(Mc.refuseMailchimpCampaign({ ...mcCamp, send_time: "now" }) ?? "", /allow-list/);
+assert.ok("problem" in Mc.checkMcDraftArgs({ audienceId: "../lists", ...mcCamp }));
+const mcHtml = Mc.mcCampaignHtml("<b>hi</b>");
+assert.ok(mcHtml.includes("&lt;b&gt;hi&lt;/b&gt;") && mcHtml.includes("*|UNSUB|*"), "the body is escaped and code adds the unsubscribe link");
+const mcsrv = readFileSync("integrations/mailchimp-server.ts", "utf8");
+assert.ok(!/\/actions\/|"DELETE"|"PATCH"|\/members|\/test|\/schedule|\/send|replicate/.test(mcsrv), "the Mailchimp server has no send, schedule, test, member or delete call");
+assert.match(mcsrv, /redirect: "error"/);
 // every Gmail tool input is checked before it reaches a URL or a draft
 assert.deepEqual(checkGmailArgs("gmail_search", { q: "$12.50 after:2026/11/01" }), { tool: "gmail_search", q: "$12.50 after:2026/11/01", max: 3 });
 assert.deepEqual(checkGmailArgs("gmail_message", { id: "18c2a9f0e1b2c3d4" }), { tool: "gmail_message", id: "18c2a9f0e1b2c3d4", maxChars: 6000 });
@@ -524,6 +557,7 @@ assert.deepEqual(importers("ga4-api"), ["integrations/ga4-server.ts"]);
 assert.deepEqual(importers("ga4-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("calendar-api"), ["integrations/calendar-server.ts"]);
 assert.deepEqual(importers("calendar-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("mailchimp-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("shopify-api"), ["integrations/shopify-server.ts"]);
 assert.deepEqual(importers("shopify-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mercury-files-server"), ["integrations/mcp.ts"]);

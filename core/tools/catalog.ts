@@ -31,8 +31,10 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, DRAFT_EMAIL, DRAFT_LIMITS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
+import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
+import type { McPeriod } from "@/core/mailchimp-rules";
 import { LIMITS as CAL, holdFromSlot } from "@/core/calendar-rules";
 import { CAMPAIGN_LIMITS } from "@/core/klaviyo-draft-rules";
 import { READ_ROWS, ageOf, columnNumbers, staleNote } from "@/core/export-rules";
@@ -47,7 +49,7 @@ import { ga4Channels, ga4Overview, ga4TopPages } from "@/integrations/ga4";
 import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Pick, ReportInput, ToolDef, ToolResult } from "./types";
-import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
+import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, GMAIL, KLAVIYO, MERCURY, NOTION, SHOPIFY, SUPABASE, daysParam, usd } from "./shared";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
 import { deliverBrief } from "@/core/brief";
@@ -281,6 +283,23 @@ const TOOLS_LIST: ToolDef[] = [
       { name: "limit", type: "number", integer: true, optional: true, description: "How many channels, 1 to 20 (10 if left out)." },
     ],
     run: async (p) => { const r = await ga4Channels(String(p.period) as Ga4Period, Number(p.limit ?? 10)); return { data: r, numbers: { sessions_listed: r.sessions_listed } }; },
+  },
+  {
+    id: "mailchimp_audiences", label: "Mailchimp audiences", detail: "Every audience in the business’s Mailchimp with its member count, unsubscribes and campaigns sent. Each carries a pick, so Draft a Mailchimp campaign can name one. Names were typed in Mailchimp, so they are untrusted",
+    kind: "read", group: "mailchimp", params: [], trusted: false, needs: MAILCHIMP, costUsd: 0,
+    run: async () => {
+      const r = await mailchimpAudiences();
+      // the audience a campaign goes to is named by pick code: its id comes from Mailchimp here, never from the model
+      const picks: Record<string, Pick> = {};
+      const audiences = r.audiences.map((a, i) => { picks[`a${i + 1}`] = { kind: "audience", id: a.id, label: a.name || a.id }; return { pick: `a${i + 1}`, ...a }; });
+      return { data: { audiences }, numbers: { audiences: audiences.length, members: r.members }, picks };
+    },
+  },
+  {
+    id: "mailchimp_results", label: "Mailchimp campaign results", detail: "Mailchimp campaigns sent in a period: sent, opens, clicks, unsubscribes, orders and revenue, each with rates per 100 sent and totals worked out in code. Subjects can quote anyone, so they are untrusted",
+    kind: "read", group: "mailchimp", trusted: false, needs: MAILCHIMP, costUsd: 0,
+    params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_90_days", description: "How far back to look." }],
+    run: async (p) => { const r = await mailchimpCampaigns(String(p.period) as McPeriod); return { data: r, numbers: r.totals }; },
   },
   {
     id: "calendar_week", label: "The week ahead", detail: "Events on the business’s Google Calendar for the next days: each one’s time, a short title and how many guests (never their addresses), with meetings, hours in meetings and the busiest day counted in code. Titles come from whoever sent the invite, so they are untrusted",
@@ -773,6 +792,25 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, CAMPAIGN_DRAFT, list.id, args);
       if (refused) return { problem: refused };
       return { gatewayTool: CAMPAIGN_DRAFT, target: list.id, args, actionType: "campaign_draft", title: `${list.label}: ${args.subject}`, preview: { list: list.label, subject: args.subject, preview_text: args.preview, body: args.body, why: input.why } };
+    },
+  },
+  {
+    id: "mailchimp_campaign_draft", label: "Draft a Mailchimp campaign", detail: "Stages one email campaign to one of the business’s Mailchimp audiences, for the owner to approve. Approving makes it a draft in Mailchimp; the owner sends it from Mailchimp. Nothing here can send or schedule a campaign. Claims about products come only from Product facts",
+    kind: "action", group: "mailchimp", trusted: true, needs: MAILCHIMP_DRAFTS, costUsd: 0,
+    agents: GATEWAY_TOOLS[MAILCHIMP_DRAFT].agents,
+    params: [
+      { name: "audience", type: "pick", kind: "audience", description: "The audience it goes to, from a Mailchimp audiences result." },
+      { name: "subject", type: "text", maxLength: CAMPAIGN_LIMITS.subject, description: "The subject line." },
+      { name: "preview", type: "text", maxLength: CAMPAIGN_LIMITS.preview, description: "The preview text shown after the subject in the inbox." },
+      { name: "body", type: "text", maxLength: CAMPAIGN_LIMITS.body, multiline: true, description: "The email, plain text, paragraphs split by a blank line. No links or merge tags; code adds the unsubscribe line." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why this campaign now, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const aud = input.audience as Pick;
+      const args = { subject: String(input.subject), preview: String(input.preview), body: String(input.body) };
+      const refused = refuseProposal(ctx.agentId, MAILCHIMP_DRAFT, aud.id, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: MAILCHIMP_DRAFT, target: aud.id, args, actionType: "mailchimp_draft", title: `${aud.label}: ${args.subject}`, preview: { list: aud.label, subject: args.subject, preview_text: args.preview, body: args.body, why: input.why } };
     },
   },
   {
