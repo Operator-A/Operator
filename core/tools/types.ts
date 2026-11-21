@@ -12,7 +12,7 @@
 export type ToolKind = "read" | "calculate" | "report" | "action";
 
 /** Groups on the builder screen, one per integration. */
-export type ToolGroup = "shopify" | "mercury" | "supabase" | "notion" | "calculate" | "agents" | "web" | "gmail" | "email" | "klaviyo" | "analytics"
+export type ToolGroup = "shopify" | "mercury" | "supabase" | "notion" | "calculate" | "agents" | "web" | "gmail" | "email" | "klaviyo" | "analytics" | "calendar"
   /** A turned-on tool on a server the owner added by its address (docs/custom-servers.md), built from its row, not written here. */
   | "custom";
 
@@ -136,8 +136,11 @@ export interface ToolDef {
    * says why not. Pure: nothing is queued here; the runner queues it at the gateway after the run.
    */
   stage?: (input: Record<string, string | number | Pick>, ctx: ToolCtx) => Staged | { problem: string };
-  /** Action tools: the only agents the gateway lets use it (hard rule), copied from core/gateway. */
-  agents?: readonly string[];
+  /**
+   * Action tools: who the gateway lets use it, copied from core/gateway. A list names the only agents
+   * (hard rule); "granted" means any agent an approver gives it to on the builder's Tools step (card 250).
+   */
+  agents?: readonly string[] | "granted";
   /**
    * Tools that depend on where the agent sits on the org chart (docs/org-chart.md, slice 3):
    * "team" for an agent with live agents under its seat, "company" for the company seat, "head"
@@ -146,6 +149,11 @@ export interface ToolDef {
    */
   seat?: "team" | "company" | "head";
 }
+
+/** Action tools: whether this agent may hold it. A granted action: any agent an approver gives it to; a named one: only those agents. */
+export const actionOpenTo = (t: { agents?: ToolDef["agents"] }, agentId?: string | null): boolean => t.agents === "granted" || (!!agentId && !!t.agents?.includes(agentId));
+/** Who may hold an action, in words, for a refusal. */
+export const actionWho = (t: { agents?: ToolDef["agents"] }): string => t.agents === "granted" ? "any agent you give it to" : t.agents?.join(" and ") || "no agent";
 
 export const paramsOf = (t: ToolDef, ctx: ToolCtx): readonly Param[] => (t.paramsFor ? t.paramsFor(ctx) : t.params);
 

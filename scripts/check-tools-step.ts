@@ -70,7 +70,7 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   assert.equal(tileOfMcp("mercury_write"), null, "a gateway-only sign-in is no tile");
   // order: what a leaned-toward department needs comes first, the rest keep list order
   assert.deepEqual(orderCategories(new Set()).map((c) => c.id), [...CATEGORY_IDS]);
-  assert.deepEqual(orderCategories(new Set(["mercury", "klaviyo"] as const)).map((c) => c.id), ["money", "list", "store", "site", "inbox"]);
+  assert.deepEqual(orderCategories(new Set(["mercury", "klaviyo"] as const)).map((c) => c.id), ["money", "list", "store", "site", "inbox", "calendar"]);
   // skipped: only real categories, each once
   assert.deepEqual(readSkipped(["inbox", "nope", "inbox", "store", 3]), ["store", "inbox"]);
   assert.deepEqual(readSkipped("store"), []);
@@ -82,7 +82,7 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   assert.equal(cur(["shopify"], ["site"]), "money", "connected and skipped ones are answered");
   assert.equal(cur(["shopify"], [], "store"), "store", "one asked for shows even when answered");
   assert.equal(cur([], [], "nope"), "store", "an unknown one is ignored");
-  assert.equal(cur(["shopify", "analytics", "mercury"], ["list", "inbox"]), null, "every part connected or skipped: none");
+  assert.equal(cur(["shopify", "analytics", "mercury"], ["list", "inbox", "calendar"]), null, "every part connected or skipped: none");
   assert.equal(categoryState(order[0], new Set(["shopify"] as const), ["store"]), "connected", "connected wins over skipped");
   const acts = read("dashboard/setupActions.ts");
   assert.match(acts, /export async function setupSkipTool[\s\S]{0,140}asRole\("approver"\)[\s\S]{0,80}isCategory\(cat\)/, "skipping checks the role, then the category");

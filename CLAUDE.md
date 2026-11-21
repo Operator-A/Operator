@@ -14,10 +14,12 @@ They hold for every business on OPERATOR. "The owner" is the business's owner; "
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
-The tool gateway (`core/gateway`) has three action types so far, all Draft: receipt, category
+The tool gateway (`core/gateway`) has four action types so far, all Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), a Gmail draft to a lead
-on the leads list (the prospecting lead finder; the owner sends it from Gmail), and a draft email campaign
-to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo). No send,
+on the leads list (the prospecting lead finder; the owner sends it from Gmail), a draft email campaign
+to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), and a
+private hold with no guests on the business's Google Calendar (any agent an approver gives it to; it emails
+no one). No send,
 payment or publish action type is built, so no agent can send, pay or publish.
 
 
@@ -70,7 +72,7 @@ payment or publish action type is built, so no agent can send, pay or publish.
   and are never promoted. A custom tool's reply is untrusted data and never chooses a recipient,
   URL, product or category. Hosted servers (Klaviyo, Mercury) are used where they fit;
   where one reaches more than the profile needs or doesn't fit, we run our own in the app
-  (Notion, Gmail with no send tool, Google Analytics read only, Shopify with one fixed query per tool,
+  (Notion, Gmail with no send tool, Google Analytics read only, Google Calendar with one private hold tool, Shopify with one fixed query per tool,
   Mercury receipt files, Klaviyo campaign drafts).
   Each of our own servers is the only file that calls its service's API, and only
   `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).

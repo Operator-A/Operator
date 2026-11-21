@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { withOrg } from "../core/tenancy";
 import { TEST_ORG } from "./lib/test-org";
-import { checkInput } from "../core/tools/types";
+import { actionOpenTo, checkInput } from "../core/tools/types";
 import { readSpec, specLooser } from "../core/agent-spec";
 import { draftSteps, sameSteps, stepChanges } from "../core/playbook";
 import { runExplore, traceNumbers, type Step } from "../core/runner";
@@ -136,6 +136,21 @@ async function main() {
   // specs: actions only for agents the gateway names; a Notion report needs a page; both count as reaching further
   assert.ok(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["mercury_propose_annotation"] }, "b_green").problems.some((p) => /gateway lets only/.test(p)));
   assert.deepEqual(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["mercury_propose_annotation"] }, "bookkeeper").problems, []);
+  // card 250: a granted action is open to any agent; a named one only to its agents
+  assert.ok(actionOpenTo({ agents: "granted" }, "b_any_agent") && actionOpenTo({ agents: "granted" }, null));
+  assert.ok(!actionOpenTo({ agents: ["cfo"] }, "b_any_agent") && actionOpenTo({ agents: ["cfo"] }, "cfo") && !actionOpenTo({}, "cfo"));
+  // card 251: a calendar hold is granted; it stages only for an agent whose spec holds it, from a free slot
+  assert.equal(TOOLS.calendar_hold.agents, "granted");
+  assert.deepEqual(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["calendar_free_time", "calendar_hold"] }, "b_ops_1").problems, []);
+  const z = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const s0 = Math.ceil((Date.now() + 3 * 864e5) / 36e5) * 36e5;
+  const slot = { kind: "slot", id: `${z(s0)}/${z(s0 + 300 * 6e4)}`, label: "Thu, 11:00 to 16:00 (300 min)" };
+  const hctx = { agentId: "b_ops_1", notionPages: [], outputSources: [], granted: ["calendar_free_time", "calendar_hold"] };
+  const staged = TOOLS.calendar_hold.stage!({ slot, minutes: 90, title: "Write the newsletter", why: "Friday send" }, hctx);
+  assert.ok(!("problem" in staged) && staged.gatewayTool === "calendar.hold" && staged.target === `${z(s0)}/${z(s0 + 90 * 6e4)}`, JSON.stringify(staged));
+  assert.ok(!("problem" in staged) && JSON.stringify(Object.keys(staged.args)) === JSON.stringify(["title", "start", "end"]));
+  assert.ok("problem" in TOOLS.calendar_hold.stage!({ slot, minutes: 90, title: "Write the newsletter", why: "x" }, { ...hctx, granted: ["calendar_free_time"] }), "not given the hold: refused");
+  assert.ok("problem" in TOOLS.calendar_hold.stage!({ slot, minutes: 400, title: "Too long", why: "x" }, hctx), "longer than the slot: refused");
   assert.ok(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["report_notion_page"] }).problems.some((p) => /no page to write under/.test(p)));
   const rep1 = readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["report_email_owner"] }).spec;
   assert.deepEqual(rep1.reportPage, null);
