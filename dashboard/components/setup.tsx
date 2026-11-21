@@ -16,7 +16,8 @@ import { Icon } from "./Icon";
 export interface SetupMsg { id: string; role: "owner" | "avery"; text: string; runId: string | null; notes: string[] }
 
 /** `zone`: while the business has no time zone yet, the first message also sends the browser's (card 187). */
-export function SetupChat({ name, initial, send, ready, blocked, foot, zone }: { name: string; initial: SetupMsg[]; send: (text: string, site: string) => Promise<SetupAnswer>; ready: boolean; blocked: string | null; foot: string | null; zone?: (tz: string) => Promise<ActionResult> }) {
+/** `card`: a part's card Avery asked about (card 195), drawn by the page from code's list, under the last message. */
+export function SetupChat({ name, initial, send, ready, blocked, foot, zone, card }: { name: string; initial: SetupMsg[]; send: (text: string, site: string) => Promise<SetupAnswer>; ready: boolean; blocked: string | null; foot: string | null; zone?: (tz: string) => Promise<ActionResult>; card?: React.ReactNode }) {
   const [msgs, setMsgs] = useState<SetupMsg[]>(initial);
   const [text, setText] = useState("");
   const [site, setSite] = useState("");
@@ -30,7 +31,7 @@ export function SetupChat({ name, initial, send, ready, blocked, foot, zone }: {
     if (!el) return;
     const f = requestAnimationFrame(() => requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight })));
     return () => cancelAnimationFrame(f);
-  }, [msgs, busy, initial]);
+  }, [msgs, busy, initial, card]);
   const go = () => {
     const t = text.trim();
     if (!t || busy || !ready) return;
@@ -87,6 +88,7 @@ export function SetupChat({ name, initial, send, ready, blocked, foot, zone }: {
               </div>
             </div>
           ))}
+        {!busy && card}
         {busy && (
           <div className="row wg-pop ink2" style={{ gap: 10, fontSize: 14 }}>
             <span className="wg-dots" aria-hidden><i /><i /><i /></span>
@@ -106,6 +108,21 @@ export function SetupChat({ name, initial, send, ready, blocked, foot, zone }: {
       </form>
     </section>
   );
+}
+
+/**
+ * The snapshot (card 195 slice B): on a tool's card once it is connected and has no snapshot yet, asks
+ * code once for a few numbers from it. The page then shows the saved facts in its place.
+ */
+export function AutoSnapshot({ take, name }: { take: () => Promise<ActionResult>; name: string }) {
+  const [r, setR] = useState<ActionResult | null>(null);
+  const [busy, start] = useTransition();
+  const once = useRef(false);
+  const go = () => start(async () => { try { setR(await take()); } catch (e) { setR({ ok: false, text: e instanceof Error ? e.message : "Something went wrong." }); } });
+  useEffect(() => { if (once.current) return; once.current = true; go(); });
+  if (busy || !r) return <span className="row ink2" style={{ gap: 10, fontSize: 14 }}><span className="wg-dots" aria-hidden><i /><i /><i /></span>Reading a few numbers from {name}</span>;
+  if (!r.ok) return <span className="soft-box row wrap" role="status" style={{ fontSize: 13, gap: 10 }}>Couldn’t read {name}: {r.text}<button className="btn outline sm" onClick={go}>Try again</button></span>;
+  return <span className="sub">{r.text}</span>;
 }
 
 /** Back and Next under a step (card 181). The step is saved, then the page shows it. */
