@@ -6,7 +6,7 @@ import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import type { FactTopic } from "@/core/setup-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -78,6 +78,17 @@ export const TOOL_TILES: readonly ToolTile[] = [
     ],
     also: { mcp: "calendar_holds", label: "Calendar holds", why: "An agent you give holds to can block time for you, as a private event with no guests. Only the gateway uses this second sign-in, after you approve, and it never invites or emails anyone." },
   },
+  {
+    id: "stripe", name: "Stripe", gives: "Payments, subscriptions and open invoices", icon: "credit-card", mcp: "stripe",
+    steps: [
+      "In Stripe, open Developers > API keys (on the Stripe dashboard, bottom left).",
+      "Tap Create restricted key. If Stripe asks how you’ll use it, pick the option for your own integration.",
+      "Name it OPERATOR read.",
+      "Set Balance, Balance transaction sources, Subscriptions, Invoices and Customers to Read. Leave everything else on None.",
+      "Tap Create key, then copy the key (it starts with rk_live_) and paste it below.",
+    ],
+    also: { mcp: "stripe_drafts", label: "Stripe invoice drafts", why: "To draft invoices you approve, paste a second restricted key that can write invoices and nothing else. Only the gateway uses it, and you finalize and send each invoice from Stripe." },
+  },
 ];
 
 export const TILE_BY_ID = Object.fromEntries(TOOL_TILES.map((t) => [t.id, t])) as Record<ToolTileId, ToolTile>;
@@ -96,6 +107,8 @@ export const SCOPE_WORDS: Record<string, string> = {
   "https://www.googleapis.com/auth/calendar.events.readonly": "see the events on your calendars. It can’t change, add or delete anything",
   "https://www.googleapis.com/auth/calendar.events": "add a private hold you approved to your calendar. Our server has no code to change or delete an event, or to invite anyone",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
+  "a Stripe restricted key with Read on Balance, Balance transaction sources, Subscriptions, Invoices and Customers, and None on everything else (a key that can change anything is refused)": "see your balance, payments, subscriptions, open invoices and customers. A key that can change anything is refused",
+  "a Stripe restricted key with Write on Invoices and Invoice items, Read on Customers, and None on everything else, used only to make a draft invoice": "make a draft invoice you approved. It can’t finalize, send, charge or refund",
   "the app’s read scopes": "read orders, products and stock",
   write_orders: "add tags to an order, only after you approve",
   write_customers: "add tags to a customer, only after you approve",
@@ -110,7 +123,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", STRIPE_CONNECTED: "stripe",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -168,7 +181,7 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
   part({ id: "store", area: "Where you sell", core: true, topic: "channels", learns: "orders, products and stock", question: "Where do you sell?", value: "Your agents read orders, products and stock, and tell you what sold in plain words.", ready: "Your agents can see your orders, products and stock.",
     tools: [{ name: "Shopify", tile: "shopify" }, { name: "WooCommerce" }, { name: "Square Online" }, { name: "Wix" }, { name: "Squarespace" }, { name: "Etsy" }] }),
   part({ id: "payments", area: "Payments", core: true, topic: "sells", learns: "what you’re paid, refunds and unpaid invoices", question: "How do people pay you?", value: "Know what came in, what’s owed and what got refunded, without opening another dashboard.", ready: "Your payments are in reach.",
-    tools: [{ name: "Stripe" }, { name: "Square" }, { name: "PayPal" }] }),
+    tools: [{ name: "Stripe", tile: "stripe" }, { name: "Square" }, { name: "PayPal" }] }),
   part({ id: "money", area: "Bank", core: true, topic: "other", learns: "balances and every charge", question: "Where does the money live?", value: "Your bookkeeper categorizes every charge and matches the receipts.", ready: "Your books can start from your real transactions.",
     tools: [{ name: "Mercury", tile: "mercury" }, { name: "Chase" }, { name: "Bank of America" }, { name: "Wells Fargo" }] }),
   part({ id: "books", area: "Books", core: true, topic: "other", learns: "profit and loss, bills and what’s owed to you", question: "What do you keep your books in?", value: "Monthly numbers come from your own books, not a guess.", ready: "Your books are in reach.",

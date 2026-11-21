@@ -5,7 +5,7 @@ import "server-only";
 import { db } from "@/core/db";
 import { agentNames } from "@/core/org";
 import { loadCaps } from "@/core/gateway";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, type ActionDef } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_TAGS, TOOLS, type ActionDef } from "@/core/gateway/policy";
 import { listTrust, standingOf, TRUST_MISSING } from "@/core/trust";
 import { loadSpec } from "@/core/agent-spec";
 import { LEVEL_WORDS, offerWords, standingWords, type Level } from "@/core/trust-rules";
@@ -17,6 +17,7 @@ export const WHAT: Record<string, string> = {
   [CAMPAIGN_DRAFT]: "campaign drafts",
   [SHOPIFY_TAGS]: "Shopify order and customer tags",
   [CALENDAR_HOLD]: "calendar holds",
+  [INVOICE_DRAFT]: "Stripe invoice drafts",
 };
 
 export interface TrustLine { agentId: string; tool: string; name: string; what: string; level: Level; levelWords: string; words: string; reason: string | null; changedAt: string | null; clean: number }
