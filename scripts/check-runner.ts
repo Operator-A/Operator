@@ -151,6 +151,31 @@ async function main() {
   assert.ok(!("problem" in staged) && JSON.stringify(Object.keys(staged.args)) === JSON.stringify(["title", "start", "end"]));
   assert.ok("problem" in TOOLS.calendar_hold.stage!({ slot, minutes: 90, title: "Write the newsletter", why: "x" }, { ...hctx, granted: ["calendar_free_time"] }), "not given the hold: refused");
   assert.ok("problem" in TOOLS.calendar_hold.stage!({ slot, minutes: 400, title: "Too long", why: "x" }, hctx), "longer than the slot: refused");
+  // card 252: a Mailchimp draft names its audience by pick, only for an agent given it
+  const aud = { kind: "audience", id: "a1b2c3d4e5", label: "Newsletter" };
+  const mctx = { agentId: "b_mkt_1", notionPages: [], outputSources: [], granted: ["mailchimp_audiences", "mailchimp_campaign_draft"] };
+  const mstaged = TOOLS.mailchimp_campaign_draft.stage!({ audience: aud, subject: "New roast", preview: "Out Friday", body: "Hello", why: "Friday" }, mctx);
+  assert.ok(!("problem" in mstaged) && mstaged.gatewayTool === "mailchimp.campaign_draft" && mstaged.target === "a1b2c3d4e5");
+  assert.ok("problem" in TOOLS.mailchimp_campaign_draft.stage!({ audience: aud, subject: "x", preview: "y", body: "Hello", why: "z" }, { ...mctx, granted: [] }));
+  // card 253: a HubSpot move names its deal and stage by pick, only for an agent given it
+  const deal = { kind: "deal", id: "11", label: "Cafe Uno wholesale · Meeting booked · Sales" }, stg = { kind: "stage", id: "contractsent", label: "Sales · Contract sent" };
+  const hctx2 = { agentId: "b_sales_1", notionPages: [], outputSources: [], granted: ["hubspot_deals", "hubspot_move_deal"] };
+  const hstaged = TOOLS.hubspot_move_deal.stage!({ deal, stage: stg, note: "Signed the quote", why: "Call today" }, hctx2);
+  assert.ok(!("problem" in hstaged) && hstaged.gatewayTool === "hubspot.deal_stage" && hstaged.target === "11" && JSON.stringify(hstaged.args) === '{"stage":"contractsent","note":"Signed the quote"}');
+  assert.ok("problem" in TOOLS.hubspot_move_deal.stage!({ deal, stage: stg, note: "x", why: "z" }, { ...hctx2, granted: ["hubspot_deals"] }));
+  // card 255: a Meta pause names its ad by pick, only for an agent given it; the target never rides along
+  const adPick = { kind: "ad", id: "120210000000001", label: "Spring A · Spring · 60 USD per purchase" };
+  const pctx = { agentId: "b_mkt_1", notionPages: [], outputSources: [], granted: ["meta_ad_results", "meta_pause_ad"] };
+  const pstaged = TOOLS.meta_pause_ad.stage!({ ad: adPick, result: "purchase", period: "last_7_days", why: "Twice the target" }, pctx);
+  assert.ok(!("problem" in pstaged) && pstaged.gatewayTool === "meta.pause_ad" && pstaged.target === "120210000000001" && JSON.stringify(pstaged.args) === '{"result":"purchase","period":"last_7_days","why":"Twice the target"}');
+  assert.ok("problem" in TOOLS.meta_pause_ad.stage!({ ad: adPick, result: "purchase", period: "last_7_days", why: "x" }, { ...pctx, granted: ["meta_ad_results"] }));
+  assert.ok("problem" in TOOLS.meta_pause_ad.stage!({ ad: adPick, result: "purchase", period: "lifetime", why: "x" }, pctx));
+  // card 254: a WooCommerce note names its order by pick, only for an agent given it
+  const ord = { kind: "order", id: "1234", label: "#1001, Nov 2, $30.00" };
+  const wctx = { agentId: "b_ops_1", notionPages: [], outputSources: [], granted: ["woo_orders", "woo_order_note"] };
+  const wstaged = TOOLS.woo_order_note.stage!({ order: ord, note: "Ship Monday", why: "Customer asked" }, wctx);
+  assert.ok(!("problem" in wstaged) && wstaged.gatewayTool === "woocommerce.order_note" && wstaged.target === "1234" && JSON.stringify(wstaged.args) === '{"note":"Ship Monday"}');
+  assert.ok("problem" in TOOLS.woo_order_note.stage!({ order: ord, note: "Ship Monday", why: "z" }, { ...wctx, granted: ["woo_orders"] }));
   assert.ok(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["report_notion_page"] }).problems.some((p) => /no page to write under/.test(p)));
   const rep1 = readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["report_email_owner"] }).spec;
   assert.deepEqual(rep1.reportPage, null);

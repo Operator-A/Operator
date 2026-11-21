@@ -7,6 +7,10 @@ import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-
 import { CUSTOMER_ID, INVOICE_FIELDS, refuseInvoice } from "@/core/stripe-rules";
 import { SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
+import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
+import { NOTE_FIELDS, orderIdOk, refuseNote } from "@/core/woo-rules";
+import { MOVE_FIELDS, dealIdOk, refuseMove } from "@/core/hubspot-rules";
+import { PAUSE_FIELDS, adIdOk, refusePause } from "@/core/meta-rules";
 
 export type Tier = "Report" | "Draft" | "Act";
 
@@ -41,6 +45,25 @@ export const INVOICE_DRAFT = "stripe.invoice_draft";
  * the gateway checks it is still free right before the write. The first granted action type.
  */
 export const CALENDAR_HOLD = "calendar.hold";
+/**
+ * A draft campaign in the business's Mailchimp, to one of its own audiences (card 252). The owner sends
+ * it from Mailchimp: our server has no send or schedule call. The audience is the target, picked from
+ * the business's Mailchimp audiences by code and checked again right before the write. Granted.
+ */
+export const MAILCHIMP_DRAFT = "mailchimp.campaign_draft";
+/**
+ * A private note on one WooCommerce order (card 254): store staff see it, the customer doesn't. The
+ * order is a pick from the store's own orders, and the gateway checks it still exists right before the
+ * write. Granted.
+ */
+export const WOO_NOTE = "woocommerce.order_note";
+export const HUBSPOT_MOVE = "hubspot.deal_stage";
+/**
+ * Meta Ads (card 255): pause one active ad, picked from a Meta Ads results row, whose cost per result
+ * is over the owner's target for that result. The gateway reads the target again and the server reads
+ * the ad's numbers again right before the pause; no longer over target is refused. Granted.
+ */
+export const META_PAUSE = "meta.pause_ad";
 
 /**
  * Who may propose an action type. A list names the only agents, by id (today's three action types;
@@ -73,6 +96,38 @@ export const TOOLS = {
     tier: "Draft" as Tier,
     fields: CAMPAIGN_FIELDS,
     // a draft to people who signed up to the list, never sent by the app: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [MAILCHIMP_DRAFT]: {
+    agents: "granted",
+    grant: "mailchimp_campaign_draft",
+    tier: "Draft" as Tier,
+    fields: CAMPAIGN_FIELDS,
+    // a draft to people who signed up to the audience, never sent by the app: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [WOO_NOTE]: {
+    agents: "granted",
+    grant: "woo_order_note",
+    tier: "Draft" as Tier,
+    fields: NOTE_FIELDS,
+    // a note only the store's staff see: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [HUBSPOT_MOVE]: {
+    agents: "granted",
+    grant: "hubspot_move_deal",
+    tier: "Draft" as Tier,
+    fields: MOVE_FIELDS,
+    // a stage change and a note inside the business's own CRM, emailing no one: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [META_PAUSE]: {
+    agents: "granted",
+    grant: "meta_pause_ad",
+    tier: "Draft" as Tier,
+    fields: PAUSE_FIELDS,
+    // pausing stops spend on an ad over the owner's own target and starts nothing: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
   [INVOICE_DRAFT]: {
@@ -185,6 +240,10 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (who) return who;
   if (tool === DRAFT_EMAIL) return UUID.test(target) ? refuseDraft(args) : "The target is not a lead on the leads list.";
   if (tool === CAMPAIGN_DRAFT) return listIdOk(target) ? refuseCampaign(args) : "The target is not a Klaviyo list id.";
+  if (tool === MAILCHIMP_DRAFT) return audienceIdOk(target) ? refuseMailchimpCampaign(args) : "The target is not a Mailchimp audience id.";
+  if (tool === WOO_NOTE) return orderIdOk(target) ? refuseNote(args) : "The target is not a WooCommerce order id.";
+  if (tool === HUBSPOT_MOVE) return dealIdOk(target) ? refuseMove(args) : "The target is not a HubSpot deal id.";
+  if (tool === META_PAUSE) return adIdOk(target) ? refusePause(args) : "The target is not a Meta ad id.";
   if (tool === INVOICE_DRAFT) return CUSTOMER_ID.test(target) ? refuseInvoice(args) : "The target is not a Stripe customer id.";
   if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
   if (tool === SHOPIFY_STOCK) return stockTarget(target) ? refuseStock(args) : "The target is not a Shopify inventory item at a location.";

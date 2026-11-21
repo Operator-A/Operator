@@ -41,6 +41,44 @@ The gateway checks a granted action twice: `propose` reads the agent's active sp
 and `applyApproved` refuses, rather than applies, any approved granted action whose agent no longer
 holds the tool (`refuseUngranted`). That covers actions released from the undo window too.
 
+## `mailchimp.campaign_draft` (card 252)
+
+A draft campaign in the business's Mailchimp, to one of its own audiences, for the owner to send from
+Mailchimp. Granted: any agent an approver gives `mailchimp_campaign_draft` to. The audience is a pick
+from `mailchimp_audiences`; `refuseMailchimpCampaign` checks the words on proposal and again in
+`applyMailchimpOne`, and the server reads the audience again right before it writes. Needs the
+Mailchimp campaign drafts key on Connections; until then approved drafts wait.
+
+## `hubspot.deal_stage` (card 253)
+
+Moves one deal in the business's HubSpot to another stage of its own pipeline and logs a note on it
+saying why. It emails no one. Granted: any agent an approver gives `hubspot_move_deal` to. The deal and
+the stage are picks from `hubspot_deals`. `refuseMove` checks the stage id and the note on proposal and
+again in `applyHubSpotMove`. Right before it writes, the server reads the deal's pipeline as HubSpot
+lists it, and refuses a stage outside that pipeline or the deal's current stage. The stage before and
+after go into `diff_json`. It starts at Draft and may be promoted. It needs the HubSpot deal moves key
+on Connections; until that is connected, approved moves wait.
+
+## `meta.pause_ad` (card 255)
+
+Pauses one running ad in the business's Meta ad account whose cost per result is over the owner's
+target for that result (Connections > Meta Ads pauses). Granted: any agent an approver gives
+`meta_pause_ad` to. The ad is a pick from `meta_ad_results`; the proposal carries the result kind, the
+period and a reason, never a target or a budget (`refusePause`, on proposal and again in
+`applyMetaPause`). On apply the gateway reads the owner's target again (none: refused), and the server
+reads the ad again: still running and still over the target, or refused. The status before and after
+go into `diff_json`. It starts at Draft and may be promoted. It needs the Meta Ads pauses sign-in on
+Connections; until that is connected, approved pauses wait.
+
+## `woocommerce.order_note` (card 254)
+
+One private note on one order in the business's WooCommerce store. Store staff see it; the customer
+doesn't, and isn't emailed. Granted: any agent an approver gives `woo_order_note` to. The order is a
+pick from `woo_orders`; `refuseNote` checks the note on proposal and again in `applyWooNote`, and the
+server reads the order again on the same key right before it writes. Starts at Draft and may be
+promoted (28 of the last 30 approvals unedited). Needs the WooCommerce order notes key on
+Connections; until then approved notes wait.
+
 ## `calendar.hold` (card 251)
 
 A private hold on the business's primary Google Calendar: a title, a start and an end, nothing else.

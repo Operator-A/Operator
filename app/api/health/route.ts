@@ -34,6 +34,14 @@ async function check() {
     stripe: await localReady("stripe"),
     calendar: await localReady("calendar"),
     calendar_holds: await localReady("calendar_holds"),
+    mailchimp: await localReady("mailchimp"),
+    mailchimp_drafts: await localReady("mailchimp_drafts"),
+    woo: await localReady("woo"),
+    woo_notes: await localReady("woo_notes"),
+    hubspot: await localReady("hubspot"),
+    hubspot_deals: await localReady("hubspot_deals"),
+    meta: await localReady("meta"),
+    meta_pauses: await localReady("meta_pauses"),
   };
   let agents: { id: string; enabled: boolean }[] | string = "not checked";
   if (set.supabase) {

@@ -1,5 +1,5 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -126,6 +126,39 @@ t("hold: refused when the spec can't be read", refuseProposal("bookkeeper", CALE
 t("hold: refused when the target isn't its own time", refuseProposal("b_ops_1", CALENDAR_HOLD, "2026-11-25T11:00:00-06:00/2026-11-25T12:00:00-06:00", hold, 200, ["calendar_hold"], nowMs) !== null);
 t("hold: refused with a guest", refuseProposal("b_ops_1", CALENDAR_HOLD, holdAt, { ...hold, attendees: "x@y.example" }, 200, ["calendar_hold"], nowMs) !== null);
 t("hold: refused in the past", refuseProposal("b_ops_1", CALENDAR_HOLD, holdAt, hold, 200, ["calendar_hold"], Date.parse("2026-11-24T18:00:00Z")) !== null);
+
+// Mailchimp drafts (card 252): granted, to one of the business's audiences
+t("mailchimp: granted, Draft, promotable", TOOLS[MAILCHIMP_DRAFT].agents === "granted" && TOOLS[MAILCHIMP_DRAFT].grant === "mailchimp_campaign_draft" && TOOLS[MAILCHIMP_DRAFT].tier === "Draft");
+t("mailchimp: ok for an agent given it", refuseProposal("b_mkt_1", MAILCHIMP_DRAFT, "a1b2c3d4e5", camp, 200, ["mailchimp_campaign_draft"]) === null);
+t("mailchimp: refused for an agent not given it", refuseProposal("campaign_writer", MAILCHIMP_DRAFT, "a1b2c3d4e5", camp, 200, []) !== null);
+t("mailchimp: refused on a non-audience target", refuseProposal("b_mkt_1", MAILCHIMP_DRAFT, "../lists", camp, 200, ["mailchimp_campaign_draft"]) !== null);
+t("mailchimp: refused with a merge tag", refuseProposal("b_mkt_1", MAILCHIMP_DRAFT, "a1b2c3d4e5", { ...camp, body: "Hi *|FNAME|*" }, 200, ["mailchimp_campaign_draft"]) !== null);
+
+// WooCommerce order notes (card 254): granted, one private note on one order
+t("woo: granted, Draft, promotable", TOOLS[WOO_NOTE].agents === "granted" && TOOLS[WOO_NOTE].grant === "woo_order_note" && TOOLS[WOO_NOTE].tier === "Draft" && TOOLS[WOO_NOTE].promotable);
+t("woo: ok for an agent given it", refuseProposal("b_ops_1", WOO_NOTE, "1234", { note: "Ship Monday" }, 200, ["woo_order_note"]) === null);
+t("woo: refused for an agent not given it", refuseProposal("b_ops_1", WOO_NOTE, "1234", { note: "Ship Monday" }, 200, ["woo_orders"]) !== null);
+t("woo: refused on a non-order target", refuseProposal("b_ops_1", WOO_NOTE, "1234/refunds", { note: "x" }, 200, ["woo_order_note"]) !== null);
+t("woo: refused when it would tell the customer", refuseProposal("b_ops_1", WOO_NOTE, "1234", { note: "x", customer_note: true }, 200, ["woo_order_note"]) !== null);
+t("woo: refused with a link", refuseProposal("b_ops_1", WOO_NOTE, "1234", { note: "www.x.example" }, 200, ["woo_order_note"]) !== null);
+
+// HubSpot deal moves (card 253): granted, a stage id and a note on one deal
+const mv = { stage: "contractsent", note: "Signed the quote on the call." };
+t("hubspot: granted, Draft, promotable", TOOLS[HUBSPOT_MOVE].agents === "granted" && TOOLS[HUBSPOT_MOVE].grant === "hubspot_move_deal" && TOOLS[HUBSPOT_MOVE].tier === "Draft" && TOOLS[HUBSPOT_MOVE].promotable);
+t("hubspot: ok for an agent given it", refuseProposal("b_sales_1", HUBSPOT_MOVE, "11", mv, 200, ["hubspot_move_deal"]) === null);
+t("hubspot: refused for an agent not given it", refuseProposal("b_sales_1", HUBSPOT_MOVE, "11", mv, 200, ["hubspot_deals"]) !== null);
+t("hubspot: refused on a non-deal target", refuseProposal("b_sales_1", HUBSPOT_MOVE, "11/notes", mv, 200, ["hubspot_move_deal"]) !== null);
+t("hubspot: refused with another field", refuseProposal("b_sales_1", HUBSPOT_MOVE, "11", { ...mv, amount: "1" }, 200, ["hubspot_move_deal"]) !== null);
+t("hubspot: refused without a note", refuseProposal("b_sales_1", HUBSPOT_MOVE, "11", { stage: "contractsent" }, 200, ["hubspot_move_deal"]) !== null);
+
+// Meta ad pauses (card 255): granted, a result, a period and why, on one ad; the target is the owner's
+const pz = { result: "purchase", period: "last_7_days", why: "Cost per purchase is twice your target." };
+t("meta: granted, Draft, promotable", TOOLS[META_PAUSE].agents === "granted" && TOOLS[META_PAUSE].grant === "meta_pause_ad" && TOOLS[META_PAUSE].tier === "Draft" && TOOLS[META_PAUSE].promotable);
+t("meta: ok for an agent given it", refuseProposal("b_mkt_1", META_PAUSE, "120210000000001", pz, 200, ["meta_pause_ad"]) === null);
+t("meta: refused for an agent not given it", refuseProposal("b_mkt_1", META_PAUSE, "120210000000001", pz, 200, ["meta_ad_results"]) !== null);
+t("meta: refused on a non-ad target", refuseProposal("b_mkt_1", META_PAUSE, "act_1", pz, 200, ["meta_pause_ad"]) !== null);
+t("meta: refused when the agent names a target", refuseProposal("b_mkt_1", META_PAUSE, "120210000000001", { ...pz, target: 1 }, 200, ["meta_pause_ad"]) !== null);
+t("meta: refused with a budget", refuseProposal("b_mkt_1", META_PAUSE, "120210000000001", { ...pz, daily_budget: 10 }, 200, ["meta_pause_ad"]) !== null);
 
 console.log(fails ? `${fails} FAILED` : "all passed");
 if (fails) process.exit(1);
