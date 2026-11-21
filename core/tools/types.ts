@@ -138,7 +138,7 @@ export interface ToolDef {
   stage?: (input: Record<string, string | number | Pick>, ctx: ToolCtx) => Staged | { problem: string };
   /**
    * Action tools: who the gateway lets use it, copied from core/gateway. A list names the only agents
-   * (hard rule); "granted" means any agent an approver gives it to on the builder's Tools step (card 210).
+   * (hard rule); "granted" means any agent an approver gives it to on the builder's Tools step (card 250).
    */
   agents?: readonly string[] | "granted";
   /**

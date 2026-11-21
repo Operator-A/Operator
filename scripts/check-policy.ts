@@ -65,7 +65,7 @@ t("lead with address ok", refuseDraftTo({ email: "Ana@Fleet.coffee", stage: "new
 t("lead without address refused", refuseDraftTo({ email: null, stage: "new" }, new Set()) !== null);
 t("suppressed lead refused", refuseDraftTo({ email: "ana@fleet.coffee", stage: "new" }, new Set(["ana@fleet.coffee"])) !== null);
 t("lost lead refused", refuseDraftTo({ email: "ana@fleet.coffee", stage: "lost" }, new Set()) !== null);
-// granted actions (card 210): any agent whose active spec holds the action's tool, refused otherwise
+// granted actions (card 250): any agent whose active spec holds the action's tool, refused otherwise
 const granted: ActionDef = { agents: "granted", grant: "calendar_hold", tier: "Draft", fields: ["title"], promotable: true };
 t("granted: agent holding the tool may propose", refuseAgent(granted, "calendar.hold", "b_sales_3", ["calendar_events", "calendar_hold"]) === null);
 t("granted: agent without the tool refused", refuseAgent(granted, "calendar.hold", "b_sales_3", ["calendar_events"]) !== null);

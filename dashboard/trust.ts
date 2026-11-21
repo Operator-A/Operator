@@ -5,8 +5,9 @@ import "server-only";
 import { db } from "@/core/db";
 import { agentNames } from "@/core/org";
 import { loadCaps } from "@/core/gateway";
-import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, TOOLS } from "@/core/gateway/policy";
+import { ANNOTATE, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, TOOLS, type ActionDef } from "@/core/gateway/policy";
 import { listTrust, standingOf, TRUST_MISSING } from "@/core/trust";
+import { loadSpec } from "@/core/agent-spec";
 import { LEVEL_WORDS, offerWords, standingWords, type Level } from "@/core/trust-rules";
 
 /** What each write tool is called on a promotion card ("Quinn's receipt and category changes"). */
@@ -26,13 +27,10 @@ export async function trustView(): Promise<TrustView> {
   const undoMinutes = (await loadCaps()).undo_window_minutes.value;
   const { data: agents } = await db().from("agents").select("id");
   const have = new Set((agents ?? []).map((a) => a.id as string));
-  // a granted action type names no agents in code: its lines are the agents that have used it
-  const usedBy = async (tool: string) => {
-    const { data } = await db().from("agent_actions").select("agent_id").eq("tool", tool).order("created_at", { ascending: false }).limit(500);
-    return [...new Set((data ?? []).map((r) => r.agent_id as string))];
-  };
-  const agentsOf = await Promise.all(Object.entries(TOOLS).map(async ([tool, t]) => [tool, t.agents === "granted" ? await usedBy(tool) : (t.agents as readonly string[])] as const));
-  const pairs = agentsOf.flatMap(([tool, ids]) => ids.filter((a) => have.has(a)).map((agentId) => ({ agentId, tool })));
+  // a granted action type (card 250): the agents whose active spec holds its tool; else the agents it names
+  const specTools = new Map(await Promise.all([...have].map(async (id) => [id, (await loadSpec(id).catch(() => null))?.spec.tools ?? []] as const)));
+  const holders = (t: ActionDef) => (t.agents === "granted" ? [...have].filter((a) => !!t.grant && specTools.get(a)?.includes(t.grant)) : t.agents.filter((a) => have.has(a)));
+  const pairs = Object.entries(TOOLS).flatMap(([tool, t]) => holders(t as ActionDef).map((agentId) => ({ agentId, tool })));
   const names = await agentNames([...new Set(pairs.map((p) => p.agentId))]);
   const rows = await listTrust();
   const rowOf = (a: string, t: string) => rows.find((r) => r.agent_id === a && r.tool === t) ?? null;
