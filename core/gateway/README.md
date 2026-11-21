@@ -129,6 +129,21 @@ on the Tools step. Draft tier, `promotable: true` (a label on the business's own
   the live tags, adds only the missing ones (Shopify's `tagsAdd`), and the action stores
   `undo_json.tags_remove` with exactly those.
 
+## `shopify.set_stock` (docs/shopify-actions.md)
+
+The available count of one Shopify item at one location. Any agent an approver grants "Set stock at a
+location" on the Tools step. Draft tier, `promotable: false` (the number comes from the agent, and
+numbers come from code: it always waits for an approver).
+
+- The target is `<inventory item>@<location>`, a pick from a Stock levels result, which also carries the
+  count the row showed (`from`). The proposal holds only `from`, `available` (0 to 10,000, at most 100
+  units from `from`) and one of Shopify's reasons (`refuseStock` in `core/shopify-actions.ts`).
+- Applying needs Shopify connected with `write_inventory`, through `callWriteTool("shopify",
+  "shopify_set_stock")`; at most `policies.max_shopify_writes_per_run` (25) per apply. The server
+  re-checks the scope and the live count (refused if it moved), then writes with `changeFromQuantity`
+  and an idempotency key (the action's id). The action stores `undo_json` = the count before, valid only
+  while the count is still the one it set.
+
 ## Caps, vendors and suppressed addresses
 
 The fences the payment and email action types will have to pass. Neither action type exists yet.
