@@ -12,6 +12,7 @@ import { CREDITS_TAX_CODE, MIN_BALANCE_USD, PACKS_USD, packLineItem, balanceOf, 
 import { billingFor } from "../core/cost-rules";
 import { BANK_DIRECTIVE, BANK_SETTINGS, PATTERN_PREFIX, RETAIN_BATCH, SYNC_EVERY_MS, cohortWords, docIdOf, statementOf, statementProblem, syncDue, syncPlan, syncWith, tagsOf, type Bank } from "./brain-rules";
 import type { PatternRow } from "../core/brain-rules";
+import { PLAYBOOK_PREFIX, lessonDoc, lessonProblem, playbookPlan, readLesson, syncPlaybook } from "./playbook-rules";
 
 const now = Date.parse("2026-12-01T12:00:00Z");
 const DAY = 86_400_000;
@@ -332,4 +333,48 @@ assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+HostedClaude,$/m, "the cl
   assert.deepEqual(["app", "core", "dashboard", "ee", "integrations", "scripts"].flatMap((d) => { try { return callers(d); } catch { return []; } }), ["ee/brain.ts"], "only ee/brain.ts talks to Hindsight");
 }
 
-console.log("check:ee ok (credits, plan, trial, grace, comped, Stripe signatures and rows, sign-up codes, shared brain bank)");
+// the OPERATOR playbook (card 235): staff lessons, no counts, percentages or addresses, kept apart from the counts in the bank
+{
+  const ok = { title: "Start email with a welcome series", body: "Before any campaign, set up a short welcome series so new subscribers hear from you while they still care.", kind: null };
+  assert.equal(lessonProblem(ok), null);
+  assert.equal(lessonProblem({ ...ok, body: "Send weekly, not daily, while the list is under 1,000 subscribers." }), null, "small numbers in advice are fine");
+  for (const [bad, why] of [[{ ...ok, title: "x" }, "title"], [{ ...ok, body: "short" }, "body"], [{ ...ok, title: "t".repeat(81) }, "long title"], [{ ...ok, body: "b".repeat(601) }, "long body"],
+    [{ ...ok, body: "About 80% of stores kept the email department after two months." }, "percent"], [{ ...ok, body: "Eighteen percent of stores kept the email department after two months." }, "percent word"],
+    [{ ...ok, body: "We saw 18 of 26 online stores keep email marketing after sixty days." }, "count"], [{ ...ok, body: "Write to founders@example.com with questions about this lesson." }, "email"],
+    [{ ...ok, body: "Read the full guide at https://example.com before setting this up." }, "link"], [{ ...ok, body: "Bad\u0000character in a lesson body that is long enough." }, "control"]] as const)
+    assert.ok(lessonProblem(bad as typeof ok), `${why} is refused`);
+  assert.deepEqual(readLesson({ title: "  Two\nlines ", body: " a  b\r\n\n\n\nc ", kind: "nope" }), { title: "Two lines", body: "a b\n\nc", kind: null });
+  assert.equal(readLesson({ title: "t", body: "b", kind: "online_store" }).kind, "online_store");
+  const id = "0b9d6e1a-1111-4222-8333-444455556666";
+  const doc = lessonDoc({ id, ...ok, kind: "online_store" });
+  assert.equal(doc.documentId, `${PLAYBOOK_PREFIX}${id}`);
+  assert.match(doc.content, /^OPERATOR's playbook, for online stores: Start email with a welcome series\. Before any campaign/);
+  assert.deepEqual(doc.tags, ["source:playbook", "kind:online_store"]);
+  assert.deepEqual(doc.metadata, { source: "playbook", lesson: id });
+  assert.deepEqual(lessonDoc({ id, ...ok }).tags, ["source:playbook", "kind:all"]);
+  // the plan keeps patterns and other documents, and drops playbook documents no longer published
+  const plan = playbookPlan([{ id, ...ok }, { id: "bad", ...ok, body: "80% of everyone, which is not allowed here." }], [`${PLAYBOOK_PREFIX}old`, `${PLAYBOOK_PREFIX}${id}`, "pat-all--dept:finance"]);
+  assert.deepEqual(plan.retain.map((d) => d.documentId), [`${PLAYBOOK_PREFIX}${id}`], "a lesson that breaks the rules is never sent");
+  assert.deepEqual(plan.remove, [`${PLAYBOOK_PREFIX}old`]);
+  // and the pattern sync never deletes a playbook document
+  assert.deepEqual(syncPlan([], [`${PLAYBOOK_PREFIX}${id}`, "pat-all--x"], {}).remove, ["pat-all--x"]);
+  void (async () => {
+    const calls: string[] = [];
+    const bank: Bank = { async setBank() {}, async directives() { return []; }, async addDirective() {}, async documents() { return [`${PLAYBOOK_PREFIX}gone`, "pat-all--dept:finance"]; },
+      async retain(docs) { calls.push(`retain:${docs.length}`); }, async remove(d) { calls.push(`remove:${d}`); } };
+    assert.deepEqual(await syncPlaybook(bank, [{ id, ...ok }]), { retained: 1, removed: 1 });
+    assert.deepEqual(calls, ["retain:1", `remove:${PLAYBOOK_PREFIX}gone`]);
+  })().catch((e) => { console.error(e); process.exit(1); });
+  // written only in the admin business, by its owners, and audited
+  const acts = readFileSync("ee/playbook-actions.ts", "utf8");
+  for (const fn of ["playbookSave", "playbookPublish", "playbookRemove"]) {
+    const body = acts.split(`export async function ${fn}`)[1].split("\nexport ")[0];
+    assert.match(body, /await asRole\("owner"\)/, `${fn} is owners only`);
+    assert.match(body, /me\.orgId !== adminOrgId\(\)/, `${fn} is the admin business only`);
+    assert.match(body, /await audit\(me, /, `${fn} is audited`);
+  }
+  assert.match(readFileSync("ee/playbook-card.tsx", "utf8"), /if \(me\.orgId !== adminOrgId\(\) \|\| me\.role !== "owner"\) return null;/, "only the admin business's owners see the card");
+  assert.match(readFileSync("ee/playbook.ts", "utf8"), /return withOrg\(admin, fn\);/, "lessons are read and written as the admin business only");
+}
+
+console.log("check:ee ok (credits, plan, trial, grace, comped, Stripe signatures and rows, sign-up codes, shared brain bank, playbook)");

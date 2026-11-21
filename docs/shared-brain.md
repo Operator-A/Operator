@@ -137,3 +137,34 @@ statements hold only list words and the counted numbers; the sync with a fake ba
 over the floor, deletes the documents no longer counted, sets the bank first, and does nothing without
 both settings; the weekly gate.
 
+## Slice 5: the OPERATOR playbook (card 235)
+
+Lessons written by OPERATOR staff, so Avery and agents have useful advice on day one, before 5 businesses
+share any pattern. Avery reads them in slice 4, together with the counts.
+
+### What it does
+
+- **Where lessons live**: `ee_playbook_lessons` (migration `20261227090000_ee_playbook.sql`), rows of the
+  admin business (`OPERATOR_ADMIN_ORG_ID`), read and written only as that business (`ee/playbook.ts`). No
+  other business reads them from the database.
+- **Who writes them**: owners of the admin business, on Settings > Playbook (`ee/playbook-card.tsx`; the card
+  shows nowhere else). A lesson has a title, a few sentences and who it is for (every business, or one kind
+  from `BUSINESS_KINDS`). It starts as a draft. Every change is audited.
+- **What a lesson may say** (`lessonProblem`, `ee/playbook-rules.ts`): advice in words, small numbers in advice
+  ("under 1,000 subscribers"). Never a percentage, a count like "18 of 26", an address or a link, because
+  figures founders see come from counts done in code. The table checks lengths and the kind list again.
+- **Into the bank**: publishing, changing, taking back or deleting a lesson pushes the published playbook to
+  the bank at once (`pushPlaybook`). Each published lesson is its own document, id `play-<lesson id>`, tags
+  `source:playbook` and `kind:<kind>` or `kind:all`, written "OPERATOR's playbook, for online stores: …", so it
+  is never mixed up with a count. Playbook documents no longer published are deleted. The weekly sync does the
+  same again, so a push that fails is put right within a week. The pattern sync never touches `play-`
+  documents, and the playbook never touches `pat-` ones.
+- **The weekly sync's result is logged** (`[dispatch] shared brain: …`) when it runs or fails, not when it is
+  off or not due.
+
+### Tests (`npm run check:ee`)
+
+Lesson rules (percentages, counts, addresses, links, lengths refused; small numbers allowed); the document
+and its tags; the plan sends only lessons that pass and deletes only stale `play-` documents; the pattern sync
+leaves `play-` documents alone; the playbook sync against a fake bank; the actions are owners of the admin
+business only and audited; only the admin business's owners see the card.

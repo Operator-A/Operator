@@ -43,6 +43,8 @@ export async function GET(req: Request) {
   }
   // once per round, after every business: the cloud edition's weekly shared-brain sync (ee/brain.ts)
   const brain = await afterSchedule(now);
+  // the weekly sync's result goes to the logs too, so it can be checked there (not when it is off or not due)
+  if (brain && brain !== "not due" && brain !== "off") console.log("[dispatch] shared brain:", brain);
   return NextResponse.json({ orgs, brain });
 }
 
