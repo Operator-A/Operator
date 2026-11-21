@@ -9,6 +9,7 @@
 
 import { createHash } from "node:crypto";
 import { SHOPIFY_TOOLS } from "@/core/shopify-queries";
+import { STRIPE_DRAFT_TOOL, STRIPE_READ_TOOLS } from "@/core/stripe-rules";
 import { SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES } from "@/core/shopify-actions";
 
 /**
@@ -194,6 +195,36 @@ export const MCP_SERVERS = {
     scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
     writeTools: [],
     signInHint: "Sign in with a Google account that can see the business’s Google Analytics, and leave the one box Google shows ticked.",
+  },
+  stripe: {
+    id: "stripe",
+    name: "Stripe",
+    // Our own server (integrations/stripe-server.ts, card 240). Stripe's hosted MCP server has only
+    // generic tools (any GET, any write, refunds included) and no read-only switch, so it can't be held
+    // to named tools. A restricted key with Read on five lists, refused when it can change anything.
+    // Each tool runs one fixed request (core/stripe-rules.ts); sums are made in code.
+    auth: "token",
+    url: "https://api.stripe.com/v1",
+    readTools: STRIPE_READ_TOOLS,
+    reportTools: [],
+    scopes: ["a Stripe restricted key with Read on Balance, Balance transaction sources, Subscriptions, Invoices and Customers, and None on everything else (a key that can change anything is refused)"],
+    writeTools: [],
+    signInHint: "In Stripe: Developers, API keys, Create restricted key, name it OPERATOR read. Set Balance, Balance transaction sources, Subscriptions, Invoices and Customers to Read, leave everything else None, then Create key. Paste it here (rk_…).",
+  },
+  stripe_drafts: {
+    id: "stripe_drafts",
+    name: "Stripe invoice drafts",
+    // A second restricted key, held only by the gateway (card 240): Write on Invoices and Invoice
+    // items, Read on Customers, None on everything else (refunds, charges, payouts and customers
+    // writes are refused when it is pasted). One tool: a draft invoice with auto_advance off. The
+    // server has no finalize, send, pay, void or refund code, so the owner finalizes in Stripe.
+    auth: "token",
+    url: "https://api.stripe.com/v1",
+    readTools: [],
+    reportTools: [],
+    scopes: ["a Stripe restricted key with Write on Invoices and Invoice items, Read on Customers, and None on everything else, used only to make a draft invoice"],
+    writeTools: [{ tool: STRIPE_DRAFT_TOOL, actionType: "stripe.invoice_draft" }],
+    signInHint: "In Stripe: Developers, API keys, Create restricted key, name it OPERATOR invoice drafts. Set Invoices to Write (and Invoice items too, if Stripe lists it on its own), Customers to Read, leave everything else None, then Create key. Paste it here (rk_…). Only the gateway uses it, after you approve; you finalize and send from Stripe.",
   },
   calendar: {
     id: "calendar",
