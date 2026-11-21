@@ -195,7 +195,7 @@ const STATE_WORD: Record<TileView["state"], { text: string; bg: string; fg: stri
   coming: { text: "Coming next", bg: "var(--soft)", fg: "var(--mut)" },
 };
 
-const PART_WORD: Record<CategoryState, string> = { connected: "Connected", open: "Not asked yet", skipped: "Later", guide: "Avery sets it up after", export: "From an export", uses: "On our build list", none: "None yet" };
+const PART_WORD: Record<CategoryState, string> = { connected: "Connected", open: "Not asked yet", skipped: "Later", guide: "Avery sets it up after", export: "On our build list", uses: "On our build list", none: "None yet" };
 
 /** Your tools beside the chat (card 195): every core part, and any other once Avery asked about it. Tap one to open its card. */
 function YourTools({ parts, tiles, asking }: { parts: { c: ToolCategory; state: CategoryState }[]; tiles: TileView[]; asking: string | null }) {
@@ -230,7 +230,7 @@ function ToolCard({ c, state, plan, tiles, open, owner, shopifyDomain, tapped, n
   // card 195 slice B: the numbers code read from it, saved as facts that start "From <tool>: "
   const prefix = on ? snapshotPrefix(on.tile.name) : null;
   const snap = prefix ? facts.filter((f) => f.text.startsWith(prefix)) : [];
-  const answer = plan?.kind === "uses" || plan?.kind === "export" ? `${plan.tool}. There’s no direct line to it yet, so it’s on our build list${plan.kind === "export" ? " and this part starts from an export" : ""}.`
+  const answer = plan?.kind === "uses" || plan?.kind === "export" ? `${plan.tool}. There’s no direct line to it yet, so it’s on our build list.`
     : plan?.kind === "guide" ? `None yet. Avery sets up ${c.starter?.name} with you after setup.` : plan?.kind === "none" ? "None yet." : null;
   return (
     <section className="wg-pop stack" aria-label={c.area} style={{ gap: 12, background: "var(--card)", border: "1px solid var(--bd)", borderRadius: 18, padding: 18, maxWidth: 640 }}>

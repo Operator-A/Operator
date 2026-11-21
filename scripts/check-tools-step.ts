@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { MCP_SERVERS } from "../core/mcp-rules";
 import { TEMPLATES } from "../core/templates";
 import { TOOLS } from "../core/tools/catalog";
-import { readAsked, readSetupState, setupDirective, toolLines, FACT_TOPICS } from "../core/setup-rules";
+import { readAsked, readSetupState, setupDirective, toolLines, FACT_TOPICS, NOTHING_CONNECTS } from "../core/setup-rules";
 import { SNAPSHOT_MAX, SNAPSHOT_TILES, bankFacts, capSnapshot, emailFacts, hasSnapshot, siteFacts, storeFacts } from "../core/snapshot-rules";
 import { waitLine } from "../core/company-rules";
 import { CATEGORY_IDS, NEED_TILE, SCOPE_WORDS, TOOL_CATEGORIES, TOOL_TILES, MAX_LISTED, answerFact, backTarget, cardCategory, categoryOfTile, categoryState, followUps, listedTool, partsShown, planKinds, planNotes, readPlans, readSkipped, tileOfMcp, type Plans, type ToolTileId, neededBy, permissionsOf, routeUnlisted, tilesFor, waitingOn, type TemplateTools } from "../core/tools-step-rules";
@@ -110,11 +110,17 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   // Avery names a part only; its state comes from code, and the tools come from the list
   const lines = toolLines([{ id: "store", state: "connected" }, { id: "bookings", state: "open" }]);
   assert.match(lines, /- store \(where you sell\): connected/);
-  assert.match(lines, /- bookings \(bookings, only if it fits\): open/);
+  assert.match(lines, new RegExp(`- bookings \\(bookings, only if it fits, ${NOTHING_CONNECTS}\\): open`), "a part where nothing connects says so (card 196)");
+  assert.ok(!toolLines([]).includes(`where you sell, ${NOTHING_CONNECTS}`), "a part with a tile that connects doesn't");
+  for (const c of TOOL_CATEGORIES) assert.equal(toolLines([]).includes(`- ${c.id} (${c.area.toLowerCase()}${c.core ? "" : ", only if it fits"}, ${NOTHING_CONNECTS})`), c.tiles.length === 0, `${c.id}: marked exactly when no tool connects`);
   assert.ok(!/Shopify|Calendly|https?:/.test(lines), "the directive lists parts, never tools or links");
   const dir = setupDirective("Avery", [], []);
   assert.match(dir, /call Ask about a tool with that part's id/);
   assert.match(dir, /Never name a tool, a link or a sign-in step yourself: the card does that/);
+  assert.match(dir, /Never ask which tool they use in words alone: call Ask about a tool/, "card 196: a tool question always comes with its card");
+  assert.match(dir, /If the founder already named the tool for an open part, still call it/);
+  assert.match(dir, /Say the card connects a tool only for a part that has one/);
+  assert.match(dir, /it does once the founder names it \(Instagram means social/);
   assert.ok(!dir.includes("that is advice only"), "the old line that sent tools to a later step is gone");
   const setup = read("core/setup.ts");
   assert.match(setup, /function askToolTool[\s\S]{0,900}if \(rows\.length\) return \{ problem: "one card per reply" \}[\s\S]{0,200}if \(!open\.has\(cat\)\) return \{ problem: "that part already has an answer" \}/, "one card per reply, and only an open part");
@@ -122,6 +128,10 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   assert.match(setup, /if \(heldAsk\.cat\) \{ const now = await setupState\(\); await saveSetupState/, "the ask is kept only after a run that finished");
   assert.match(setup, /export async function answerCategory[\s\S]{0,500}listedTool\(cat, tool\)[\s\S]{0,120}throw new Error/, "an answer is checked against the part's own list");
   const acts = read("dashboard/setupActions.ts");
+  assert.match(acts, /planCategory\(cat, \{ kind: "uses", tool: r\.name \}\)/, "a typed tool we don't connect is saved like a listed one (card 196)");
+  assert.doesNotMatch(acts, /kind: "export"/, "no new answer is saved as an export plan");
+  assert.match(read("app/globals.css"), /\.wg \{[^}]*overflow: clip;/, "card 196: the setup page clips, so a tap never scrolls it sideways and the steps bar can stick");
+  assert.doesNotMatch(read("app/start/page.tsx"), /"From an export"/, "the panel has one word for a tool we don't connect");
   assert.match(acts, /export async function setupAnswerTool[\s\S]{0,200}asRole\("owner"\)[\s\S]{0,80}isCategory\(cat\)/, "answering checks the role, then the part");
   assert.doesNotMatch(acts.slice(acts.indexOf("export async function setupAnswerTool"), acts.indexOf("export async function setupPlanClear")), /askSetup|runExplore/, "no model call");
   assert.match(acts, /export async function setupSkipTool[\s\S]{0,140}asRole\("approver"\)[\s\S]{0,80}isCategory\(cat\)/, "skipping checks the role, then the part");
@@ -182,12 +192,15 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   // stored plans: only real parts, a guide only where there is a starter, a checked tool name
   assert.deepEqual(readPlans({ list: { kind: "guide" }, money: { kind: "guide" }, nope: { kind: "guide" }, inbox: { kind: "export", tool: "  Outlook " }, store: { kind: "export", tool: "https://evil.example" }, site: { kind: "other" } }),
     { list: { kind: "guide" }, inbox: { kind: "export", tool: "Outlook" } });
-  // card 195: a listed tool that doesn't connect yet, or none
-  assert.deepEqual(readPlans({ bookings: { kind: "uses", tool: "Calendly" }, ads: { kind: "none" }, store: { kind: "uses", tool: "Shopify" }, books: { kind: "uses", tool: "Made Up" } }),
-    { bookings: { kind: "uses", tool: "Calendly" }, ads: { kind: "none" } }, "uses only names an unconnectable tool on the part's own list");
-  assert.deepEqual(planNotes({ money: { kind: "uses", tool: "Chase" }, list: { kind: "none" } }), {}, "uses and none add no wait notes");
-  assert.deepEqual(planKinds({ money: { kind: "uses", tool: "Chase" } }), {});
-  assert.deepEqual(followUps({ money: { kind: "uses", tool: "Chase" }, list: { kind: "none" } }, new Set(), new Set()), [], "nor Desk follow-ups");
+  // card 195: a listed tool that doesn't connect yet, or none; card 196: or one the founder typed, never one that connects
+  assert.deepEqual(readPlans({ bookings: { kind: "uses", tool: "Calendly" }, ads: { kind: "none" }, store: { kind: "uses", tool: "Shopify" }, books: { kind: "uses", tool: "  Made Up " }, leads: { kind: "uses", tool: "https://evil.example" } }),
+    { bookings: { kind: "uses", tool: "Calendly" }, ads: { kind: "none" }, books: { kind: "uses", tool: "Made Up" } }, "uses names a tool that doesn't connect here, checked");
+  // card 196: a tool we don't connect means that part's work starts from an export, picked or typed alike
+  assert.deepEqual(planKinds({ money: { kind: "uses", tool: "Chase" }, bookings: { kind: "uses", tool: "Calendly" } }), { Mercury: "export" });
+  assert.deepEqual(planKinds({ money: { kind: "uses", tool: "Chase" } }), planKinds({ money: { kind: "export", tool: "Chase" } }), "the old export plan reads the same");
+  assert.match(planNotes({ money: { kind: "uses", tool: "Capital One" }, list: { kind: "none" } }).Mercury, /^Starts from an export of Capital One/);
+  assert.deepEqual(followUps({ money: { kind: "uses", tool: "Chase" }, bookings: { kind: "uses", tool: "Calendly" }, list: { kind: "none" } }, new Set(), new Set()).map((f) => [f.cat, f.kind]), [["money", "export"]], "a Desk follow-up only where a tool would connect");
+  assert.deepEqual(planNotes({ list: { kind: "none" } }), {}, "none adds no wait note");
   assert.deepEqual(readPlans(["list"]), {});
   assert.deepEqual(readPlans(null), {});
   assert.deepEqual(readSetupState({ plans: { list: { kind: "guide" }, x: 1 } }, []).plans, { list: { kind: "guide" } }, "the saved state keeps its plans");

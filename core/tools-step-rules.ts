@@ -255,7 +255,12 @@ export function readPlans(raw: unknown): Plans {
     if (!p || typeof p !== "object") continue;
     if (p.kind === "guide" && c.starter) out[c.id] = { kind: "guide" };
     if (p.kind === "export" && typeof p.tool === "string") { const n = checkServiceName(p.tool); if (!("problem" in n)) out[c.id] = { kind: "export", tool: n.name }; }
-    if (p.kind === "uses") { const t = listedTool(c.id, p.tool); if (t && !t.tile) out[c.id] = { kind: "uses", tool: t.name }; }
+    // a listed tool that doesn't connect, or one the founder typed (card 196); never a tool that connects here
+    if (p.kind === "uses" && typeof p.tool === "string") {
+      const t = listedTool(c.id, p.tool);
+      if (t) { if (!t.tile) out[c.id] = { kind: "uses", tool: t.name }; }
+      else { const n = checkServiceName(p.tool); if (!("problem" in n)) out[c.id] = { kind: "uses", tool: n.name }; }
+    }
     if (p.kind === "none") out[c.id] = { kind: "none" };
   }
   return out;
@@ -285,7 +290,7 @@ export function planNotes(plans: Plans): Record<string, string> {
   const out: Record<string, string> = {};
   for (const c of TOOL_CATEGORIES) {
     const p = plans[c.id];
-    if (!p || (p.kind !== "guide" && p.kind !== "export")) continue;
+    if (!p || p.kind === "none") continue;
     for (const id of c.tiles) out[TILE_BY_ID[id].name] = p.kind === "guide" ? `Avery sets up ${c.starter?.name ?? TILE_BY_ID[id].name} with you after setup, then it starts working.` : `Starts from an export of ${p.tool} until it has a connection.`;
   }
   return out;
@@ -294,7 +299,8 @@ export function planNotes(plans: Plans): Record<string, string> {
 /** Which planned kind each waiting tool has, by tool name, for the reveal's status (card 184). */
 export function planKinds(plans: Plans): Record<string, "guide" | "export"> {
   const out: Record<string, "guide" | "export"> = {};
-  for (const c of TOOL_CATEGORIES) { const p = plans[c.id]; if (p && (p.kind === "guide" || p.kind === "export")) for (const id of c.tiles) out[TILE_BY_ID[id].name] = p.kind; }
+  // a tool the business uses that we don't connect (picked or typed, card 196) means the part's work starts from an export
+  for (const c of TOOL_CATEGORIES) { const p = plans[c.id]; if (p && p.kind !== "none") for (const id of c.tiles) out[TILE_BY_ID[id].name] = p.kind === "guide" ? "guide" : "export"; }
   return out;
 }
 
@@ -311,7 +317,7 @@ export function followUps(plans: Plans, connected: ReadonlySet<ToolTileId>, expo
     const p = plans[c.id];
     if (!p || c.tiles.some((t) => connected.has(t))) continue;
     if (p.kind === "guide" && c.starter) out.push({ cat: c.id, area: c.area, kind: "guide", starter: c.starter });
-    if (p.kind === "export") { const n = checkServiceName(p.tool); if (!("problem" in n) && !exportKeys.has(n.key)) out.push({ cat: c.id, area: c.area, kind: "export", tool: n.name }); }
+    if (p.kind === "export" || p.kind === "uses") { if (!c.tiles.length) continue; const n = checkServiceName(p.tool); if (!("problem" in n) && !exportKeys.has(n.key)) out.push({ cat: c.id, area: c.area, kind: "export", tool: n.name }); }
   }
   return out;
 }
