@@ -2,7 +2,7 @@
 // First-run setup actions (card 151, docs/setup.md). Each checks the login and role again. A message to
 // Avery makes real model calls, so it also needs DASHBOARD_CONTROLS=on, like her chat.
 import { revalidatePath } from "next/cache";
-import { addFact, answerCategory, askSetup, confirmFact, editFact, endWrapUp, finishSetup, keepAnswerFact, startCompany, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, type SetupAnswer } from "@/core/setup";
+import { addFact, answerCategory, askSetup, takeSnapshot, confirmFact, editFact, endWrapUp, finishSetup, keepAnswerFact, startCompany, inSetup, planCategory, removeFact, setStage, setupState, skipCategory, type SetupAnswer } from "@/core/setup";
 import { isStage } from "@/core/setup-rules";
 import { readPick } from "@/core/company-rules";
 import { companyChart } from "./company";
@@ -13,6 +13,7 @@ import { saveSettingsFields, settings } from "@/core/settings";
 import { validTz } from "@/core/time";
 import { askFor } from "@/core/connector-requests";
 import { isCategory, routeUnlisted } from "@/core/tools-step-rules";
+import { hasSnapshot } from "@/core/snapshot-rules";
 import { asRole, getHealth } from "./data";
 import { connectedTiles } from "./toolsStep";
 import { controlsOn } from "./session";
@@ -67,6 +68,22 @@ export async function setupAnswerTool(cat: string, tool: string | null): Promise
       return { ok: true, href: "/start", text: `Noted. There’s no direct line to ${r.name} yet, so it’s on our build list, and it starts working the day it connects.` };
     }
     return { ok: true, href: "/start", text: "Noted." };
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * The snapshot (card 195 slice B): once a tool is connected in setup, its card asks code for a few
+ * numbers from it, saved as facts. Only a connected tile with a snapshot; no model call.
+ */
+export async function setupSnapshot(tile: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!hasSnapshot(tile)) return { ok: false, text: "That tool has no snapshot." };
+  try {
+    if (!(await inSetup())) return { ok: false, text: "Setup is finished for this business." };
+    if (!(await connectedTiles(await getHealth())).has(tile)) return { ok: false, text: "Connect it first." };
+    const facts = await takeSnapshot(tile);
+    await audit(me, "snapshot_tool", tile, { facts: facts.length });
+    return done(facts.length ? `Saved ${facts.length} fact${facts.length === 1 ? "" : "s"} from it.` : "Nothing to save from it yet.");
   } catch (e) { return fail(e); }
 }
 

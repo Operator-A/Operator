@@ -5,6 +5,7 @@ import { MCP_SERVERS } from "../core/mcp-rules";
 import { TEMPLATES } from "../core/templates";
 import { TOOLS } from "../core/tools/catalog";
 import { readAsked, readSetupState, setupDirective, toolLines, FACT_TOPICS } from "../core/setup-rules";
+import { SNAPSHOT_MAX, SNAPSHOT_TILES, bankFacts, capSnapshot, emailFacts, hasSnapshot, siteFacts, storeFacts } from "../core/snapshot-rules";
 import { waitLine } from "../core/company-rules";
 import { CATEGORY_IDS, NEED_TILE, SCOPE_WORDS, TOOL_CATEGORIES, TOOL_TILES, MAX_LISTED, answerFact, backTarget, cardCategory, categoryOfTile, categoryState, followUps, listedTool, partsShown, planKinds, planNotes, readPlans, readSkipped, tileOfMcp, type Plans, type ToolTileId, neededBy, permissionsOf, routeUnlisted, tilesFor, waitingOn, type TemplateTools } from "../core/tools-step-rules";
 
@@ -130,6 +131,43 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   assert.match(page, /const tapped = isCategory\(sp\.q\) \? sp\.q : categoryOfTile\(sp\.c\)/, "the page only takes a part from the list");
   assert.match(page, /c\.tools\.map\(\(t\) => \(\s*<ActionButton key=\{t\.name\} className="wg-tool" action=\{setupAnswerTool\.bind\(null, c\.id, t\.name\)\}/, "the card's tools come from the list in code");
   assert.match(read("dashboard/components/setup.tsx"), /\{!busy && card\}/, "the card sits under the last message");
+}
+
+// the snapshot once a tool connects (card 195 slice B): numbers in code, never the tool's own text
+{
+  const sh = storeFacts([{ total: 100, repeat: true }, { total: 50.5, repeat: false }, { total: 49.5, repeat: false }, { total: Number.NaN, repeat: true }], 3);
+  assert.deepEqual(sh.map((f) => f.topic), ["sells", "customers", "other"]);
+  assert.equal(sh[0].text, "From Shopify: 3 orders and $200 in the last 30 days, $67 on average", "a bad total is left out, sums in code");
+  assert.equal(sh[1].text, "From Shopify: 33% of those orders came from repeat customers");
+  assert.equal(sh[2].text, "From Shopify: 3 orders waiting to ship");
+  assert.deepEqual(storeFacts([], 0), [{ topic: "sells", text: "From Shopify: no orders in the last 30 days" }]);
+  assert.equal(storeFacts([{ total: 10, repeat: false }], 0).length, 2, "nothing to ship, no line");
+  const bank = bankFacts({ cash_usd: 41250.4, spend_per_30d_usd: 12000, income_per_30d_usd: 9000, runway_months: 13.7 });
+  assert.deepEqual(bank.map((f) => f.text), ["From Mercury: $41,250 cash across the business accounts", "From Mercury: about $12,000 goes out and $9,000 comes in a month", "From Mercury: about 13 months of runway at that rate"]);
+  assert.equal(bankFacts({ cash_usd: 100, runway_months: 0.4 })[1].text, "From Mercury: less than a month of runway at that rate");
+  assert.deepEqual(bankFacts({}), [], "no numbers, no facts");
+  const mail = emailFacts(3, { messages: 4, open_rate_pct: 41.2, click_rate_pct: 2.8, orders: 12, revenue_usd: 980 });
+  assert.deepEqual(mail.map((f) => f.text), ["From Klaviyo: 3 email lists", "From Klaviyo: 4 campaigns sent in the last 30 days, 41% opened, 3% clicked", "From Klaviyo: those campaigns brought in 12 orders and $980"]);
+  assert.equal(emailFacts(1, { messages: 0 })[1].text, "From Klaviyo: no campaigns sent in the last 30 days");
+  assert.equal(emailFacts(1, { messages: 0 })[0].text, "From Klaviyo: 1 email list", "one, not ones");
+  const site = siteFacts({ sessions: 2100, users: 1500, key_events: 63, key_events_per_100_sessions: 3 });
+  assert.deepEqual(site.map((f) => f.text), ["From Google Analytics: 2,100 visits from 1,500 people in the last 30 days", "From Google Analytics: 63 key events (sales, sign-ups and the like), 3 per 100 visits"]);
+  assert.deepEqual(siteFacts({}), []);
+  for (const f of [...sh, ...bank, ...mail, ...site]) assert.ok(f.text.length <= 160 && (FACT_TOPICS as readonly string[]).includes(f.topic), "each fits one fact");
+  assert.equal(capSnapshot(Array.from({ length: 9 }, () => ({ topic: "other" as const, text: "x".repeat(300) }))).length, SNAPSHOT_MAX);
+  assert.ok(capSnapshot([{ topic: "other", text: "x".repeat(300) }])[0].text.length === 160);
+  assert.deepEqual([...SNAPSHOT_TILES], ["shopify", "mercury", "klaviyo", "analytics"], "every built tile but Gmail");
+  assert.ok(!hasSnapshot("gmail") && hasSnapshot("mercury"));
+  const rules = read("core/snapshot-rules.ts");
+  assert.doesNotMatch(rules, /: string\b[^)]*\)\s*:\s*SnapshotFact/, "no formatter takes free text from a tool");
+  const setup = read("core/setup.ts");
+  const snap = setup.slice(setup.indexOf("export async function takeSnapshot"), setup.indexOf("/** The first job started"));
+  assert.match(snap, /withRun\(SETUP_AGENT, "setup"/, "a snapshot is a logged run");
+  assert.doesNotMatch(snap, /runExplore|askSetup|anthropic/i, "no model call");
+  assert.match(snap, /x\.source === "owner" && x\.text\.startsWith\(prefix\)/, "a new snapshot replaces the tool's last one");
+  const acts = read("dashboard/setupActions.ts");
+  assert.match(acts, /export async function setupSnapshot[\s\S]{0,140}asRole\("owner"\)[\s\S]{0,80}hasSnapshot\(tile\)[\s\S]{0,300}connectedTiles\(await getHealth\(\)\)\)\.has\(tile\)/, "only an owner, only a connected tile with a snapshot");
+  assert.match(read("core/setup-rules.ts"), /facts that start "From <tool>:"/, "Avery is told those facts are the founder's own data");
 }
 
 // no tool yet, or one we don't connect (card 183)

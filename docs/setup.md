@@ -137,6 +137,17 @@ that connect, their steps and what each permission is for are still `TOOL_TILES`
   panel is full. Only an owner answers (`setupAnswerTool`, audited). No model call.
 - **Avery knows what's connected.** Each message tells her which parts are connected, so she doesn't
   ask about them again (`connectedTiles` in `sendSetup`).
+- **The snapshot** (slice B, `core/snapshot-rules.ts`, `takeSnapshot` in `core/setup.ts`). When a
+  tool's card shows it connected and it has no snapshot yet, the card asks code once
+  (`setupSnapshot`, owner only, audited) for a few numbers from it, read through the catalog's own read
+  tools or Shopify's orders query: Shopify's last 30 days of orders, average order, repeat share and
+  orders waiting to ship; Mercury's cash, money out and in a month and runway; Klaviyo's lists and last
+  30 days of campaigns; Google Analytics' visits and key events. Gmail has none. It is one logged run
+  (trigger `setup`) with no model call. At most four facts, each starting "From <tool>: " and saved as
+  known, replacing that tool's last snapshot, so they count toward what Avery needs to know. Every
+  number is worked out in code, and no text from the tool (a product, merchant or page name) goes into
+  a fact. The directive tells Avery those facts are the founder's own data, to build on rather than
+  ask for again.
 - **The panel.** Numbered steps, then what each permission is for (from the profile's scopes,
   `SCOPE_WORDS`), then the Connect button or, for Shopify, the store's address and the read-only key.
   Gmail also offers the drafts sign-in once the read-only one is connected.
@@ -301,7 +312,7 @@ from Shopify data (`docs/product-facts.md`).
 - `core/setup-rules.ts`, `core/design-rules.ts` (pure, tested by `npm run check:setup`)
 - `core/setup.ts` (state, facts, `askSetup`)
 - `dashboard/setupActions.ts` (the actions, each checking the role again)
-- `core/tools-step-rules.ts` (pure, tested by `npm run check:tools-step`), `dashboard/toolsStep.ts`
+- `core/tools-step-rules.ts`, `core/snapshot-rules.ts` (pure, tested by `npm run check:tools-step`), `dashboard/toolsStep.ts`
 - `core/company-rules.ts` (pure, tested by `npm run check:setup`), `dashboard/company.ts`
 - `core/first-job-rules.ts` (pure, tested by `npm run check:first-job`), `dashboard/firstJob.ts`, `dashboard/components/firstJob.tsx`, `startFirstJob` in `dashboard/actions.ts`
 - `dashboard/components/setup.tsx` (the conversation, the panel, the store and unlisted-tool forms, the company chart), `app/start/page.tsx`

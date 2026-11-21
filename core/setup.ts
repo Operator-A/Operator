@@ -14,8 +14,9 @@ import { installTemplates } from "@/core/install";
 import { TEMPLATES, templateList } from "@/core/templates";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
-import { CATEGORY_IDS, TOOL_CATEGORIES, answerFact, categoryState, listedTool, readPlans, readSkipped, type CategoryId, type CategoryPlan, type ToolTileId } from "@/core/tools-step-rules";
+import { CATEGORY_IDS, TILE_BY_ID, TOOL_CATEGORIES, answerFact, categoryState, listedTool, readPlans, readSkipped, type CategoryId, type CategoryPlan, type ToolTileId } from "@/core/tools-step-rules";
 import { checkAddress } from "@/core/custom-mcp-rules";
+import { SNAPSHOT_DAYS, bankFacts, capSnapshot, emailFacts, siteFacts, snapshotPrefix, storeFacts, type SnapshotFact, type SnapshotTile } from "@/core/snapshot-rules";
 import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
 import { MAX_REPLY } from "@/core/chat-rules";
 import {
@@ -138,6 +139,49 @@ export async function keepAnswerFact(cat: CategoryId, tool: string | null): Prom
   const { error } = await db().from("business_facts").insert({ topic: c.topic, text: cleanFact(answerFact(c, tool)), state: "known", source: "owner" });
   if (error) throw new Error(error.message);
   await forgetBusiness();
+}
+
+/**
+ * The snapshot (card 195 slice B): a few fixed reads from a tool that just connected, every number
+ * worked out in code, saved as known facts that replace the tool's last snapshot. One logged run
+ * (trigger "setup") with no model call. Returns the facts saved.
+ */
+export async function takeSnapshot(tile: SnapshotTile): Promise<SnapshotFact[]> {
+  let facts: SnapshotFact[] = [];
+  const res = await withRun(SETUP_AGENT, "setup", async () => {
+    facts = capSnapshot(await readSnapshot(tile));
+    return { status: "ok", summary: `Snapshot from ${TILE_BY_ID[tile].name}: ${facts.length} fact${facts.length === 1 ? "" : "s"}.`, tokensIn: 0, tokensOut: 0, costUsd: 0 };
+  });
+  if (res.status !== "ok") throw new Error(res.summary);
+  const prefix = snapshotPrefix(TILE_BY_ID[tile].name);
+  for (const f of (await listFacts())?.filter((x) => x.source === "owner" && x.text.startsWith(prefix)) ?? []) await db().from("business_facts").delete().eq("id", f.id);
+  const room = MAX_FACTS - (await factCount());
+  const keep = facts.slice(0, Math.max(0, room));
+  if (keep.length) {
+    const { error } = await db().from("business_facts").insert(keep.map((f) => ({ topic: f.topic, text: cleanFact(f.text), state: "known", source: "owner", run_id: res.runId })));
+    if (error) throw new Error(error.message);
+    await forgetBusiness();
+  }
+  return keep;
+}
+
+/** The fixed reads for each tool: the catalog's own read tools (numbers in code) or Shopify's orders query. */
+async function readSnapshot(tile: SnapshotTile): Promise<SnapshotFact[]> {
+  const ctx = { agentId: SETUP_AGENT, notionPages: [], outputSources: [] };
+  const { callTool } = await import("@/core/tools/call");
+  const numbers = async (id: string, input: Record<string, string | number> = {}) => (await callTool(id, input, ctx)).numbers ?? {};
+  if (tile === "shopify") {
+    const { orgDate } = await import("@/core/tz");
+    const { ordersBetween } = await import("@/integrations/shopify/orders");
+    const [orders, open] = await Promise.all([ordersBetween(await orgDate(SNAPSHOT_DAYS), await orgDate(0)), numbers("shopify_open_orders").catch(() => ({} as Record<string, number>))]);
+    return storeFacts(orders.map((o) => ({ total: Number(o.totalPriceSet.shopMoney.amount), repeat: Number(o.customer?.numberOfOrders ?? 0) > 1 })), open.to_ship ?? null);
+  }
+  if (tile === "mercury") return bankFacts(await numbers("calc_burn_rate", { days: 90 }));
+  if (tile === "klaviyo") {
+    const [lists, campaigns] = await Promise.all([numbers("klaviyo_lists"), numbers("klaviyo_campaigns", { period: "last_30_days" })]);
+    return emailFacts(lists.lists ?? null, campaigns);
+  }
+  return siteFacts(await numbers("analytics_overview", { period: "last_30_days" }));
 }
 
 /** The first job started (card 154): which agent, and when. */

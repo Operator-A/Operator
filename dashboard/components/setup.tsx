@@ -110,6 +110,21 @@ export function SetupChat({ name, initial, send, ready, blocked, foot, zone, car
   );
 }
 
+/**
+ * The snapshot (card 195 slice B): on a tool's card once it is connected and has no snapshot yet, asks
+ * code once for a few numbers from it. The page then shows the saved facts in its place.
+ */
+export function AutoSnapshot({ take, name }: { take: () => Promise<ActionResult>; name: string }) {
+  const [r, setR] = useState<ActionResult | null>(null);
+  const [busy, start] = useTransition();
+  const once = useRef(false);
+  const go = () => start(async () => { try { setR(await take()); } catch (e) { setR({ ok: false, text: e instanceof Error ? e.message : "Something went wrong." }); } });
+  useEffect(() => { if (once.current) return; once.current = true; go(); });
+  if (busy || !r) return <span className="row ink2" style={{ gap: 10, fontSize: 14 }}><span className="wg-dots" aria-hidden><i /><i /><i /></span>Reading a few numbers from {name}</span>;
+  if (!r.ok) return <span className="soft-box row wrap" role="status" style={{ fontSize: 13, gap: 10 }}>Couldn’t read {name}: {r.text}<button className="btn outline sm" onClick={go}>Try again</button></span>;
+  return <span className="sub">{r.text}</span>;
+}
+
 /** Back and Next under a step (card 181). The step is saved, then the page shows it. */
 export function StageNav({ back, next, go }: { back: { stage: string; label: string } | null; next: { stage: string; label: string; quiet?: boolean } | null; go: (stage: string) => Promise<ActionResult> }) {
   const [busy, start] = useTransition();

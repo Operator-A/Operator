@@ -679,6 +679,8 @@ button.wg-opt { width: 100%; font: inherit; text-align: left; cursor: pointer; }
 .wg-tool:hover { border-color: #7C8CF8; transform: translateY(-1px); }
 .wg-else > summary { list-style: none; cursor: pointer; } .wg-else > summary::-webkit-details-marker { display: none; }
 .wg-else[open] { flex-basis: 100%; }
+.wg-snap { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.wg-snap li { background: var(--soft); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; line-height: 1.4; font-variant-numeric: tabular-nums; }
 @media (max-width: 560px) { .wg-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .wg-opt:hover { text-decoration: none; transform: translateY(-2px); border-color: #7C8CF8; box-shadow: 0 14px 28px -16px rgba(63, 71, 184, .5); }
 @keyframes wgDash { to { background-position: 24px 0; } }

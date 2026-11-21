@@ -7,7 +7,9 @@ import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 import { FACTS_MISSING, inSetup, listFacts, setupState } from "@/core/setup";
 import { SETUP_AGENT, STAGES, STAGE_WORDS, nextStage, prevStage, shownStage, stageProgress, wrapScreen, type Stage } from "@/core/setup-rules";
-import { SetupChat, Coverage, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
+import { AutoSnapshot, SetupChat, Coverage, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
+import { hasSnapshot, snapshotPrefix } from "@/core/snapshot-rules";
+import type { Fact } from "@/core/setup-rules";
 import { SignOutButton } from "@/dashboard/components/signOut";
 import { toolsStep, type TileView } from "@/dashboard/toolsStep";
 import { cardCategory, categoryOfTile, categoryState, isCategory, partsShown, planKinds, planNotes, type CategoryPlan, type CategoryState, type ToolCategory } from "@/core/tools-step-rules";
@@ -22,7 +24,7 @@ import { claudeState } from "@/dashboard/claude";
 import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
 import { extensions } from "@/core/extensions";
 import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
-import { sendSetup, setupTimeZone, setupGo, setupAddFact, setupAnswerTool, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupOtherTool, setupPlanClear, setupSkipTool, setupStartEmpty, setupToDesk } from "@/dashboard/setupActions";
+import { sendSetup, setupTimeZone, setupGo, setupAddFact, setupAnswerTool, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupOtherTool, setupPlanClear, setupSkipTool, setupSnapshot, setupStartEmpty, setupToDesk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
 import { billing } from "@/dashboard/cost";
 import { settings } from "@/core/settings";
@@ -76,7 +78,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const nextLabel = stage === "business" ? (talked ? "Show me my company" : "Skip to my company") : "Next: your first job";
   const card = cat && (
     <ToolCard key={`${cat.id}-${open?.tile.id ?? ""}`} c={cat} state={categoryState(cat, connected, state.skipped, state.plans)} plan={state.plans[cat.id] ?? null}
-      tiles={tiles} open={open && cat.tiles.includes(open.tile.id) ? open : null} owner={owner} shopifyDomain={shopifyDomain} tapped={!!tapped} note={note} />
+      tiles={tiles} open={open && cat.tiles.includes(open.tile.id) ? open : null} owner={owner} shopifyDomain={shopifyDomain} tapped={!!tapped} note={note} facts={facts ?? []} />
   );
 
   return (
@@ -223,8 +225,11 @@ function YourTools({ parts, tiles, asking }: { parts: { c: ToolCategory; state: 
  * A part's card in the chat (card 195), drawn from code's list: the common tools, Something else,
  * None yet and Skip. A tool with a tile opens its connect steps here; any other is saved as the answer.
  */
-function ToolCard({ c, state, plan, tiles, open, owner, shopifyDomain, tapped, note }: { c: ToolCategory; state: CategoryState; plan: CategoryPlan | null; tiles: TileView[]; open: TileView | null; owner: boolean; shopifyDomain: string; tapped: boolean; note: { ok: boolean; text: string } | null }) {
+function ToolCard({ c, state, plan, tiles, open, owner, shopifyDomain, tapped, note, facts }: { c: ToolCategory; state: CategoryState; plan: CategoryPlan | null; tiles: TileView[]; open: TileView | null; owner: boolean; shopifyDomain: string; tapped: boolean; note: { ok: boolean; text: string } | null; facts: Fact[] }) {
   const on = state === "connected" ? tiles.find((t) => c.tiles.includes(t.tile.id) && t.state === "connected") ?? null : null;
+  // card 195 slice B: the numbers code read from it, saved as facts that start "From <tool>: "
+  const prefix = on ? snapshotPrefix(on.tile.name) : null;
+  const snap = prefix ? facts.filter((f) => f.text.startsWith(prefix)) : [];
   const answer = plan?.kind === "uses" || plan?.kind === "export" ? `${plan.tool}. There’s no direct line to it yet, so it’s on our build list${plan.kind === "export" ? " and this part starts from an export" : ""}.`
     : plan?.kind === "guide" ? `None yet. Avery sets up ${c.starter?.name} with you after setup.` : plan?.kind === "none" ? "None yet." : null;
   return (
@@ -237,6 +242,12 @@ function ToolCard({ c, state, plan, tiles, open, owner, shopifyDomain, tapped, n
       {on ? (
         <>
           <span style={{ fontSize: 14 }}>{c.ready}{on.who ? <> Signed in as <b>{on.who}</b>.</> : ""}{on.tile.id === "mercury" ? " If that isn’t your business, change it on Connections." : ""}</span>
+          {snap.length > 0 ? (
+            <div className="stack" style={{ gap: 6 }}>
+              <ul className="wg-snap">{snap.map((f) => <li key={f.id}>{f.text.slice(prefix!.length).replace(/^./, (x) => x.toUpperCase())}</li>)}</ul>
+              <span className="ink2" style={{ fontSize: 12.5 }}>Counted in code from your {on.tile.name} and saved to what Avery knows. Nothing was changed in {on.tile.name}.</span>
+            </div>
+          ) : owner && hasSnapshot(on.tile.id) ? <AutoSnapshot take={setupSnapshot.bind(null, on.tile.id)} name={on.tile.name} /> : null}
           {on.tile.also && on.also && !on.also.connected && (
             <div className="stack rule" style={{ gap: 6, paddingTop: 10 }}>
               <b style={{ fontSize: 14 }}>{on.tile.also.label}{on.neededBy.length ? ` (needed for ${on.neededBy.join(", ")})` : ""}</b>
