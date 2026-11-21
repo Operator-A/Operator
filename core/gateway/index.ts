@@ -15,6 +15,7 @@ import { orgTz } from "@/core/tz";
 import { hasGmail } from "@/integrations/gmail";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
+import { refuseTags, shopifyTarget } from "@/core/shopify-actions";
 import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
 import { ANNOTATE, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
@@ -565,8 +566,9 @@ async function applyShopifyTag(a: ActionRow, runId: string) {
   const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
   try {
     const args = a.args_json as unknown as { tags: string[] };
-    // the allow-list again, at execution time; the server re-checks scopes and the live tags
-    const no = refuseProposal(a.agent_id, SHOPIFY_TAGS, a.target, args as unknown as Record<string, unknown>);
+    // the fields again, at execution time (the grant was re-checked by refuseUngranted before any apply);
+    // the server re-checks the app's scopes and the live tags
+    const no = shopifyTarget(a.target) ? refuseTags(args as unknown as Record<string, unknown>) : "The target is not a Shopify order or customer id.";
     if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
     const out = (await callWriteTool("shopify", "shopify_add_tags", { target: a.target, tags: args.tags })) as { added?: unknown; skipped?: unknown; before?: unknown; label?: unknown };
     const added = Array.isArray(out?.added) ? (out.added as string[]) : [];
