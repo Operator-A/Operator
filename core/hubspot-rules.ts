@@ -3,7 +3,7 @@
 //
 // HubSpot's hosted MCP server takes its scopes from its own tool list, writes included, so our own
 // server (integrations/hubspot-server.ts) runs in the app over HubSpot's CRM API, with two service keys
-// the owner makes in HubSpot (Development, Keys, Service keys; Zak chose pasted keys 2026-11-21, with a
+// the owner makes in HubSpot (Development, Keys, Service keys; pasted keys for now, with a
 // HubSpot app for one-tap Connect later):
 // - "HubSpot" (agents): open deals by stage with amounts, and counts of contacts and companies. No
 //   contact list, no email address or phone. A key that can write deals is refused when pasted.

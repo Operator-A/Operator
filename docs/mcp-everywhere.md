@@ -349,7 +349,7 @@ HubSpot's hosted MCP server (mcp.hubspot.com) takes its scopes from its own tool
 included, so it can't give agents read access only. Our server runs in the app over HubSpot's CRM API
 with two **service keys** the owner makes in HubSpot (Development > Keys > Service keys). HubSpot
 stopped new legacy private apps in October 2026, and service keys take exact scopes for one account.
-Zak chose pasted keys on 2026-11-21. A HubSpot app for one-tap Connect is a later card (253.5).
+Keys are pasted for now. A HubSpot app for one-tap Connect is a later card (253.5).
 
 - **Profiles** (`core/mcp-rules.ts`), both a pasted service key sealed in the vault:
   - `hubspot`: the agents' key, with `crm.objects.deals.read`, `crm.objects.contacts.read` and
