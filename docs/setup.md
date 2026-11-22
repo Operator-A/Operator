@@ -144,6 +144,9 @@ that connect, their steps and what each permission is for are still `TOOL_TILES`
   gets 6 tool calls and $0.30; a reply where Avery can sketch gets 14 and $0.70, room for the shared brain,
   about / head / goal for three departments, and finish. If a reply still stops before finishing, nothing is
   saved and Avery's message is code's fixed `SETUP_STOPPED` line, never the runner's summary.
+- **Which card a question shows** (card 206). Avery picks a part by what it covers (`covers` on each part in
+  `core/tools-step-rules.ts`, read through `partWords`), not by its title. Where a business rings up sales in person,
+  a register or card reader, is payments, so the card lists Square and Clover rather than online stores.
 - **What a reply costs** (card 200). Every agent run caches its prompt (`cache_control` in `core/runner.ts`), so
   each turn after the first in a run reads the prompt at a tenth of the input price; `costUsd` bills cache
   writes at 1.25x and reads at 0.1x. A setup turn writes at most `SETUP_MAX_OUT` tokens, and the cost check

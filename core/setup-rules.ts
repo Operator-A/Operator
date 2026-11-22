@@ -186,7 +186,7 @@ export const NOTHING_CONNECTS = "nothing connects yet: the card only records whi
 
 export function toolLines(parts: readonly { id: CategoryId; state: CategoryState }[]): string {
   const word: Record<CategoryState, string> = { open: "open", connected: "connected", skipped: "left for later", guide: "none yet, set up after", export: "uses a tool we don't connect yet", uses: "uses a tool we don't connect yet", none: "none yet" };
-  return TOOL_CATEGORIES.map((c) => `  - ${c.id} (${c.area.toLowerCase()}${c.core ? "" : ", only if it fits"}${c.tiles.length ? "" : `, ${NOTHING_CONNECTS}`}): ${word[parts.find((p) => p.id === c.id)?.state ?? "open"]}`).join("\n");
+  return TOOL_CATEGORIES.map((c) => `  - ${c.id} (${c.covers}${c.core ? "" : ", only if it fits"}${c.tiles.length ? "" : `, ${NOTHING_CONNECTS}`}): ${word[parts.find((p) => p.id === c.id)?.state ?? "open"]}`).join("\n");
 }
 
 export function setupDirective(name: string, facts: readonly Pick<Fact, "topic" | "text" | "state">[], kits: readonly { id: string; name: string; about: string }[], menu: string | null = null, designs: readonly Design[] = [], parts: readonly { id: CategoryId; state: CategoryState }[] = []): string {

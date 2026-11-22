@@ -11,7 +11,7 @@ import "server-only";
 import { edition, similarBusinesses } from "@/core/extensions";
 import { brainSettings, savedSnapshot, saveBrainSettings } from "@/core/brain";
 import { BRAIN_TOPICS, BUSINESS_KINDS, KIND_WORDS, isKind, isTopic, whyFor, workedBlock, workedNote, type BrainTopic, type Similar, type SimilarLesson } from "@/core/brain-rules";
-import { TOOL_CATEGORIES } from "@/core/tools-step-rules";
+import { TOOL_CATEGORIES, partWords } from "@/core/tools-step-rules";
 import type { ToolDef } from "@/core/tools/types";
 
 export const SIMILAR_TOOL = "businesses_like_yours";
@@ -26,7 +26,7 @@ export function similarTool(held: { got: Similar[] }): ToolDef | null {
     kind: "read", group: "agents", trusted: true, needs: [], costUsd: 0,
     params: [{
       name: "topic", type: "enum", options: [...BRAIN_TOPICS],
-      description: `starting: which departments and tools to begin with. approvals: drafts approved unedited and action types that earn trust. Or one part of the business: ${TOOL_CATEGORIES.map((c) => `${c.id} (${c.area.toLowerCase()})`).join(", ")}.`,
+      description: `starting: which departments and tools to begin with. approvals: drafts approved unedited and action types that earn trust. Or one part of the business: ${TOOL_CATEGORIES.map(partWords).join(", ")}.`,
     }],
     run: async (input) => {
       if (!isTopic(input.topic)) return { data: { problem: "pick a topic from the list" } };

@@ -241,6 +241,8 @@ export interface Starter { tile: ToolTileId; name: string; promise: string; step
 export interface ListedTool { name: string; tile?: ToolTileId }
 export interface ToolCategory {
   id: CategoryId; area: string; question: string; value: string; ready: string;
+  /** What the part means, in the words Avery reads when she picks a card (card 206). */
+  covers: string;
   /** What Avery learns once it is connected, in a few words (the card's top line). */
   learns: string;
   /** Shown in the Your tools panel from the start; the rest appear once Avery asks. */
@@ -257,15 +259,15 @@ export const MAX_LISTED = 6;
 type Def = Omit<ToolCategory, "tiles">;
 const part = (d: Def): ToolCategory => ({ ...d, tiles: d.tools.flatMap((t) => (t.tile ? [t.tile] : [])) });
 export const TOOL_CATEGORIES: readonly ToolCategory[] = [
-  part({ id: "store", area: "Where you sell", core: true, topic: "channels", learns: "orders, products and stock", question: "Where do you sell?", value: "Your agents read orders, products and stock, and tell you what sold in plain words.", ready: "Your agents can see your orders, products and stock.",
+  part({ id: "store", covers: "an online store or shop software where customers order", area: "Where you sell", core: true, topic: "channels", learns: "orders, products and stock", question: "Where do you sell?", value: "Your agents read orders, products and stock, and tell you what sold in plain words.", ready: "Your agents can see your orders, products and stock.",
     tools: [{ name: "Shopify", tile: "shopify" }, { name: "WooCommerce", tile: "woo" }, { name: "Square Online" }, { name: "Wix" }, { name: "Squarespace" }, { name: "Etsy" }] }),
-  part({ id: "payments", area: "Payments", core: true, topic: "sells", learns: "what you’re paid, refunds and unpaid invoices", question: "How do people pay you?", value: "Know what came in, what’s owed and what got refunded, without opening another dashboard.", ready: "Your payments are in reach.",
-    tools: [{ name: "Stripe", tile: "stripe" }, { name: "Square", tile: "square" }, { name: "PayPal" }] }),
-  part({ id: "money", area: "Bank", core: true, topic: "other", learns: "balances and every charge", question: "Where does the money live?", value: "Your bookkeeper categorizes every charge and matches the receipts.", ready: "Your books can start from your real transactions.",
+  part({ id: "payments", covers: "how customers pay: the register or card reader at the counter, payment links and invoices", area: "Payments", core: true, topic: "sells", learns: "what you’re paid, refunds and unpaid invoices", question: "How do people pay you?", value: "Know what came in, what’s owed and what got refunded, without opening another dashboard.", ready: "Your payments are in reach.",
+    tools: [{ name: "Stripe", tile: "stripe" }, { name: "Square", tile: "square" }, { name: "Clover" }, { name: "PayPal" }] }),
+  part({ id: "money", covers: "the business bank account", area: "Bank", core: true, topic: "other", learns: "balances and every charge", question: "Where does the money live?", value: "Your bookkeeper categorizes every charge and matches the receipts.", ready: "Your books can start from your real transactions.",
     tools: [{ name: "Mercury", tile: "mercury" }, { name: "Chase" }, { name: "Bank of America" }, { name: "Wells Fargo" }] }),
-  part({ id: "books", area: "Books", core: true, topic: "other", learns: "profit and loss, bills and what’s owed to you", question: "What do you keep your books in?", value: "Monthly numbers come from your own books, not a guess.", ready: "Your books are in reach.",
+  part({ id: "books", covers: "the bookkeeping software", area: "Books", core: true, topic: "other", learns: "profit and loss, bills and what’s owed to you", question: "What do you keep your books in?", value: "Monthly numbers come from your own books, not a guess.", ready: "Your books are in reach.",
     tools: [{ name: "QuickBooks Online", tile: "quickbooks" }, { name: "Xero" }, { name: "Wave" }] }),
-  part({ id: "list", area: "Email marketing", core: true, topic: "channels", learns: "your lists and how campaigns did", question: "What do you use for email marketing?", value: "Campaigns get drafted from what sold best. You press send.", ready: "Your lists and past campaigns are in reach.",
+  part({ id: "list", covers: "email newsletters and campaigns to customers", area: "Email marketing", core: true, topic: "channels", learns: "your lists and how campaigns did", question: "What do you use for email marketing?", value: "Campaigns get drafted from what sold best. You press send.", ready: "Your lists and past campaigns are in reach.",
     tools: [{ name: "Klaviyo", tile: "klaviyo" }, { name: "Mailchimp", tile: "mailchimp" }, { name: "Shopify Email" }, { name: "Kit" }],
     starter: { tile: "klaviyo", name: "Klaviyo", promise: "The free plan needs no card. It’s your account, I show you each tap, then you connect it here.", steps: [
       "Open klaviyo.com and tap Sign up.",
@@ -275,9 +277,9 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
       "Stay on the free plan: you don’t need to add a card.",
       "Come back here and tap Connect Klaviyo.",
     ] } }),
-  part({ id: "inbox", area: "Inbox and calendar", core: true, topic: "other", learns: "receipts, threads and your week", question: "What do you use for email?", value: "Receipts get matched from your inbox, and emails you approve wait in your Drafts.", ready: "Your agents can read your inbox and your week.",
+  part({ id: "inbox", covers: "the business email inbox and calendar", area: "Inbox and calendar", core: true, topic: "other", learns: "receipts, threads and your week", question: "What do you use for email?", value: "Receipts get matched from your inbox, and emails you approve wait in your Drafts.", ready: "Your agents can read your inbox and your week.",
     tools: [{ name: "Gmail", tile: "gmail" }, { name: "Google Calendar", tile: "calendar" }, { name: "Outlook" }] }),
-  part({ id: "site", area: "Website traffic", core: true, topic: "channels", learns: "visits, pages and where people drop off", question: "How do you track your website?", value: "Know where visitors come from and where they drop off.", ready: "Visits and conversions go into your summaries.",
+  part({ id: "site", covers: "website visitor stats", area: "Website traffic", core: true, topic: "channels", learns: "visits, pages and where people drop off", question: "How do you track your website?", value: "Know where visitors come from and where they drop off.", ready: "Visits and conversions go into your summaries.",
     tools: [{ name: "Google Analytics", tile: "analytics" }, { name: "Plausible" }],
     starter: { tile: "analytics", name: "Google Analytics", promise: "It’s free. You create the property, I show you each tap, then you connect it here.", steps: [
       "Open analytics.google.com and sign in with the Google account you use for the business.",
@@ -288,21 +290,23 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
       "In Shopify, open Sales channels > Google & YouTube (add the app if it isn’t there), sign in with the same Google account and pick the property you just made.",
       "Come back here and tap Connect Google Analytics.",
     ] } }),
-  part({ id: "leads", area: "Leads and customers", core: true, topic: "customers", learns: "your contacts, deals and who went quiet", question: "Where do you keep track of leads and customers?", value: "Follow-ups get drafted for the people who went quiet.", ready: "Your contacts and deals are in reach.",
+  part({ id: "leads", covers: "a CRM or list of leads, customers and deals", area: "Leads and customers", core: true, topic: "customers", learns: "your contacts, deals and who went quiet", question: "Where do you keep track of leads and customers?", value: "Follow-ups get drafted for the people who went quiet.", ready: "Your contacts and deals are in reach.",
     tools: [{ name: "HubSpot", tile: "hubspot" }, { name: "Salesforce" }, { name: "Pipedrive" }] }),
-  part({ id: "ads", area: "Ads", core: false, topic: "channels", learns: "spend and what each ad brought in", question: "Where do you run ads?", value: "See what each dollar of ads brought back.", ready: "Your ad numbers are in reach.",
+  part({ id: "ads", covers: "paid ads on social media or search", area: "Ads", core: false, topic: "channels", learns: "spend and what each ad brought in", question: "Where do you run ads?", value: "See what each dollar of ads brought back.", ready: "Your ad numbers are in reach.",
     tools: [{ name: "Meta Ads", tile: "meta" }, { name: "Google Ads" }, { name: "TikTok Ads" }] }),
-  part({ id: "social", area: "Social", core: false, topic: "channels", learns: "posts and what people respond to", question: "Where do you post?", value: "Posts get drafted from what your customers respond to. You approve each one.", ready: "Your posts are in reach.",
+  part({ id: "social", covers: "social media posts", area: "Social", core: false, topic: "channels", learns: "posts and what people respond to", question: "Where do you post?", value: "Posts get drafted from what your customers respond to. You approve each one.", ready: "Your posts are in reach.",
     tools: [{ name: "Instagram" }, { name: "Facebook" }, { name: "TikTok" }] }),
-  part({ id: "support", area: "Customer support", core: false, topic: "customers", learns: "what customers ask and how long they wait", question: "Where do customer questions land?", value: "Replies get drafted for the common questions.", ready: "Your support inbox is in reach.",
+  part({ id: "support", covers: "where customer questions and help requests land", area: "Customer support", core: false, topic: "customers", learns: "what customers ask and how long they wait", question: "Where do customer questions land?", value: "Replies get drafted for the common questions.", ready: "Your support inbox is in reach.",
     tools: [{ name: "Gorgias" }, { name: "Zendesk" }, { name: "Help Scout" }] }),
-  part({ id: "bookings", area: "Bookings", core: false, topic: "sells", learns: "appointments, no-shows and busy hours", question: "What do people book you through?", value: "Open slots and no-shows get followed up.", ready: "Your bookings are in reach.",
+  part({ id: "bookings", covers: "appointments and online booking", area: "Bookings", core: false, topic: "sells", learns: "appointments, no-shows and busy hours", question: "What do people book you through?", value: "Open slots and no-shows get followed up.", ready: "Your bookings are in reach.",
     tools: [{ name: "Square Appointments" }, { name: "Calendly" }, { name: "Acuity" }] }),
-  part({ id: "shipping", area: "Shipping", core: false, topic: "other", learns: "what shipped, what’s late and what it cost", question: "How do you ship?", value: "Late and lost packages get flagged before the customer asks.", ready: "Your shipments are in reach.",
+  part({ id: "shipping", covers: "shipping labels and tracking", area: "Shipping", core: false, topic: "other", learns: "what shipped, what’s late and what it cost", question: "How do you ship?", value: "Late and lost packages get flagged before the customer asks.", ready: "Your shipments are in reach.",
     tools: [{ name: "ShipStation" }, { name: "Shippo" }, { name: "Pirate Ship" }] }),
-  part({ id: "team", area: "Team and work", core: false, topic: "other", learns: "who’s doing what", question: "Where does your team keep its work?", value: "Your crew posts its updates where your team already looks.", ready: "Your team’s tools are in reach.",
+  part({ id: "team", covers: "where the team chats and tracks work", area: "Team and work", core: false, topic: "other", learns: "who’s doing what", question: "Where does your team keep its work?", value: "Your crew posts its updates where your team already looks.", ready: "Your team’s tools are in reach.",
     tools: [{ name: "Slack" }, { name: "Notion" }, { name: "Asana" }] }),
 ];
+/** A part as Avery reads it: its id, then what it covers (card 206). */
+export const partWords = (c: Pick<ToolCategory, "id" | "covers">): string => `${c.id} (${c.covers})`;
 /** The listed tool a founder picked on a part's card, by its exact name. Only names from the list. */
 export const listedTool = (cat: CategoryId, name: unknown): ListedTool | null => TOOL_CATEGORIES.find((c) => c.id === cat)?.tools.find((t) => t.name === name) ?? null;
 /** The fact a founder's answer on a card saves: the part, then the tool or "none yet". Code writes it, never a model. */
