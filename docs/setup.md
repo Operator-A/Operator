@@ -144,6 +144,11 @@ that connect, their steps and what each permission is for are still `TOOL_TILES`
   gets 6 tool calls and $0.30; a reply where Avery can sketch gets 14 and $0.70, room for the shared brain,
   about / head / goal for three departments, and finish. If a reply still stops before finishing, nothing is
   saved and Avery's message is code's fixed `SETUP_STOPPED` line, never the runner's summary.
+- **What a reply costs** (card 200). Every agent run caches its prompt (`cache_control` in `core/runner.ts`), so
+  each turn after the first in a run reads the prompt at a tenth of the input price; `costUsd` bills cache
+  writes at 1.25x and reads at 0.1x. A setup turn writes at most `SETUP_MAX_OUT` tokens, and the cost check
+  before each turn uses the same number. Once Avery can sketch, code asks the shared brain once
+  (`similarUpFront`) and puts the answer in her prompt, so she doesn't spend a turn on the tool.
 - **On a phone** (card 199, 720 px and under): the header stays one line (name with an ellipsis, Sign out as
   an icon), the steps bar is a compact pill on the right that hides while a chat field has focus, the
   chat box fits one screen (`100svh`), Avery's chat avatar is hidden at 560 px and under, and tool buttons

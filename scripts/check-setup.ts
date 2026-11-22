@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import {
   FACT_MAX, FACT_TOPICS, MAX_FACTS, SETUP_AGENT, SETUP_TEMPLATE, STAGES, STAGE_WORDS,
   shownStage, wrapScreen, INTERVIEW_AREAS, SETUP_EFFORT, SETUP_MODEL, coverage, leaningOf, type Fact,
-  SETUP_HANDOFF, SETUP_STOPPED, setupLimits, cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
+  SETUP_HANDOFF, SETUP_MAX_OUT, SETUP_STOPPED, setupLimits, cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
 } from "../core/setup-rules";
 import { MAX_DESIGNS, REASON_MAX, applyDesign, saidLine, unquote, designGaps, designKey, pickId, readDesigns, type Design, type Kit } from "../core/design-rules";
 import { peopleOf, type DraftCtx } from "../core/department-rules";
@@ -18,6 +18,7 @@ import { DEPT_STATUS_WORDS, agentsOf, bespokeDept, companyDepts, companyTotals, 
 import { monthCost, runCost } from "../core/cost-rules";
 import { TEMPLATES } from "../core/templates";
 import { modelDef } from "../integrations/models";
+import { CACHE_READ, CACHE_WRITE, costUsd } from "../integrations/anthropic";
 
 const read = (f: string) => readFileSync(f, "utf8");
 const tpl = (id: string) => JSON.parse(read(`templates/${id}.json`)) as Template;
@@ -48,6 +49,24 @@ assert.ok(!/https?:|Shopify|Klaviyo|Mercury/.test(SETUP_HANDOFF) && SETUP_HANDOF
   assert.match(css, /\.wg-tool \{ padding: 8px 6px; font-size: 14px; overflow-wrap: normal;/, "tool names break between words only");
   assert.match(ui, /className="stack wg-nav"/);
 }
+// card 200: prompt caching is billed at its own rates, a setup turn writes at most SETUP_MAX_OUT, and the shared brain is asked in code
+{
+  const m = modelDef(SETUP_MODEL)!;
+  assert.equal(CACHE_WRITE, 1.25); assert.equal(CACHE_READ, 0.1);
+  assert.equal(costUsd(SETUP_MODEL, 10000, 0), Number((10000 * m.in).toFixed(4)));
+  assert.equal(costUsd(SETUP_MODEL, 10000, 1000, 0, { read: 9000 }), Number(((1000 + 9000 * 0.1) * m.in + 1000 * m.out).toFixed(4)));
+  assert.equal(costUsd(SETUP_MODEL, 10000, 0, 0, { write: 10000 }), Number((10000 * 1.25 * m.in).toFixed(4)));
+  assert.ok(costUsd(SETUP_MODEL, 18000, 1600, 0, { read: 16000 }) < costUsd(SETUP_MODEL, 18000, 1600) / 2, "a cached turn costs less than half");
+  assert.ok(SETUP_MAX_OUT >= 4000 && SETUP_MAX_OUT < 8000, "room for thinking and a long design call, below the runner's 8000");
+  const runner = read("core/runner.ts"), setup = read("core/setup.ts");
+  assert.match(runner, /cache_control: \{ type: "ephemeral" \}/);
+  assert.match(runner, /const worst = costUsd\(spec\.model, lastIn \+ 3000, maxOut\)/, "the cost check uses the same output limit as the call");
+  assert.match(runner, /max_tokens: maxOut,/);
+  assert.match(runner, /costUsd\(billed, tin, tout, searches, cacheTokens\(res\.usage\)\)/);
+  assert.match(setup, /maxOut: SETUP_MAX_OUT/);
+  assert.match(setup, /const upFront = ready \? await similarUpFront\("starting"\)/);
+  assert.match(setup, /\[ready \? null : similarTool\(heldSimilar\), kindTool\(heldKind\)\]/, "no tool turn for the brain once she can sketch");
+}
 // card 196: a fact cut off mid-sentence is refused, so Avery sends the whole line
 assert.match(factProblem("goals", "Greg doesn't know whether the van pays for itself and wants to", 0)!, /stops mid-sentence/);
 for (const end of ["and", "or", "the", "a", "of", "for", "with", "because"]) assert.ok(factProblem("other", `Something about ${end}`, 0), `ends on "${end}"`);
@@ -61,8 +80,8 @@ assert.equal(factProblem("other", "Tried a winter tune-up flyer once, nothing be
   // the runner refuses a turn when spent + its worst case (input + 3000, 8000 out) passes the limit
   const m = modelDef(SETUP_MODEL)!, turn = (tin: number, tout: number) => tin * m.in + tout * m.out;
   let spent = 0, turns = 0;
-  for (let i = 0; i < 10; i++) { const tin = 9000 + i * 1500; if (spent + turn(tin + 3000, 8000) > sketch.maxCostUsd) break; spent += turn(tin, 1600); turns++; }
-  assert.ok(turns >= 4, `a sketch reply affords ${turns} model turns, needs at least 4`);
+  for (let i = 0; i < 10; i++) { const tin = 9000 + i * 1500; if (spent + turn(tin + 3000, SETUP_MAX_OUT) > sketch.maxCostUsd) break; spent += turn(tin, 1600); turns++; }
+  assert.ok(turns >= 5, `a sketch reply affords ${turns} model turns, needs at least 5`);
   // a stopped reply says so in code's words, never the runner's summary
   assert.ok(!/\$|cost limit|tool calls/.test(SETUP_STOPPED));
   const src = read("core/setup.ts");

@@ -10,7 +10,7 @@ import "server-only";
 //   that finishes, and only when the owner hasn't picked one on Settings > Shared brain.
 import { edition, similarBusinesses } from "@/core/extensions";
 import { brainSettings, savedSnapshot, saveBrainSettings } from "@/core/brain";
-import { BRAIN_TOPICS, BUSINESS_KINDS, KIND_WORDS, isKind, isTopic, whyFor, workedBlock, workedNote, type Similar } from "@/core/brain-rules";
+import { BRAIN_TOPICS, BUSINESS_KINDS, KIND_WORDS, isKind, isTopic, whyFor, workedBlock, workedNote, type BrainTopic, type Similar, type SimilarLesson } from "@/core/brain-rules";
 import { TOOL_CATEGORIES } from "@/core/tools-step-rules";
 import type { ToolDef } from "@/core/tools/types";
 
@@ -30,21 +30,44 @@ export function similarTool(held: { got: Similar[] }): ToolDef | null {
     }],
     run: async (input) => {
       if (!isTopic(input.topic)) return { data: { problem: "pick a topic from the list" } };
-      const [s, snap] = await Promise.all([brainSettings(), savedSnapshot()]);
-      const got = await similarBusinesses({ topic: input.topic, kind: s.kind, revenue: snap?.revenue_band ?? "unknown" });
-      if (!got) return { data: { problem: "The shared brain can't be read right now." } };
-      held.got.push(got);
-      const numbers: Record<string, number> = {};
-      got.counts.forEach((c, i) => { numbers[`count_${i + 1}_businesses_with_it`] = c.hits; numbers[`count_${i + 1}_businesses_counted`] = c.orgs; });
-      return {
-        data: {
-          comparedAs: s.kind ? KIND_WORDS[s.kind] : "every business (the kind of business isn't set yet)",
-          counts: got.counts.length ? got.counts.map((c) => c.statement) : "Fewer than five businesses share anything on this topic yet.",
-          playbook: got.playbook.map((l) => ({ title: l.title, lesson: l.lesson, for: l.for })),
-        },
-        numbers,
-      };
+      const r = await similarLookup(input.topic);
+      if (!r) return { data: { problem: "The shared brain can't be read right now." } };
+      held.got.push(r.got);
+      return { data: r.data, numbers: r.numbers };
     },
+  };
+}
+
+/** One businesses-like-yours lookup, the same for the tool and for code that asks up front. Null when it can't be read. */
+async function similarLookup(topic: BrainTopic): Promise<{ got: Similar; data: { comparedAs: string; counts: string[] | string; playbook: SimilarLesson[] }; numbers: Record<string, number> } | null> {
+  const [s, snap] = await Promise.all([brainSettings(), savedSnapshot()]);
+  const got = await similarBusinesses({ topic, kind: s.kind, revenue: snap?.revenue_band ?? "unknown" });
+  if (!got) return null;
+  const numbers: Record<string, number> = {};
+  got.counts.forEach((c, i) => { numbers[`count_${i + 1}_businesses_with_it`] = c.hits; numbers[`count_${i + 1}_businesses_counted`] = c.orgs; });
+  return {
+    got, numbers,
+    data: {
+      comparedAs: s.kind ? KIND_WORDS[s.kind] : "every business (the kind of business isn't set yet)",
+      counts: got.counts.length ? got.counts.map((c) => c.statement) : "Fewer than five businesses share anything on this topic yet.",
+      playbook: got.playbook.map((l) => ({ title: l.title, lesson: l.lesson, for: l.for })),
+    },
+  };
+}
+
+/**
+ * Card 200: setup asks the shared brain once, in code, when Avery can sketch, and puts the answer in her
+ * prompt, so she doesn't spend a model turn calling the tool. Null on the open edition or when it can't be read.
+ */
+export async function similarUpFront(topic: BrainTopic): Promise<{ block: string; got: Similar } | null> {
+  if (edition() !== "cloud") return null;
+  const r = await similarLookup(topic);
+  if (!r) return null;
+  const counts = Array.isArray(r.data.counts) ? r.data.counts.map((c) => `- ${c}`).join("\n") : r.data.counts;
+  const lessons = r.data.playbook.map((l) => `- ${l.title}: ${l.lesson} (${l.for})`).join("\n") || "- none yet";
+  return {
+    got: r.got,
+    block: `Businesses like yours (compared as: ${r.data.comparedAs}), from OPERATOR's shared brain. Quote a count exactly as given and never work out a new number; say the playbook is OPERATOR's advice.\nCounts:\n${counts}\nOPERATOR's playbook:\n${lessons}`,
   };
 }
 

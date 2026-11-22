@@ -19,13 +19,13 @@ import { checkAddress } from "@/core/custom-mcp-rules";
 import { SNAPSHOT_DAYS, bankFacts, capSnapshot, emailFacts, siteFacts, snapshotPrefix, storeFacts, type SnapshotFact, type SnapshotTile } from "@/core/snapshot-rules";
 import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
 import { MAX_REPLY } from "@/core/chat-rules";
-import { kindTool, similarTool } from "@/core/brain-tools";
+import { kindTool, similarTool, similarUpFront } from "@/core/brain-tools";
 import { similarNote, type Similar } from "@/core/brain-rules";
 import {
   FACT_TOPICS, MAX_FACTS_PER_MESSAGE, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
   cleanFact, coverage, factProblem, SETUP_EFFORT, SETUP_MODEL, isStage, isTopic, MAX_FACTS, needsSetup, readAsked, readSetupState, setupDirective, setupPrompt, stateFor,
   type Fact, type FactState, type SetupState, type Stage,
-  SETUP_HANDOFF, SETUP_STOPPED, setupLimits,
+  SETUP_HANDOFF, SETUP_MAX_OUT, SETUP_STOPPED, setupLimits,
 } from "@/core/setup-rules";
 import { applyDesign, designGaps, pickId, BESPOKE_PREFIX, DESIGN_PARTS, MAX_DESIGN_PARTS, MAX_DESIGNS, REASON_MAX, type Design, type Kit } from "@/core/design-rules";
 
@@ -380,7 +380,10 @@ export async function askSetup(message: string, siteRaw: string, connected: Read
   const ready = coverage(facts).ready;
   // the shared brain (card 233, cloud edition only): what businesses like this one found, and its kind
   const heldSimilar: { got: Similar[] } = { got: [] }, heldKind: { said: string | null } = { said: null };
-  const brain = [similarTool(heldSimilar), kindTool(heldKind)].filter((t): t is ToolDef => !!t);
+  // card 200: once she can sketch, code asks the shared brain once and puts it in her prompt instead of a tool turn
+  const upFront = ready ? await similarUpFront("starting").catch(() => null) : null;
+  if (upFront) heldSimilar.got.push(upFront.got);
+  const brain = [ready ? null : similarTool(heldSimilar), kindTool(heldKind)].filter((t): t is ToolDef => !!t);
   const tools = [saveFactTool(heldFacts, facts.length), askToolTool(heldAsk, open), ...(ready ? [designTool(heldDesign)] : []), ...(site ? [siteTool(new URL(site).hostname)] : []), ...brain];
   const base = loaded.spec;
   const spec: AgentSpec = {
@@ -396,8 +399,8 @@ export async function askSetup(message: string, siteRaw: string, connected: Read
   let finished = false, said: string | null = null, readAPage = false;
   const res = await withRun(SETUP_AGENT, "setup", async (runId) => {
     const r = await runExplore(spec, {
-      agentId: SETUP_AGENT, runId, deliver: true, chat: true,
-      prompt: setupPrompt(history.map((h) => ({ role: h.role, text: h.text })), message, site),
+      agentId: SETUP_AGENT, runId, deliver: true, chat: true, maxOut: SETUP_MAX_OUT,
+      prompt: `${setupPrompt(history.map((h) => ({ role: h.role, text: h.text })), message, site)}${upFront ? `\n\n${upFront.block}` : ""}`,
       tools: { ...TOOLS, ...Object.fromEntries(tools.map((t) => [t.id, t])) },
     });
     finished = r.finished; said = r.result;

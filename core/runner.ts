@@ -29,7 +29,7 @@ import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, businessLines, ownerWord, type Business } from "@/core/business-rules";
 import { localDate, dayTitle } from "@/core/time";
 import type { RunResult } from "@/core/runs";
-import { Anthropic, claude, costUsd, inputTokens, isModel } from "@/integrations/anthropic";
+import { Anthropic, claude, cacheTokens, costUsd, inputTokens, isModel } from "@/integrations/anthropic";
 import { TOOLS } from "@/core/tools/catalog";
 import { callTool, hostFor } from "@/core/tools/call";
 import { actionOpenTo, actionWho, checkInput, inputSchema, paramsOf, type Pick, type PickRef, type Staged, type ToolCtx, type ToolDef } from "@/core/tools/types";
@@ -185,6 +185,8 @@ export interface ExploreOpts {
   worked?: { block: string; note: string } | null;
   /** In a chain: what the agent before reported (core/chain.ts). Another agent's words, so untrusted data. */
   handoff?: { from: string; summary: string; metrics: Record<string, number> } | null;
+  /** The most one model turn may write, in tokens (card 200); at most MAX_OUT. Setup uses SETUP_MAX_OUT. */
+  maxOut?: number;
   /** Tests only: stand-ins for the gateway and for report delivery. */
   propose?: (p: Proposal) => Promise<{ status: "queued" | "scheduled" | "refused" | "duplicate"; reason?: string }>;
   report?: (tool: string) => Promise<string>;
@@ -249,6 +251,8 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   const held: Record<string, Record<string, string | number>[]> = {};
   const reports: { tool: string; ok: boolean; note: string }[] = [];
   let tokensIn = 0, tokensOut = 0, spent = 0, toolCalls = 0, customCalls = 0, lastIn = 3000;
+  // the most one model turn may write (card 200): the call and the cost check before it use the same number
+  const maxOut = Math.min(MAX_OUT, Math.max(1000, Math.round(opts.maxOut ?? MAX_OUT)));
   let cited: unknown = null;
   let result: string | null = null, stopped: string | null = null, wrapUp = false, nudged = false;
   // a try saves its steps as they happen, in order; everything else saves them once at the end
@@ -388,12 +392,14 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
 
     for (let turn = 0; turn < spec.limits.maxSteps + 4; turn++) {
       // hard stop on cost: the worst this next turn could cost, before it is sent
-      const worst = costUsd(spec.model, lastIn + 3000, MAX_OUT);
+      const worst = costUsd(spec.model, lastIn + 3000, maxOut);
       if (spent + worst > spec.limits.maxCostUsd) { stopped = `the $${spec.limits.maxCostUsd.toFixed(2)} cost limit`; break; }
       const t0 = Date.now();
       const { res, tin, tout, c } = await span("model_call", { "operator.agent": opts.agentId, "operator.run": opts.runId, "operator.model": spec.model }, async (set) => {
         const res = await (opts.client ?? (await claude())).beta.messages.create({
-          model: spec.model, max_tokens: MAX_OUT,
+          model: spec.model, max_tokens: maxOut,
+          // prompt caching (card 200): each turn re-sends the whole prompt, so later turns read it from the cache
+          cache_control: { type: "ephemeral" },
           betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
           output_config: { effort: spec.effort },
           system, tools: toolList(), messages,
@@ -402,7 +408,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
         const searches = res.usage.server_tool_use?.web_search_requests ?? 0;
         // a refusal may be answered by another Claude model; bill whichever model served it
         const billed = isModel(res.model) ? res.model : spec.model;
-        const c = costUsd(billed, tin, tout, searches);
+        const c = costUsd(billed, tin, tout, searches, cacheTokens(res.usage));
         set({ "operator.model": billed, "operator.tokens_in": tin, "operator.tokens_out": tout, "operator.cost_usd": c, "operator.status": res.stop_reason ?? "unknown" });
         return { res, tin, tout, c };
       });

@@ -35,6 +35,9 @@ export function setupLimits(ready: boolean): { maxSteps: number; maxCostUsd: num
   return ready ? { maxSteps: 14, maxCostUsd: 0.7 } : { maxSteps: 6, maxCostUsd: 0.3 };
 }
 
+/** The most one setup model turn may write, thinking included (card 200): real turns write 800 to 2,500 tokens. */
+export const SETUP_MAX_OUT = 5000;
+
 /** Avery's reply when a setup run stops before it finishes (card 198): nothing was saved, so say so. */
 export const SETUP_STOPPED = "That one needed more work than a single reply allows, so I stopped before saving anything. Send your message again and I'll pick it up.";
 
