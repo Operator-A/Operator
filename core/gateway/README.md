@@ -214,12 +214,27 @@ an approver grants "Mark an order shipped" on the Tools step. Draft only and nev
   days; the server re-checks the scope and the live order (`planShip`: refused if it changed or can no
   longer be marked here) and sends the one fixed `fulfillmentCreate` with an idempotency key. No undo.
 
+## `shopify.create_discount` (docs/shopify-actions.md)
+
+One percent-off discount code on every product, once per customer, not combined with other discounts.
+Any agent an approver grants "Create a discount code" on the Tools step. Draft only and never promoted
+(decided 2026-11-22).
+
+- The target is `code:<CODE>`. The proposal holds exactly `title`, `percent`, `uses`, `starts` and `ends`
+  (`refuseDiscount` in `core/shopify-actions.ts`), inside the code limits (20%, 100 uses, 30 days) when
+  staged and inside the owner's caps (`max_discount_percent`, `max_discount_uses`, `max_discount_days`,
+  never above the code limits) when applied.
+- Applying needs Shopify connected with `write_discounts`, through `callWriteTool("shopify",
+  "shopify_create_discount")`; at most `policies.max_shopify_writes_per_run` (25) per apply. The server
+  refuses a code Shopify already has, or a new one while 5 agent-made codes are live, and sends the one
+  fixed `discountCodeBasicCreate`. No undo.
+
 ## Caps, vendors and suppressed addresses
 
 The fences the payment and email action types will have to pass. Neither action type exists yet.
 
 - `CAPS` in `policy.ts`: per purchase ($500), per calendar month ($1,500), emails per day (20),
-  undo window (30 minutes). The owner's values are rows in `policies`; each has a limit in code that
+  undo window (30 minutes), and for discount codes the most off (20%), uses (100) and days (30). The owner's values are rows in `policies`; each has a limit in code that
   `effectiveCap` never lets a row pass. The owner changes them on Settings; agents
   never write `policies`.
 - `checkPurchase`: payee must be in `vendors` with a Mercury recipient; amount within the

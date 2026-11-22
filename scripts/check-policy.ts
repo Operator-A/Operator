@@ -1,6 +1,6 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { CARRIERS, normTracking, claimsIn, copyFacts, copyHtml, copyPrint, numbersIn, refuseCopyFacts } from "../core/shopify-actions";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { DISCOUNT_LIMITS, addDays, daysBetween, normCode, refuseDiscount, refuseDiscountDates, CARRIERS, normTracking, claimsIn, copyFacts, copyHtml, copyPrint, numbersIn, refuseCopyFacts } from "../core/shopify-actions";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -98,6 +98,38 @@ t("stock refused with an unknown reason", st({ ...stockOk, reason: "promotion" }
 t("stock refused with an extra field", st({ ...stockOk, location: "gid://shopify/Location/9" }) !== null);
 t("stock refused without the count it was staged against", st({ available: 40, reason: "received" }) !== null);
 t("stock refused on an order", st(stockOk, "gid://shopify/Order/1") !== null);
+// Shopify discount codes (docs/shopify-actions.md, slice 4)
+const discOk = { title: "Win-back, November", percent: 15, uses: 50, starts: "2026-12-01", ends: "2026-12-15" };
+const dc = (args: Record<string, unknown>, target = "code:COMEBACK15") => refuseProposal("b_mkt_2", SHOPIFY_DISCOUNT, target, args, 200, ["shopify_discount_codes", "shopify_discount"]);
+t("discount is Draft only and never promoted", TOOLS[SHOPIFY_DISCOUNT].tier === "Draft" && !TOOLS[SHOPIFY_DISCOUNT].promotable);
+t("discount is a granted action, named by the builder's tool", TOOLS[SHOPIFY_DISCOUNT].agents === "granted" && TOOLS[SHOPIFY_DISCOUNT].grant === "shopify_discount");
+t("discount refused for an agent that wasn't granted it", refuseProposal("b_mkt_2", SHOPIFY_DISCOUNT, "code:COMEBACK15", discOk, 200, ["shopify_discount_codes"]) !== null);
+t("discount caps are 20%, 100 uses, 30 days (decided 2026-11-22)", DISCOUNT_LIMITS.percent === 20 && DISCOUNT_LIMITS.uses === 100 && DISCOUNT_LIMITS.days === 30 && DISCOUNT_LIMITS.live === 5);
+t("discount ok", dc(discOk) === null);
+t("discount ok at every cap", dc({ ...discOk, percent: 20, uses: 100, ends: addDays(discOk.starts, 30) }) === null);
+t("discount refused over the percent cap", dc({ ...discOk, percent: 21 }) !== null);
+t("discount refused over the uses cap", dc({ ...discOk, uses: 101 }) !== null);
+t("discount refused over the days cap", dc({ ...discOk, ends: addDays(discOk.starts, 31) }) !== null);
+t("discount refused with a fraction", dc({ ...discOk, percent: 12.5 }) !== null);
+t("discount refused with no use limit", dc({ ...discOk, uses: 0 }) !== null);
+t("discount refused with no end date", dc({ title: discOk.title, percent: 15, uses: 50, starts: discOk.starts }) !== null);
+t("discount refused when it ends before it starts", dc({ ...discOk, ends: discOk.starts }) !== null);
+t("discount refused with a bad date", dc({ ...discOk, ends: "2026-02-30" }) !== null);
+t("discount refused with a fixed amount", dc({ ...discOk, amount: 10 }) !== null);
+t("discount refused with free shipping", dc({ ...discOk, free_shipping: true }) !== null);
+t("discount refused with a product list", dc({ ...discOk, products: ["gid://shopify/Product/1"] }) !== null);
+t("discount refused with HTML in the title", dc({ ...discOk, title: "<b>Big</b>" }) !== null);
+t("discount refused with a lowercase or short code", dc(discOk, "code:abc") !== null && dc(discOk, "code:AB1") !== null);
+t("discount refused on a Shopify id", dc(discOk, "gid://shopify/Product/1") !== null);
+t("discount held to the owner's lower caps", refuseDiscount(discOk, { percent: 10, uses: 100, days: 30 }) !== null && refuseDiscount(discOk, { percent: 15, uses: 50, days: 14 }) === null);
+t("an owner cap above the code limit doesn't loosen it", refuseDiscount({ ...discOk, percent: 25 }, { percent: 50, uses: 1000, days: 365 }) !== null);
+t("discount refused with a start in the past when staged", refuseDiscountDates(discOk, "2026-12-02", true) !== null);
+t("discount refused with a start over 30 days away when staged", refuseDiscountDates(discOk, "2026-10-31", true) !== null && refuseDiscountDates(discOk, "2026-11-01", true) === null);
+t("an approved code may still start after its start date", refuseDiscountDates(discOk, "2026-12-05", false) === null);
+t("an approved code is refused once its end date passed", refuseDiscountDates(discOk, "2026-12-16", false) !== null);
+t("codes drop spaces and dashes and go upper case", normCode(" come-back 15 ") === "COMEBACK15");
+t("days between dates", daysBetween("2026-12-30", "2027-01-02") === 3 && addDays("2026-12-30", 3) === "2027-01-02");
+t("discount caps can only go lower on Settings", "refuse" in capChange("max_discount_percent", 20, 25) && "looser" in capChange("max_discount_percent", 20, 10) && effectiveCap("max_discount_uses", 500) === 100);
 // Shopify mark shipped (docs/shopify-actions.md, slice 5)
 const ordr = "gid://shopify/Order/7", shipOk = { fulfillment_orders: ["gid://shopify/FulfillmentOrder/1"], carrier: "UPS", tracking: "1Z999AA10123456784" };
 const shp = (args: Record<string, unknown>, target = ordr) => refuseProposal("b_ops_1", SHOPIFY_SHIP, target, args, 200, ["shopify_orders_to_ship", "shopify_ship"]);

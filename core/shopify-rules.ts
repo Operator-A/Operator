@@ -214,6 +214,29 @@ const ORDERS_TO_SHIP = gql`
   }
 `;
 
+// Discount codes, newest first, for staging a new code: each code's title, code, status, dates, percent or
+// amount off, use limit and uses so far, and tags. 50 a page. No customer data.
+const DISCOUNT_CODES = gql`
+  query AgentDiscountCodes($after: String) {
+    codeDiscountNodes(first: 50, after: $after, sortKey: CREATED_AT, reverse: true) {
+      nodes {
+        id
+        codeDiscount {
+          __typename
+          ... on DiscountCodeBasic {
+            title status startsAt endsAt usageLimit asyncUsageCount appliesOncePerCustomer tags
+            codes(first: 1) { nodes { code } }
+            customerGets { value { __typename ... on DiscountPercentage { percentage } ... on DiscountAmount { amount { amount currencyCode } } } }
+          }
+          ... on DiscountCodeBxgy { title status startsAt endsAt }
+          ... on DiscountCodeFreeShipping { title status startsAt endsAt }
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
 /** Core's Shopify tools: what every business on Shopify can read. */
 export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
   {
@@ -291,6 +314,17 @@ export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
     description: "Open, unshipped orders, newest first, 50 a page, with their Shopify ids: order number, date, and each fulfillment order's state, location and items left. No names or addresses.",
     inputSchema: { type: "object", properties: { after } },
     doc: ORDERS_TO_SHIP,
+    variables: (a) => {
+      const cur = afterArg(a);
+      if (cur === undefined) return { problem: "after must be a cursor from the last page" };
+      return { variables: { after: cur } };
+    },
+  },
+  {
+    tool: "shopify_discount_codes",
+    description: "Discount codes, newest first, 50 a page: title, code, status, dates, percent or amount off, use limit and uses so far, and which ones agents made. No customer data.",
+    inputSchema: { type: "object", properties: { after } },
+    doc: DISCOUNT_CODES,
     variables: (a) => {
       const cur = afterArg(a);
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };

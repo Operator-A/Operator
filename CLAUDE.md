@@ -14,7 +14,7 @@ They hold for every business on OPERATOR. "The owner" is the business's owner; "
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
-The tool gateway (`core/gateway`) has fifteen action types so far, all starting at Draft: receipt, category
+The tool gateway (`core/gateway`) has sixteen action types so far, all starting at Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), a Gmail draft to a lead
 on the leads list (the prospecting lead finder; the owner sends it from Gmail), a draft email campaign
 to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), a draft
@@ -24,7 +24,9 @@ private hold with no guests on the business's Google Calendar (any agent an appr
 no one), tags added to a Shopify order or customer (any agent an approver grants it to), a stock count
 set on one Shopify item at one location (any agent an approver grants it to; Draft only), an order the
 business ships itself marked shipped in Shopify with a carrier and tracking number (any agent an approver
-grants it to; Draft only, never promoted; Shopify emails the customer its own shipping confirmation), a new
+grants it to; Draft only, never promoted; Shopify emails the customer its own shipping confirmation), one percent-off
+discount code on every product, once per customer, inside caps in code the owner may lower (at most 20% off, 100 uses
+and 30 days; at most 5 agent-made codes live; any agent an approver grants it to; Draft only, never promoted), a new
 description or SEO text on one Shopify product (any agent an approver grants it to), a draft
 invoice to one of the business's existing Stripe customers (any agent an approver gives it to; the owner
 finalizes and sends it from Stripe), a private note on an order in the business's WooCommerce store (any

@@ -7,7 +7,7 @@ import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-
 import { CUSTOMER_ID, INVOICE_FIELDS, refuseInvoice } from "@/core/stripe-rules";
 import { CATEGORIZE_FIELDS, QBO_CATEGORIZE, expenseTarget, refuseCategorize } from "@/core/quickbooks-rules";
 import { SQUARE_INVOICE, SQUARE_INVOICE_FIELDS, SQUARE_INVOICE_GRANT, refuseSquareInvoice, squareTarget } from "@/core/square-rules";
-import { SHOPIFY_COPY, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP, SHOPIFY_SHIP_GRANT, refuseShip, SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
+import { SHOPIFY_DISCOUNT, SHOPIFY_DISCOUNT_GRANT, DISCOUNT_LIMITS, discountTarget, refuseDiscount, SHOPIFY_COPY, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP, SHOPIFY_SHIP_GRANT, refuseShip, SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
 import { NOTE_FIELDS, orderIdOk, refuseNote } from "@/core/woo-rules";
@@ -32,7 +32,7 @@ export const DRAFT_EMAIL = "gmail.create_draft";
  * Tags added to one Shopify order or customer (docs/shopify-actions.md). Adds only; undo removes
  * exactly the tags it added. The target is a Shopify id from a Recent orders result.
  */
-export { SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS };
+export { SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS };
 export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
 /**
  * A draft invoice in the business's Stripe, to one of its own Stripe customers (card 240). Stripe holds
@@ -217,7 +217,16 @@ export const TOOLS = {
     // the tracking number comes from the agent reading an email or a label, and Shopify emails it to the
     // customer: Draft for good until numbers come from a connected shipping tool in code (decided 2026-11-22)
     promotable: false,
+  },  [SHOPIFY_DISCOUNT]: {
+    // any agent an approver grants "Create a discount code" on the Tools step; never a proposal
+    agents: "granted",
+    grant: SHOPIFY_DISCOUNT_GRANT,
+    tier: "Draft" as Tier,
+    fields: ["title", "percent", "uses", "starts", "ends"],
+    // money off every order that uses it: an approval card for good, inside the caps (decided 2026-11-22)
+    promotable: false,
   },
+
 } as const satisfies Record<string, ActionDef>;
 export type ToolName = keyof typeof TOOLS;
 
@@ -302,6 +311,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (tool === QBO_CATEGORIZE) return expenseTarget(target) ? refuseCategorize(args) : "The target is not a QuickBooks expense line.";
   if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
   if (tool === SHOPIFY_STOCK) return stockTarget(target) ? refuseStock(args) : "The target is not a Shopify inventory item at a location.";
+  if (tool === SHOPIFY_DISCOUNT) return discountTarget(target) ? refuseDiscount(args) : "The target is not a discount code.";
   if (tool === SHOPIFY_SHIP) return shopifyTarget(target)?.kind === "Order" ? refuseShip(args) : "The target is not a Shopify order id.";
   if (tool === SHOPIFY_COPY) return productTarget(target) ? refuseCopy(args) : "The target is not a Shopify product id.";
   if (tool === CALENDAR_HOLD) return target === `${args.start}/${args.end}` && isoMs(args.start) !== null ? refuseHold(args, now) : "The target is not the hold's own start and end.";
@@ -371,7 +381,7 @@ export const planIsEmpty = (p: Plan) => !p.attach && !p.categoryId && !p.note;
 // a limit in code that no row can pass. "looser" says which way is riskier: a bigger purchase
 // cap, more emails, or a shorter undo window. Tightening is always allowed.
 
-export type CapKey = "max_purchase_usd" | "max_monthly_spend_usd" | "max_emails_per_day" | "undo_window_minutes";
+export type CapKey = "max_purchase_usd" | "max_monthly_spend_usd" | "max_emails_per_day" | "undo_window_minutes" | "max_discount_percent" | "max_discount_uses" | "max_discount_days";
 export interface CapDef {
   label: string;
   /** The owner's starting value (Nov 11), used when the row is missing or unreadable. */
@@ -390,6 +400,9 @@ export const CAPS: Record<CapKey, CapDef> = {
   max_monthly_spend_usd: { label: "Per calendar month", start: 1500, looser: "up", limit: 1500, safest: 0, unit: "usd", about: "All agents together, Chicago calendar month, counted from applied payments." },
   max_emails_per_day: { label: "Emails per day", start: 20, looser: "up", limit: 20, safest: 0, unit: "count", about: "Outbound emails from all agents together, Chicago day. Briefs and alerts to you don’t count." },
   undo_window_minutes: { label: "Undo window", start: 30, looser: "down", limit: 30, safest: 240, unit: "minutes", about: "How long you can undo an action at the middle trust level before it goes out." },
+  max_discount_percent: { label: "Discount code: percent off", start: DISCOUNT_LIMITS.percent, looser: "up", limit: DISCOUNT_LIMITS.percent, safest: 0, unit: "count", about: "The most off any discount code an agent makes. Every code covers all products, once per customer." },
+  max_discount_uses: { label: "Discount code: uses", start: DISCOUNT_LIMITS.uses, looser: "up", limit: DISCOUNT_LIMITS.uses, safest: 0, unit: "count", about: "The most times one agent-made code can be used. Every code has a use limit." },
+  max_discount_days: { label: "Discount code: days", start: DISCOUNT_LIMITS.days, looser: "up", limit: DISCOUNT_LIMITS.days, safest: 0, unit: "count", about: "The longest an agent-made code can run, start to end. Every code has an end date." },
 };
 export const CAP_KEYS = Object.keys(CAPS) as CapKey[];
 

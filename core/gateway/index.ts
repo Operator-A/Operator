@@ -19,7 +19,7 @@ import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
 import { invoiceCents, type InvoiceArgs } from "@/core/stripe-rules";
 import { QBO_CATEGORIZE_TOOL, UNCATEGORIZED, type CategorizeArgs } from "@/core/quickbooks-rules";
 import { SQUARE_DRAFT_TOOL, splitTarget } from "@/core/square-rules";
-import { productTarget, refuseCopy, refuseShip, refuseStock, refuseTags, SHIP_REPEAT_DAYS, shopifyTarget, stockTarget } from "@/core/shopify-actions";
+import { discountTarget, refuseDiscount, refuseDiscountDates, type DiscountArgs, productTarget, refuseCopy, refuseShip, refuseStock, refuseTags, SHIP_REPEAT_DAYS, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
 import { refuseHold } from "@/core/calendar-rules";
@@ -28,9 +28,9 @@ import { orderIdOk, refuseNote } from "@/core/woo-rules";
 import { dealIdOk, refuseMove } from "@/core/hubspot-rules";
 import { adIdOk, refusePause, RESULT_LABEL, type MetaResult } from "@/core/meta-rules";
 import { metaTargets } from "@/core/meta-targets";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, SQUARE_INVOICE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, SQUARE_INVOICE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, SQUARE_INVOICE } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, SQUARE_INVOICE } from "./policy";
 
 export interface Proposal {
   agentId: string;
@@ -445,7 +445,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyShopifyStock(ids), applyShopifyCopy(ids), applyShopifyShip(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids), applyMetaPauses(ids), applyCategorize(ids), applySquareInvoices(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyShopifyStock(ids), applyShopifyCopy(ids), applyShopifyShip(ids), applyShopifyDiscounts(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids), applyMetaPauses(ids), applyCategorize(ids), applySquareInvoices(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -744,6 +744,58 @@ async function applyCopyChange(a: ActionRow, runId: string) {
       // what to put back: the old copy, and only while the store still shows the copy this action set
       undo_json: { set_copy: out?.before ?? null, only_if_print: typeof out?.set === "string" ? out.set : null },
       result_json: { record: label },
+    });
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
+/** Approved discount codes, at most max_shopify_writes_per_run per agent, inside the owner's caps, through our Shopify server. */
+async function applyShopifyDiscounts(ids?: string[]) {
+  const rows = await approvedOf(SHOPIFY_DISCOUNT, ids);
+  if (!rows.length) return null;
+  if (!(await ready("shopify"))) return { ok: true, text: "Approved, not in Shopify yet: Shopify isn't connected (Connections, Shopify)." };
+  const cap = await numPolicy("max_shopify_writes_per_run", 25);
+  const c = await loadCaps();
+  const caps = { percent: c.max_discount_percent.value, uses: c.max_discount_uses.value, days: c.max_discount_days.value };
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyDiscount(a, runId, caps); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway created ${n.applied} approved discount code${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved discount codes are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyDiscount(a: ActionRow, runId: string, caps: { percent: number; uses: number; days: number }) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as DiscountArgs;
+    // the fields again, against the owner's caps now (a cap lowered since the card holds), and the dates;
+    // the server re-checks the code limits, the scope, that the code is free and the live-code count
+    const code = discountTarget(a.target);
+    const no = !code ? "The target is not a discount code." : refuseDiscount(args as unknown as Record<string, unknown>, caps) ?? refuseDiscountDates(args, new Date().toISOString().slice(0, 10), false);
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const out = (await callWriteTool("shopify", "shopify_create_discount", { target: a.target, title: args.title, percent: args.percent, uses: args.uses, starts: args.starts, ends: args.ends })) as { refused?: unknown; discount?: unknown };
+    if (typeof out?.refused === "string") { await done({ status: "refused", reason: out.refused, result_json: { record: code } }); return "refused" as const; }
+    await done({
+      status: "applied",
+      diff_json: { before: null, after: { code, percent: args.percent, uses: args.uses, starts: args.starts, ends: args.ends } },
+      // no undo action: the owner ends a code early in Shopify (deactivate); nothing deletes a code
+      undo_json: null,
+      result_json: { record: code, discount: typeof out?.discount === "string" ? out.discount : null },
     });
     return "applied" as const;
   } catch (e) {
