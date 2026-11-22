@@ -555,7 +555,7 @@ button.org-seat { cursor: pointer; }
 .lc-n { position: absolute; left: 0; top: 0; border: 0; background: none; padding: 0; color: var(--ink); cursor: pointer; will-change: transform; z-index: 3; }
 .lc-in { display: flex; transform: translate(-50%, -50%); transition: opacity .6s, transform .7s cubic-bezier(.22, .8, .2, 1), filter .6s, width .7s cubic-bezier(.22, .8, .2, 1), height .7s cubic-bezier(.22, .8, .2, 1), box-shadow .4s; }
 .lc-n.gone { pointer-events: none; } .lc-n.gone .lc-in { opacity: 0; transform: translate(-50%, -50%) scale(.6); filter: blur(6px); }
-.lc-n.dim .lc-in { opacity: .3; } .lc-n.gone.dim .lc-in { opacity: 0; }
+.lc-n.dim .lc-in { opacity: .7; } .lc-n.gone.dim .lc-in { opacity: 0; }
 .lc-n:focus-visible { outline: none; } .lc-n:focus-visible .lc-in, .lc-n:focus-visible .lc-cell { outline: 2px solid var(--acc); outline-offset: 2px; }
 
 .lc-dept { z-index: 1; }
@@ -598,7 +598,8 @@ button.org-seat { cursor: pointer; }
 .lc-spend { flex: none; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mut); }
 .lc-bar { width: 44px; height: 5px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 10%, transparent); overflow: hidden; }
 .lc-bar span { display: block; height: 100%; border-radius: 99px; background: var(--mint); } .lc-bar span.near { background: var(--yel); } .lc-bar span.out { background: var(--red); }
-.lc-fold .lc-in { width: var(--cw, 120px); height: var(--ch, 26px); align-items: center; gap: 6px; padding: 0 10px; border-radius: 10px; font-size: 11.5px; font-weight: 600; color: var(--ink2); background: color-mix(in srgb, var(--lc-strong) 55%, transparent); border: 1px solid var(--lc-bd); }
+.lc-fold .lc-in { width: var(--cw, 120px); height: var(--ch, 34px); align-items: center; justify-content: center; gap: 5px; padding: 0 14px; border-radius: 11px; font-size: 10.5px; white-space: nowrap; font-weight: 600; color: var(--ink2); background: color-mix(in srgb, var(--lc-strong) 55%, transparent); border: 1px solid var(--lc-bd); }
+.lc-fold .lc-in > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .lc-fold:hover .lc-in { color: var(--ink); background: var(--lc-strong); }
 .lc-fold.shown .lc-in { background: none; border-color: transparent; color: var(--mut); }
 .lc-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }

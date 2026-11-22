@@ -144,7 +144,7 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
           const A = e.nodes[l.a], B = e.nodes[l.b];
           if (!A?.show || !B?.show) continue;
           const g = curve(l, A, B, e.opened); curves.set(l, g);
-          ctx.globalAlpha = e.lit ? (e.hs.has(l.a) || e.hs.has(l.b) ? .95 : .12) : l.type === "report" ? .55 : .75;
+          ctx.globalAlpha = e.lit ? (e.hs.has(l.a) || e.hs.has(l.b) ? .95 : .32) : l.type === "report" ? .55 : .75;
           ctx.strokeStyle = ctx.fillStyle = col[l.type === "report" ? "--lc-report" : "--lc-handoff"] || "#6272EE"; ctx.lineWidth = 1.7; ctx.lineCap = "round";
           ctx.setLineDash(l.type === "handoff" ? [7, 7] : []); ctx.lineDashOffset = calm ? 0 : -t * 16;
           ctx.beginPath(); ctx.moveTo(g[0][0], g[0][1]);

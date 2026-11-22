@@ -41,6 +41,9 @@ const cases: [string, CanvasData][] = [
   ["no company seat", { ...full, company: null }],
   ["one department", { ...full, depts: depts.slice(0, 1), handoffs: handoffs.slice(1) }],
   ["no departments", { ...full, depts: [], handoffs: [] }],
+  // the company seat is in no department: a hand-off to or from it must still lay out (opening the
+  // department used to make a pill for a department that doesn't exist and crash the page)
+  ["a hand-off with the company seat", { ...full, handoffs: [...handoffs, { from: "m2", to: "top", chain: "Up" }, { from: "top", to: "s1", chain: "Down" }] }],
 ];
 const WIDTHS = [326, 390, 600, 886, 1200, 1500];
 
@@ -169,6 +172,12 @@ assert.equal(teamSize(depts[0], "s1"), 6); assert.equal(teamSize(depts[0], "s2")
 const one = layoutCanvas(full, 886, null, new Set(["s1"]));
 assert.deepEqual(depts[0].seats.filter((s) => one.boxes[s.id].show).map((s) => s.id), ["s1", "s2", "s5", "s6"]);
 assert.ok(one.height > loads.height, "the canvas grows when a team opens");
+// an unfolded big department takes two columns, so its seats stay readable; a small one keeps one
+const cellW = (L: ReturnType<typeof layoutCanvas>, id: string) => L.boxes[deptBox(id)].w;
+assert.equal(cellW(one, "sales"), 2 * cellW(one, "money") + 12, "opened sales is two columns wide");
+assert.equal(cellW(loads, "sales"), cellW(loads, "money"), "folded sales is one column, like the rest");
+assert.ok(one.boxes["s2"].w > loads.boxes["s1"].w, "its seats get the room");
+assert.ok(one.boxes[deptBox("sales")].x < one.boxes[deptBox("money")].x, "departments keep their order");
 // the folded sales head still takes Morgan's hand-off, and Reese's to Rico (folded) draws no line
 assert.deepEqual(loads.lines.filter((l) => l.type === "handoff").map((l) => `${l.a}>${l.b}`), ["m1>s1"]);
 
@@ -194,6 +203,11 @@ assert.equal(colsFor(600, 5), 4);
 assert.equal(colsFor(326, 1), 1);
 assert.equal(colsFor(1500, 9), 5);
 assert.equal(colsFor(886, 3), 3);
+// a hand-off between a department and the company seat runs straight to that seat, with no pill
+const withTop = cases.find(([n]) => n === "a hand-off with the company seat")![1];
+const money = layoutCanvas(withTop, 1200, "money", new Set(["m1"]));
+assert.ok(!Object.keys(money.boxes).some((k) => k.includes("undefined")), "no box for a department that doesn't exist");
+assert.ok(money.lines.some((l) => l.type === "handoff" && l.a === "m2" && l.b === "top"), "Quinn's hand-off reaches the company seat");
 // a focus that names no department is the whole company
 assert.deepEqual(layoutCanvas(full, 886, "gone"), layoutCanvas(full, 886, null));
 // the same input gives the same layout (nothing random, so it doesn't jump between renders)
