@@ -9,7 +9,7 @@ import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import { settings } from "@/core/settings";
 import { DEFAULT_TZ } from "@/core/time";
 import { SHOPIFY_QUERIES, shopifyKeyKind, shopifyVariables, scopesBeyond } from "@/core/shopify-queries";
-import { DISCOUNT_CREATE, DISCOUNT_OF, DISCOUNT_SCOPE, SHOPIFY_DISCOUNT_TOOL, agentLiveCount, discountTarget, planDiscount, refuseDiscount, refuseDiscountDates, type DiscountArgs, type DiscountNode, COPY_OF, COPY_SET, SHIP_CREATE, SHIP_OF, SHIP_SCOPE, SHOPIFY_COPY_TOOL, SHOPIFY_SHIP_TOOL, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_ADD, TAGS_OF, copyHtml, copyPrint, copyText, factsOf, planCopy, planShip, planStock, planTags, printOf, productTarget, refuseCopy, refuseCopyFacts, refuseShip, refuseStock, refuseTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "@/core/shopify-actions";
+import { REFUND_CREATE, REFUND_OF, SHOPIFY_REFUND_TOOL, cents, dollars, planRefund, refuseRefund, type RefundArgs, type RefundOrder, DISCOUNT_CREATE, DISCOUNT_OF, DISCOUNT_SCOPE, SHOPIFY_DISCOUNT_TOOL, agentLiveCount, discountTarget, planDiscount, refuseDiscount, refuseDiscountDates, type DiscountArgs, type DiscountNode, COPY_OF, COPY_SET, SHIP_CREATE, SHIP_OF, SHIP_SCOPE, SHOPIFY_COPY_TOOL, SHOPIFY_SHIP_TOOL, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_ADD, TAGS_OF, copyHtml, copyPrint, copyText, factsOf, planCopy, planShip, planStock, planTags, printOf, productTarget, refuseCopy, refuseCopyFacts, refuseShip, refuseStock, refuseTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "@/core/shopify-actions";
 import { NO_FIELDS_KEY } from "@/core/shopify-rules";
 import type { CopyProduct, ShipOrder } from "@/core/shopify-actions";
 import { shopifyMutate, shopifyQuery, whoIs } from "./shopify-api";
@@ -37,6 +37,10 @@ const WRITE_ABOUT: Record<string, { description: string; inputSchema: unknown }>
   [SHOPIFY_DISCOUNT_TOOL]: {
     description: "Creates one percent-off discount code on every product, once per customer, not combined with other discounts, with a use limit and an end date, tagged as agent-made. Refused if the code is taken or too many agent-made codes are live. Only the gateway calls it, after an approver approves.",
     inputSchema: { type: "object", required: ["target", "title", "percent", "uses", "starts", "ends"], properties: { target: { type: "string" }, title: { type: "string" }, percent: { type: "integer" }, uses: { type: "integer" }, starts: { type: "string" }, ends: { type: "string" } } },
+  },
+  [SHOPIFY_REFUND_TOOL]: {
+    description: "Refunds one order (all of it with shipping, or some items) back to its original payment, with no restock, only while it has refunded what the card saw and Shopify's own amount is at most the card's and inside max_cents. Shopify emails the customer its refund confirmation. Only the gateway calls it, after an approver approves.",
+    inputSchema: { type: "object", required: ["target", "whole", "lines", "amount", "refunded_before", "max_cents", "key"], properties: { target: { type: "string" }, whole: { type: "boolean" }, lines: { type: "array", items: { type: "object" } }, amount: { type: "string" }, refunded_before: { type: "string" }, max_cents: { type: "integer" }, key: { type: "string" } } },
   },
 };
 
@@ -212,6 +216,41 @@ async function createDiscount(key: string, raw: unknown): Promise<Record<string,
   return { discount: out.discountCodeBasicCreate.codeDiscountNode?.id ?? null, label: code };
 }
 
+type RefundMade = { refundCreate: { refund: { id: string; totalRefundedSet: { shopMoney: { amount: string } } } | null; userErrors: { field?: string[]; message: string }[] } };
+
+/**
+ * Refunds one order: the inputs checked again, the app's live scopes, then Shopify's own refund for these
+ * items (or the whole order with shipping) read live: it must be at most the card's amount and inside
+ * max_cents (the gateway's per-refund cap and what's left of the month), back through the order's own
+ * payments. Then the one fixed refundCreate, items never restocked, with the action's id as its key.
+ */
+async function refundOrder(key: string, raw: unknown): Promise<Record<string, unknown>> {
+  const a = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const target = typeof a.target === "string" ? shopifyTarget(a.target) : null;
+  if (!target || target.kind !== "Order") throw new Error("the target isn't a Shopify order id");
+  if (!stockKeyOk(a.key)) throw new Error("a refund needs the action's id as its idempotency key");
+  const args = { whole: a.whole, lines: a.lines, amount: a.amount, refunded_before: a.refunded_before };
+  const no = refuseRefund(args);
+  if (no) throw new Error(no);
+  if (!Number.isInteger(a.max_cents) || (a.max_cents as number) < 1) throw new Error("max_cents must be what the caps allow, in cents");
+  const r = args as unknown as RefundArgs;
+  const { scopes } = await whoIs(key);
+  if (!scopes.includes("write_orders")) throw new Error(addScope("write_orders"));
+  const asked = r.whole ? null : r.lines.map((l) => ({ lineItemId: l.line, quantity: l.qty, restockType: "NO_RESTOCK" }));
+  const live = (await shopifyQuery<{ order: RefundOrder | null }>(key, REFUND_OF, { id: target.gid, lines: asked, full: r.whole })).order;
+  const label = live ? `order ${live.name}` : "order";
+  const plan = planRefund(r, live && live.id === target.gid ? live : null, a.max_cents as number);
+  if ("refuse" in plan) return { refused: plan.refuse, label };
+  const s = live!.suggestedRefund!;
+  // the items: the card's for some items, Shopify's own list for the whole order; never restocked
+  const lines = (asked ?? s.refundLineItems.map((l) => ({ lineItemId: l.lineItem.id, quantity: l.quantity, restockType: "NO_RESTOCK" }))).filter((l) => l.quantity > 0);
+  const transactions = s.suggestedTransactions.map((t) => ({ orderId: target.gid, parentId: t.parentTransaction!.id, amount: t.amountSet.shopMoney.amount, gateway: t.gateway, kind: "REFUND" }));
+  const out = await shopifyMutate<RefundMade>(key, REFUND_CREATE, { orderId: target.gid, lines, shipping: r.whole ? { fullRefund: true } : null, transactions, note: "Refund approved in OPERATOR", key: a.key });
+  const errs = out.refundCreate.userErrors ?? [];
+  if (errs.length) throw new Error(`Shopify refused the refund: ${errs.map((e) => e.message).join("; ").slice(0, 200)}`);
+  return { refund: out.refundCreate.refund?.id ?? null, amount: dollars(plan.amountCents), label, refunded_total: out.refundCreate.refund ? dollars(cents(out.refundCreate.refund.totalRefundedSet.shopMoney.amount)) : null };
+}
+
 /** A JSON-RPC handler for one call, with the key the vault opened. */
 export function shopifyServer(key: string) {
   const reply = (id: unknown, result: unknown) => ({ jsonrpc: "2.0", id, result });
@@ -226,12 +265,12 @@ export function shopifyServer(key: string) {
       case "tools/list":
         return reply(id, { tools: [
           ...READS.map((name) => ({ name, description: TOOLS[name].description, inputSchema: TOOLS[name].inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })),
-          ...WRITES.map((name) => ({ name, ...WRITE_ABOUT[name], annotations: { readOnlyHint: false, destructiveHint: name === SHOPIFY_STOCK_TOOL || name === SHOPIFY_SHIP_TOOL || name === SHOPIFY_DISCOUNT_TOOL, idempotentHint: name !== SHOPIFY_DISCOUNT_TOOL, openWorldHint: false } })),
+          ...WRITES.map((name) => ({ name, ...WRITE_ABOUT[name], annotations: { readOnlyHint: false, destructiveHint: name === SHOPIFY_STOCK_TOOL || name === SHOPIFY_SHIP_TOOL || name === SHOPIFY_DISCOUNT_TOOL || name === SHOPIFY_REFUND_TOOL, idempotentHint: name !== SHOPIFY_DISCOUNT_TOOL, openWorldHint: false } })),
         ] });
       case "tools/call": {
         const name = typeof req.params?.name === "string" ? req.params.name : "";
         // integrations/mcp.ts lets only callWriteTool (the gateway) reach a write tool
-        const write = name === SHOPIFY_TAGS_TOOL ? addTags : name === SHOPIFY_STOCK_TOOL ? setStock : name === SHOPIFY_COPY_TOOL ? setCopy : name === SHOPIFY_SHIP_TOOL ? markShipped : name === SHOPIFY_DISCOUNT_TOOL ? createDiscount : null;
+        const write = name === SHOPIFY_TAGS_TOOL ? addTags : name === SHOPIFY_STOCK_TOOL ? setStock : name === SHOPIFY_COPY_TOOL ? setCopy : name === SHOPIFY_SHIP_TOOL ? markShipped : name === SHOPIFY_DISCOUNT_TOOL ? createDiscount : name === SHOPIFY_REFUND_TOOL ? refundOrder : null;
         if (write && WRITES.includes(name)) {
           try {
             return reply(id, { structuredContent: await write(key, req.params?.arguments), content: [{ type: "text", text: "ok" }] });

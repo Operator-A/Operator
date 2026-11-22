@@ -7,7 +7,7 @@ import { listTrust } from "@/core/trust";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { CAPS, CAP_KEYS, fmtCap, type CapDef, type CapKey } from "@/core/gateway/policy";
-import { emailsSentToday, loadCaps, monthSpentUsd } from "@/core/gateway";
+import { emailsSentToday, loadCaps, monthRefundedUsd, monthSpentUsd } from "@/core/gateway";
 import { requireSession } from "./data";
 
 export interface CapLine extends CapDef { key: CapKey; value: number; missing: boolean; used: string }
@@ -18,10 +18,11 @@ export async function capLines(now = new Date()): Promise<{ caps: CapLine[] | nu
   await requireSession();
   if (!env.supabaseUrl || !env.supabaseServiceKey) return { caps: null, log: [], problem: "Supabase isn’t set up, so the caps can’t be read." };
   try {
-    const [caps, spent, sent, log, trusted] = await Promise.all([
+    const [caps, spent, sent, log, trusted, refunded] = await Promise.all([
       loadCaps(), monthSpentUsd(now).catch(() => null), emailsSentToday(now).catch(() => null),
       db().from("policy_log").select("key, old_value, new_value, changed_by, created_at").order("created_at", { ascending: false }).limit(10),
       listTrust().then((rows) => rows.filter((r) => r.level === "act_undo").length, () => 0),
+      monthRefundedUsd(now).catch(() => null),
     ]);
     const used: Record<CapKey, string> = {
       max_purchase_usd: "No payment action exists yet, so nothing has been paid",
@@ -31,6 +32,8 @@ export async function capLines(now = new Date()): Promise<{ caps: CapLine[] | nu
       max_discount_percent: "Checked on every discount code card, and again right before Shopify",
       max_discount_uses: "Checked on every discount code card, and again right before Shopify",
       max_discount_days: "Checked on every discount code card, and again right before Shopify",
+      max_refund_usd: "Checked on every refund card, and again against Shopify's amount right before the refund",
+      max_monthly_refunds_usd: refunded == null ? "Can’t read refunds" : `${fmtCap("max_monthly_refunds_usd", refunded)} refunded this month`,
     };
     return {
       caps: CAP_KEYS.map((k) => ({ key: k, ...CAPS[k], value: caps[k].value, missing: caps[k].raw == null, used: used[k] })),

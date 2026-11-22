@@ -535,8 +535,141 @@ export const DISCOUNT_CREATE = gql`
   }
 `;
 
+// ---------- slice 6: a refund on one recent order, inside caps written in code ----------
+
+/** Gateway action type: refund one order (all of it, or some items) to its original payment. Draft only, never promoted (decided 2026-11-22). */
+export const SHOPIFY_REFUND = "shopify.refund";
+/** The write tool on our Shopify server that applies it. */
+export const SHOPIFY_REFUND_TOOL = "shopify_refund";
+/** The builder's tool an approver grants (core/tools/catalog.ts). */
+export const SHOPIFY_REFUND_GRANT = "shopify_refund";
+/**
+ * The most a refund can ever be, in US dollars (decided 2026-11-22): per refund and per calendar month in
+ * the business's time zone. The owner can set each lower on Settings (CAPS in core/gateway/policy.ts),
+ * never higher. Plus: orders from the last `days`, at most `lines` line items, and Shopify's amount at
+ * approval may be at most `slackUsd` over the card's.
+ */
+export const REFUND_LIMITS = { perRefund: 100, monthly: 500, days: 60, lines: 20, slackUsd: 0.05 } as const;
+export type RefundCaps = { perRefund: number; monthly: number };
+export interface RefundArgs { whole: boolean; lines: { line: string; qty: number }[]; amount: string; refunded_before: string }
+
+const LINE = /^gid:\/\/shopify\/LineItem\/\d{1,20}$/;
+const MONEY = /^\d{1,7}\.\d{2}$/;
+/** Dollars to whole cents, for comparing money without floating point. */
+export const cents = (v: string | number) => Math.round(Number(v) * 100);
+/** Cents to a two-decimal string. */
+export const dollars = (c: number) => (c / 100).toFixed(2);
+
+/**
+ * Why a refund card is refused, or null: exactly whether it is the whole order, the line items and
+ * quantities (none for a whole order), the amount Shopify worked out when it was staged and how much the
+ * order had refunded then, with the amount inside the per-refund cap. No custom amount, gift card, store
+ * credit or restock can be named.
+ */
+export function refuseRefund(args: Record<string, unknown>, caps: Pick<RefundCaps, "perRefund"> = REFUND_LIMITS): string | null {
+  const extra = Object.keys(args).filter((k) => !["whole", "lines", "amount", "refunded_before"].includes(k));
+  if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. A refund holds only the whole order or its items, and the amounts Shopify worked out.`;
+  if (typeof args.whole !== "boolean") return "whole must be true (the whole order) or false (some items).";
+  const lines = args.lines;
+  if (!Array.isArray(lines)) return "lines must be a list (empty for the whole order).";
+  if (args.whole && lines.length) return "A whole-order refund names no items.";
+  if (!args.whole && (!lines.length || lines.length > REFUND_LIMITS.lines)) return `Name 1 to ${REFUND_LIMITS.lines} items to refund.`;
+  const seen = new Set<string>();
+  for (const l of lines as unknown[]) {
+    const x = (l && typeof l === "object" ? l : {}) as { line?: unknown; qty?: unknown };
+    if (Object.keys(x).some((k) => k !== "line" && k !== "qty") || typeof x.line !== "string" || !LINE.test(x.line) || !Number.isInteger(x.qty) || (x.qty as number) < 1 || (x.qty as number) > 1000) return "Each item is a line item from an Orders to refund row and a whole quantity.";
+    if (seen.has(x.line)) return "An item is named twice.";
+    seen.add(x.line);
+  }
+  if (typeof args.amount !== "string" || !MONEY.test(args.amount) || cents(args.amount) < 1) return "amount must be the refund Shopify works out, in dollars and cents.";
+  if (typeof args.refunded_before !== "string" || !MONEY.test(args.refunded_before)) return "refunded_before must be what the order had refunded, in dollars and cents.";
+  const cap = Math.min(caps.perRefund, REFUND_LIMITS.perRefund);
+  if (cents(args.amount) > cents(cap)) return `$${args.amount} is over the cap of $${dollars(cents(cap))} per refund.`;
+  return null;
+}
+
+/** Whether a refund of `amountCents` fits the month: what was refunded this month plus this, at most the monthly cap. */
+export function refuseRefundMonth(amountCents: number, monthCents: number, caps: Pick<RefundCaps, "monthly"> = REFUND_LIMITS): string | null {
+  const cap = cents(Math.min(caps.monthly, REFUND_LIMITS.monthly));
+  if (monthCents + amountCents > cap) return `This refund ($${dollars(amountCents)}) would take this month's refunds to $${dollars(monthCents + amountCents)}, over the cap of $${dollars(cap)}. Nothing was written.`;
+  return null;
+}
+
+/** One order as the live check before a refund reads it. No names or addresses. */
+export interface RefundOrder {
+  id: string; name: string; createdAt: string; cancelledAt: string | null; test: boolean; displayFinancialStatus: string; currencyCode: string;
+  totalRefundedSet: { shopMoney: { amount: string } };
+  suggestedRefund: {
+    amountSet: { shopMoney: { amount: string; currencyCode: string } };
+    refundLineItems: { lineItem: { id: string }; quantity: number }[];
+    suggestedTransactions: { gateway: string | null; kind: string; amountSet: { shopMoney: { amount: string } }; parentTransaction: { id: string } | null }[];
+  } | null;
+}
+
+/** Whether an order can be refunded here: paid or partly refunded, not cancelled or a test, in US dollars, from the last `days` days. */
+export function refundable(o: Pick<RefundOrder, "createdAt" | "cancelledAt" | "test" | "displayFinancialStatus" | "currencyCode">, now = new Date()): string | null {
+  if (o.cancelledAt) return "cancelled";
+  if (o.test) return "a test order";
+  if (o.displayFinancialStatus !== "PAID" && o.displayFinancialStatus !== "PARTIALLY_REFUNDED") return o.displayFinancialStatus === "REFUNDED" ? "refunded already" : "not paid";
+  if (o.currencyCode !== "USD") return "not in US dollars (the caps are in dollars)";
+  if (now.getTime() - Date.parse(o.createdAt) > REFUND_LIMITS.days * 86_400_000) return `older than ${REFUND_LIMITS.days} days`;
+  return null;
+}
+
+/**
+ * What a staged refund may still do: write only while the order can be refunded, has refunded exactly what
+ * the card saw, Shopify's amount is at most the card's (plus a few cents of rounding) and inside
+ * `maxCents` (the owner's per-refund cap and what's left of the month), and every dollar goes back through
+ * the order's own payments.
+ */
+export function planRefund(a: RefundArgs, live: RefundOrder | null, maxCents: number, now = new Date()): { write: true; amountCents: number } | { refuse: string } {
+  if (!live) return { refuse: "Shopify doesn't have this order any more." };
+  const not = refundable(live, now);
+  if (not) return { refuse: `This order can't be refunded here now (${not}). Nothing was written.` };
+  if (cents(live.totalRefundedSet.shopMoney.amount) !== cents(a.refunded_before)) return { refuse: "The order was refunded since this was staged. Nothing was written." };
+  const s = live.suggestedRefund;
+  if (!s || s.amountSet.shopMoney.currencyCode !== "USD") return { refuse: "Shopify has no refund for this. Nothing was written." };
+  const amt = cents(s.amountSet.shopMoney.amount);
+  if (amt < 1) return { refuse: "Nothing is left to refund on these items. Nothing was written." };
+  if (amt > cents(a.amount) + cents(REFUND_LIMITS.slackUsd)) return { refuse: `Shopify now works out $${dollars(amt)}, more than the $${a.amount} on the card. Nothing was written.` };
+  if (amt > maxCents) return { refuse: `Shopify works out $${dollars(amt)}, over what the caps allow now ($${dollars(maxCents)}). Nothing was written.` };
+  const tx = s.suggestedTransactions;
+  if (!tx.length || tx.some((t) => !t.parentTransaction || t.kind !== "SUGGESTED_REFUND" || !t.gateway || /gift_card|store_credit/i.test(t.gateway))) return { refuse: "Shopify can't send this refund back to the original payment. Do this one in Shopify. Nothing was written." };
+  if (tx.reduce((n, t) => n + cents(t.amountSet.shopMoney.amount), 0) !== amt) return { refuse: "Shopify's refund doesn't add up. Do this one in Shopify. Nothing was written." };
+  return { write: true, amountCents: amt };
+}
+
+// Right before the write: the order, what it has refunded, and Shopify's own refund for these items (or the
+// whole order with shipping). No names or addresses. A read, so it may live here.
+export const REFUND_OF = gql`
+  query AgentRefundOf($id: ID!, $lines: [RefundLineItemInput!], $full: Boolean!) {
+    order(id: $id) {
+      id name createdAt cancelledAt test displayFinancialStatus currencyCode
+      totalRefundedSet { shopMoney { amount } }
+      suggestedRefund(refundLineItems: $lines, suggestFullRefund: $full, refundShipping: $full) {
+        amountSet { shopMoney { amount currencyCode } }
+        refundLineItems { lineItem { id } quantity }
+        suggestedTransactions { gateway kind amountSet { shopMoney { amount } } parentTransaction { id } }
+      }
+    }
+  }
+`;
+
+// The only Shopify write in the repo for this action type: a refund on one order, the line items with no
+// restock (the server builds them), full shipping only on a whole-order refund, and only the transactions
+// Shopify suggested back to the original payment. Shopify emails the customer its own refund confirmation
+// (decided 2026-11-22). No custom amount, gift card or store credit can be sent.
+export const REFUND_CREATE = gql`
+  mutation AgentRefund($orderId: ID!, $lines: [RefundLineItemInput!]!, $shipping: ShippingRefundInput, $transactions: [OrderTransactionInput!]!, $note: String!, $key: String!) {
+    refundCreate(input: { orderId: $orderId, notify: true, note: $note, refundLineItems: $lines, shipping: $shipping, transactions: $transactions }) @idempotent(key: $key) {
+      refund { id totalRefundedSet { shopMoney { amount } } }
+      userErrors { field message }
+    }
+  }
+`;
+
 /** Every mutation our Shopify server may run, by write tool. The server refuses any other document. */
-export const SHOPIFY_MUTATIONS: Readonly<Record<string, string>> = { [SHOPIFY_TAGS_TOOL]: TAGS_ADD, [SHOPIFY_STOCK_TOOL]: STOCK_SET, [SHOPIFY_COPY_TOOL]: COPY_SET, [SHOPIFY_SHIP_TOOL]: SHIP_CREATE, [SHOPIFY_DISCOUNT_TOOL]: DISCOUNT_CREATE };
+export const SHOPIFY_MUTATIONS: Readonly<Record<string, string>> = { [SHOPIFY_TAGS_TOOL]: TAGS_ADD, [SHOPIFY_STOCK_TOOL]: STOCK_SET, [SHOPIFY_COPY_TOOL]: COPY_SET, [SHOPIFY_SHIP_TOOL]: SHIP_CREATE, [SHOPIFY_DISCOUNT_TOOL]: DISCOUNT_CREATE, [SHOPIFY_REFUND_TOOL]: REFUND_CREATE };
 
 /** A document is exactly one of the fixed mutations above. */
 export function assertFixedMutation(doc: string): void {

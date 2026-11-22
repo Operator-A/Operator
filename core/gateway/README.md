@@ -214,6 +214,23 @@ an approver grants "Mark an order shipped" on the Tools step. Draft only and nev
   days; the server re-checks the scope and the live order (`planShip`: refused if it changed or can no
   longer be marked here) and sends the one fixed `fulfillmentCreate` with an idempotency key. No undo.
 
+## `shopify.refund` (docs/shopify-actions.md)
+
+A refund of one Shopify order, the whole order or some items, back to its original payment. Any agent an
+approver grants "Refund an order" on the Tools step. Draft only and never promoted (decided 2026-11-22):
+it moves money, and Shopify emails the customer its refund confirmation.
+
+- The target is an order gid, a pick from an Orders to refund result. The proposal holds exactly `whole`,
+  `lines`, `amount` and `refunded_before` (`refuseRefund` in `core/shopify-actions.ts`), with the amount
+  worked out in code from the pick and inside $100.
+- Applying needs Shopify connected with `write_orders`, through `callWriteTool("shopify",
+  "shopify_refund")`, one at a time so the month adds up. The gateway checks the owner's caps
+  (`max_refund_usd`, `max_monthly_refunds_usd`, never above $100 and $500) against this month's applied
+  refunds (`monthRefundedUsd`) and passes the most the server may refund; the server re-reads the order
+  and Shopify's own refund (`planRefund`: refused if the order was refunded since, the amount went up or
+  is over the caps, or the money wouldn't go back to the original payment) and sends the one fixed
+  `refundCreate` with an idempotency key. No undo.
+
 ## `shopify.create_discount` (docs/shopify-actions.md)
 
 One percent-off discount code on every product, once per customer, not combined with other discounts.
@@ -234,7 +251,7 @@ Any agent an approver grants "Create a discount code" on the Tools step. Draft o
 The fences the payment and email action types will have to pass. Neither action type exists yet.
 
 - `CAPS` in `policy.ts`: per purchase ($500), per calendar month ($1,500), emails per day (20),
-  undo window (30 minutes), and for discount codes the most off (20%), uses (100) and days (30). The owner's values are rows in `policies`; each has a limit in code that
+  undo window (30 minutes), for discount codes the most off (20%), uses (100) and days (30), and for refunds the most per refund ($100) and per month ($500). The owner's values are rows in `policies`; each has a limit in code that
   `effectiveCap` never lets a row pass. The owner changes them on Settings; agents
   never write `policies`.
 - `checkPurchase`: payee must be in `vendors` with a Mercury recipient; amount within the
@@ -242,7 +259,7 @@ The fences the payment and email action types will have to pass. Neither action 
   payment to a vendor is flagged so it always waits for the owner.
 - `checkEmail`: never to an address in `email_suppressions`, never past today's cap, and for an
   agent seated in a department never past that department's cap (never above the company cap).
-- `index.ts`: `loadCaps`, `monthSpentUsd` and `emailsSentToday` (month and day in the business's time zone, from
+- `index.ts`: `loadCaps`, `monthSpentUsd`, `monthRefundedUsd` and `emailsSentToday` (month and day in the business's time zone, from
   applied actions), `paidVendorIds`, and `onBreach`, where the trust levels card will demote
   the action type to Draft.
 - Only a signed-in the owner adds vendors (Settings, `DASHBOARD_CONTROLS=on`).

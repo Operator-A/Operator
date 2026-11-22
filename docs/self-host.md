@@ -30,7 +30,10 @@ Supabase itself is either its official self-host stack on your machine
    - `CRON_SECRET`, `SESSION_SECRET` and `MCP_SECRET_KEY`: long random strings
      (`openssl rand -base64 32` each); `MCP_SECRET_KEY` wraps every org's vault key, so keep it safe;
    - `APP_URL`, the address people open (default `http://localhost:3000`);
-   - for email sign-in, Supabase Auth's SMTP settings in Supabase, and its Site URL set to `APP_URL`.
+   - for email sign-in, Supabase Auth's SMTP settings in Supabase, and its Site URL set to `APP_URL`;
+   - for the morning brief and alerts by email, `RESEND_API_KEY` and `BRIEF_FROM` (a sender on a
+     domain verified in Resend). Owners never see these names: Connections > Email to you only says
+     whether emails go out and to whom.
    Each integration's sign-in is made on Connections later (the token vault), with your own OAuth
    apps where one is needed (Google's client id and secret in `.env`).
 3. **Run** `docker compose up -d --build`. The first run applies every migration; later runs apply

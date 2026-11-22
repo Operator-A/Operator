@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireSession } from "@/dashboard/data";
 import { readStatus } from "@/core/status";
 import { OVERDUE_MIN, REALERT_HOURS } from "@/core/status-rules";
-import { hasEmail } from "@/integrations/email";
+import { emailState } from "@/integrations/email";
 
 // Status (docs/usage.md, slice 4): everything that needs a look, on one page. Alerts (red) also
 // email the owner from the scheduler; warnings only show here.
@@ -10,7 +10,7 @@ export default async function Status() {
   await requireSession();
   const { facts: f, problems } = await readStatus();
   const alerts = problems.filter((p) => p.level === "alert").length;
-  const emails = await hasEmail();
+  const mail = await emailState(), emails = mail.ok;
   const tile = (label: string, value: React.ReactNode, sub: string) => (
     <div className="card" style={{ padding: "14px 18px", gap: 4, flex: "1 1 150px" }}>
       <span className="sub">{label}</span>
@@ -50,7 +50,7 @@ export default async function Status() {
 
       <span className="sub">
         {emails ? `Red items also email you from the scheduler (every 15 minutes): once when they start, then at most every ${REALERT_HOURS} hours while they last.`
-          : "Red items show here. Alert emails go out once the app can send email (RESEND_API_KEY and BRIEF_FROM in Vercel) and an owner email is picked on Settings > Where things go."}
+          : `Red items show here. ${mail.text}`}
       </span>
     </div>
   );

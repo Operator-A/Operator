@@ -1,6 +1,6 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
 import { DISCOUNT_LIMITS, addDays, daysBetween, normCode, refuseDiscount, refuseDiscountDates, CARRIERS, normTracking, claimsIn, copyFacts, copyHtml, copyPrint, numbersIn, refuseCopyFacts } from "../core/shopify-actions";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_REFUND, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -37,7 +37,7 @@ t("cents fraction refused", "refuse" in capChange("max_purchase_usd", 500, 100.5
 t("undo shorter than floor refused", "refuse" in capChange("undo_window_minutes", 30, 20));
 t("undo longer ok, not looser", (() => { const c = capChange("undo_window_minutes", 30, 60); return "looser" in c && !c.looser; })());
 t("undo back shorter looser", (() => { const c = capChange("undo_window_minutes", 60, 30); return "looser" in c && c.looser; })());
-t("unknown key refused", "refuse" in capChange("max_refund_usd", 0, 5));
+t("unknown key refused", "refuse" in capChange("max_gift_card_usd", 0, 5));
 t("same value refused", "refuse" in capChange("max_emails_per_day", 20, 20));
 // Gmail drafts (slice 7): only Rowan, a lead id, subject and body only, no links; the recipient comes from the leads list
 const lead = "0b5f7a52-1c1e-4d1a-9a59-3f1f0a8c2d11";
@@ -130,6 +130,21 @@ t("an approved code is refused once its end date passed", refuseDiscountDates(di
 t("codes drop spaces and dashes and go upper case", normCode(" come-back 15 ") === "COMEBACK15");
 t("days between dates", daysBetween("2026-12-30", "2027-01-02") === 3 && addDays("2026-12-30", 3) === "2027-01-02");
 t("discount caps can only go lower on Settings", "refuse" in capChange("max_discount_percent", 20, 25) && "looser" in capChange("max_discount_percent", 20, 10) && effectiveCap("max_discount_uses", 500) === 100);
+// Shopify refunds (docs/shopify-actions.md, slice 6)
+const rfOk = { whole: false, lines: [{ line: "gid://shopify/LineItem/11", qty: 1 }], amount: "18.40", refunded_before: "0.00" };
+const rfd = (args: Record<string, unknown>, target = "gid://shopify/Order/9") => refuseProposal("b_ops_1", SHOPIFY_REFUND, target, args, 200, ["shopify_orders_to_refund", "shopify_refund"]);
+t("refund is Draft only and never promoted", TOOLS[SHOPIFY_REFUND].tier === "Draft" && !TOOLS[SHOPIFY_REFUND].promotable);
+t("refund is a granted action, named by the builder's tool", TOOLS[SHOPIFY_REFUND].agents === "granted" && TOOLS[SHOPIFY_REFUND].grant === "shopify_refund");
+t("refund refused for an agent that wasn't granted it", refuseProposal("b_ops_1", SHOPIFY_REFUND, "gid://shopify/Order/9", rfOk, 200, ["shopify_orders_to_refund"]) !== null);
+t("refund ok", rfd(rfOk) === null);
+t("whole-order refund ok", rfd({ whole: true, lines: [], amount: "64.00", refunded_before: "0.00" }) === null);
+t("refund refused over $100", rfd({ ...rfOk, amount: "100.01" }) !== null);
+t("refund refused with a custom amount field", rfd({ ...rfOk, custom_amount: "5.00" }) !== null);
+t("refund refused with restock", rfd({ ...rfOk, restock: true }) !== null);
+t("refund refused with notify switched", rfd({ ...rfOk, notify: false }) !== null);
+t("refund refused on a customer", rfd(rfOk, "gid://shopify/Customer/9") !== null);
+t("refund refused on a product", rfd(rfOk, "gid://shopify/Product/9") !== null);
+t("refund caps can only go lower on Settings", "refuse" in capChange("max_refund_usd", 100, 150) && "looser" in capChange("max_refund_usd", 100, 50) && effectiveCap("max_monthly_refunds_usd", 5000) === 500 && "refuse" in capChange("max_monthly_refunds_usd", 500, 501));
 // Shopify mark shipped (docs/shopify-actions.md, slice 5)
 const ordr = "gid://shopify/Order/7", shipOk = { fulfillment_orders: ["gid://shopify/FulfillmentOrder/1"], carrier: "UPS", tracking: "1Z999AA10123456784" };
 const shp = (args: Record<string, unknown>, target = ordr) => refuseProposal("b_ops_1", SHOPIFY_SHIP, target, args, 200, ["shopify_orders_to_ship", "shopify_ship"]);

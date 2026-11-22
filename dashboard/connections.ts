@@ -36,7 +36,7 @@ export interface Connection {
 export const CONNECTIONS: Connection[] = [
   {
     id: "shopify", name: "Shopify", sub: "Orders, products, stock", icon: "shopping-bag", builtIn: false, mcp: "shopify",
-    about: "Our own Shopify server, run in the app with the custom app the business makes in Shopify. Each read runs one fixed query written in code and can’t change anything; no tool takes GraphQL. Store actions (tagging an order or a customer, setting a stock count, rewriting a product’s description and SEO text, marking an order shipped with tracking, creating a discount code inside your caps) are one fixed change each, made only by the gateway after you approve. The app may have read scopes plus write_orders, write_customers, write_inventory, write_products, write_merchant_managed_fulfillment_orders and write_discounts; a key with any other write scope is refused when you paste it. Shopify’s write_products also covers prices and deleting products: OPERATOR’s server never sends either, so the server is the limit. Order reads carry no customer names or addresses. Marking an order shipped makes Shopify email the customer its own shipping confirmation; that is the only customer email any store action causes.",
+    about: "Our own Shopify server, run in the app with the custom app the business makes in Shopify. Each read runs one fixed query written in code and can’t change anything; no tool takes GraphQL. Store actions (tagging an order or a customer, setting a stock count, rewriting a product’s description and SEO text, marking an order shipped with tracking, creating a discount code inside your caps, refunding an order inside your refund caps) are one fixed change each, made only by the gateway after you approve. The app may have read scopes plus write_orders, write_customers, write_inventory, write_products, write_merchant_managed_fulfillment_orders and write_discounts; a key with any other write scope is refused when you paste it. Shopify’s write_products also covers prices and deleting products: OPERATOR’s server never sends either, so the server is the limit. Order reads carry no customer names or addresses. Shopify’s write_orders also allows refunds: OPERATOR refunds only to the original payment, inside the refund caps on Settings, with Shopify working out the amount. Marking an order shipped makes Shopify email the customer its own shipping confirmation, and a refund its own refund confirmation; those are the only customer emails any store action causes.",
     checks: [{ key: "shopify", label: "Store", setup: "Paste your OPERATOR app’s key below, and fill in the store (and the client id if the key is a client secret) on Settings > Where things go." }],
   },
   {
@@ -124,8 +124,9 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     id: "email", name: "Email to you", sub: "Briefs and alerts", icon: "inbox", builtIn: false,
-    about: "Sends through Resend to the owner email on Settings > Where things go, always one of this business’s owners. The code has no way to name anyone else.",
-    checks: [{ key: "email", label: "Email", setup: "Set RESEND_API_KEY and BRIEF_FROM (a sender on a domain verified in Resend) in Vercel, and pick the owner email on Settings > Where things go." }],
+    about: "Your morning brief and alerts, emailed to one of this business’s owners. The code has no way to email anyone else.",
+    // what this card says it does (or why not) is worked out per business: emailLine in core/settings-rules.ts
+    checks: [{ key: "email", label: "Email", setup: "No emails go out yet. Pick who gets the morning brief and alerts on Settings > Business > Where things go." }],
   },
   {
     id: "web", name: "The web", sub: "Search and read pages", icon: "globe", builtIn: false,
