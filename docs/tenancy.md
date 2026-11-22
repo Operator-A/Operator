@@ -222,7 +222,9 @@ request that runs it as the job's org. One scheduler serves every org.
   `chain_waits` is gone (it never had a row).
 - **Enqueue** (`core/jobs.ts`, `startStep` in `core/chain.ts`): a chain step is enqueued as the
   current org and, unless it waits for a time, kicked straight away.
-- **Kick**: a signed request to `/api/jobs/<id>?org=<org>` (`CRON_SECRET` bearer). It resolves in
+- **Kick**: a signed request to `/api/jobs/<id>?org=<org>` (`CRON_SECRET` bearer, plus Vercel's
+  `x-vercel-protection-bypass` header when `VERCEL_AUTOMATION_BYPASS_SECRET` is set; see "Vercel
+  Authentication" below). It never follows a redirect. It resolves in
   seconds, not when the work ends.
 - **Worker** (`app/api/jobs/[id]`): runs as `?org`, so the job is read through `db()` scoped to
   that org and, with the database lock on, with that org's token: a job of another org can't be
@@ -244,6 +246,18 @@ request that runs it as the job's org. One scheduler serves every org.
 Tested on a local Postgres: a second job with the same key in an org is refused, a bad kind or a
 non-object payload is refused, a job is claimed once, and an org's token can't see, claim or update
 another org's job.
+
+### Vercel Authentication (card 205, 2026-11-21)
+
+A kick is the app calling itself. With Vercel Authentication on (Deployment Protection, "all except
+custom domains") and no custom domain, Vercel answers that call with a redirect to its sign-in page,
+the kick refuses the redirect, and the job never starts (logged as `could not be started: fetch
+failed: unexpected redirect`). Turn on **Protection Bypass for Automation** in the project's
+Deployment Protection settings: Vercel then adds `VERCEL_AUTOMATION_BYPASS_SECRET` to every
+deployment, and the kick sends it. Self-hosted, nothing is needed (the variable stays blank).
+
+A waiting job more than 2 hours past its start time (`MISSED_MS`) is marked failed by the scheduler
+("Never started"), so a step meant for the morning never runs in the evening after kicks were failing.
 
 ### Setup (the owner, once)
 

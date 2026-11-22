@@ -4,7 +4,7 @@ import { loadCrew } from "@/agents/registry";
 import { claimFiring, startStep } from "@/core/chain";
 import { allOrgIds } from "@/core/db";
 import { firingsBetween, loadFlow } from "@/core/flow";
-import { dueJobs, failStale, kick } from "@/core/jobs";
+import { dueJobs, failMissed, failStale, kick } from "@/core/jobs";
 import { orgOn } from "@/core/org-switch";
 import { cronAuthorized } from "@/core/runs";
 import { withOrg } from "@/core/tenancy";
@@ -18,7 +18,7 @@ export const maxDuration = 60;
 
 // The scheduler: the one Vercel Schedule (vercel.json "dispatch", every 15 minutes; this plan's schedules run up to 15 minutes late, so it can't be more often). For each org in
 // turn, as that org (docs/tenancy.md, slice 3): it starts the chains whose schedule came due in the
-// last hour (each firing once: chain_fires), marks failed the jobs that never finished, and kicks
+// last hour (each firing once: chain_fires), marks failed the jobs that never finished (and the waiting ones more than 2 hours past their start), and kicks
 // the jobs that are due (a step whose "not before" time has come, or one whose kick was lost). The
 // work itself runs in workers (/api/jobs/<id>), each its own request through withRun. While an org
 // is off (core/org-switch.ts, docs/org-schedule.md) no chain of it starts on its own; the worker
@@ -63,6 +63,8 @@ async function schedule(origin: string, now: number) {
     }
   }
   const stale = await failStale(now);
+  // a step whose kicks kept failing is skipped once it is hours late, not run at the wrong time of day
+  const missed = await failMissed(now);
   const due = await dueJobs(now);
   await Promise.all(due.map((id) => kick(origin, id)));
   // trusted actions never stop the scheduler; with controls off they wait, as approved ones do
@@ -71,5 +73,5 @@ async function schedule(origin: string, now: number) {
   // the shared-brain snapshot never stops the scheduler either; at most one a day
   const brain = edition() === "cloud" ? await takeSnapshot().catch((e) => { console.error("[dispatch] brain", e instanceof Error ? e.message : e); return "failed"; }) : null;
   const alerted = await sendStatusAlerts(origin, now).catch((e) => { console.error("[dispatch] alerts", e instanceof Error ? e.message : e); return []; });
-  return { on, started, kicked: due.length, stale, trusted, brain, alerted, problems: flow.problems };
+  return { on, started, kicked: due.length, stale, missed, trusted, brain, alerted, problems: flow.problems };
 }
