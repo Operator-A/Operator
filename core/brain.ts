@@ -8,6 +8,7 @@ import { orgDate } from "@/core/tz";
 import { TEMPLATES } from "@/core/templates";
 import { TOOLS } from "@/core/gateway/policy";
 import { readPlans } from "@/core/tools-step-rules";
+import { checkCampaignResults, recentCampaigns } from "@/core/campaign-results";
 import { BRAIN_KEY, NO_BRAIN, buildSnapshot, readBrainSettings, snapshotProblem, type BrainSettings, type Snapshot } from "@/core/brain-rules";
 
 export const BRAIN_MISSING = "The shared brain table isn’t in Supabase yet: apply the migration 20261226090000_shared_brain.sql.";
@@ -35,7 +36,7 @@ export async function forgetSnapshot(): Promise<void> {
 
 /** The business's snapshot as it is saved, for Settings. Null when there is none. */
 export async function savedSnapshot(): Promise<Snapshot | null> {
-  const { data, error } = await db().from("brain_snapshots").select("taken_on, kind, revenue_band, age_band, tools, departments, bespoke, on_duty, actions, levels").maybeSingle();
+  const { data, error } = await db().from("brain_snapshots").select("taken_on, kind, revenue_band, age_band, tools, departments, bespoke, on_duty, actions, levels, results").maybeSingle();
   if (error || !data) return null;
   return data as Snapshot;
 }
@@ -44,7 +45,7 @@ export async function savedSnapshot(): Promise<Snapshot | null> {
 export async function computeSnapshot(kind: BrainSettings["kind"]): Promise<Snapshot> {
   const today = await orgDate();
   const since = new Date(Date.now() - 30 * 864e5).toISOString();
-  const [org, setup, conns, depts, agents, approvals, levels, kpis] = await Promise.all([
+  const [org, setup, conns, depts, agents, approvals, levels, kpis, campaigns] = await Promise.all([
     db().from("orgs").select("created_at").maybeSingle(),
     db().from("policies").select("value_json").eq("key", "setup").maybeSingle(),
     db().from("mcp_connections").select("id").not("connected_at", "is", null),
@@ -53,6 +54,7 @@ export async function computeSnapshot(kind: BrainSettings["kind"]): Promise<Snap
     db().from("approvals").select("status, agent_actions(tool)").gte("decided_at", since),
     db().from("trust_levels").select("tool, level").neq("level", "draft"),
     db().from("kpi_snapshots").select("revenue").gte("date", await orgDate(30)),
+    recentCampaigns(),
   ]);
   for (const r of [org, conns, depts, agents, approvals]) if (r.error) throw new Error(r.error.message);
   const plans = readPlans(((setup.data as { value_json?: { plans?: unknown } } | null)?.value_json ?? {}).plans);
@@ -72,6 +74,7 @@ export async function computeSnapshot(kind: BrainSettings["kind"]): Promise<Snap
     })),
     levels: levels.error ? [] : ((levels.data ?? []) as { tool: string; level: string }[]),
     actionTypes: Object.keys(TOOLS),
+    campaigns,
   });
 }
 
@@ -86,6 +89,8 @@ export async function takeSnapshot(): Promise<"off" | "already" | "taken"> {
   const { data: had, error } = await db().from("brain_snapshots").select("taken_on").maybeSingle();
   if (error) throw new Error(/brain_snapshots/.test(error.message) ? BRAIN_MISSING : error.message);
   if ((had as { taken_on?: string } | null)?.taken_on === today) return "already";
+  // slice 4b: how sent campaigns turned out, read once a day before the snapshot; never stops it
+  await checkCampaignResults().catch((e) => console.error("[brain] campaign results", e instanceof Error ? e.message : e));
   const snap = await computeSnapshot(s.kind);
   const problem = snapshotProblem(snap);
   if (problem) throw new Error(`Snapshot not saved: ${problem}`);

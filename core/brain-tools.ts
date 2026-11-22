@@ -10,7 +10,7 @@ import "server-only";
 //   that finishes, and only when the owner hasn't picked one on Settings > Shared brain.
 import { edition, similarBusinesses } from "@/core/extensions";
 import { brainSettings, savedSnapshot, saveBrainSettings } from "@/core/brain";
-import { BRAIN_TOPICS, BUSINESS_KINDS, KIND_WORDS, isKind, isTopic, type Similar } from "@/core/brain-rules";
+import { BRAIN_TOPICS, BUSINESS_KINDS, KIND_WORDS, isKind, isTopic, workedBlock, workedNote, type Similar } from "@/core/brain-rules";
 import { TOOL_CATEGORIES } from "@/core/tools-step-rules";
 import type { ToolDef } from "@/core/tools/types";
 
@@ -67,4 +67,22 @@ export function kindTool(held: { said: string | null }): ToolDef | null {
       return held.said;
     },
   };
+}
+
+/**
+ * Slice 4b (card 234): what has worked for the action types an agent holds, handed to it by code before
+ * it drafts (the cloud edition; null on the open edition or when nothing came back). The block goes in
+ * its prompt; the note goes on each approval card it stages, so the owner sees what it was shown.
+ */
+export async function workedFor(actionTypes: readonly string[]): Promise<{ block: string; note: string } | null> {
+  const types = [...new Set(actionTypes)].slice(0, 3);
+  if (edition() !== "cloud" || !types.length) return null;
+  const [s, snap] = await Promise.all([brainSettings(), savedSnapshot()]);
+  const got = await Promise.all(types.map((action) => similarBusinesses({ topic: "approvals", kind: s.kind, revenue: snap?.revenue_band ?? "unknown", action })));
+  const merged: Similar = { counts: got.flatMap((g) => g?.counts ?? []), playbook: [] };
+  const seen = new Set<string>();
+  for (const l of got.flatMap((g) => g?.playbook ?? [])) if (!seen.has(l.title)) { seen.add(l.title); merged.playbook.push(l); }
+  merged.playbook = merged.playbook.slice(0, 3);
+  const block = workedBlock(merged), note = workedNote(merged);
+  return block && note ? { block, note } : null;
 }

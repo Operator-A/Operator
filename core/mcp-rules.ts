@@ -508,7 +508,7 @@ export function listSize(payload: unknown): { id: string; name: string; profiles
 
 export const REPORT_PERIODS = ["last_7_days", "last_30_days", "last_90_days", "last_365_days"] as const;
 export const REPORT_STATS = ["recipients", "delivered", "opens_unique", "clicks_unique", "conversions", "unsubscribes"] as const;
-export interface ReportRow { name: string; channel: string; sent: string; recipients: number; delivered: number; opens: number; clicks: number; orders: number; revenue: number; unsubscribes: number }
+export interface ReportRow { id: string; name: string; channel: string; sent: string; recipients: number; delivered: number; opens: number; clicks: number; orders: number; revenue: number; unsubscribes: number }
 
 /** One row per campaign or flow message, with the counts it reported. Names are the business's own words, still shown as data. */
 export function reportRows(payload: unknown, kind: "campaign" | "flow"): ReportRow[] {
@@ -516,6 +516,7 @@ export function reportRows(payload: unknown, kind: "campaign" | "flow"): ReportR
     const r = obj(x), s = obj(r.statistics), g = obj(r.groupings);
     const det = obj(obj(kind === "campaign" ? r.campaign_details : r.flow_details).attributes);
     return {
+      id: str(g[`${kind}_id`], 80),
       name: str(det.name) || str(g.flow_name) || str(g.campaign_message_name) || str(g[`${kind}_id`], 40),
       channel: str(g.send_channel, 30),
       sent: str(det.send_time, 40),
