@@ -583,6 +583,9 @@ button.org-seat { cursor: pointer; }
 .lc-card.open .lc-sd { background: none; width: auto; height: auto; margin-top: 0; }
 .lc-card.open .lc-sd::before { content: "+"; font-style: normal; font-weight: 700; color: var(--mut); }
 .lc-card.you .lc-in { background: var(--ink); color: var(--ws); border-color: transparent; } .lc-card.you .lc-role { color: inherit; opacity: .7; }
+.lc-fold .lc-in { width: var(--cw, 120px); height: var(--ch, 26px); align-items: center; gap: 6px; padding: 0 10px; border-radius: 10px; font-size: 11.5px; font-weight: 600; color: var(--ink2); background: color-mix(in srgb, var(--lc-strong) 55%, transparent); border: 1px solid var(--lc-bd); }
+.lc-fold:hover .lc-in { color: var(--ink); background: var(--lc-strong); }
+.lc-fold.shown .lc-in { background: none; border-color: transparent; color: var(--mut); }
 .lc-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .lc-meta b { font-size: 13px; font-weight: 700; line-height: 1.25; } .lc-role { font-size: 11px; line-height: 1.25; color: var(--ink2); }
 .lc-meta b, .lc-role { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

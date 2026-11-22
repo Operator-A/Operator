@@ -20,6 +20,7 @@ The owner, 2026-11-22: the Crew page should look alive and let you dig into each
 |---|---|---|
 | 1 | The canvas: whole company and an opened department, report and hand-off lines, today's runs as pulses, the department and agent panel | The read-only org chart on `/crew` and its phone folding (`DeptSummary`, the fold buttons, the team counts, their styles). `OrgChart.tsx` becomes the Edit chart view only. |
 | 2 | What waits for you and draft checks: an amber line from an agent to you for each draft in Approvals, a green line where a lead checks a draft first, the count on each department and card | The "waiting" counts stay text-only until this slice; nothing else to delete |
+| 1b | Big departments fold: a department with more than 5 seats starts as its head, and a row under each seat with a team shows or hides the next level down | Nothing: the whole tree always showing is what it changes |
 
 ## Slice 1: the canvas
 
@@ -45,3 +46,16 @@ The owner, 2026-11-22: the Crew page should look alive and let you dig into each
 **Tests.** `npm run check:org-canvas`: for phone, tablet and desktop widths, with the whole company and with each department opened, every seat has a box, no two cards overlap, nothing leaves the canvas, every line joins two boxes that are showing, a report line exists for every seat with someone above it, and a hand-off line exists only for two steps in a row of a chain that is on with pass-along set. It also checks the deleted folding code and styles are gone and that the canvas component calls no server action. `npm run check`, `npm run build`.
 
 **Not in this slice.** Lines for approvals and draft checks (slice 2). Live updates without a reload.
+
+## Slice 1b: big departments fold
+
+The owner, 2026-11-22, with a phone screenshot of a 12-seat Marketing department running off the screen: a department with a lot of agents should show its head and expand downwards into the agents under it.
+
+- A department with more than 5 seats (`FOLD_AT` in `dashboard/org-canvas.ts`) starts folded: only its head shows, with a row under it, "Show 8 seats" (every seat under the head, at any depth). A smaller department starts with every seat showing.
+- Clicking the row shows the seats right under that seat, each with its own row when it has a team, so you open one level at a time. Clicking it again ("Hide 8 seats") folds everything under that seat back.
+- An opened department always shows its head and the seats right under it; the seats under those leads follow the same rows.
+- What is open lives in the page and resets on reload. The same choice holds on the whole company and inside an opened department.
+- A seat that is folded away draws no card and no report line. A hand-off to or from it lands on the nearest seat above it that shows, so a chain into a folded team still points at that team.
+- Seats grow out of the seat above them when its row opens, and fold back into it.
+
+**Tests.** `npm run check:org-canvas` lays every sample out as the page loads, with every team open and with every team folded, and checks that a seat shows only when every seat above it is open, that each seat with a team has its row right under it, and that hand-off lines land on the nearest seat that shows.

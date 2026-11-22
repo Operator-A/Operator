@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deptBox, layoutCanvas, moveLines, seatName, type Box, type CanvasData, type CanvasDept, type CanvasRun, type CanvasSeat, type Line } from "../org-canvas";
+import { defaultOpen, deptBox, layoutCanvas, moveLines, seatName, teamSize, type Box, type CanvasData, type CanvasDept, type CanvasRun, type CanvasSeat, type Line } from "../org-canvas";
 import { GoalTile } from "./goals";
 import { Icon } from "./Icon";
 import { DeptLimits } from "./orgBits";
@@ -47,9 +47,12 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
   const [focus, setFocus] = useState<string | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [hot, setHot] = useState<string | null>(null);
+  // whose teams show: a big department starts as its head, and each fold row opens one level down
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => defaultOpen(d));
+  const fold = (seat: string) => setOpen((o) => { const n = new Set(o); if (!n.delete(seat)) n.add(seat); return n; });
 
   const opened = focus ? d.depts.find((x) => x.id === focus) ?? null : null;
-  const lay = useMemo(() => (W ? layoutCanvas(d, W, opened?.id ?? null) : null), [d, W, opened]);
+  const lay = useMemo(() => (W ? layoutCanvas(d, W, opened?.id ?? null, open) : null), [d, W, opened, open]);
   const seats = useMemo(() => new Map<string, { seat: CanvasSeat; dept: CanvasDept | null }>([...(d.company ? [[d.company.id, { seat: d.company, dept: null }] as const] : []), ...d.depts.flatMap((dp) => dp.seats.map((s) => [s.id, { seat: s, dept: dp }] as const))]), [d]);
   const picked = sel && opened?.seats.some((s) => s.id === sel) ? sel : null;
 
@@ -170,6 +173,7 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
 
   const click = (b: Box) => {
     if (b.kind === "dept") return go(b.id.slice(5));
+    if (b.kind === "fold") return b.of ? fold(b.of) : undefined;
     const at = seats.get(b.id);
     if (b.kind === "you" || !at?.dept) { if (opened) go(null); return; }
     if (!opened) return go(at.dept.id);
@@ -200,6 +204,16 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
                 return (
                   <button key={b.id} {...common} className={cls(b, `lc-dept${b.focus ? " focus" : ""}${b.port ? " port" : ""}`)} style={{ "--hue": HUES[i % HUES.length] } as React.CSSProperties} aria-label={`Open ${dp.name}`}>
                     <span className="lc-in"><span className="lc-cell" style={size(b)}><span className="lc-lbl"><b>{dp.name}</b></span></span></span>
+                  </button>
+                );
+              }
+              if (b.kind === "fold") {
+                const at = b.of ? seats.get(b.of) : null;
+                if (!at?.dept) return null;
+                const n = teamSize(at.dept, at.seat.id), shown = open.has(at.seat.id) || (opened && at.seat.id === opened.seats[0]?.id);
+                return (
+                  <button key={b.id} {...common} className={cls(b, `lc-fold${shown ? " shown" : ""}`)} aria-expanded={!!shown} aria-label={`${shown ? "Hide" : "Show"} the ${n} seat${n === 1 ? "" : "s"} under ${seatName(at.seat)}`}>
+                    <span className="lc-in" style={size(b)}><Icon name={shown ? "chevron-up" : "chevron-down"} size={13} /><span>{shown ? "Hide" : "Show"} {n} seat{n === 1 ? "" : "s"}</span></span>
                   </button>
                 );
               }

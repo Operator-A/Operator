@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import type { Chain } from "../core/flow-rules";
-import { YOU, colsFor, deptBox, handoffsOf, layoutCanvas, moveLines, seatName, type Box, type CanvasData, type CanvasDept, type CanvasSeat } from "../dashboard/org-canvas";
+import { FOLD_AT, YOU, colsFor, defaultOpen, deptBox, foldBox, handoffsOf, layoutCanvas, teamSize, moveLines, seatName, type Box, type CanvasData, type CanvasDept, type CanvasSeat } from "../dashboard/org-canvas";
 
 const read = (p: string) => readFileSync(p, "utf8");
 
@@ -48,12 +48,14 @@ const edges = (b: Box) => ({ l: b.x - b.w / 2, r: b.x + b.w / 2, t: b.y - b.h / 
 const overlap = (a: Box, b: Box) => { const p = edges(a), q = edges(b); return p.l < q.r - .5 && q.l < p.r - .5 && p.t < q.b - .5 && q.t < p.b - .5; };
 const inside = (a: Box, b: Box) => { const p = edges(a), q = edges(b); return p.l >= q.l - .5 && p.r <= q.r + .5 && p.t >= q.t - .5 && p.b <= q.b + .5; };
 
+// each layout is tried as the page loads, with every team open, and with every team folded
+const folds = (d: CanvasData): [string, Set<string>][] => [["as it loads", defaultOpen(d)], ["all open", new Set(d.depts.flatMap((x) => x.seats.map((s) => s.id)))], ["all folded", new Set()]];
 let layouts = 0;
 for (const [name, d] of cases) {
   for (const W of WIDTHS) {
-    for (const focus of [null, ...d.depts.map((x) => x.id)]) {
-      const at = `${name}, ${W}px, ${focus ?? "whole company"}`;
-      const L = layoutCanvas(d, W, focus);
+    for (const focus of [null, ...d.depts.map((x) => x.id)]) for (const [fold, open] of folds(d)) {
+      const at = `${name}, ${W}px, ${focus ?? "whole company"}, ${fold}`;
+      const L = layoutCanvas(d, W, focus, open);
       layouts++;
       const all = Object.values(L.boxes), shown = all.filter((b) => b.show);
       const seats = [...(d.company ? [d.company] : []), ...d.depts.flatMap((x) => x.seats)];
@@ -69,7 +71,7 @@ for (const [name, d] of cases) {
         const e = edges(b);
         assert.ok(e.l >= -.5 && e.r <= W + .5, `${at}: ${b.id} is inside the width (${e.l} to ${e.r})`);
         assert.ok(e.t >= -.5 && e.b <= L.height + .5, `${at}: ${b.id} is inside the height`);
-        assert.ok(b.w >= (b.kind === "seat" ? 60 : 100), `${at}: ${b.id} is ${b.w} wide`);
+        assert.ok(b.w >= (b.kind === "seat" || b.kind === "fold" ? 60 : 100), `${at}: ${b.id} is ${b.w} wide`);
       }
 
       // no two cards overlap, no two departments overlap, and a seat sits inside its department
@@ -98,11 +100,28 @@ for (const [name, d] of cases) {
         assert.deepEqual(up.map((l) => l.b), [s.parent ?? top], `${at}: ${s.id} reports to ${s.parent ?? top}`);
       }
 
-      // hand-off lines only where the data has one
+      // folding: a seat shows when every seat above it is open (an opened department always shows its
+      // head's seats), and a seat with a team that shows has the row that folds it
+      const parent = new Map(d.depts.flatMap((x) => x.seats.map((s) => [s.id, s.parent] as const)));
+      const heads = new Set(d.depts.map((x) => x.seats[0]?.id));
+      const unfolded = (id: string): boolean => { const p = parent.get(id); return !p || ((open.has(p) || (focus != null && heads.has(p))) && unfolded(p)); };
+      for (const x of d.depts) {
+        if (focus && x.id !== focus) continue;
+        for (const s of x.seats) {
+          assert.equal(L.boxes[s.id].show, unfolded(s.id), `${at}: ${s.id} shows only when the seats above it are open`);
+          const kids = x.seats.some((k) => k.parent === s.id), f = L.boxes[foldBox(s.id)];
+          assert.equal(!!f, kids, `${at}: ${s.id} has a fold row exactly when it has a team`);
+          if (f) assert.equal(f.show, L.boxes[s.id].show && !(focus && heads.has(s.id)), `${at}: the fold row of ${s.id} shows with its seat (an opened head has none)`);
+          if (f?.show) assert.ok(f.y > L.boxes[s.id].y && f.of === s.id, `${at}: the fold row sits under ${s.id}`);
+        }
+      }
+
+      // hand-off lines only where the data has one, landing on the nearest seat that shows
       const deptOf = (id: string) => d.depts.find((x) => x.seats.some((s) => s.id === id))?.id;
+      const up = (id: string) => { let s: string | null | undefined = id; while (s && !L.boxes[s]?.show) s = parent.get(s); return s; };
       for (const l of L.lines.filter((x) => x.type === "handoff")) {
         const ok = d.handoffs.some((h) => {
-          const a = l.a.startsWith("dept:") ? deptBox(deptOf(h.from) ?? "") : h.from, b = l.b.startsWith("dept:") ? deptBox(deptOf(h.to) ?? "") : h.to;
+          const a = l.a.startsWith("dept:") ? deptBox(deptOf(h.from) ?? "") : up(h.from), b = l.b.startsWith("dept:") ? deptBox(deptOf(h.to) ?? "") : up(h.to);
           return a === l.a && b === l.b;
         });
         assert.ok(ok, `${at}: the hand-off line ${l.a} to ${l.b} comes from a chain`);
@@ -110,24 +129,39 @@ for (const [name, d] of cases) {
 
       if (!focus) {
         assert.equal(L.cols, colsFor(W, d.depts.length));
-        assert.ok(all.every((b) => b.show && !b.big && !b.focus && !b.port), `${at}: the whole company shows every box, small`);
-        assert.equal(L.lines.filter((l) => l.type === "handoff").length, d.handoffs.length, `${at}: every hand-off is drawn`);
+        assert.ok(all.every((b) => !b.big && !b.focus && !b.port), `${at}: the whole company draws every box small`);
+        assert.ok(all.filter((b) => b.kind === "dept" || b.kind === "you").every((b) => b.show), `${at}: every department shows`);
+        if (fold === "all open") assert.equal(L.lines.filter((l) => l.type === "handoff").length, d.handoffs.length, `${at}: every hand-off is drawn`);
       } else {
         const mine = d.depts.find((x) => x.id === focus)!;
         assert.ok(L.boxes[deptBox(focus)].focus, `${at}: the opened department is marked`);
-        for (const s of mine.seats) assert.ok(L.boxes[s.id].show, `${at}: its seat ${s.id} shows`);
+        for (const s of mine.seats) if (s.depth <= 1) assert.ok(L.boxes[s.id].show, `${at}: its seat ${s.id} shows`);
         assert.ok(L.boxes[mine.seats[0].id].big, `${at}: its head is a big card`);
         for (const x of d.depts) {
           if (x.id === focus) continue;
           const b = L.boxes[deptBox(x.id)];
           const trades = d.handoffs.some((h) => (deptOf(h.from) === focus && deptOf(h.to) === x.id) || (deptOf(h.to) === focus && deptOf(h.from) === x.id));
           assert.ok(!b.show || (b.port && trades), `${at}: ${x.id} leaves unless it trades work with the opened department`);
-          for (const s of x.seats) assert.ok(!L.boxes[s.id].show, `${at}: ${s.id} leaves`);
+          for (const s of x.seats) assert.ok(!L.boxes[s.id].show && !L.boxes[foldBox(s.id)]?.show, `${at}: ${s.id} leaves`);
         }
       }
     }
   }
 }
+
+// a big department starts folded to its head; a small one starts open
+assert.ok(depts[0].seats.length > FOLD_AT && depts[1].seats.length <= FOLD_AT);
+const loads = layoutCanvas(full, 886, null);
+assert.deepEqual(depts[0].seats.filter((s) => loads.boxes[s.id].show).map((s) => s.id), ["s1"], "sales (7 seats) shows only its head");
+assert.ok(loads.boxes[foldBox("s1")].show, "with a row to open its team");
+assert.deepEqual(depts[1].seats.filter((s) => loads.boxes[s.id].show).map((s) => s.id), ["m1", "m2"], "money (2 seats) shows every seat");
+assert.equal(teamSize(depts[0], "s1"), 6); assert.equal(teamSize(depts[0], "s2"), 2); assert.equal(teamSize(depts[0], "s3"), 0);
+// opening the head shows the next level down, and only that
+const one = layoutCanvas(full, 886, null, new Set(["s1"]));
+assert.deepEqual(depts[0].seats.filter((s) => one.boxes[s.id].show).map((s) => s.id), ["s1", "s2", "s5", "s6"]);
+assert.ok(one.height > loads.height, "the canvas grows when a team opens");
+// the folded sales head still takes Morgan's hand-off, and Reese's to Rico (folded) draws no line
+assert.deepEqual(loads.lines.filter((l) => l.type === "handoff").map((l) => `${l.a}>${l.b}`), ["m1>s1"]);
 
 // columns: two on a phone, never more than five or than there are departments
 assert.equal(colsFor(326, 5), 2);
