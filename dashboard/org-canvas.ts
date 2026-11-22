@@ -279,7 +279,11 @@ export function layoutCanvas(d: CanvasData, W: number, focus: string | null, ope
     hideRest(opened, id);
   }
   // the departments it trades work with stay as pills under it; the rest leave
-  const linked = d.handoffs.flatMap((x) => (deptOfSeat[x.from] === opened.id && deptOfSeat[x.to] !== opened.id ? [deptOfSeat[x.to]] : deptOfSeat[x.to] === opened.id && deptOfSeat[x.from] !== opened.id ? [deptOfSeat[x.from]] : []));
+  // (a hand-off with the company seat, which is in no department, adds no pill: that seat is already on screen)
+  const linked = d.handoffs.flatMap((x) => {
+    const from = deptOfSeat[x.from], to = deptOfSeat[x.to];
+    return from === opened.id && to && to !== opened.id ? [to] : to === opened.id && from && from !== opened.id ? [from] : [];
+  });
   const ports = [...new Set(linked)].slice(0, Math.max(1, Math.floor((cellW + GAP) / (150 + GAP))));
   ports.forEach((p, i) => box(deptBox(p), "dept", PAD + 75 + i * (150 + GAP), cellTop + h + 46, 150, 38, { port: true }));
   for (const dp of d.depts) {
@@ -290,7 +294,12 @@ export function layoutCanvas(d: CanvasData, W: number, focus: string | null, ope
       if (kidsOf(dp, s.id).length) box(foldBox(s.id), "fold", 0, 0, 100, FH, { show: false, rides: deptBox(dp.id), of: s.id });
     }
   }
-  const end = (seat: string) => (deptOfSeat[seat] === opened.id ? shownUp(seat) : ports.includes(deptOfSeat[seat]) ? deptBox(deptOfSeat[seat]) : null);
+  const end = (seat: string) => {
+    const dp = deptOfSeat[seat];
+    if (dp === opened.id) return shownUp(seat);
+    if (dp) return ports.includes(dp) ? deptBox(dp) : null;
+    return boxes[seat]?.show ? seat : null;
+  };
   const seen = new Set<string>();
   for (const x of d.handoffs) {
     if (deptOfSeat[x.from] !== opened.id && deptOfSeat[x.to] !== opened.id) continue;

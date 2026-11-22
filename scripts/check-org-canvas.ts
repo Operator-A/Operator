@@ -41,6 +41,9 @@ const cases: [string, CanvasData][] = [
   ["no company seat", { ...full, company: null }],
   ["one department", { ...full, depts: depts.slice(0, 1), handoffs: handoffs.slice(1) }],
   ["no departments", { ...full, depts: [], handoffs: [] }],
+  // the company seat is in no department: a hand-off to or from it must still lay out (opening the
+  // department used to make a pill for a department that doesn't exist and crash the page)
+  ["a hand-off with the company seat", { ...full, handoffs: [...handoffs, { from: "m2", to: "top", chain: "Up" }, { from: "top", to: "s1", chain: "Down" }] }],
 ];
 const WIDTHS = [326, 390, 600, 886, 1200, 1500];
 
@@ -200,6 +203,11 @@ assert.equal(colsFor(600, 5), 4);
 assert.equal(colsFor(326, 1), 1);
 assert.equal(colsFor(1500, 9), 5);
 assert.equal(colsFor(886, 3), 3);
+// a hand-off between a department and the company seat runs straight to that seat, with no pill
+const withTop = cases.find(([n]) => n === "a hand-off with the company seat")![1];
+const money = layoutCanvas(withTop, 1200, "money", new Set(["m1"]));
+assert.ok(!Object.keys(money.boxes).some((k) => k.includes("undefined")), "no box for a department that doesn't exist");
+assert.ok(money.lines.some((l) => l.type === "handoff" && l.a === "m2" && l.b === "top"), "Quinn's hand-off reaches the company seat");
 // a focus that names no department is the whole company
 assert.deepEqual(layoutCanvas(full, 886, "gone"), layoutCanvas(full, 886, null));
 // the same input gives the same layout (nothing random, so it doesn't jump between renders)
