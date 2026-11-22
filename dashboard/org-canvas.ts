@@ -93,13 +93,13 @@ export interface Line { a: string; b: string; type: "report" | "handoff"; shape:
 export interface Layout { boxes: Record<string, Box>; lines: Line[]; height: number; cols: number }
 
 export const PAD = 16;
-const GAP = 12, CH = 44, FH = 26, INDENT = 16, COL_MIN = 128, COL_MAX = 260;
+const GAP = 12, CH = 52, FH = 26, INDENT = 16, COL_MIN = 128, COL_MAX = 260;
 /** A department with more seats than this starts folded down to its head. */
 export const FOLD_AT = 5;
 export const foldBox = (seat: string) => `fold:${seat}`;
 
 /** How tall a department's card is in the phone's list. */
-export const LIST_H = 156;
+export const LIST_H = 164;
 /** Below this width (a phone) the whole company is a list of department cards, one per row. */
 export const PHONE = 560;
 /** The left gutter on a phone, where every department's line runs up to the company seat. */
@@ -192,8 +192,8 @@ export function layoutCanvas(d: CanvasData, W: number, focus: string | null, ope
       const id = deptBox(dp.id);
       box(id, "dept", cx, y + LIST_H / 2, colW, LIST_H, { list: true });
       for (const s of dp.seats) {
-        box(s.id, "seat", cx, y + 62, colW - 24, CH, { show: false, rides: id });
-        if (kidsOf(dp, s.id).length) box(foldBox(s.id), "fold", cx, y + 62, colW - 24, FH, { show: false, rides: id, of: s.id });
+        box(s.id, "seat", cx, y + 66, colW - 24, CH, { show: false, rides: id });
+        if (kidsOf(dp, s.id).length) box(foldBox(s.id), "fold", cx, y + 66, colW - 24, FH, { show: false, rides: id, of: s.id });
       }
       line(id, top, "report", "spine");
       y += LIST_H + 14;
