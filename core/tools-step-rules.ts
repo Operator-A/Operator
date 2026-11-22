@@ -190,6 +190,7 @@ export const SCOPE_WORDS: Record<string, string> = {
   write_inventory: "set an item’s stock count at a location, only after you approve each change",
   write_products: "rewrite a product’s description and SEO text, after you approve (later on its own, once it has earned trust); never prices or deletes",
   write_merchant_managed_fulfillment_orders: "mark an order you ship yourself shipped, with a tracking number, only after you approve each one. Shopify then emails the customer its shipping confirmation",
+  write_discounts: "create a percent-off discount code you approved, inside your caps on Settings (most off, uses and days). It never changes or deletes a code",
 };
 
 /** The permissions a tile asks for, each with what it is for. */

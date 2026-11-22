@@ -28,6 +28,9 @@ export async function capLines(now = new Date()): Promise<{ caps: CapLine[] | nu
       max_monthly_spend_usd: spent == null ? "Can’t read payments" : `${fmtCap("max_monthly_spend_usd", spent)} sent this month`,
       max_emails_per_day: sent == null ? "Can’t read emails" : `${sent} sent today${sent === 0 ? " (no email action exists yet)" : ""}`,
       undo_window_minutes: trusted ? `${trusted} kind${trusted === 1 ? "" : "s"} of action at Act with undo (Approvals, Trust levels)` : "Used once an action type earns Act with undo. None has yet",
+      max_discount_percent: "Checked on every discount code card, and again right before Shopify",
+      max_discount_uses: "Checked on every discount code card, and again right before Shopify",
+      max_discount_days: "Checked on every discount code card, and again right before Shopify",
     };
     return {
       caps: CAP_KEYS.map((k) => ({ key: k, ...CAPS[k], value: caps[k].value, missing: caps[k].raw == null, used: used[k] })),

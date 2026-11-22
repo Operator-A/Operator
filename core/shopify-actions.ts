@@ -7,7 +7,7 @@
 import { gql } from "@/core/shopify-rules";
 
 /** The write scopes the Shopify profile asks for. A key with any other write scope is refused. */
-export const SHOPIFY_WRITE_SCOPES = ["write_orders", "write_customers", "write_inventory", "write_products", "write_merchant_managed_fulfillment_orders"] as const;
+export const SHOPIFY_WRITE_SCOPES = ["write_orders", "write_customers", "write_inventory", "write_products", "write_merchant_managed_fulfillment_orders", "write_discounts"] as const;
 
 /** Gateway action type: add tags to one order or one customer. Undo removes only the tags it added. */
 export const SHOPIFY_TAGS = "shopify.add_tags";
@@ -434,8 +434,109 @@ export const SHIP_CREATE = gql`
   }
 `;
 
+// ---------- slice 4: one discount code, percent off, inside caps written in code ----------
+
+/** Gateway action type: create one percent-off discount code. Draft only, never promoted (decided 2026-11-22). */
+export const SHOPIFY_DISCOUNT = "shopify.create_discount";
+/** The write tool on our Shopify server that applies it. */
+export const SHOPIFY_DISCOUNT_TOOL = "shopify_create_discount";
+/** The builder's tool an approver grants (core/tools/catalog.ts). */
+export const SHOPIFY_DISCOUNT_GRANT = "shopify_discount";
+/** The write scope it needs. */
+export const DISCOUNT_SCOPE = "write_discounts";
+/** The tag every agent-made code carries, so live ones can be counted. */
+export const DISCOUNT_TAG = "operator-agent";
+/**
+ * The most a code can ever be (decided 2026-11-22): percent off, uses, and days from start to end. The
+ * owner can set each lower on Settings (CAPS in core/gateway/policy.ts), never higher. Plus: at most
+ * `live` agent-made codes active or scheduled at once, and a start at most `aheadDays` away.
+ */
+export const DISCOUNT_LIMITS = { percent: 20, uses: 100, days: 30, live: 5, aheadDays: 30, title: 60 } as const;
+export type DiscountCaps = { percent: number; uses: number; days: number };
+export interface DiscountArgs { title: string; percent: number; uses: number; starts: string; ends: string }
+
+const CODE = /^[A-Z0-9]{4,20}$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** A discount card's target: `code:<CODE>`, the code it creates. */
+export function discountTarget(target: string): string | null {
+  const m = /^code:(.+)$/.exec(target);
+  return m && CODE.test(m[1]) ? m[1] : null;
+}
+/** A code the way people type it, made comparable: spaces and dashes dropped, upper case. */
+export const normCode = (v: unknown) => String(v ?? "").replace(/[\s-]+/g, "").toUpperCase();
+const dayMs = (d: string) => Date.parse(`${d}T00:00:00Z`);
+const validDay = (d: unknown): d is string => typeof d === "string" && DAY.test(d) && Number.isFinite(dayMs(d)) && new Date(dayMs(d)).toISOString().slice(0, 10) === d;
+/** Whole days from one date to another (YYYY-MM-DD). */
+export const daysBetween = (a: string, b: string) => Math.round((dayMs(b) - dayMs(a)) / 86_400_000);
+/** A date `n` days after another (YYYY-MM-DD). */
+export const addDays = (d: string, n: number) => new Date(dayMs(d) + n * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * Why a discount card is refused, or null: exactly a title, a whole percent off, a use limit and a start
+ * and end date, each inside the caps. No fixed amount, free shipping, product list or customer list can
+ * be named. The caps passed in are the owner's (never above DISCOUNT_LIMITS).
+ */
+export function refuseDiscount(args: Record<string, unknown>, caps: DiscountCaps = DISCOUNT_LIMITS): string | null {
+  const extra = Object.keys(args).filter((k) => !["title", "percent", "uses", "starts", "ends"].includes(k));
+  if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. A discount holds only a title, a percent off, a use limit and its dates.`;
+  const pct = Math.min(caps.percent, DISCOUNT_LIMITS.percent), uses = Math.min(caps.uses, DISCOUNT_LIMITS.uses), days = Math.min(caps.days, DISCOUNT_LIMITS.days);
+  if (typeof args.title !== "string" || !args.title.trim() || args.title.length > DISCOUNT_LIMITS.title || /[\u0000-\u001f<>]/.test(args.title)) return `title must be plain text, 1 to ${DISCOUNT_LIMITS.title} characters.`;
+  if (!Number.isInteger(args.percent) || (args.percent as number) < 1) return "percent must be a whole number of 1 or more.";
+  if ((args.percent as number) > pct) return `${args.percent}% is over the cap of ${pct}% off.`;
+  if (!Number.isInteger(args.uses) || (args.uses as number) < 1) return "uses must be a whole number of 1 or more: every code has a use limit.";
+  if ((args.uses as number) > uses) return `${args.uses} uses is over the cap of ${uses}.`;
+  if (!validDay(args.starts) || !validDay(args.ends)) return "starts and ends must be dates (YYYY-MM-DD): every code has an end date.";
+  const len = daysBetween(args.starts, args.ends);
+  if (len < 1) return "ends must be after starts.";
+  if (len > days) return `${len} days is over the cap of ${days} days.`;
+  return null;
+}
+
+/** Whether the dates still work on `today` (YYYY-MM-DD): when staged, the start is today or later and at most 30 days away; at any time, the end hasn't passed. */
+export function refuseDiscountDates(a: { starts: string; ends: string }, today: string, staging: boolean): string | null {
+  if (a.ends < today) return "This code's end date has passed. Nothing was written.";
+  if (staging && a.starts < today) return "starts can't be in the past.";
+  if (staging && daysBetween(today, a.starts) > DISCOUNT_LIMITS.aheadDays) return `starts can be at most ${DISCOUNT_LIMITS.aheadDays} days away.`;
+  return null;
+}
+
+/** What a staged discount may still do: write only while the code is free and fewer than the live cap of agent codes are active or scheduled. */
+export function planDiscount(live: { taken: boolean; agentLive: number }): { write: true } | { refuse: string } {
+  if (live.taken) return { refuse: "Shopify already has a discount with this code. Nothing was written." };
+  if (live.agentLive >= DISCOUNT_LIMITS.live) return { refuse: `${live.agentLive} agent-made codes are already live (the most is ${DISCOUNT_LIMITS.live}). End one in Shopify first. Nothing was written.` };
+  return { write: true };
+}
+
+/** One code as the live check reads it. */
+export interface DiscountNode { id: string; codeDiscount: { __typename: string; status?: string; tags?: string[] } | null }
+/** Agent-made codes that are active or scheduled. */
+export const agentLiveCount = (nodes: DiscountNode[]) => nodes.filter((n) => n.codeDiscount?.__typename === "DiscountCodeBasic" && (n.codeDiscount.status === "ACTIVE" || n.codeDiscount.status === "SCHEDULED") && (n.codeDiscount.tags ?? []).includes(DISCOUNT_TAG)).length;
+
+// Right before the write: is the code taken, and how many agent-made codes are live (the newest 100
+// codes). A read, so it may live here.
+export const DISCOUNT_OF = gql`
+  query AgentDiscountOf($code: String!) {
+    codeDiscountNodeByCode(code: $code) { id }
+    codeDiscountNodes(first: 100, sortKey: CREATED_AT, reverse: true) {
+      nodes { id codeDiscount { __typename ... on DiscountCodeBasic { status tags } } }
+    }
+  }
+`;
+
+// The only Shopify write in the repo for this action type: one percent-off code on every product for
+// every customer, once per customer, not combined with other discounts, with a use limit and an end date,
+// tagged as agent-made. Only the title, code, percent, dates and use limit come from the card.
+export const DISCOUNT_CREATE = gql`
+  mutation AgentDiscount($title: String!, $code: String!, $percentage: Float!, $startsAt: DateTime!, $endsAt: DateTime!, $usageLimit: Int!) {
+    discountCodeBasicCreate(basicCodeDiscount: { title: $title, code: $code, startsAt: $startsAt, endsAt: $endsAt, usageLimit: $usageLimit, appliesOncePerCustomer: true, context: { all: ALL }, customerGets: { value: { percentage: $percentage }, items: { all: true } }, combinesWith: { orderDiscounts: false, productDiscounts: false, shippingDiscounts: false }, tags: ["operator-agent"] }) {
+      codeDiscountNode { id }
+      userErrors { field message code }
+    }
+  }
+`;
+
 /** Every mutation our Shopify server may run, by write tool. The server refuses any other document. */
-export const SHOPIFY_MUTATIONS: Readonly<Record<string, string>> = { [SHOPIFY_TAGS_TOOL]: TAGS_ADD, [SHOPIFY_STOCK_TOOL]: STOCK_SET, [SHOPIFY_COPY_TOOL]: COPY_SET, [SHOPIFY_SHIP_TOOL]: SHIP_CREATE };
+export const SHOPIFY_MUTATIONS: Readonly<Record<string, string>> = { [SHOPIFY_TAGS_TOOL]: TAGS_ADD, [SHOPIFY_STOCK_TOOL]: STOCK_SET, [SHOPIFY_COPY_TOOL]: COPY_SET, [SHOPIFY_SHIP_TOOL]: SHIP_CREATE, [SHOPIFY_DISCOUNT_TOOL]: DISCOUNT_CREATE };
 
 /** A document is exactly one of the fixed mutations above. */
 export function assertFixedMutation(doc: string): void {

@@ -31,8 +31,8 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
-import { CARRIER_NAMES, COPY_LIMITS, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP_GRANT, normTracking, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, copyText, productTarget, refuseCopyFacts, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { DISCOUNT_LIMITS, SHOPIFY_DISCOUNT_GRANT, addDays, normCode, refuseDiscountDates, CARRIER_NAMES, COPY_LIMITS, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP_GRANT, normTracking, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, copyText, productTarget, refuseCopyFacts, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
 import type { McPeriod } from "@/core/mailchimp-rules";
@@ -72,6 +72,7 @@ import { openOrders, recentOrders } from "@/integrations/shopify/orders";
 import { stockLevels } from "@/integrations/shopify/stock";
 import { productCopy } from "@/integrations/shopify/copy";
 import { ordersToShip } from "@/integrations/shopify/ship";
+import { discountCodes } from "@/integrations/shopify/discounts";
 
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -227,6 +228,16 @@ const TOOLS_LIST: ToolDef[] = [
           : { pick: `sh${i + 1}`, order: o.name, date: o.createdAt?.slice(0, 10) ?? null, items_left: o.items, ships_from: o.from };
       });
       return { data: { orders: rows, note: "A tracking number must come from the owner or a carrier label, never be made up." }, numbers: { orders: rows.length, can_mark: Object.keys(picks).length }, picks };
+    },
+  },
+  {
+    id: "shopify_discount_codes", label: "Discount codes", detail: "Discount codes (up to 100), newest first: code, title, kind, status, dates, percent or amount off, use limit and uses so far, and which ones agents made. No customer data",
+    kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async () => {
+      const list = await discountCodes();
+      const live = list.filter((d) => d.status === "active" || d.status === "scheduled");
+      const rows = list.map((d) => ({ code: d.code, title: d.title, kind: d.kind, status: d.status, starts: d.starts, ends: d.ends, off: d.off, use_limit: d.usesLimit, used: d.used, made_by_agent: d.byAgent }));
+      return { data: { codes: rows, note: `A new code needs its own code text. At most ${DISCOUNT_LIMITS.live} agent-made codes can be live at once.` }, numbers: { codes: rows.length, live: live.length, agent_live: live.filter((d) => d.byAgent).length }, picks: {} };
     },
   },
   {
@@ -1145,6 +1156,31 @@ const TOOLS_LIST: ToolDef[] = [
       if (refused) return { problem: refused };
       const items = typeof row.n === "number" ? row.n : null;
       return { gatewayTool: SHOPIFY_SHIP, target, args, actionType: "order_shipped", title: `${pick.label}: shipped by ${args.carrier}`, preview: { record: pick.label, items, carrier: args.carrier, tracking: args.tracking, notify: true, why: input.why } };
+    },
+  },
+  {
+    id: SHOPIFY_DISCOUNT_GRANT, label: "Create a discount code", detail: `Stages one percent-off discount code for an approver to approve. Always an approval card: it never runs on its own. Every product, once per customer, not combined with other discounts, at most ${DISCOUNT_LIMITS.percent}% off, ${DISCOUNT_LIMITS.uses} uses and ${DISCOUNT_LIMITS.days} days (the owner may set lower caps). Refused if the code is taken or ${DISCOUNT_LIMITS.live} agent-made codes are already live`,
+    kind: "action", becomes: SHOPIFY_DISCOUNT, group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
+    agents: GATEWAY_TOOLS[SHOPIFY_DISCOUNT].agents,
+    params: [
+      { name: "code", type: "text", maxLength: 24, description: "The code customers type, 4 to 20 letters or digits (spaces and dashes are dropped). Check Discount codes first so it isn't taken." },
+      { name: "percent", type: "number", integer: true, description: `Percent off, a whole number up to ${DISCOUNT_LIMITS.percent}.` },
+      { name: "uses", type: "number", integer: true, description: `How many times the code can be used in all, up to ${DISCOUNT_LIMITS.uses}.` },
+      { name: "days", type: "int", min: 1, max: DISCOUNT_LIMITS.days, default: 14, description: `How many days it runs from the start, up to ${DISCOUNT_LIMITS.days}.` },
+      { name: "starts", type: "text", maxLength: 10, optional: true, description: `The start date, YYYY-MM-DD, today or up to ${DISCOUNT_LIMITS.aheadDays} days away. Leave it out to start today.` },
+      { name: "title", type: "text", maxLength: DISCOUNT_LIMITS.title, description: "The name the owner sees in Shopify, e.g. the campaign it's for." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on what the code is for, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const code = normCode(input.code);
+      const today = new Date().toISOString().slice(0, 10);
+      const starts = typeof input.starts === "string" && input.starts.trim() ? input.starts.trim() : today;
+      const days = Number(input.days);
+      const args = { title: String(input.title ?? "").trim(), percent: Number(input.percent), uses: Number(input.uses), starts, ends: /^\d{4}-\d{2}-\d{2}$/.test(starts) && Number.isInteger(days) ? addDays(starts, days) : "" };
+      const target = `code:${code}`;
+      const refused = refuseProposal(ctx.agentId, SHOPIFY_DISCOUNT, target, args, undefined, ctx.granted ?? null) ?? refuseDiscountDates(args, today, true);
+      if (refused) return { problem: refused };
+      return { gatewayTool: SHOPIFY_DISCOUNT, target, args, actionType: "discount_code", title: `${code}: ${args.percent}% off, ${args.uses} uses`, preview: { record: code, title: args.title, percent: args.percent, uses: args.uses, starts: args.starts, ends: args.ends, why: input.why } };
     },
   },
   {

@@ -7,7 +7,7 @@ import { CTX_META, callThrough, createHost, listThrough, served } from "../core/
 import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
 import { SHOPIFY_DOCS, SHOPIFY_QUERIES, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, scopesBeyond } from "../core/shopify-queries";
-import { COPY_OF, COPY_SET, SHIP_CREATE, SHIP_OF, SHOPIFY_SHIP, SHOPIFY_SHIP_TOOL, planShip, shippable, type ShipOrder, SHOPIFY_COPY, SHOPIFY_COPY_TOOL, SHOPIFY_MUTATIONS, SHOPIFY_STOCK, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_OF, assertFixedMutation, mayUndoCopy, mayUndoStock, planCopy, productTarget, planStock, planTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "../core/shopify-actions";
+import { DISCOUNT_CREATE, DISCOUNT_OF, SHOPIFY_DISCOUNT, SHOPIFY_DISCOUNT_TOOL, agentLiveCount, discountTarget, planDiscount, COPY_OF, COPY_SET, SHIP_CREATE, SHIP_OF, SHOPIFY_SHIP, SHOPIFY_SHIP_TOOL, planShip, shippable, type ShipOrder, SHOPIFY_COPY, SHOPIFY_COPY_TOOL, SHOPIFY_MUTATIONS, SHOPIFY_STOCK, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_OF, assertFixedMutation, mayUndoCopy, mayUndoStock, planCopy, productTarget, planStock, planTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "../core/shopify-actions";
 import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
 import { GA4_TOOLS, checkGa4Args, dateRange, rate, readChannels, readOverview, readProperties, readTopPages, reportBodies } from "../core/ga4-rules";
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
@@ -288,7 +288,7 @@ assert.equal(MCP_SERVERS.shopify.auth, "token");
 assert.deepEqual([...MCP_SERVERS.shopify.readTools].sort(), Object.keys(SHOPIFY_DOCS).sort(), "every Shopify tool runs exactly one fixed query");
 // store actions (docs/shopify-actions.md): each write tool runs one fixed mutation, only the gateway reaches it
 assert.deepEqual(MCP_SERVERS.shopify.reportTools, [], "no report tools on Shopify");
-assert.deepEqual(MCP_SERVERS.shopify.writeTools, [{ tool: SHOPIFY_TAGS_TOOL, actionType: SHOPIFY_TAGS }, { tool: SHOPIFY_STOCK_TOOL, actionType: SHOPIFY_STOCK }, { tool: SHOPIFY_COPY_TOOL, actionType: SHOPIFY_COPY }, { tool: SHOPIFY_SHIP_TOOL, actionType: SHOPIFY_SHIP }], "four store actions so far: tags, stock, product copy and mark shipped");
+assert.deepEqual(MCP_SERVERS.shopify.writeTools, [{ tool: SHOPIFY_TAGS_TOOL, actionType: SHOPIFY_TAGS }, { tool: SHOPIFY_STOCK_TOOL, actionType: SHOPIFY_STOCK }, { tool: SHOPIFY_COPY_TOOL, actionType: SHOPIFY_COPY }, { tool: SHOPIFY_SHIP_TOOL, actionType: SHOPIFY_SHIP }, { tool: SHOPIFY_DISCOUNT_TOOL, actionType: SHOPIFY_DISCOUNT }], "five store actions so far: tags, stock, product copy, mark shipped and discount codes");
 assert.deepEqual(Object.keys(SHOPIFY_MUTATIONS).sort(), MCP_SERVERS.shopify.writeTools.map((w) => w.tool).sort(), "every write tool has exactly one fixed mutation, and no mutation without a write tool");
 for (const doc of Object.values(SHOPIFY_MUTATIONS)) { assert.ok(/^\s*mutation\s/.test(doc), "a fixed mutation"); assert.ok(!/\b(Delete|delete|Remove|remove|cancel|refund|Refund)\w*\s*\(/.test(doc), "no delete, remove, cancel or refund"); assert.throws(() => assertReadOnly(doc), "the read path refuses a store action"); }
 assert.ok(mayWrite("shopify", SHOPIFY_TAGS_TOOL) && !mayCall("shopify", SHOPIFY_TAGS_TOOL) && !mayReport("shopify", SHOPIFY_TAGS_TOOL), "only the gateway can reach the tag tool");
@@ -300,7 +300,7 @@ assert.deepEqual(shopifyTarget("gid://shopify/Order/123"), { kind: "Order", gid:
 assert.equal(scopeFor(shopifyTarget("gid://shopify/Customer/9")!), "write_customers");
 for (const bad of ["gid://shopify/Product/1", "gid://shopify/Order/1/x", "123", "gid://shopify/Order/abc"]) assert.equal(shopifyTarget(bad), null, bad);
 assert.deepEqual(planTags(["VIP", "wholesale"], ["vip", "x"]), { add: ["wholesale"], skipped: ["VIP"] }, "a tag already there (any case) is skipped, so undo never removes it");
-assert.deepEqual(SHOPIFY_WRITE_SCOPES, ["write_orders", "write_customers", "write_inventory", "write_products", "write_merchant_managed_fulfillment_orders"]);
+assert.deepEqual(SHOPIFY_WRITE_SCOPES, ["write_orders", "write_customers", "write_inventory", "write_products", "write_merchant_managed_fulfillment_orders", "write_discounts"]);
 // stock (slice 2): one item at one location, compared against the count it was staged against
 assert.ok(mayWrite("shopify", SHOPIFY_STOCK_TOOL) && !mayCall("shopify", SHOPIFY_STOCK_TOOL) && !mayReport("shopify", SHOPIFY_STOCK_TOOL), "only the gateway can reach the stock tool");
 assert.doesNotThrow(() => assertReadOnly(STOCK_OF), "the live count before a write is a read");
@@ -325,6 +325,20 @@ assert.deepEqual(planCopy("ab12cd34", "ab12cd34"), { write: true });
 assert.ok("refuse" in planCopy("ab12cd34", "ffffffff") && "refuse" in planCopy("ab12cd34", null), "copy that changed since, or a product that's gone, is refused");
 assert.ok(mayUndoCopy("ab12cd34", "ab12cd34") && !mayUndoCopy("ab12cd34", "00000000") && !mayUndoCopy("ab12cd34", null));
 const srv = srvText();
+// discount codes (slice 4): one percent-off code, every product, once per customer, no stacking, capped
+assert.ok(mayWrite("shopify", SHOPIFY_DISCOUNT_TOOL) && !mayCall("shopify", SHOPIFY_DISCOUNT_TOOL) && !mayReport("shopify", SHOPIFY_DISCOUNT_TOOL), "only the gateway can reach the discount tool");
+assert.doesNotThrow(() => assertReadOnly(DISCOUNT_OF), "the live check before a write is a read");
+assert.ok(/appliesOncePerCustomer: true, context: \{ all: ALL \}, customerGets: \{ value: \{ percentage: \$percentage \}, items: \{ all: true \} \}, combinesWith: \{ orderDiscounts: false, productDiscounts: false, shippingDiscounts: false \}, tags: \["operator-agent"\]/.test(DISCOUNT_CREATE), "the discount mutation fixes every product, every customer, once each, no stacking, and the agent tag");
+assert.ok(/usageLimit: \$usageLimit/.test(DISCOUNT_CREATE) && /endsAt: \$endsAt/.test(DISCOUNT_CREATE), "every code has a use limit and an end date");
+assert.ok(!/discountAmount|\$amount|products:|collections:|customers:|customerSegments|minimumRequirement|recurringCycleLimit|Bxgy|FreeShipping|discountCodeBasicUpdate|Deactivate|Delete/.test(DISCOUNT_CREATE), "no fixed amount, product or customer list, minimum, other kind, edit, deactivate or delete");
+assert.ok(srv.includes("planDiscount(") && srv.includes("refuseDiscount("), "the server re-checks the args and the live store");
+assert.equal(discountTarget("code:SPRING20"), "SPRING20");
+for (const bad of ["SPRING20", "code:spring20", "code:AB", "code:" + "A".repeat(21), "code:SPRING 20", "code:SPRING-20"]) assert.equal(discountTarget(bad), null, bad);
+assert.deepEqual(planDiscount({ taken: false, agentLive: 4 }), { write: true });
+assert.ok("refuse" in planDiscount({ taken: true, agentLive: 0 }), "a code Shopify already has is refused");
+assert.ok("refuse" in planDiscount({ taken: false, agentLive: 5 }), "a sixth live agent-made code is refused");
+const dn = (status: string, tags: string[], t = "DiscountCodeBasic") => ({ id: "gid://shopify/DiscountCodeNode/1", codeDiscount: { __typename: t, status, tags } });
+assert.equal(agentLiveCount([dn("ACTIVE", ["operator-agent"]), dn("SCHEDULED", ["operator-agent"]), dn("EXPIRED", ["operator-agent"]), dn("ACTIVE", []), dn("ACTIVE", ["operator-agent"], "DiscountCodeBxgy")]), 2, "only active or scheduled basic codes with the agent tag count");
 // mark shipped (slice 5): every remaining item on one order, one carrier and tracking number, Shopify's own email
 assert.ok(mayWrite("shopify", SHOPIFY_SHIP_TOOL) && !mayCall("shopify", SHOPIFY_SHIP_TOOL) && !mayReport("shopify", SHOPIFY_SHIP_TOOL), "only the gateway can reach the ship tool");
 assert.doesNotThrow(() => assertReadOnly(SHIP_OF), "the live order before a write is a read");
@@ -356,9 +370,9 @@ assert.doesNotThrow(() => assertReadOnly(WHO));
 for (const bad of ["mutation M { productDelete(input: {}) { deletedProductId } }", "query Q { shop { name } } mutation M { x }", "subscription S { x }", "{ shop { name } }"]) assert.throws(() => assertReadOnly(bad), bad);
 assert.doesNotThrow(() => assertReadOnly('query Q { products(query: "mutation") { nodes { id } } }'), "a word inside a string is not an operation");
 assert.deepEqual(scopesBeyond(["read_products", "read_orders", "unauthenticated_read_product_listings"], SHOPIFY_WRITE_SCOPES), [], "a read-only key is kept (reads work; store actions wait)");
-assert.deepEqual(scopesBeyond(["read_orders", "write_orders", "write_customers", "write_inventory", "write_products", "read_merchant_managed_fulfillment_orders", "write_merchant_managed_fulfillment_orders"], SHOPIFY_WRITE_SCOPES), [], "the profile's write scopes are kept");
+assert.deepEqual(scopesBeyond(["read_orders", "write_orders", "write_customers", "write_inventory", "write_products", "read_merchant_managed_fulfillment_orders", "write_merchant_managed_fulfillment_orders", "read_discounts", "write_discounts"], SHOPIFY_WRITE_SCOPES), [], "the profile's write scopes are kept");
 assert.deepEqual(scopesBeyond(["write_third_party_fulfillment_orders", "write_fulfillments"], SHOPIFY_WRITE_SCOPES), ["write_third_party_fulfillment_orders", "write_fulfillments"], "other fulfillment write scopes are refused");
-assert.deepEqual(scopesBeyond(["read_products", "write_discounts", "write_orders"], SHOPIFY_WRITE_SCOPES), ["write_discounts"], "a write scope the profile doesn't name is refused");
+assert.deepEqual(scopesBeyond(["read_products", "write_gift_cards", "write_orders"], SHOPIFY_WRITE_SCOPES), ["write_gift_cards"], "a write scope the profile doesn't name is refused");
 assert.equal(shopifyKeyKind("shpat_" + "a1".repeat(16)), "token");
 assert.equal(shopifyKeyKind("shpss_" + "b2".repeat(16)), "secret");
 assert.equal(shopifyKeyKind("ntn_short"), null);

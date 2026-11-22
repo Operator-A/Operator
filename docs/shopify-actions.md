@@ -140,16 +140,47 @@ action causes, and it is Shopify's template, not text a model wrote.
 - Not in this slice: shipping part of an order, more than one location, a custom carrier or link,
   editing or cancelling a fulfillment, and orders a fulfillment app handles.
 
+### `shopify.create_discount` (slice 4)
+Creates one percent-off discount code. Write tool `shopify_create_discount`, mutation
+`discountCodeBasicCreate` (`DISCOUNT_CREATE`). Only the title, code, percent, start and end and use limit
+come from the card; the rest is written in the document itself: every product (`items: { all: true }`),
+every customer (`context: { all: ALL }`), once per customer, not combined with order, product or shipping
+discounts, and the tag `operator-agent`. No fixed amount, free shipping, buy X get Y, product or customer
+list can be sent.
+
+- **Target**: `code:<CODE>`, the code it creates: 4 to 20 letters or digits, upper case (`discountTarget`;
+  the catalog drops spaces and dashes first).
+- **Args**: exactly `title` (plain text, up to 60), `percent` (whole number), `uses` (whole number) and
+  `starts` and `ends` (YYYY-MM-DD) (`refuseDiscount`).
+- **Caps** (decided 2026-11-22): at most 20% off, 100 uses, and 30 days from start to end
+  (`DISCOUNT_LIMITS`). The owner can set each lower on Settings (`max_discount_percent`,
+  `max_discount_uses`, `max_discount_days` in `CAPS`), never higher. The card is checked against the code
+  limits when staged and against the owner's caps again when applied, so a cap lowered since holds.
+- **Dates**: when staged, the start is today or later and at most 30 days away (`refuseDiscountDates`);
+  when applied, a code whose end date has passed is refused. Dates are UTC days (00:00 to 23:59:59).
+- **Scope**: `write_discounts`, and `read_discounts` for the read tool `shopify_discount_codes` ("Discount
+  codes": code, title, kind, status, dates, amount off, use limit, uses so far, and whether an agent made it).
+- **Apply**: the server reads the live store (`DISCOUNT_OF`): a code Shopify already has is refused, and so
+  is a new code while 5 agent-made codes are active or scheduled among the newest 100 (`planDiscount`).
+  Records `diff_json` and `result_json` (the code and its Shopify id). No undo action: the owner ends a code
+  early by deactivating it in Shopify, and nothing deletes a code.
+- **Card**: the code, percent off, uses, dates and name, and a line saying anyone with the code can use it.
+- **Draft only, never promoted** (decided 2026-11-22): money off every order that uses it. Granted only by
+  an approver on the Tools step ("Create a discount code").
+- Not in this slice: fixed-amount, free-shipping and buy X get Y codes, codes for some products or some
+  customers, minimum order amounts, editing or ending a code.
+
 ## Not built (each its own slice, with a spec first)
 
-Product titles, discount codes (needs a cap from the owner), refunds (moves money: needs per-refund and monthly caps from
+Product titles, refunds (moves money: needs per-refund and monthly caps from
 the owner). Price changes, gift cards, cancelling orders and any delete stay out.
 
 ## Setting it up in Shopify
 
 The write scopes are `write_orders` and `write_customers` (tags), `write_inventory` (stock),
 `write_products` (product copy) and `write_merchant_managed_fulfillment_orders` (mark shipped; add
-`read_merchant_managed_fulfillment_orders` too). Add only the ones for the actions you'll grant.
+`read_merchant_managed_fulfillment_orders` too) and `write_discounts` (discount codes; add
+`read_discounts` too). Add only the ones for the actions you'll grant.
 
 **A Dev Dashboard app** (new custom apps are made there; the key is a client secret):
 

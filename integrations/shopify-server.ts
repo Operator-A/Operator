@@ -9,7 +9,7 @@ import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import { settings } from "@/core/settings";
 import { DEFAULT_TZ } from "@/core/time";
 import { SHOPIFY_QUERIES, shopifyKeyKind, shopifyVariables, scopesBeyond } from "@/core/shopify-queries";
-import { COPY_OF, COPY_SET, SHIP_CREATE, SHIP_OF, SHIP_SCOPE, SHOPIFY_COPY_TOOL, SHOPIFY_SHIP_TOOL, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_ADD, TAGS_OF, copyHtml, copyPrint, copyText, factsOf, planCopy, planShip, planStock, planTags, printOf, productTarget, refuseCopy, refuseCopyFacts, refuseShip, refuseStock, refuseTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "@/core/shopify-actions";
+import { DISCOUNT_CREATE, DISCOUNT_OF, DISCOUNT_SCOPE, SHOPIFY_DISCOUNT_TOOL, agentLiveCount, discountTarget, planDiscount, refuseDiscount, refuseDiscountDates, type DiscountArgs, type DiscountNode, COPY_OF, COPY_SET, SHIP_CREATE, SHIP_OF, SHIP_SCOPE, SHOPIFY_COPY_TOOL, SHOPIFY_SHIP_TOOL, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_ADD, TAGS_OF, copyHtml, copyPrint, copyText, factsOf, planCopy, planShip, planStock, planTags, printOf, productTarget, refuseCopy, refuseCopyFacts, refuseShip, refuseStock, refuseTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "@/core/shopify-actions";
 import { NO_FIELDS_KEY } from "@/core/shopify-rules";
 import type { CopyProduct, ShipOrder } from "@/core/shopify-actions";
 import { shopifyMutate, shopifyQuery, whoIs } from "./shopify-api";
@@ -33,6 +33,10 @@ const WRITE_ABOUT: Record<string, { description: string; inputSchema: unknown }>
   [SHOPIFY_SHIP_TOOL]: {
     description: "Marks every remaining item on one order shipped with one carrier and tracking number, only while its open fulfillment orders are still the ones the card was staged against. Shopify emails the customer its own shipping confirmation. Only the gateway calls it, after an approver approves.",
     inputSchema: { type: "object", required: ["target", "fulfillment_orders", "carrier", "tracking", "key"], properties: { target: { type: "string" }, fulfillment_orders: { type: "array", items: { type: "string" } }, carrier: { type: "string" }, tracking: { type: "string" }, key: { type: "string" } } },
+  },
+  [SHOPIFY_DISCOUNT_TOOL]: {
+    description: "Creates one percent-off discount code on every product, once per customer, not combined with other discounts, with a use limit and an end date, tagged as agent-made. Refused if the code is taken or too many agent-made codes are live. Only the gateway calls it, after an approver approves.",
+    inputSchema: { type: "object", required: ["target", "title", "percent", "uses", "starts", "ends"], properties: { target: { type: "string" }, title: { type: "string" }, percent: { type: "integer" }, uses: { type: "integer" }, starts: { type: "string" }, ends: { type: "string" } } },
   },
 };
 
@@ -182,6 +186,32 @@ async function markShipped(key: string, raw: unknown): Promise<Record<string, un
   return { fulfillment: out.fulfillmentCreate.fulfillment?.id ?? null, label, carrier: args.carrier, tracking: args.tracking };
 }
 
+type DiscountMade = { discountCodeBasicCreate: { codeDiscountNode: { id: string } | null; userErrors: { field?: string[]; message: string; code?: string }[] } };
+
+/**
+ * Creates one discount code: the inputs checked again against the caps in code, the app's live scopes,
+ * then the live store (the code must be free, and fewer than the live cap of agent-made codes active or
+ * scheduled), then the one fixed discountCodeBasicCreate.
+ */
+async function createDiscount(key: string, raw: unknown): Promise<Record<string, unknown>> {
+  const a = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const code = typeof a.target === "string" ? discountTarget(a.target) : null;
+  if (!code) throw new Error("the target isn't a discount code");
+  const args = { title: a.title, percent: a.percent, uses: a.uses, starts: a.starts, ends: a.ends };
+  const no = refuseDiscount(args) ?? refuseDiscountDates(args as unknown as DiscountArgs, new Date().toISOString().slice(0, 10), false);
+  if (no) throw new Error(no);
+  const d = args as unknown as DiscountArgs;
+  const { scopes } = await whoIs(key);
+  if (!scopes.includes(DISCOUNT_SCOPE)) throw new Error(addScope(DISCOUNT_SCOPE));
+  const live = await shopifyQuery<{ codeDiscountNodeByCode: { id: string } | null; codeDiscountNodes: { nodes: DiscountNode[] } }>(key, DISCOUNT_OF, { code });
+  const plan = planDiscount({ taken: !!live.codeDiscountNodeByCode, agentLive: agentLiveCount(live.codeDiscountNodes.nodes) });
+  if ("refuse" in plan) return { refused: plan.refuse, label: code };
+  const out = await shopifyMutate<DiscountMade>(key, DISCOUNT_CREATE, { title: d.title.trim(), code, percentage: d.percent / 100, startsAt: `${d.starts}T00:00:00Z`, endsAt: `${d.ends}T23:59:59Z`, usageLimit: d.uses });
+  const errs = out.discountCodeBasicCreate.userErrors ?? [];
+  if (errs.length) throw new Error(`Shopify refused the discount: ${errs.map((e) => e.message).join("; ").slice(0, 200)}`);
+  return { discount: out.discountCodeBasicCreate.codeDiscountNode?.id ?? null, label: code };
+}
+
 /** A JSON-RPC handler for one call, with the key the vault opened. */
 export function shopifyServer(key: string) {
   const reply = (id: unknown, result: unknown) => ({ jsonrpc: "2.0", id, result });
@@ -196,12 +226,12 @@ export function shopifyServer(key: string) {
       case "tools/list":
         return reply(id, { tools: [
           ...READS.map((name) => ({ name, description: TOOLS[name].description, inputSchema: TOOLS[name].inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })),
-          ...WRITES.map((name) => ({ name, ...WRITE_ABOUT[name], annotations: { readOnlyHint: false, destructiveHint: name === SHOPIFY_STOCK_TOOL || name === SHOPIFY_SHIP_TOOL, idempotentHint: true, openWorldHint: false } })),
+          ...WRITES.map((name) => ({ name, ...WRITE_ABOUT[name], annotations: { readOnlyHint: false, destructiveHint: name === SHOPIFY_STOCK_TOOL || name === SHOPIFY_SHIP_TOOL || name === SHOPIFY_DISCOUNT_TOOL, idempotentHint: name !== SHOPIFY_DISCOUNT_TOOL, openWorldHint: false } })),
         ] });
       case "tools/call": {
         const name = typeof req.params?.name === "string" ? req.params.name : "";
         // integrations/mcp.ts lets only callWriteTool (the gateway) reach a write tool
-        const write = name === SHOPIFY_TAGS_TOOL ? addTags : name === SHOPIFY_STOCK_TOOL ? setStock : name === SHOPIFY_COPY_TOOL ? setCopy : name === SHOPIFY_SHIP_TOOL ? markShipped : null;
+        const write = name === SHOPIFY_TAGS_TOOL ? addTags : name === SHOPIFY_STOCK_TOOL ? setStock : name === SHOPIFY_COPY_TOOL ? setCopy : name === SHOPIFY_SHIP_TOOL ? markShipped : name === SHOPIFY_DISCOUNT_TOOL ? createDiscount : null;
         if (write && WRITES.includes(name)) {
           try {
             return reply(id, { structuredContent: await write(key, req.params?.arguments), content: [{ type: "text", text: "ok" }] });
