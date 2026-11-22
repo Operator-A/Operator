@@ -12,6 +12,7 @@ import { hasMercury, mercuryCategories, mercuryTransaction } from "@/integration
 import { callWriteTool, mcpStatus } from "@/integrations/mcp";
 import { startOf } from "@/core/time";
 import { orgTz } from "@/core/tz";
+import { recordCampaign } from "@/core/campaign-results";
 import { hasGmail } from "@/integrations/gmail";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
@@ -39,6 +40,8 @@ export interface Proposal {
   title: string;
   reasoning?: string;
   preview?: Record<string, unknown>;
+  /** Shared brain, slice 4b: what the agent was shown before it drafted, in code's words (workedNote). */
+  brainNote?: string | null;
 }
 
 async function numPolicy(key: string, d: number) {
@@ -82,7 +85,10 @@ export async function propose(p: Proposal): Promise<{ status: "queued" | "schedu
     const [departmentId, checker] = await Promise.all([draftDepartment(p.agentId), draftChecker(p.agentId)]);
     const review = checker ? { reviewer_agent_id: checker.reviewer, review_status: "waiting", review_due: new Date(Date.now() + LEAD_REVIEW_HOURS * 36e5).toISOString() } : {};
     const card = { action_id: action.id, agent_id: p.agentId, title: p.title, reasoning: p.reasoning ?? null, preview: p.preview ?? {} };
-    let { error: e2 } = await db().from("approvals").insert({ ...card, department_id: departmentId, ...review });
+    const note = p.brainNote ? { brain_note: p.brainNote.slice(0, 600) } : {};
+    let { error: e2 } = await db().from("approvals").insert({ ...card, ...note, department_id: departmentId, ...review });
+    // before the slice 4b migration there's no brain_note column: the card goes without the line
+    if (p.brainNote && (e2?.code === "42703" || e2?.code === "PGRST204")) ({ error: e2 } = await db().from("approvals").insert({ ...card, department_id: departmentId, ...review }));
     // before the slice 4 migration the columns aren't there: the card goes straight to the owner, as before
     if (e2?.code === "42703" || e2?.code === "PGRST204") ({ error: e2 } = await db().from("approvals").insert(card));
     if (e2) { await db().from("agent_actions").delete().eq("id", action.id); throw new Error(`Gateway: could not queue the approval: ${e2.message}`); }
@@ -537,6 +543,7 @@ async function applyCampaign(a: ActionRow, runId: string) {
     const out = (await callWriteTool("klaviyo_drafts", "klaviyo_create_draft", { listId: a.target, subject: args.subject, preview: args.preview, body: args.body })) as { campaignId?: unknown; templateId?: unknown; listName?: unknown };
     if (typeof out?.campaignId !== "string" || !out.campaignId) throw new Error("Klaviyo didn't return a campaign id");
     await done({ status: "applied", result_json: { klaviyo_campaign_id: out.campaignId, klaviyo_template_id: out.templateId ?? null, list: out.listName ?? null, sent: false } });
+    await recordCampaign(a.id, CAMPAIGN_DRAFT, out.campaignId, args as unknown as Record<string, unknown>);
     return "applied" as const;
   } catch (e) {
     await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
@@ -778,6 +785,7 @@ async function applyMailchimpOne(a: ActionRow, runId: string) {
     const out = (await callWriteTool("mailchimp_drafts", "mailchimp_create_draft", { audienceId: a.target, subject: args.subject, preview: args.preview, body: args.body })) as { campaignId?: unknown; audience?: unknown };
     if (typeof out?.campaignId !== "string" || !out.campaignId) throw new Error("Mailchimp didn't return a campaign id");
     await done({ status: "applied", result_json: { mailchimp_campaign_id: out.campaignId, audience: out.audience ?? null, sent: false } });
+    await recordCampaign(a.id, MAILCHIMP_DRAFT, out.campaignId, args as unknown as Record<string, unknown>);
     return "applied" as const;
   } catch (e) {
     await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });

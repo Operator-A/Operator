@@ -386,6 +386,8 @@ export interface ApprovalItem {
   reviewer_agent_id: string | null;
   review_status: string | null;
   review_note: string | null;
+  /** Shared brain, slice 4b: what the agent was shown before it drafted, in code's words. */
+  brain_note: string | null;
   review_due: string | null;
 }
 export interface GatewayAction { id: string; agent_id: string; tool: string; action_type: string; target: string; status: string; reason: string | null; created_at: string; executed_at: string | null; run_id: string | null; exec_run_id: string | null }
@@ -403,14 +405,15 @@ export interface ApprovalsView {
 /** The approvals queue, approved changes waiting to be applied, recent decisions and the gateway log. Null until the tables exist. */
 const AP_COLS = "id, action_id, agent_id, title, reasoning, status, created_at, decided_at, preview, agent_actions(status, reason, tool)";
 const AP_REVIEW = "department_id, reviewer_agent_id, review_status, review_note, review_due";
-type ApRow = Pick<ApprovalItem, "id" | "action_id" | "agent_id" | "title" | "reasoning" | "status" | "created_at" | "decided_at"> & { preview: unknown; agent_actions: unknown } & Partial<Pick<ApprovalItem, "department_id" | "reviewer_agent_id" | "review_status" | "review_note" | "review_due">>;
+type ApRow = Pick<ApprovalItem, "id" | "action_id" | "agent_id" | "title" | "reasoning" | "status" | "created_at" | "decided_at"> & { preview: unknown; agent_actions: unknown } & Partial<Pick<ApprovalItem, "department_id" | "reviewer_agent_id" | "review_status" | "review_note" | "review_due" | "brain_note">>;
 
 export async function getApprovals(): Promise<ApprovalsView | null> {
   await requireSession();
   if (!health().supabase) return null;
   const [ap, log, pol] = await Promise.all([
-    // the slice 4 columns, or the older shape until that migration is applied
-    db().from("approvals").select(`${AP_COLS}, ${AP_REVIEW}`).order("created_at", { ascending: false }).limit(200)
+    // the slice 4 and 4b columns, or the older shapes until those migrations are applied
+    db().from("approvals").select(`${AP_COLS}, ${AP_REVIEW}, brain_note`).order("created_at", { ascending: false }).limit(200)
+      .then((r) => (r.error ? db().from("approvals").select(`${AP_COLS}, ${AP_REVIEW}`).order("created_at", { ascending: false }).limit(200) : r))
       .then((r) => (r.error ? db().from("approvals").select(AP_COLS).order("created_at", { ascending: false }).limit(200) : r)),
     db().from("agent_actions").select("id, agent_id, tool, action_type, target, status, reason, created_at, executed_at, run_id, exec_run_id").order("created_at", { ascending: false }).limit(60),
     db().from("policies").select("value_json").eq("key", "approval_expiry_hours").maybeSingle(),
@@ -426,7 +429,7 @@ export async function getApprovals(): Promise<ApprovalsView | null> {
       receipt_url = data?.signedUrl ?? null;
     }
     return { id: r.id, action_id: r.action_id, agent_id: r.agent_id, title: r.title, reasoning: r.reasoning, status: r.status, created_at: r.created_at, decided_at: r.decided_at, preview, receipt_url, action_status: act?.status ?? "?", action_reason: act?.reason ?? null, tool: act?.tool ?? "",
-      department_id: r.department_id ?? null, reviewer_agent_id: r.reviewer_agent_id ?? null, review_status: r.review_status ?? null, review_note: r.review_note ?? null, review_due: r.review_due ?? null };
+      department_id: r.department_id ?? null, reviewer_agent_id: r.reviewer_agent_id ?? null, review_status: r.review_status ?? null, review_note: r.review_note ?? null, review_due: r.review_due ?? null, brain_note: r.brain_note ?? null };
   }));
   return {
     pending: items.filter((i) => i.status === "pending" && i.review_status !== "waiting").reverse(), // oldest first

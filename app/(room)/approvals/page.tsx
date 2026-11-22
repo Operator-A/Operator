@@ -202,6 +202,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
           <span style={{ fontSize: 17, fontWeight: 600 }}>{i.title}</span>
           {i.reasoning && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{i.reasoning}</span>}
           {view && <LeadBits i={i} view={view} tz={f.tz} />}
+          {i.brain_note && <span className="sub">{i.brain_note}</span>}
           <div className="row" style={{ gap: 8, marginTop: 6 }}>
             <ActionButton className="btn primary" action={approve.bind(null, i.id)}>Approve</ActionButton>
             <RejectButton reject={reject.bind(null, i.id)} agentName={name} rules={rules[i.agent_id] ?? noRules} />

@@ -10,7 +10,7 @@ import { withOrg } from "@/core/tenancy";
 import { TEMPLATES } from "@/core/templates";
 import { adminOrgId } from "./admin";
 import { BANK_ID, BANK_SETTINGS, SYNC_KEY, pickSimilar, recallTags, syncDue, syncWith, type Bank } from "./brain-rules";
-import { topicWords, type Similar, type SimilarAsk } from "@/core/brain-rules";
+import { askWords, type Similar, type SimilarAsk } from "@/core/brain-rules";
 import { syncPlaybook } from "./playbook-rules";
 import { publishedLessons } from "./playbook";
 
@@ -91,7 +91,7 @@ export async function similarBusinesses(ask: SimilarAsk): Promise<Similar | null
   if (hindsightReady()) {
     try {
       const c = new HindsightClient({ baseUrl: url(), apiKey: key(), userAgent: "operator-shared-brain" });
-      const r = await c.recall(BANK_ID, topicWords(ask.topic), { tags: recallTags(ask.kind), tagsMatch: "any_strict", maxTokens: 2048, budget: "low" });
+      const r = await c.recall(BANK_ID, askWords(ask), { tags: recallTags(ask.kind), tagsMatch: "any_strict", maxTokens: 2048, budget: "low" });
       const ids = [...new Set(r.results.map((x) => x.document_id).filter((d): d is string => typeof d === "string"))];
       ranked = ids.length ? ids : null;
     } catch { ranked = null; }

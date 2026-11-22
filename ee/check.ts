@@ -413,7 +413,15 @@ assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+HostedClaude,$/m, "the cl
   assert.deepEqual(none.counts.map((c) => c.pattern), ["tool:list:klaviyo"]);
   assert.deepEqual(none.playbook.map((l) => l.title), ["Connect the bank first"]);
   for (const c of [...s.counts, ...r.counts]) assert.match(c.statement, new RegExp(`${c.hits} of ${c.orgs}`), "the numbers in the words are the row's");
-  assert.match(readFileSync("ee/brain.ts", "utf8"), /c\.recall\(BANK_ID, topicWords\(ask\.topic\), \{ tags: recallTags\(ask\.kind\), tagsMatch: "any_strict"/, "Hindsight is searched only with the topic's words from code and the kind's tags");
+  assert.match(readFileSync("ee/brain.ts", "utf8"), /c\.recall\(BANK_ID, askWords\(ask\), \{ tags: recallTags\(ask\.kind\), tagsMatch: "any_strict"/, "Hindsight is searched only with words from code (askWords) and the kind's tags");
+  // slice 4b (card 234): result patterns, said by code, and an agent's ask covers only its action type
+  assert.equal(statementOf(row("kind:creator", "result:klaviyo.campaign_draft:subject_short", 7, 6), kits), "Among creators and media businesses on OPERATOR, 6 of 7 that sent Klaviyo campaign drafts with subjects of 40 characters or fewer usually saw opens of 35% or more.");
+  assert.equal(statementOf(row("all", "result:mailchimp.campaign_draft:time_morning", 9, 5), kits), "Among businesses on OPERATOR, 5 of 9 that sent Mailchimp campaign drafts with a morning send usually saw opens of 35% or more.");
+  for (const bad of ["result:gmail.create_draft:subject_short", "result:klaviyo.campaign_draft:Jane", "result:klaviyo.campaign_draft"]) assert.equal(statementOf(row("all", bad, 9, 6), kits), null, `${bad} is not said`);
+  const act = [...rows, row("kind:online_store", "result:klaviyo.campaign_draft:subject_short", 14, 9), row("kind:online_store", "action:klaviyo.campaign_draft", 14, 14, 80, 100), row("kind:online_store", "result:mailchimp.campaign_draft:subject_short", 10, 6)];
+  const forAgent = pickSimilar({ ask: { ...ask, topic: "approvals", action: "klaviyo.campaign_draft" }, rows: act, lessons, kits, ranked: null });
+  assert.deepEqual(forAgent.counts.map((c) => c.pattern).sort(), ["action:klaviyo.campaign_draft", "result:klaviyo.campaign_draft:subject_short"], "only the agent's own action type");
+  for (const c of forAgent.counts) assert.equal(statementProblem(c.statement), null, c.statement);
   assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+similarBusinesses,$/m, "the cloud edition fills the similarBusinesses slot");
 }
 

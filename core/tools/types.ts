@@ -141,6 +141,8 @@ export interface ToolDef {
    * (hard rule); "granted" means any agent an approver gives it to on the builder's Tools step (card 250).
    */
   agents?: readonly string[] | "granted";
+  /** Action tools: the gateway action type it becomes (core/gateway/policy.ts TOOLS), the same one its stage returns. */
+  becomes?: string;
   /**
    * Tools that depend on where the agent sits on the org chart (docs/org-chart.md, slice 3):
    * "team" for an agent with live agents under its seat, "company" for the company seat, "head"

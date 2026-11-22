@@ -205,3 +205,50 @@ kind wins, setup and chat offer the tool and write the note in code. `npm run ch
 first, recall tags, one line per pattern for the most specific cohort, on topic and this kind only, Hindsight's
 order wins but a pattern under the floor never comes back, lessons only for this kind or every business,
 numbers in the words are the live row's, Hindsight searched only with the topic's words.
+
+## Slice 4b: agents learn from results (card 234)
+
+Agents now draft with what has worked for businesses like theirs, and code measures how email campaigns
+turned out so there is something to learn from. Same rules: only patterns 5 businesses share cross, and
+every number is counted in code.
+
+### What it does
+
+- **Recording a campaign** (`core/campaign-results.ts`, rules in `core/result-rules.ts`). When the gateway
+  applies a Klaviyo or Mailchimp campaign draft, it saves a `campaign_results` row in the business's own
+  tables: the campaign's id in the service, and the draft's shape as bands (subject 40 characters or fewer,
+  41 to 60, or over 60; preview text or none; body short, medium or long). Never a word of the draft, the
+  list or a count. A failure here never fails the action.
+- **Checking it** (once a day, before the snapshot, cloud edition). Code reads campaign reports through the
+  read tools the business already connected (Klaviyo `get_campaign_report`, Mailchimp `mailchimp_campaigns`)
+  and finds the campaign by its id. Once it's sent, the send's day and time go in as bands (weekday or
+  weekend; morning, afternoon or evening). Seven days after the send, its opens, clicks and unsubscribes go
+  in as bands (opens under 20%, 20 to 35%, 35 to 50%, 50% or more). Not sent within 14 days: `not_sent`.
+- **The snapshot** gains `results`: per campaign type and shape, `good` when more than half of the
+  business's checked campaigns of that shape (last 90 days) reached 35% opens or more, else `low`.
+- **Counting**: `brain_patterns()` adds `result:<type>:<shape>`: businesses with that shape, and how many of
+  them were good. Same floor. Said by code: "Among online stores on OPERATOR, 9 of 14 that sent Klaviyo
+  campaign drafts with subjects of 40 characters or fewer usually saw opens of 35% or more."
+- **Agents** (`workedFor` in `core/brain-tools.ts`, cloud edition). Before a built agent's run, code asks
+  the `similarBusinesses` slot for each gateway action type the agent holds (`becomes` on each action tool),
+  with `action` set: its approval counts, promotions and results, plus playbook lessons. The answer goes in
+  the agent's prompt only when it may stage, marked as advice that never picks a recipient, list, product or
+  address. Code hands it over, so it works in playbook runs as well as explore runs.
+- **The approval card** shows one line under the draft, written by code (`workedNote`, saved in
+  `approvals.brain_note`): what the agent was shown.
+
+### Rolling it out
+
+Migration `20261228090000_campaign_results.sql`: apply, then merge. Until it's applied, recording is
+skipped, approval cards go without the line, and the snapshot can't be saved (it now holds `results`).
+
+### Tests
+
+`npm run check:brain`: the bands, the shape (never words), the send-time reading, when a campaign is checked,
+the snapshot's `good`/`low`, the table refusing words and rates, the result patterns under and over the
+floor on PGlite, each action tool becoming its stage's gateway type, and the wiring. `npm run check:ee`: the
+statements, and an agent's ask covering only its own action type.
+
+### Not in this slice
+
+Results for other action types (they keep their approval counts), and the "why" line on the company reveal.

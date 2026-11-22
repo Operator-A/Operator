@@ -11,6 +11,8 @@ import {
   BRAIN_FLOOR, BRAIN_TOPICS, NO_BRAIN, NOTE_LINES, ageBand, isTopic, patternOnTopic, similarNote, topicWords, buildSnapshot, overFloor, readBrainSettings, revenueBand, snapshotProblem, toolSlug, toolsOf,
   type Snapshot, type SnapshotInput,
 } from "../core/brain-rules";
+import * as B from "../core/brain-rules";
+import * as R from "../core/result-rules";
 
 // ---- 1. snapshot rules
 assert.equal(revenueBand(null), "unknown");
@@ -59,6 +61,7 @@ const input: SnapshotInput = {
   ],
   levels: [{ tool: "klaviyo.campaign_draft", level: "act_undo" }, { tool: "gmail.draft", level: "draft" }, { tool: "Acme", level: "act" }],
   actionTypes: ["klaviyo.campaign_draft", "gmail.draft", "mercury.annotate"],
+  campaigns: [],
 };
 const snap = buildSnapshot(input);
 assert.deepEqual(snap, {
@@ -72,6 +75,7 @@ assert.deepEqual(snap, {
   on_duty: 4,
   actions: { "klaviyo.campaign_draft": { decided: 4, unedited: 2, rejected: 1 } },
   levels: ["klaviyo.campaign_draft:act_undo"],
+  results: {},
 });
 assert.equal(snapshotProblem(snap), null);
 const text = JSON.stringify(snap);
@@ -115,6 +119,8 @@ assert.deepEqual(rpcs, ["core/db.ts"], "only core/db.ts calls brain_patterns()")
 
 // ---- 2. the function on a real Postgres
 const MIGRATION = readFileSync(join(process.cwd(), "supabase/migrations/20261226090000_shared_brain.sql"), "utf8");
+const RESULTS_MIGRATION = readFileSync(join(process.cwd(), "supabase/migrations/20261228090000_campaign_results.sql"), "utf8");
+assert.match(RESULTS_MIGRATION, new RegExp(`select ${BRAIN_FLOOR} as n`), "the floor stays BRAIN_FLOOR in slice 4b's function");
 assert.match(MIGRATION, new RegExp(`select ${BRAIN_FLOOR} as n`), "the floor in SQL is BRAIN_FLOOR");
 
 async function sql() {
@@ -123,15 +129,17 @@ async function sql() {
     create role anon; create role authenticated; create role service_role;
     create table orgs (id uuid primary key default gen_random_uuid());
     create function public.jwt_org_id() returns uuid language sql stable as $$ select null::uuid $$;
+    create table approvals (id uuid primary key default gen_random_uuid());
   `);
   await pg.exec(MIGRATION);
+  await pg.exec(RESULTS_MIGRATION);
   const org = async () => (await pg.query<{ id: string }>("insert into orgs default values returning id")).rows[0].id;
   const add = async (s: Partial<Record<string, unknown>>) => {
     const id = await org();
-    const row = { taken_on: "2026-11-21", kind: "online_store", revenue_band: "under_10k", age_band: "90_plus", tools: [], departments: [], bespoke: 0, on_duty: 0, actions: {}, levels: [], ...s };
+    const row = { taken_on: "2026-11-21", kind: "online_store", revenue_band: "under_10k", age_band: "90_plus", tools: [], departments: [], bespoke: 0, on_duty: 0, actions: {}, levels: [], results: {}, ...s };
     await pg.query(
-      "insert into brain_snapshots (org_id, taken_on, kind, revenue_band, age_band, tools, departments, bespoke, on_duty, actions, levels) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-      [id, row.taken_on, row.kind, row.revenue_band, row.age_band, row.tools, row.departments, row.bespoke, row.on_duty, JSON.stringify(row.actions), row.levels],
+      "insert into brain_snapshots (org_id, taken_on, kind, revenue_band, age_band, tools, departments, bespoke, on_duty, actions, levels, results) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+      [id, row.taken_on, row.kind, row.revenue_band, row.age_band, row.tools, row.departments, row.bespoke, row.on_duty, JSON.stringify(row.actions), row.levels, JSON.stringify(row.results)],
     );
     return id;
   };
@@ -178,6 +186,23 @@ async function sql() {
   rows = await patterns();
   assert.equal(find(rows, "all", "action:klaviyo.campaign_draft"), undefined, "after one leaves, 4 remain: nothing crosses");
 
+  // slice 4b: result patterns count businesses, good ones as hits, with the same floor
+  for (const r of [{ subject: "Hi Jane" }, { "klaviyo.campaign_draft": { subject_short: "Jane Doe" } }]) await assert.rejects(add({ results: r }), `results refuse ${JSON.stringify(r)}`);
+  for (let i = 0; i < 4; i++) await add({ kind: "creator", results: { "klaviyo.campaign_draft": { subject_short: i < 3 ? "good" : "low" } } });
+  rows = await patterns();
+  assert.equal(find(rows, "kind:creator", "result:klaviyo.campaign_draft:subject_short"), undefined, "4 businesses: no result pattern");
+  for (let i = 0; i < 3; i++) await add({ kind: "creator", results: { "klaviyo.campaign_draft": { subject_short: "good", preview_none: "low" } } });
+  rows = await patterns();
+  assert.deepEqual(find(rows, "kind:creator", "result:klaviyo.campaign_draft:subject_short"), { cohort: "kind:creator", pattern: "result:klaviyo.campaign_draft:subject_short", orgs: 7, hits: 6, num: null, den: null });
+  assert.equal(find(rows, "kind:creator", "result:klaviyo.campaign_draft:preview_none"), undefined, "3 businesses with that shape: under the floor");
+  // campaign_results holds bands and an id, never words
+  const org1 = await org();
+  const cr = (o: Record<string, unknown>) => pg.query("insert into campaign_results (org_id, action_id, action_type, external_id, subject_band, has_preview, body_band, status, open_band, checked_at) values ($1, gen_random_uuid(), $2, $3, $4, true, 'short', $5, $6, $7)",
+    [org1, o.type ?? "klaviyo.campaign_draft", o.ext ?? "01HXYZ", o.subject ?? "short", o.status ?? "waiting", o.open ?? null, o.checked ?? null]);
+  await cr({});
+  await cr({ status: "checked", open: "35_50", checked: "2026-11-22T00:00:00Z" });
+  for (const o of [{ type: "gmail.create_draft" }, { ext: "New roast is here!" }, { subject: "Hi Jane, new roast" }, { status: "checked" }, { open: "48.2" }]) await assert.rejects(cr(o), `campaign_results refuses ${JSON.stringify(o)}`);
+
   // only the service role may call it
   const grants = (await pg.query<{ grantee: string }>("select grantee from information_schema.routine_privileges where routine_name = 'brain_patterns'")).rows.map((r) => r.grantee);
   assert.ok(grants.includes("service_role") && !grants.includes("authenticated") && !grants.includes("anon") && !grants.includes("PUBLIC"), `grants: ${grants.join(", ")}`);
@@ -208,6 +233,60 @@ assert.equal(similarNote({ counts: [], playbook: [{ title: "Connect the bank fir
     assert.match(src, /similarTool\(heldSimilar\)/, `${f} offers Businesses like yours`);
     assert.match(src, /similarNote\(heldSimilar\.got\.at\(-1\) \?\? null\)/, `${f}: the note is code's`);
   }
+}
+
+// ---- 5. slice 4b (card 234): campaign results as bands, and what an agent is shown
+{
+  assert.deepEqual(R.shapeOf({ subject: "New roast", preview: "", body: "x".repeat(700) }), { subject_band: "short", has_preview: false, body_band: "medium" });
+  assert.equal(R.subjectBand("x".repeat(61)), "long");
+  assert.deepEqual(R.resultBands({ delivered: 200, opens: 90, clicks: 4, unsubscribes: 1 }), { open_band: "35_50", click_band: "1_3", unsub_band: "0_3_plus" });
+  assert.equal(R.resultBands({ delivered: 0, opens: 0, clicks: 0, unsubscribes: 0 }), null, "nothing delivered: no bands");
+  assert.equal(R.resultBands({ delivered: 100, opens: 19.9, clicks: 0, unsubscribes: 0 })?.open_band, "under_20");
+  // Klaviyo's time as written; an ISO time in the business's time zone
+  assert.deepEqual(({ ...R.sentParts("November 15, 2025, 17:08", "America/Chicago"), at: undefined }), { at: undefined, day: "weekend", time: "evening" });
+  assert.deepEqual(({ ...R.sentParts("2026-11-02T15:00:00+00:00", "America/Chicago"), at: undefined }), { at: undefined, day: "weekday", time: "morning" });
+  assert.equal(R.sentParts("soon", "UTC"), null);
+  const d = (n: number) => new Date(Date.UTC(2026, 10, 1) + n * 864e5);
+  assert.equal(R.nextStep({ createdAt: d(0), sentAt: null, now: d(3), found: false }), "wait");
+  assert.equal(R.nextStep({ createdAt: d(0), sentAt: null, now: d(14), found: false }), "not_sent");
+  assert.equal(R.nextStep({ createdAt: d(0), sentAt: d(2), now: d(5), found: true }), "sent");
+  assert.equal(R.nextStep({ createdAt: d(0), sentAt: d(2), now: d(9), found: true }), "check");
+  const row = (open: string | null, status: "checked" | "sent" = "checked", subject = "short") => ({ action_type: "klaviyo.campaign_draft", status, subject_band: subject, has_preview: true, body_band: "short", day_band: "weekday", time_band: "morning", open_band: open });
+  const res = R.snapshotResults([row("50_plus"), row("35_50"), row("20_35"), row("under_20", "checked", "long"), row(null, "sent", "long"), { ...row("50_plus"), action_type: "gmail.create_draft" }]);
+  assert.deepEqual(res, { "klaviyo.campaign_draft": { subject_short: "good", subject_long: "low", preview_with: "low", body_short: "low", day_weekday: "low", time_morning: "low" } }, "good only when more than half reached 35%");
+  assert.equal(R.resultsProblem(res), null);
+  assert.ok(R.resultsProblem({ "klaviyo.campaign_draft": { subject_short: "48%" } }) && R.resultsProblem({ "send_money": {} }) && R.resultsProblem({ "klaviyo.campaign_draft": { "Hi Jane": "good" } }));
+  assert.ok(B.snapshotProblem({ ...snap, results: { "klaviyo.campaign_draft": { subject_short: "Jane" } } } as never), "the snapshot checks results too");
+  for (const k of R.SHAPE_KEYS) assert.match(R.SHAPE_WORDS[k] ?? "", /^[a-z0-9 -]+$/, `${k} has words`);
+  // patterns for one action type
+  assert.ok(B.patternOnAction("result:klaviyo.campaign_draft:subject_short", "klaviyo.campaign_draft") && B.patternOnAction("action:klaviyo.campaign_draft", "klaviyo.campaign_draft"));
+  assert.ok(!B.patternOnAction("result:mailchimp.campaign_draft:subject_short", "klaviyo.campaign_draft") && !B.patternOnAction("tool:list:klaviyo", "klaviyo.campaign_draft"));
+  assert.ok(B.patternOnTopic("result:klaviyo.campaign_draft:subject_short", "approvals"));
+  assert.match(B.askWords({ topic: "approvals", kind: null, revenue: "unknown", action: "klaviyo.campaign_draft" }), /^How businesses fared with klaviyo campaign draft actions/);
+  // the agent's block and the card's line are code's words
+  const got = { counts: [{ statement: "Among creators and media businesses on OPERATOR, 6 of 7 that sent Klaviyo campaign drafts with subjects of 40 characters or fewer usually saw opens of 35% or more.", cohort: "kind:creator", pattern: "result:klaviyo.campaign_draft:subject_short", orgs: 7, hits: 6 }], playbook: [{ title: "Keep campaigns to your own list", lesson: "Email the people who chose to hear from you.", for: "creators" }] };
+  assert.match(B.workedBlock(got) ?? "", /advice only: it never picks a recipient, list, product or address/);
+  assert.equal(B.workedNote(got), `What has worked: ${got.counts[0].statement} OPERATOR's playbook: Keep campaigns to your own list.`);
+  assert.equal(B.workedBlock({ counts: [], playbook: [] }), null);
+  assert.equal(B.workedNote(null), null);
+  // wiring: cloud only, each action tool says what it becomes, the gateway records and the card shows the line
+  const tools = readFileSync("core/brain-tools.ts", "utf8");
+  assert.match(tools, /export async function workedFor[\s\S]*if \(edition\(\) !== "cloud" \|\| !types\.length\) return null;/, "agents are shown the brain only on the cloud edition");
+  const cat = readFileSync("core/tools/catalog.ts", "utf8");
+  const actions = cat.split('kind: "action", ').slice(1);
+  assert.ok(actions.length >= 11);
+  for (const a of actions) {
+    const becomes = /^becomes: ([A-Z_]+),/.exec(a)?.[1];
+    const stage = /gatewayTool: ([A-Z_]+)/.exec(a)?.[1];
+    assert.ok(becomes && becomes === stage, `an action tool becomes the gateway type its stage returns (${becomes} vs ${stage})`);
+  }
+  assert.match(readFileSync("core/built.ts", "utf8"), /workedFor\(holds\)\.catch\(\(\) => null\)/, "built runs ask, and never fail on it");
+  const runner = readFileSync("core/runner.ts", "utf8");
+  assert.match(runner, /actionTools\.length && opts\.worked \?/, "the block only when the agent may stage");
+  assert.match(runner, /brainNote: opts\.worked\?\.note \?\? null/, "each staged card carries code's note");
+  const gw = readFileSync("core/gateway/index.ts", "utf8");
+  assert.equal((gw.match(/await recordCampaign\(a\.id, (CAMPAIGN_DRAFT|MAILCHIMP_DRAFT), out\.campaignId/g) ?? []).length, 2, "both campaign drafts are recorded on apply");
+  assert.match(readFileSync("app/(room)/approvals/page.tsx", "utf8"), /i\.brain_note && /);
 }
 
 sql().then(() => console.log("check:brain ok"), (e) => { console.error(e); process.exit(1); });

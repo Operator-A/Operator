@@ -2,8 +2,9 @@
 // The shared brain, slice 3 (docs/shared-brain.md, card 232): how a counted pattern becomes one plain
 // statement in the Hindsight bank. Pure, so `npm run check:ee` can test it. Words come only from lists
 // in code; numbers only from the count (brain_patterns(), over the floor). Nothing else is ever sent.
-import { BRAIN_FLOOR, SIMILAR_COUNTS, SIMILAR_LESSONS, isKind, patternOnTopic, toolSlug, type BusinessKind, type PatternRow, type RevenueBand, type Similar, type SimilarAsk } from "@/core/brain-rules";
+import { BRAIN_FLOOR, SIMILAR_COUNTS, SIMILAR_LESSONS, isKind, patternOnAction, patternOnTopic, toolSlug, type BusinessKind, type PatternRow, type RevenueBand, type Similar, type SimilarAsk } from "@/core/brain-rules";
 import { TOOL_CATEGORIES } from "@/core/tools-step-rules";
+import { SHAPE_WORDS, isCampaignType } from "@/core/result-rules";
 
 export const BANK_ID = "operator-patterns";
 /** Every pattern document's id starts with this; anything else in the bank (slice 5's playbook) is never deleted by the sync. */
@@ -53,6 +54,10 @@ const ACTION_WORDS: Record<string, string> = {
   "calendar.hold": "calendar holds",
   "shopify.add_tags": "Shopify order and customer tags",
   "stripe.invoice_draft": "Stripe invoice drafts",
+  "mailchimp.campaign_draft": "Mailchimp campaign drafts",
+  "woocommerce.order_note": "WooCommerce order notes",
+  "hubspot.deal_stage": "HubSpot deal moves",
+  "meta.pause_ad": "Meta ad pauses",
 };
 const actionWords = (type: string) => ACTION_WORDS[type] ?? `${type.replace(/[._]+/g, " ").trim()} actions`;
 
@@ -94,6 +99,11 @@ export function statementOf(r: PatternRow, kits: Readonly<Record<string, string>
   }
   if (kind === "level" && a && !b) {
     return `${who}, ${r.hits} of ${r.orgs} that used ${actionWords(a)} earned enough trust to let them act with an undo window or on their own.`;
+  }
+  if (kind === "result" && a && b) {
+    const shape = SHAPE_WORDS[b];
+    if (!isCampaignType(a) || !shape) return null;
+    return `${who}, ${r.hits} of ${r.orgs} that sent ${actionWords(a)} with ${shape} usually saw opens of 35% or more.`;
   }
   return null;
 }
@@ -181,7 +191,8 @@ export function pickSimilar(o: {
   const best = new Map<string, PatternRow>();
   for (const r of o.rows) {
     const at = cohorts.indexOf(r.cohort);
-    if (at < 0 || !patternOnTopic(r.pattern, o.ask.topic) || !statementOf(r, o.kits)) continue;
+    const on = o.ask.action ? patternOnAction(r.pattern, o.ask.action) : patternOnTopic(r.pattern, o.ask.topic);
+    if (at < 0 || !on || !statementOf(r, o.kits)) continue;
     const had = best.get(r.pattern);
     if (!had || at < cohorts.indexOf(had.cohort)) best.set(r.pattern, r);
   }
