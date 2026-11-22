@@ -88,9 +88,9 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
     <div className="wg">
       {LIGHT[stage].map((t, i) => <div key={i} aria-hidden className={`wg-blob b${i}`} style={{ transform: t }} />)}
       <header className="wg-top">
-        <span className="brand" style={{ width: "auto" }}>
+        <span className="brand wg-brand" style={{ width: "auto" }}>
           <span className="brand-mark">{initials(biz.name)}</span>
-          <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}><span style={{ fontWeight: 700, fontSize: 17, letterSpacing: "-.02em" }}>{biz.name}</span><span style={{ fontSize: 12 }} className="ink2">Setting up</span></span>
+          <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, minWidth: 0 }}><span className="wg-name" style={{ fontWeight: 700, fontSize: 17, letterSpacing: "-.02em" }}>{biz.name}</span><span style={{ fontSize: 12 }} className="ink2">Setting up</span></span>
         </span>
         <ol aria-label="Setup progress" className="wg-steps">
           {STAGES.map((s, i) => <li key={s} aria-current={i === at ? "step" : undefined} className={i < at ? "done" : i === at ? "now" : ""}><i aria-hidden />{STAGE_WORDS[s]}</li>)}
