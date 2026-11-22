@@ -59,6 +59,7 @@ The owner, 2026-11-22, with a phone screenshot of a 12-seat Marketing department
 - Seats grow out of the seat above them when its row opens, and fold back into it.
 - A big department someone has unfolded takes two columns in the whole-company chart, so its seats stay readable. The departments keep their order and wrap to the next row when a row is full; folding it again gives the column back.
 - A hand-off between a department and the company seat (which is in no department) runs straight to that seat when the department is opened, with no pill. Before this fix, opening such a department crashed the page.
+- In an opened department, an agent card is 120px tall (72 on a phone) with 15px under its text, so two lines of what it is doing never touch the bottom edge.
 - The fold row is one line of small text in a taller button (added 2026-11-22 after the owner found it cramped). Hovering a card fades the others only a little (70%) and their lines to about a third, instead of greying them out.
 
 **Tests.** `npm run check:org-canvas` lays every sample out as the page loads, with every team open and with every team folded, and checks that a seat shows only when every seat above it is open, that each seat with a team has its row right under it, that hand-off lines land on the nearest seat that shows, and that an unfolded big department is exactly two columns wide while a folded one is one.

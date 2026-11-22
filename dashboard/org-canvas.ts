@@ -249,7 +249,7 @@ export function layoutCanvas(d: CanvasData, W: number, focus: string | null, ope
   }
 
   // one department, opened
-  const cellW = W - 2 * PAD, bw = narrow ? (cellW - 24 - GAP) / 2 : Math.min(214, cellW - 24), bh = narrow ? 68 : 100, hubY = narrow ? 92 : 64, cellTop = hubY + 44;
+  const cellW = W - 2 * PAD, bw = narrow ? (cellW - 24 - GAP) / 2 : Math.min(214, cellW - 24), bh = narrow ? 72 : 120, hubY = narrow ? 92 : 64, cellTop = hubY + 44;
   const head = opened.seats[0], kids = head ? kidsOf(opened, head.id) : [];
   const per = Math.max(1, Math.floor((cellW - 24 + GAP) / (bw + GAP)));
   const tall = (s: CanvasSeat) => (s.agent ? bh : CH);
