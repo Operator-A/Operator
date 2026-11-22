@@ -31,8 +31,8 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, DRAFT_LIMITS, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
-import { SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, DRAFT_LIMITS, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { COPY_LIMITS, SHOPIFY_COPY_GRANT, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, copyText, productTarget, refuseCopyFacts, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
 import type { McPeriod } from "@/core/mailchimp-rules";
@@ -66,6 +66,7 @@ import { deliverBrief } from "@/core/brief";
 import { openCounts } from "@/core/brief/rules";
 import { openOrders, recentOrders } from "@/integrations/shopify/orders";
 import { stockLevels } from "@/integrations/shopify/stock";
+import { productCopy } from "@/integrations/shopify/copy";
 
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -189,6 +190,22 @@ const TOOLS_LIST: ToolDef[] = [
         return { pick: `st${i + 1}`, item: l.name, sku: l.sku, location: l.locationName, available: l.available, on_hand: l.onHand };
       });
       return { data: { rows }, numbers: { rows: rows.length, units_available: levels.reduce((n, l) => n + Math.max(0, l.available), 0) }, picks };
+    },
+  },
+  {
+    id: "shopify_product_copy", label: "Product copy", detail: "Active products (up to 50): title, type, vendor, tags, description and SEO title and description. No customer data. Each product has a pick code a copy change can name",
+    kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async () => {
+      const list = await productCopy();
+      const picks: Record<string, Pick> = {};
+      const clip = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+      const rows = list.map((p, i) => {
+        // the pick carries the copy's fingerprint, the copy as it stands (for the card) and the facts the
+        // product's own data allows, so the model never supplies any of them
+        picks[`pc${i + 1}`] = { kind: "product", label: p.title, id: JSON.stringify({ p: p.id, f: p.print, n: p.facts.numbers, c: p.facts.claims, d: clip(p.description, 2000), st: p.seoTitle, sd: p.seoDescription }) };
+        return { pick: `pc${i + 1}`, title: p.title, type: p.type, vendor: p.vendor, tags: p.tags, description: clip(p.description, 1500), seo_title: p.seoTitle, seo_description: p.seoDescription };
+      });
+      return { data: { products: rows, note: "A new text may state only numbers and certification words already in that product's data here." }, numbers: { products: rows.length }, picks };
     },
   },
   {
@@ -1054,6 +1071,36 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, SHOPIFY_TAGS, target.id, args, undefined, ctx.granted ?? null);
       if (refused) return { problem: refused };
       return { gatewayTool: SHOPIFY_TAGS, target: target.id, args, actionType: order ? "order_tags" : "customer_tags", title: `${target.label}: ${args.tags.join(", ")}`, preview: { record: target.label, tags: args.tags, why: input.why } };
+    },
+  },
+  {
+    id: SHOPIFY_COPY_GRANT, label: "Rewrite product copy", detail: `Stages a new description and/or SEO title and description for one Shopify product, for an approver to approve (later on its own, once it has earned trust). Plain text: code builds the HTML. Every number and certification word must already be in the product's Shopify data. Refused if the copy changed since. The product always comes from a Product copy result`,
+    kind: "action", group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
+    agents: GATEWAY_TOOLS[SHOPIFY_COPY].agents,
+    params: [
+      { name: "product", type: "pick", kind: "product", description: "The product, from a Product copy result." },
+      { name: "description", type: "text", maxLength: COPY_LIMITS.description, multiline: true, optional: true, description: `The new description, plain text up to ${COPY_LIMITS.description.toLocaleString("en-US")} characters. A blank line starts a paragraph; lines starting with "- " make a bullet list. No HTML or links.` },
+      { name: "seo_title", type: "text", maxLength: COPY_LIMITS.seo_title, optional: true, description: `The new search title, up to ${COPY_LIMITS.seo_title} characters.` },
+      { name: "seo_description", type: "text", maxLength: COPY_LIMITS.seo_description, optional: true, description: `The new search description, up to ${COPY_LIMITS.seo_description} characters.` },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on what the new text improves, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const pick = input.product as Pick;
+      let row: { p?: unknown; f?: unknown; n?: unknown; c?: unknown; d?: unknown; st?: unknown; sd?: unknown };
+      try { row = JSON.parse(pick.id); } catch { return { problem: "that row isn't a product from Product copy" }; }
+      const target = typeof row.p === "string" ? row.p : "";
+      if (!productTarget(target) || typeof row.f !== "string") return { problem: "that row isn't a product from Product copy" };
+      const args: Record<string, unknown> = { before: row.f };
+      for (const f of ["description", "seo_title", "seo_description"] as const) if (typeof input[f] === "string" && String(input[f]).trim()) args[f] = String(input[f]).trim();
+      const refused = refuseProposal(ctx.agentId, SHOPIFY_COPY, target, args, undefined, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+      const facts = refuseCopyFacts(copyText(args), { numbers: strs(row.n), claims: strs(row.c) });
+      if (facts) return { problem: facts };
+      const was = { description: String(row.d ?? ""), seo_title: String(row.st ?? ""), seo_description: String(row.sd ?? "") };
+      const LABEL = { description: "Description", seo_title: "SEO title", seo_description: "SEO description" } as const;
+      const copy = (["description", "seo_title", "seo_description"] as const).filter((f) => args[f] !== undefined).map((f) => ({ field: LABEL[f], before: was[f], after: args[f] as string }));
+      return { gatewayTool: SHOPIFY_COPY, target, args, actionType: "product_copy", title: `${pick.label}: new ${copy.map((c) => c.field.toLowerCase()).join(", ")}`, preview: { record: pick.label, copy, why: input.why } };
     },
   },
   {

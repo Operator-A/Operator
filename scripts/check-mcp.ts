@@ -7,7 +7,7 @@ import { CTX_META, callThrough, createHost, listThrough, served } from "../core/
 import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
 import { SHOPIFY_DOCS, SHOPIFY_QUERIES, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, scopesBeyond } from "../core/shopify-queries";
-import { SHOPIFY_MUTATIONS, SHOPIFY_STOCK, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_OF, assertFixedMutation, mayUndoStock, planStock, planTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "../core/shopify-actions";
+import { COPY_OF, COPY_SET, SHOPIFY_COPY, SHOPIFY_COPY_TOOL, SHOPIFY_MUTATIONS, SHOPIFY_STOCK, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_OF, assertFixedMutation, mayUndoCopy, mayUndoStock, planCopy, productTarget, planStock, planTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "../core/shopify-actions";
 import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
 import { GA4_TOOLS, checkGa4Args, dateRange, rate, readChannels, readOverview, readProperties, readTopPages, reportBodies } from "../core/ga4-rules";
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
@@ -288,7 +288,7 @@ assert.equal(MCP_SERVERS.shopify.auth, "token");
 assert.deepEqual([...MCP_SERVERS.shopify.readTools].sort(), Object.keys(SHOPIFY_DOCS).sort(), "every Shopify tool runs exactly one fixed query");
 // store actions (docs/shopify-actions.md): each write tool runs one fixed mutation, only the gateway reaches it
 assert.deepEqual(MCP_SERVERS.shopify.reportTools, [], "no report tools on Shopify");
-assert.deepEqual(MCP_SERVERS.shopify.writeTools, [{ tool: SHOPIFY_TAGS_TOOL, actionType: SHOPIFY_TAGS }, { tool: SHOPIFY_STOCK_TOOL, actionType: SHOPIFY_STOCK }], "two store actions so far: tags and stock");
+assert.deepEqual(MCP_SERVERS.shopify.writeTools, [{ tool: SHOPIFY_TAGS_TOOL, actionType: SHOPIFY_TAGS }, { tool: SHOPIFY_STOCK_TOOL, actionType: SHOPIFY_STOCK }, { tool: SHOPIFY_COPY_TOOL, actionType: SHOPIFY_COPY }], "three store actions so far: tags, stock and product copy");
 assert.deepEqual(Object.keys(SHOPIFY_MUTATIONS).sort(), MCP_SERVERS.shopify.writeTools.map((w) => w.tool).sort(), "every write tool has exactly one fixed mutation, and no mutation without a write tool");
 for (const doc of Object.values(SHOPIFY_MUTATIONS)) { assert.ok(/^\s*mutation\s/.test(doc), "a fixed mutation"); assert.ok(!/\b(Delete|delete|Remove|remove|cancel|refund|Refund)\w*\s*\(/.test(doc), "no delete, remove, cancel or refund"); assert.throws(() => assertReadOnly(doc), "the read path refuses a store action"); }
 assert.ok(mayWrite("shopify", SHOPIFY_TAGS_TOOL) && !mayCall("shopify", SHOPIFY_TAGS_TOOL) && !mayReport("shopify", SHOPIFY_TAGS_TOOL), "only the gateway can reach the tag tool");
@@ -300,7 +300,7 @@ assert.deepEqual(shopifyTarget("gid://shopify/Order/123"), { kind: "Order", gid:
 assert.equal(scopeFor(shopifyTarget("gid://shopify/Customer/9")!), "write_customers");
 for (const bad of ["gid://shopify/Product/1", "gid://shopify/Order/1/x", "123", "gid://shopify/Order/abc"]) assert.equal(shopifyTarget(bad), null, bad);
 assert.deepEqual(planTags(["VIP", "wholesale"], ["vip", "x"]), { add: ["wholesale"], skipped: ["VIP"] }, "a tag already there (any case) is skipped, so undo never removes it");
-assert.deepEqual(SHOPIFY_WRITE_SCOPES, ["write_orders", "write_customers", "write_inventory"]);
+assert.deepEqual(SHOPIFY_WRITE_SCOPES, ["write_orders", "write_customers", "write_inventory", "write_products"]);
 // stock (slice 2): one item at one location, compared against the count it was staged against
 assert.ok(mayWrite("shopify", SHOPIFY_STOCK_TOOL) && !mayCall("shopify", SHOPIFY_STOCK_TOOL) && !mayReport("shopify", SHOPIFY_STOCK_TOOL), "only the gateway can reach the stock tool");
 assert.doesNotThrow(() => assertReadOnly(STOCK_OF), "the live count before a write is a read");
@@ -314,6 +314,16 @@ assert.ok("refuse" in planStock(12, 40, null), "an item no longer stocked there 
 assert.ok("refuse" in planStock(12, 12, 12), "no change is refused");
 assert.ok(mayUndoStock(40, 40) && !mayUndoStock(40, 41) && !mayUndoStock(40, null), "undo only while the count is still what the action set");
 assert.ok(stockKeyOk("9f2c1a4e-0000-4000-8000-000000000001") && !stockKeyOk("x") && !stockKeyOk(7));
+// product copy (slice 3): description and SEO text only, compared against the copy it was written against
+assert.ok(mayWrite("shopify", SHOPIFY_COPY_TOOL) && !mayCall("shopify", SHOPIFY_COPY_TOOL) && !mayReport("shopify", SHOPIFY_COPY_TOOL), "only the gateway can reach the copy tool");
+assert.doesNotThrow(() => assertReadOnly(COPY_OF), "the live copy before a write is a read");
+assert.ok(/productUpdate\(product: \{ id: \$id, descriptionHtml: \$html, seo: \{ title: \$seoTitle, description: \$seoDescription \} \}\)/.test(COPY_SET), "the copy mutation names only the id, the description HTML and the SEO text");
+assert.ok(!/\$product|ProductUpdateInput|title: \$title|status|tags|handle|price|variants/.test(COPY_SET.replace("seo: { title: $seoTitle", "")), "nothing else on the product can be named");
+assert.ok(srvText().includes("copyHtml(") && srvText().includes("refuseCopyFacts("), "the server builds the HTML in code and checks facts against live data");
+assert.ok(productTarget("gid://shopify/Product/42") && !productTarget("gid://shopify/Order/42") && !productTarget("gid://shopify/Product/42/x"));
+assert.deepEqual(planCopy("ab12cd34", "ab12cd34"), { write: true });
+assert.ok("refuse" in planCopy("ab12cd34", "ffffffff") && "refuse" in planCopy("ab12cd34", null), "copy that changed since, or a product that's gone, is refused");
+assert.ok(mayUndoCopy("ab12cd34", "ab12cd34") && !mayUndoCopy("ab12cd34", "00000000") && !mayUndoCopy("ab12cd34", null));
 const srv = srvText();
 assert.ok(srv.includes("scopesBeyond(w.scopes, SHOPIFY_WRITE_SCOPES)"), "the paste check refuses scopes beyond the profile");
 for (const [tool, doc] of Object.entries(SHOPIFY_DOCS)) { assert.doesNotThrow(() => assertReadOnly(doc), tool); assert.ok(!/\b(email|phone|address|firstName|lastName|displayName)\b/.test(doc), `${tool} reads no customer details`); }
@@ -321,8 +331,8 @@ assert.doesNotThrow(() => assertReadOnly(WHO));
 for (const bad of ["mutation M { productDelete(input: {}) { deletedProductId } }", "query Q { shop { name } } mutation M { x }", "subscription S { x }", "{ shop { name } }"]) assert.throws(() => assertReadOnly(bad), bad);
 assert.doesNotThrow(() => assertReadOnly('query Q { products(query: "mutation") { nodes { id } } }'), "a word inside a string is not an operation");
 assert.deepEqual(scopesBeyond(["read_products", "read_orders", "unauthenticated_read_product_listings"], SHOPIFY_WRITE_SCOPES), [], "a read-only key is kept (reads work; store actions wait)");
-assert.deepEqual(scopesBeyond(["read_orders", "write_orders", "write_customers", "write_inventory"], SHOPIFY_WRITE_SCOPES), [], "the profile's write scopes are kept");
-assert.deepEqual(scopesBeyond(["read_products", "write_products", "write_orders"], SHOPIFY_WRITE_SCOPES), ["write_products"], "a write scope the profile doesn't name is refused");
+assert.deepEqual(scopesBeyond(["read_orders", "write_orders", "write_customers", "write_inventory", "write_products"], SHOPIFY_WRITE_SCOPES), [], "the profile's write scopes are kept");
+assert.deepEqual(scopesBeyond(["read_products", "write_discounts", "write_orders"], SHOPIFY_WRITE_SCOPES), ["write_discounts"], "a write scope the profile doesn't name is refused");
 assert.equal(shopifyKeyKind("shpat_" + "a1".repeat(16)), "token");
 assert.equal(shopifyKeyKind("shpss_" + "b2".repeat(16)), "secret");
 assert.equal(shopifyKeyKind("ntn_short"), null);

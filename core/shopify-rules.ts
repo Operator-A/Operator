@@ -175,6 +175,22 @@ const STOCK_LEVELS = gql`
   }
 `;
 
+// Active products with their copy, for copy changes: title, type, vendor, tags, the description (plain
+// text and HTML, so a change can tell whether it moved), SEO text and the fact fields chosen on Settings.
+// 25 a page. No customer data.
+const PRODUCT_COPY = gql`
+  query AgentProductCopy($after: String, $keys: [String!]!) {
+    products(first: 25, after: $after, query: "status:active", sortKey: TITLE) {
+      nodes {
+        id title description descriptionHtml productType vendor tags
+        seo { title description }
+        metafields(first: 20, keys: $keys) { nodes { namespace key value } }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
 /** Core's Shopify tools: what every business on Shopify can read. */
 export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
   {
@@ -234,6 +250,17 @@ export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
       const cur = afterArg(a);
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };
       return { variables: { after: cur } };
+    },
+  },
+  {
+    tool: "shopify_product_copy",
+    description: "Active products, 25 a page, with their Shopify ids: title, type, vendor, tags, description and SEO text, and the product fields chosen on Settings. No customer data.",
+    inputSchema: { type: "object", properties: { after } },
+    doc: PRODUCT_COPY,
+    variables: (a, ctx) => {
+      const cur = afterArg(a);
+      if (cur === undefined) return { problem: "after must be a cursor from the last page" };
+      return { variables: { after: cur, keys: ctx.productFields.length ? [...ctx.productFields] : [NO_FIELDS_KEY] } };
     },
   },
   {

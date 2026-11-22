@@ -7,7 +7,7 @@
 import { gql } from "@/core/shopify-rules";
 
 /** The write scopes the Shopify profile asks for. A key with any other write scope is refused. */
-export const SHOPIFY_WRITE_SCOPES = ["write_orders", "write_customers", "write_inventory"] as const;
+export const SHOPIFY_WRITE_SCOPES = ["write_orders", "write_customers", "write_inventory", "write_products"] as const;
 
 /** Gateway action type: add tags to one order or one customer. Undo removes only the tags it added. */
 export const SHOPIFY_TAGS = "shopify.add_tags";
@@ -163,8 +163,161 @@ export const STOCK_SET = gql`
   }
 `;
 
+// ---------- slice 3: a product's description and SEO text ----------
+
+/** Gateway action type: a new description and/or SEO title and description on one product. Promotable. */
+export const SHOPIFY_COPY = "shopify.update_copy";
+/** The write tool on our Shopify server that applies it. */
+export const SHOPIFY_COPY_TOOL = "shopify_update_copy";
+/** The builder's tool an approver grants (core/tools/catalog.ts). */
+export const SHOPIFY_COPY_GRANT = "shopify_copy";
+
+/** The longest text an agent may write in each field. */
+export const COPY_LIMITS = { description: 4000, seo_title: 70, seo_description: 320 } as const;
+export const COPY_FIELDS = ["description", "seo_title", "seo_description"] as const;
+export type CopyField = (typeof COPY_FIELDS)[number];
+
+const PRODUCT = /^gid:\/\/shopify\/Product\/\d{1,20}$/;
+/** The target of a copy change: one product, by its Shopify id from a Product copy row. */
+export const productTarget = (target: string) => PRODUCT.test(target);
+
+/** A short fingerprint of a product's copy (FNV-1a over the three values), so a card knows what it was written against. */
+export function copyPrint(descriptionHtml: string | null, seoTitle: string | null, seoDescription: string | null): string {
+  const s = [descriptionHtml ?? "", seoTitle ?? "", seoDescription ?? ""].join("\u0000");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, "0");
+}
+const PRINT = /^[0-9a-f]{8}$/;
+
+/**
+ * Words that claim a certification or a standing. A new text may use one only when the product's own
+ * Shopify data already does, so an agent can't award a product "organic" or "award-winning".
+ */
+export const CLAIM_WORDS: readonly { word: string; re: RegExp }[] = [
+  { word: "certified", re: /\bcertifi(?:ed|cation)\b/i },
+  { word: "organic", re: /\borganic(?:ally)?\b/i },
+  { word: "fair trade", re: /\bfair[\s-]?trade\b/i },
+  { word: "B Corp", re: /\bb[\s-]?corp(?:oration)?\b/i },
+  { word: "kosher", re: /\bkosher\b/i },
+  { word: "halal", re: /\bhalal\b/i },
+  { word: "vegan", re: /\bvegan\b/i },
+  { word: "gluten-free", re: /\bgluten[\s-]?free\b/i },
+  { word: "non-GMO", re: /\bnon[\s-]?gmo\b/i },
+  { word: "USDA", re: /\busda\b/i },
+  { word: "award-winning", re: /\baward(?:s|[\s-]?winning)?\b/i },
+];
+
+/** The numbers in a text, written the way they compare: commas between digits dropped, so "1,000" and "1000" match. */
+export function numbersIn(text: string): string[] {
+  return [...new Set((text.replace(/(\d),(?=\d{3}\b)/g, "$1").match(/\d+(?:\.\d+)?/g) ?? []).map((n) => n.replace(/^0+(?=\d)/, "")))];
+}
+/** The claim words a text uses, by their canonical name. */
+export const claimsIn = (text: string) => CLAIM_WORDS.filter((c) => c.re.test(text)).map((c) => c.word);
+
+/** What a product's own Shopify data allows a new text to state: the numbers and claim words already in it. */
+export type CopyFacts = { numbers: string[]; claims: string[] };
+export function copyFacts(parts: readonly (string | null | undefined)[]): CopyFacts {
+  const all = parts.filter((p): p is string => typeof p === "string" && p.length > 0).join("\n");
+  return { numbers: numbersIn(all), claims: claimsIn(all) };
+}
+
+/**
+ * Why a new text states something the product's Shopify data doesn't, or null: every number and every
+ * claim word in it must already be there (the hard rule: facts come from Shopify, never the model).
+ */
+export function refuseCopyFacts(text: string, facts: CopyFacts): string | null {
+  const nums = numbersIn(text).filter((n) => !facts.numbers.includes(n));
+  const claims = claimsIn(text).filter((c) => !facts.claims.includes(c));
+  if (!nums.length && !claims.length) return null;
+  const bits = [nums.length ? `the number${nums.length === 1 ? "" : "s"} ${nums.slice(0, 5).join(", ")}` : "", claims.length ? `"${claims.join('", "')}"` : ""].filter(Boolean);
+  return `The new text says ${bits.join(" and ")}, which this product's Shopify data doesn't. Facts come only from Shopify; leave ${nums.length + claims.length === 1 ? "it" : "them"} out or add ${nums.length + claims.length === 1 ? "it" : "them"} to the product in Shopify first.`;
+}
+
+/** One product as the Product copy read and the live check before a write return it. */
+export interface CopyProduct {
+  id: string; title: string; status?: string; description: string | null; descriptionHtml: string | null; productType: string | null; vendor: string | null; tags: string[];
+  seo: { title: string | null; description: string | null } | null;
+  metafields: { nodes: { namespace: string; key: string; value: string | null }[] } | null;
+}
+/** The facts a product's own Shopify data allows: its title, description, type, vendor, tags, SEO text and the chosen fact fields. */
+export const factsOf = (p: CopyProduct) => copyFacts([p.title, p.description, p.productType, p.vendor, ...p.tags, p.seo?.title, p.seo?.description, ...(p.metafields?.nodes ?? []).map((m) => m.value)]);
+/** The fingerprint of a product's copy as it stands. */
+export const printOf = (p: CopyProduct) => copyPrint(p.descriptionHtml, p.seo?.title ?? null, p.seo?.description ?? null);
+/** All the new text in a copy change, for the facts check. */
+export const copyText = (args: Record<string, unknown>) => COPY_FIELDS.map((f) => (typeof args[f] === "string" ? (args[f] as string) : "")).filter(Boolean).join("\n");
+
+const hasMarkup = (s: string) => /<[^>]*>|&[a-z#0-9]+;|https?:\/\/|www\.|\[[^\]]*\]\([^)]*\)/i.test(s);
+
+/**
+ * Why a copy change is refused, or null: `before` (the fingerprint of the copy the card was written
+ * against) and at least one of description, seo_title and seo_description, nothing else; plain text
+ * within the limits, no markup, links or control characters (the description keeps line breaks).
+ */
+export function refuseCopy(args: Record<string, unknown>): string | null {
+  const extra = Object.keys(args).filter((k) => k !== "before" && !(COPY_FIELDS as readonly string[]).includes(k));
+  if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. A copy change holds only the description, the SEO title and the SEO description.`;
+  if (typeof args.before !== "string" || !PRINT.test(args.before)) return "before must be the fingerprint of the copy the Product copy row showed.";
+  const given = COPY_FIELDS.filter((f) => args[f] !== undefined);
+  if (!given.length) return "Write at least one of the description, the SEO title or the SEO description.";
+  for (const f of given) {
+    const v = args[f];
+    if (typeof v !== "string" || !v.trim()) return `${f} must be text.`;
+    if (v.length > COPY_LIMITS[f]) return `${f} is ${v.length} characters, over the limit of ${COPY_LIMITS[f]}.`;
+    if ((f === "description" ? /[\u0000-\u0009\u000b-\u001f]/ : /[\u0000-\u001f]/).test(v)) return `${f} may not hold control characters${f === "description" ? "" : " or line breaks"}.`;
+    if (hasMarkup(v)) return `${f} must be plain text: no HTML, links or markdown links. Code builds the page's HTML.`;
+  }
+  return null;
+}
+
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+/**
+ * The description's HTML, built in code from plain text: blank lines make paragraphs, lines starting
+ * with "- " make a bullet list, everything escaped. No links, images, scripts or styling can get in.
+ */
+export function copyHtml(text: string): string {
+  const out: string[] = [];
+  for (const block of text.replace(/\r\n?/g, "\n").split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean)) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.every((l) => /^- /.test(l))) out.push(`<ul>${lines.map((l) => `<li>${esc(l.slice(2).trim())}</li>`).join("")}</ul>`);
+    else out.push(`<p>${lines.map(esc).join("<br>")}</p>`);
+  }
+  return out.join("\n");
+}
+
+/** What a staged copy change may still do: write only while the store's copy is the copy the card was written against. */
+export function planCopy(before: string, live: string | null): { write: true } | { refuse: string } {
+  if (live === null) return { refuse: "Shopify doesn't have this product any more." };
+  return live === before ? { write: true } : { refuse: "Product copy changed since this was staged. Nothing was written." };
+}
+/** Whether an undo of a copy change may put the old text back: only while the store still shows what the action set. */
+export const mayUndoCopy = (set: string, live: string | null) => live === set;
+
+// The live copy of one product, with the data a new text may state facts from, read right before the
+// write. `keys` are the fact fields chosen on Settings. A read, so it may live here.
+export const COPY_OF = gql`
+  query AgentCopyOf($id: ID!, $keys: [String!]!) {
+    product(id: $id) {
+      id title status description descriptionHtml productType vendor tags
+      seo { title description }
+      metafields(first: 20, keys: $keys) { nodes { namespace key value } }
+    }
+  }
+`;
+
+// The only Shopify write in the repo for this action type: the product's description HTML and SEO text,
+// nothing else (no title, price, status, tags or handle can be named here).
+export const COPY_SET = gql`
+  mutation AgentCopySet($id: ID!, $html: String!, $seoTitle: String!, $seoDescription: String!) {
+    productUpdate(product: { id: $id, descriptionHtml: $html, seo: { title: $seoTitle, description: $seoDescription } }) {
+      product { id }
+      userErrors { field message }
+    }
+  }
+`;
+
 /** Every mutation our Shopify server may run, by write tool. The server refuses any other document. */
-export const SHOPIFY_MUTATIONS: Readonly<Record<string, string>> = { [SHOPIFY_TAGS_TOOL]: TAGS_ADD, [SHOPIFY_STOCK_TOOL]: STOCK_SET };
+export const SHOPIFY_MUTATIONS: Readonly<Record<string, string>> = { [SHOPIFY_TAGS_TOOL]: TAGS_ADD, [SHOPIFY_STOCK_TOOL]: STOCK_SET, [SHOPIFY_COPY_TOOL]: COPY_SET };
 
 /** A document is exactly one of the fixed mutations above. */
 export function assertFixedMutation(doc: string): void {
