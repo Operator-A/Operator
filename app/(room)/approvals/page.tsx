@@ -7,7 +7,7 @@ import { controlsOn } from "@/dashboard/session";
 import { ActionButton } from "@/dashboard/components/client";
 import { RejectButton } from "@/dashboard/components/react";
 import { Avatar, Empty } from "@/dashboard/components/ui";
-import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, SQUARE_INVOICE, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
+import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, SQUARE_INVOICE, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_REFUND, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
 
 // Applying a batch calls Mercury once or twice per change.
 export const maxDuration = 300;
@@ -132,7 +132,7 @@ function Tags({ i }: { i: ApprovalItem }) {
   );
 }
 
-const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [SHOPIFY_STOCK]: "Shopify stock", [SHOPIFY_COPY]: "Shopify product copy", [SHOPIFY_SHIP]: "Shopify shipped", [SHOPIFY_DISCOUNT]: "Shopify discount code", [INVOICE_DRAFT]: "Stripe invoice draft", [SQUARE_INVOICE]: "Square invoice draft", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note", [HUBSPOT_MOVE]: "HubSpot deal move", [META_PAUSE]: "Meta ad pause", [QBO_CATEGORIZE]: "QuickBooks category" };
+const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [SHOPIFY_STOCK]: "Shopify stock", [SHOPIFY_COPY]: "Shopify product copy", [SHOPIFY_SHIP]: "Shopify shipped", [SHOPIFY_DISCOUNT]: "Shopify discount code", [SHOPIFY_REFUND]: "Shopify refund", [INVOICE_DRAFT]: "Stripe invoice draft", [SQUARE_INVOICE]: "Square invoice draft", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note", [HUBSPOT_MOVE]: "HubSpot deal move", [META_PAUSE]: "Meta ad pause", [QBO_CATEGORIZE]: "QuickBooks category" };
 
 /** A Shopify stock change: the item at its location, the count before and after, and Shopify's reason. */
 function Stock({ i }: { i: ApprovalItem }) {
@@ -189,6 +189,17 @@ function Ship({ i }: { i: ApprovalItem }) {
   );
 }
 
+function Refund({ i }: { i: ApprovalItem }) {
+  const p = i.preview;
+  const rows: [string, string][] = [["Order", p.record ?? "?"], ["Refund", p.whole ? "the whole order, with shipping" : (p.refund_items ?? []).join(", ") || "?"], ["Amount", p.amount ? `$${p.amount}` : "?"], ["Refunded before", p.refunded_before ? `$${p.refunded_before}` : "?"]];
+  return (
+    <div style={{ borderRadius: 16, background: "var(--soft)", padding: "6px 16px" }}>
+      {rows.map(([k, v], n) => <div key={k} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13 }}><span className="muted">{k}</span><span style={{ fontWeight: 500, textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>{v}</span></div>)}
+      <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Approving refunds this money to the customer&rsquo;s original payment, and Shopify emails the customer its refund confirmation. Items aren&rsquo;t restocked. Shopify works out the amount again right before; it&rsquo;s refused if that is more than shown here, over your refund caps, or the order was refunded since. A refund can&rsquo;t be undone. Always waits for you.</div>
+    </div>
+  );
+}
+
 function Change({ i }: { i: ApprovalItem }) {
   const p = i.preview;
   if (i.tool === DRAFT_EMAIL) return <Draft i={i} />;
@@ -201,6 +212,7 @@ function Change({ i }: { i: ApprovalItem }) {
   if (i.tool === SHOPIFY_COPY) return <Copy i={i} />;
   if (i.tool === SHOPIFY_SHIP) return <Ship i={i} />;
   if (i.tool === SHOPIFY_DISCOUNT) return <Discount i={i} />;
+  if (i.tool === SHOPIFY_REFUND) return <Refund i={i} />;
   if (i.tool === WOO_NOTE) return <OrderNote i={i} />;
   if (i.tool === HUBSPOT_MOVE) return <DealMove i={i} />;
   if (i.tool === META_PAUSE) return <AdPause i={i} />;

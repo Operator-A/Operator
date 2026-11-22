@@ -31,8 +31,8 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
-import { DISCOUNT_LIMITS, SHOPIFY_DISCOUNT_GRANT, addDays, normCode, refuseDiscountDates, CARRIER_NAMES, COPY_LIMITS, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP_GRANT, normTracking, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, copyText, productTarget, refuseCopyFacts, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_REFUND, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { REFUND_LIMITS, SHOPIFY_REFUND_GRANT, dollars, DISCOUNT_LIMITS, SHOPIFY_DISCOUNT_GRANT, addDays, normCode, refuseDiscountDates, CARRIER_NAMES, COPY_LIMITS, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP_GRANT, normTracking, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, copyText, productTarget, refuseCopyFacts, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
 import type { McPeriod } from "@/core/mailchimp-rules";
@@ -73,6 +73,7 @@ import { stockLevels } from "@/integrations/shopify/stock";
 import { productCopy } from "@/integrations/shopify/copy";
 import { ordersToShip } from "@/integrations/shopify/ship";
 import { discountCodes } from "@/integrations/shopify/discounts";
+import { ordersToRefund } from "@/integrations/shopify/refunds";
 
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -228,6 +229,23 @@ const TOOLS_LIST: ToolDef[] = [
           : { pick: `sh${i + 1}`, order: o.name, date: o.createdAt?.slice(0, 10) ?? null, items_left: o.items, ships_from: o.from };
       });
       return { data: { orders: rows, note: "A tracking number must come from the owner or a carrier label, never be made up." }, numbers: { orders: rows.length, can_mark: Object.keys(picks).length }, picks };
+    },
+  },
+  {
+    id: "shopify_orders_to_refund", label: "Orders to refund", detail: `Paid or partly refunded orders from the last ${REFUND_LIMITS.days} days (up to 50), newest first: order number, date, total, refunded so far, Shopify's full refund and each item still refundable with its price per unit after discounts, with tax. No names or addresses. Each order that can be refunded here has a pick code a refund can name`,
+    kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async () => {
+      const list = await ordersToRefund();
+      const picks: Record<string, Pick> = {};
+      const rows = list.map((o, i) => {
+        const date = o.createdAt.slice(0, 10);
+        if (o.not) return { order: o.name, date, cannot_refund_here: o.not };
+        // the pick carries what the order had refunded, Shopify's full refund and each item's price, so the
+        // model never supplies an amount
+        picks[`rf${i + 1}`] = { kind: "refund", label: `Order ${o.name}`, id: JSON.stringify({ o: o.id, rb: o.refundedCents, full: o.fullCents, lines: o.items.map((l) => ({ id: l.id, name: l.name, q: l.left, u: l.unitCents })) }) };
+        return { pick: `rf${i + 1}`, order: o.name, date, total: usd(o.totalCents / 100), refunded_so_far: usd(o.refundedCents / 100), whole_order_refund: usd(o.fullCents / 100), items: o.items.map((l, n) => ({ item: n + 1, name: l.name, refundable: l.left, each_with_tax: usd(l.unitCents / 100) })) };
+      });
+      return { data: { orders: rows, note: `A refund goes back to the original payment, at most $${REFUND_LIMITS.perRefund} each and $${REFUND_LIMITS.monthly} a month (the owner may set lower caps).` }, numbers: { orders: rows.length, can_refund: Object.keys(picks).length }, picks };
     },
   },
   {
@@ -1156,6 +1174,47 @@ const TOOLS_LIST: ToolDef[] = [
       if (refused) return { problem: refused };
       const items = typeof row.n === "number" ? row.n : null;
       return { gatewayTool: SHOPIFY_SHIP, target, args, actionType: "order_shipped", title: `${pick.label}: shipped by ${args.carrier}`, preview: { record: pick.label, items, carrier: args.carrier, tracking: args.tracking, notify: true, why: input.why } };
+    },
+  },
+  {
+    id: SHOPIFY_REFUND_GRANT, label: "Refund an order", detail: `Stages a refund of one Shopify order, all of it or some items, back to the original payment, for an approver to approve. Always an approval card: it never runs on its own. Shopify works out the amount (never the agent) and emails the customer its own refund confirmation. Items are not restocked. At most $${REFUND_LIMITS.perRefund} per refund and $${REFUND_LIMITS.monthly} a month (the owner may set lower caps). Refused if the order was refunded since or Shopify's amount went up. The order always comes from an Orders to refund result`,
+    kind: "action", becomes: SHOPIFY_REFUND, group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
+    agents: GATEWAY_TOOLS[SHOPIFY_REFUND].agents,
+    params: [
+      { name: "order", type: "pick", kind: "refund", description: "The order, from an Orders to refund result." },
+      { name: "refund", type: "enum", options: ["whole order", "some items"], description: "The whole order (with shipping), or some items only." },
+      { name: "items", type: "text", maxLength: 200, optional: true, description: "For some items: item number and quantity from the Orders to refund row, like \"1:2, 3:1\". Leave it out for the whole order." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why this order is refunded, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const pick = input.order as Pick;
+      let row: { o?: unknown; rb?: unknown; full?: unknown; lines?: unknown };
+      try { row = JSON.parse(pick.id); } catch { return { problem: "that row isn't an order from Orders to refund" }; }
+      const target = typeof row.o === "string" ? row.o : "";
+      if (typeof row.rb !== "number" || typeof row.full !== "number" || !Array.isArray(row.lines)) return { problem: "that row isn't an order from Orders to refund" };
+      const known = row.lines as { id: string; name: string; q: number; u: number }[];
+      const whole = input.refund === "whole order";
+      const lines: { line: string; qty: number }[] = [];
+      const shown: string[] = [];
+      let amountCents = whole ? row.full : 0;
+      if (!whole) {
+        const text = typeof input.items === "string" ? input.items.trim() : "";
+        if (!text) return { problem: "name the items to refund, like \"1:2, 3:1\"" };
+        for (const part of text.split(/[,;]+/).map((x) => x.trim()).filter(Boolean)) {
+          const m = /^(\d{1,3})\s*[:x×]\s*(\d{1,4})$/.exec(part);
+          if (!m) return { problem: `"${part}" isn't an item number and a quantity, like 1:2` };
+          const it = known[Number(m[1]) - 1], qty = Number(m[2]);
+          if (!it) return { problem: `item ${m[1]} isn't on that order's row` };
+          if (qty < 1 || qty > it.q) return { problem: `item ${m[1]} has ${it.q} left to refund` };
+          lines.push({ line: it.id, qty });
+          shown.push(`${qty} × ${it.name}`);
+          amountCents += qty * it.u;
+        }
+      }
+      const args = { whole, lines, amount: dollars(amountCents), refunded_before: dollars(row.rb) };
+      const refused = refuseProposal(ctx.agentId, SHOPIFY_REFUND, target, args, undefined, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      return { gatewayTool: SHOPIFY_REFUND, target, args, actionType: "order_refunded", title: `${pick.label}: refund $${args.amount}`, preview: { record: pick.label, whole, refund_items: whole ? null : shown, amount: args.amount, refunded_before: args.refunded_before, notify: true, why: input.why } };
     },
   },
   {

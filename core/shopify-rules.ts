@@ -237,6 +237,30 @@ const DISCOUNT_CODES = gql`
   }
 `;
 
+// Paid orders from the last 60 days, for staging a refund: order number, date, status, total, refunded so
+// far, Shopify's own whole-order refund (with shipping), and each line item's refundable quantity, unit
+// price after discounts and tax. 25 a page. No names or addresses.
+const ORDERS_TO_REFUND = gql`
+  query AgentOrdersToRefund($query: String!, $after: String) {
+    orders(first: 25, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) {
+      nodes {
+        id name createdAt cancelledAt test displayFinancialStatus currencyCode
+        totalPriceSet { shopMoney { amount } }
+        totalRefundedSet { shopMoney { amount } }
+        suggestedRefund(suggestFullRefund: true, refundShipping: true) { amountSet { shopMoney { amount currencyCode } } }
+        lineItems(first: 20) {
+          nodes {
+            id name quantity refundableQuantity
+            discountedUnitPriceAfterAllDiscountsSet { shopMoney { amount } }
+            taxLines { priceSet { shopMoney { amount } } }
+          }
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
 /** Core's Shopify tools: what every business on Shopify can read. */
 export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
   {
@@ -329,6 +353,18 @@ export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
       const cur = afterArg(a);
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };
       return { variables: { after: cur } };
+    },
+  },
+  {
+    tool: "shopify_orders_to_refund",
+    description: "Paid orders from the last 60 days, newest first, 25 a page, with their Shopify ids: order number, date, total, refunded so far, Shopify's whole-order refund, and each item's refundable quantity, price and tax. No names or addresses.",
+    inputSchema: { type: "object", properties: { after } },
+    doc: ORDERS_TO_REFUND,
+    variables: (a, ctx) => {
+      const cur = afterArg(a);
+      if (cur === undefined) return { problem: "after must be a cursor from the last page" };
+      const start = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
+      return { variables: { query: `created_at:>='${start}T00:00:00${offsetOn(start, ctx.timeZone)}' (financial_status:paid OR financial_status:partially_refunded)`, after: cur } };
     },
   },
   {

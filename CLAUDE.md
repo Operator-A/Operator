@@ -14,7 +14,7 @@ They hold for every business on OPERATOR. "The owner" is the business's owner; "
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
-The tool gateway (`core/gateway`) has sixteen action types so far, all starting at Draft: receipt, category
+The tool gateway (`core/gateway`) has seventeen action types so far, all starting at Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), a Gmail draft to a lead
 on the leads list (the prospecting lead finder; the owner sends it from Gmail), a draft email campaign
 to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), a draft
@@ -26,7 +26,10 @@ set on one Shopify item at one location (any agent an approver grants it to; Dra
 business ships itself marked shipped in Shopify with a carrier and tracking number (any agent an approver
 grants it to; Draft only, never promoted; Shopify emails the customer its own shipping confirmation), one percent-off
 discount code on every product, once per customer, inside caps in code the owner may lower (at most 20% off, 100 uses
-and 30 days; at most 5 agent-made codes live; any agent an approver grants it to; Draft only, never promoted), a new
+and 30 days; at most 5 agent-made codes live; any agent an approver grants it to; Draft only, never promoted), a refund of one
+recent Shopify order (the whole order or some items) to its original payment, the amount worked out by Shopify,
+at most $100 per refund and $500 a month in code the owner may lower (any agent an approver grants it to; Draft
+only, never promoted; Shopify emails the customer its own refund confirmation), a new
 description or SEO text on one Shopify product (any agent an approver grants it to), a draft
 invoice to one of the business's existing Stripe customers (any agent an approver gives it to; the owner
 finalizes and sends it from Stripe), a private note on an order in the business's WooCommerce store (any
@@ -38,8 +41,9 @@ Uncategorized Expense into one of the business's own expense accounts (any agent
 an amount, and nothing is created or deleted), and a draft invoice to one of the business's existing Square
 customers at one of its active locations (any agent an approver gives it to; the owner publishes and sends it
 from Square). No
-action type sends a message a model wrote, pays or publishes a post; the only customer email any action
-causes is Shopify's own shipping confirmation.
+action type sends a message a model wrote, pays or publishes a post, and the only money any action moves is
+a capped Shopify refund to the original payment; the only customer emails any action causes are Shopify's own
+shipping and refund confirmations.
 
 
 - Sending, buying and posting are allowed only as gateway action types, and every new
@@ -48,7 +52,8 @@ causes is Shopify's own shipping confirmation.
   its last 30 approvals went through unedited and the owner confirms the promotion card. A
   "wrong" rejection, complaint, unsubscribe spike, cap breach or breaker trip drops it
   back to Draft. No code path may send, pay or post outside the gateway.
-- Money: only within `policies.max_purchase_usd` (start $500) and
+- Money: a refund to a customer's original payment is only the Shopify refund action type, inside its own
+  caps (`max_refund_usd`, `max_monthly_refunds_usd`). Any other money moves only within `policies.max_purchase_usd` (start $500) and
   `policies.max_monthly_spend_usd` (start $1,500), only to payees in `vendors` (the owner adds
   rows; a new payee is always Draft and never promoted), as Mercury send-money requests.
   No card actions, no transfers to personal accounts, no void or delete of a transaction,
@@ -64,8 +69,8 @@ causes is Shopify's own shipping confirmation.
   that file and `check:mcp` on one not named on the Shopify profile. The key may carry read scopes and
   only the write scopes the profile names; any other write scope is refused. A store action is granted
   to an agent only by an approver on the builder's Tools step, never by a proposal. No agent deletes a
-  product, customer or order, cancels an order, or moves money from Shopify (refunds, gift cards,
-  prices) until that action type has its own cap in code.
+  product, customer or order, cancels an order, or moves money from Shopify (gift cards, prices) until
+  that action type has its own cap in code; refunds have theirs (`REFUND_LIMITS`).
 - Email: first contact with a person who has never heard from the business is always Draft
   and never promoted. Follow-ups and replies on an existing thread can be promoted. Daily
   cap `policies.max_emails_per_day` (start 20); an unsubscribe or "stop" reply ends all
