@@ -9,8 +9,10 @@ import { agentNames, companySeat, deptSpent, headOf, childrenOf, liveAgentIds, m
 import type { MapOrg } from "./agentMap";
 import type { GoalView } from "./goals";
 import type { Floor } from "./data";
-import { when } from "./format";
-import { stateLook, stateOf, type Look } from "./status";
+import { hm, md, when } from "./format";
+import { handoffsOf, type CanvasData, type CanvasSeat, type CanvasState } from "./org-canvas";
+import { isLive, stateLook, stateOf, type AgentState, type Look } from "./status";
+import type { Chain } from "@/core/flow-rules";
 
 export interface SeatAgent {
   id: string;
@@ -21,6 +23,10 @@ export interface SeatAgent {
   hue: string | null;
   look: Look;
   last: string;
+  state: AgentState;
+  /** What it does, what a real run hands you, and its last run that did something. */
+  job: string; writes: string | null;
+  summary: string | null; lastRunId: string | null;
 }
 export interface SeatView {
   id: string;
@@ -65,7 +71,8 @@ function agentsOf(f: Floor): SeatAgent[] {
   return f.crew.map((a): SeatAgent => {
     const st = stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0);
     const last = f.runs.find((r) => r.agent_id === a.id && r.status !== "skipped");
-    return { id: a.id, name: a.name, role: a.role, href: `/agents/${a.id}`, icon: a.icon, hue: a.hue ?? null, look: stateLook(st, f.org.on), last: last ? `Last ran ${when(last.started_at, f.tz)}` : "Never run" };
+    return { id: a.id, name: a.name, role: a.role, href: `/agents/${a.id}`, icon: a.icon, hue: a.hue ?? null, look: stateLook(st, f.org.on), last: last ? `Last ran ${when(last.started_at, f.tz)}` : "Never run",
+      state: st, job: a.job, writes: a.writes ?? null, summary: last?.summary ?? null, lastRunId: last?.id ?? null };
   });
 }
 
@@ -74,7 +81,7 @@ export function orgView(f: Floor, org: Org, x: DeptExtras, goals: Record<string,
   const byId = new Map(all.map((a) => [a.id, a]));
   const view = (s: Seat, depth: number): SeatView => ({
     id: s.id, title: s.title, sub: s.sub, holder: s.holder,
-    agent: s.holder === "agent" && s.agentId ? byId.get(s.agentId) ?? { id: s.agentId, name: s.agentId, role: "Not found", href: "/crew", icon: "cpu", hue: null, look: OFF_LOOK, last: "" } : null,
+    agent: s.holder === "agent" && s.agentId ? byId.get(s.agentId) ?? { id: s.agentId, name: s.agentId, role: "Not found", href: "/crew", icon: "cpu", hue: null, look: OFF_LOOK, last: "", state: "missing", job: "", writes: null, summary: null, lastRunId: null } : null,
     kids: depth > 6 ? [] : childrenOf(org, s.id).map((c) => view(c, depth + 1)),
     proposals: proposals[s.id] ?? [],
   });
@@ -100,6 +107,39 @@ export function orgView(f: Floor, org: Org, x: DeptExtras, goals: Record<string,
     choices: all.map((a) => { const s = seatOf(org, a.id); return { id: a.id, label: a.name, seat: s ? seatPath(org, s) : null }; }),
     problems: orgProblems(org),
   };
+}
+
+const CANVAS_STATE: Record<AgentState, CanvasState> = { running: "run", active: "on", manual: "call", paused: "off", over: "over", missing: "missing" };
+const clip = (t: string, n = 160) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t);
+
+/**
+ * The living canvas's data (docs/crew-canvas.md): the chart as flat seats, hand-offs from the chains
+ * that are on, and today's runs. Everything on the canvas is drawn from this and nothing else.
+ */
+export function canvasData(f: Floor, v: OrgView, chains: readonly Chain[]): CanvasData {
+  const flat = (s: SeatView, parent: string | null, depth: number): CanvasSeat[] => [{
+    id: s.id, title: s.title, sub: s.sub, holder: s.holder, parent, depth,
+    agent: s.agent ? {
+      id: s.agent.id, name: s.agent.name, role: s.agent.role, href: s.agent.href, state: CANVAS_STATE[s.agent.state], label: s.agent.look.label, last: s.agent.last,
+      summary: s.agent.summary ? clip(s.agent.summary) : null, lastRunHref: s.agent.lastRunId ? `/runs/${s.agent.lastRunId}` : null, job: s.agent.job, writes: s.agent.writes,
+    } : null,
+    href: s.holder === "open" ? (s.proposals.length ? `/proposals/${s.proposals[0].id}` : `/build/new?seat=${s.id}`) : null,
+    proposal: s.proposals[0]?.text ?? null,
+  }, ...s.kids.flatMap((k) => flat(k, s.id, depth + 1))];
+  const depts = v.departments.map((d) => ({ id: d.id, name: d.name, seats: flat(d.head, null, 0), spent: d.spent, budget: d.budget, rules: d.rules.map((r) => r.text), goals: d.goals }));
+  const company = v.company ? flat({ ...v.company, kids: [] }, null, 0)[0] : null;
+  const seatOfAgent: Record<string, string> = {}, nameOf: Record<string, string> = {};
+  for (const s of [...(company ? [company] : []), ...depts.flatMap((d) => d.seats)]) if (s.agent) { seatOfAgent[s.agent.id] = s.id; nameOf[s.agent.id] = s.agent.name; }
+  const today = md(f.now, f.tz);
+  const runs = f.runs
+    .filter((r) => r.status !== "skipped" && (r.status !== "running" || isLive(r, f.now)) && seatOfAgent[r.agent_id] && md(r.started_at, f.tz) === today)
+    .slice(0, 40)
+    .map((r) => ({
+      id: r.id, seat: seatOfAgent[r.agent_id], who: nameOf[r.agent_id], at: hm(r.started_at, f.tz), href: `/runs/${r.id}`,
+      status: r.status === "failed" ? "failed" as const : r.status === "running" ? "running" as const : "ok" as const,
+      text: clip(r.summary ?? (r.status === "failed" ? r.error ?? "The run failed." : r.status === "running" ? "Working now." : "Ran."), 140),
+    }));
+  return { company, depts, handoffs: handoffsOf(chains, seatOfAgent), runs };
 }
 
 /** For the builder's step 1: every seat as a path, and whether it's free for this agent. */
