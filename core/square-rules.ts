@@ -15,7 +15,7 @@
 
 import { INVOICE_CURRENCIES, INVOICE_FIELDS, INVOICE_LIMITS, MAX_INVOICE_USD, REQUEST_KEY, invoiceCents, refuseInvoice, type InvoiceArgs, type InvoiceLine } from "@/core/stripe-rules";
 
-export const SQUARE_READ_TOOLS = ["square_payments", "square_locations", "square_open_invoices", "square_customers"] as const;
+export const SQUARE_READ_TOOLS = ["square_payments", "square_locations", "square_open_invoices", "square_customers", "square_appointments"] as const;
 export type SquareReadTool = (typeof SQUARE_READ_TOOLS)[number];
 export const SQUARE_DRAFT_TOOL = "square_create_invoice_draft";
 /** The gateway action type: a draft invoice in the business's Square. */
@@ -27,7 +27,7 @@ export const SQUARE_INVOICE_GRANT = "square_invoice_draft";
  * and invoices. Writes: invoices, and orders because a Square invoice is built on an order. Our server
  * makes only that one order, for the draft, and never updates or pays an order.
  */
-export const SQUARE_SCOPES = ["MERCHANT_PROFILE_READ", "PAYMENTS_READ", "CUSTOMERS_READ", "INVOICES_READ", "INVOICES_WRITE", "ORDERS_WRITE"] as const;
+export const SQUARE_SCOPES = ["MERCHANT_PROFILE_READ", "PAYMENTS_READ", "CUSTOMERS_READ", "INVOICES_READ", "INVOICES_WRITE", "ORDERS_WRITE", "APPOINTMENTS_READ", "APPOINTMENTS_ALL_READ"] as const;
 
 /** Pinned so a change on Square's side can't change what a call does. */
 export const SQUARE_VERSION = "2025-10-16";
@@ -68,22 +68,32 @@ export const MAX_LOCATIONS = 10;
 
 /** Square ids: customers, locations, payments, orders and invoices are letters, digits, - and _. */
 export const SQ_ID = /^[A-Za-z0-9_-]{4,64}$/;
+/** Square lists bookings over at most 31 days at a time. */
+export const MAX_BOOKING_DAYS = 31;
 
 export type SquareArgs =
   | { tool: "square_payments"; days: number }
   | { tool: "square_locations" }
   | { tool: "square_open_invoices"; limit: number }
-  | { tool: "square_customers"; limit: number };
+  | { tool: "square_customers"; limit: number }
+  | { tool: "square_appointments"; days: number; when: "past" | "next" };
 
 /** A read tool's input, checked again on our server. Anything not named here is refused. */
 export function checkSquareArgs(tool: string, raw: unknown): SquareArgs | { problem: string } {
   const a = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const allowed: Record<SquareReadTool, string[]> = { square_payments: ["days"], square_locations: [], square_open_invoices: ["limit"], square_customers: ["limit"] };
+  const allowed: Record<SquareReadTool, string[]> = { square_payments: ["days"], square_locations: [], square_open_invoices: ["limit"], square_customers: ["limit"], square_appointments: ["days", "when"] };
   if (!(tool in allowed)) return { problem: `${tool || "that"} isn't a Square read tool` };
   const t = tool as SquareReadTool;
   const extra = Object.keys(a).filter((k) => !allowed[t].includes(k));
   if (extra.length) return { problem: `unknown input: ${extra.join(", ")}` };
   if (t === "square_locations") return { tool: t };
+  if (t === "square_appointments") {
+    const days = a.days === undefined ? 7 : Number(a.days);
+    const when = a.when === undefined ? "next" : a.when;
+    if (!Number.isInteger(days) || days < 1 || days > MAX_BOOKING_DAYS) return { problem: `days is a whole number from 1 to ${MAX_BOOKING_DAYS}` };
+    if (when !== "past" && when !== "next") return { problem: "when is past or next" };
+    return { tool: t, days, when };
+  }
   if (t === "square_payments") {
     const days = a.days === undefined ? 30 : Number(a.days);
     if (!Number.isInteger(days) || days < 1 || days > MAX_DAYS) return { problem: `days is a whole number from 1 to ${MAX_DAYS}` };
@@ -107,6 +117,7 @@ export const squareRequest = {
   payments: (since: string, cursor?: string): Req => ({ method: "GET", path: "payments", query: { begin_time: since, sort_order: "DESC", limit: String(PAGE), ...(cursor ? { cursor } : {}) } }),
   invoices: (locationId: string): Req => ({ method: "POST", path: "invoices/search", body: { query: { filter: { location_ids: [locationId] }, sort: { field: "INVOICE_SORT_DATE", order: "DESC" } }, limit: PAGE } }),
   customers: (limit: number): Req => ({ method: "GET", path: "customers", query: { limit: String(limit), sort_field: "CREATED_AT", sort_order: "DESC" } }),
+  bookings: (startMin: string, startMax: string, cursor?: string): Req => ({ method: "GET", path: "bookings", query: { start_at_min: startMin, start_at_max: startMax, limit: String(PAGE), ...(cursor ? { cursor } : {}) } }),
   customer: (id: string): Req => ({ method: "GET", path: `customers/${encodeURIComponent(id)}` }),
   invoice: (id: string): Req => ({ method: "GET", path: `invoices/${encodeURIComponent(id)}` }),
   createOrder: (body: unknown): Req => ({ method: "POST", path: "orders", body }),
@@ -368,4 +379,60 @@ export function readInvoice(j: unknown): { id: string; status: string; total: nu
 export function squareError(j: unknown): string {
   const e = obj(arr(obj(j).errors)[0]);
   return str(e.detail, 200) || str(e.code, 80) || "error";
+}
+
+// ---- Appointments (2026-11-22): bookings by day, counted here. Customer ids only, never names or contacts.
+
+/** The window a bookings read covers: the last `days` days up to now, or the next `days` days from now. */
+export function bookingWindow(days: number, when: "past" | "next", now: number): { from: string; to: string } {
+  const a = when === "past" ? now - days * 86_400_000 : now;
+  return { from: new Date(a).toISOString(), to: new Date(a + days * 86_400_000).toISOString() };
+}
+
+const CANCELLED = new Set(["CANCELLED_BY_CUSTOMER", "CANCELLED_BY_SELLER", "DECLINED"]);
+
+export interface Appointments {
+  from: string; to: string;
+  totals: { booked: number; cancelled: number; no_shows: number; pending: number; minutes_booked: number; no_show_rate: number };
+  days: { date: string; booked: number; cancelled: number; no_shows: number }[];
+  locations: { location: string; booked: number; no_shows: number }[];
+  /** True when more than MAX_PAGES pages existed and the rest were not read. */
+  cut: boolean;
+}
+
+/**
+ * Bookings in a window: booked counts accepted, pending and no-show bookings (a no-show was booked);
+ * cancelled counts customer and seller cancellations and declines. Minutes come from each booking's
+ * segments. The no-show rate is no-shows over bookings whose time has passed.
+ */
+export function readBookings(rows: readonly Json[], names: ReadonlyMap<string, string>, window: { from: string; to: string }, now: number, cut: boolean): Appointments {
+  const day = new Map<string, { booked: number; cancelled: number; no_shows: number }>();
+  const loc = new Map<string, { booked: number; no_shows: number }>();
+  let booked = 0, cancelled = 0, noShows = 0, pending = 0, minutes = 0, past = 0;
+  for (const b of rows) {
+    const status = str(b.status, 30);
+    const start = str(b.start_at, 40);
+    const at = Date.parse(start);
+    if (!Number.isFinite(at)) continue;
+    const date = start.slice(0, 10);
+    const d = day.get(date) ?? { booked: 0, cancelled: 0, no_shows: 0 };
+    const lid = str(b.location_id, 64);
+    const l = loc.get(lid) ?? { booked: 0, no_shows: 0 };
+    if (CANCELLED.has(status)) { cancelled++; d.cancelled++; day.set(date, d); continue; }
+    if (!["ACCEPTED", "PENDING", "NO_SHOW"].includes(status)) continue;
+    booked++; d.booked++; l.booked++;
+    if (status === "PENDING") pending++;
+    if (status === "NO_SHOW") { noShows++; d.no_shows++; l.no_shows++; }
+    if (at <= now) past++;
+    minutes += arr(b.appointment_segments).map(obj).reduce((t, s) => t + Math.max(0, int(s.duration_minutes)), 0);
+    day.set(date, d);
+    loc.set(lid, l);
+  }
+  return {
+    from: window.from, to: window.to,
+    totals: { booked, cancelled, no_shows: noShows, pending, minutes_booked: minutes, no_show_rate: past ? round2(noShows / past) : 0 },
+    days: [...day].sort(([a], [b]) => (a < b ? -1 : 1)).map(([date, d]) => ({ date, ...d })),
+    locations: [...loc].map(([id, l]) => ({ location: names.get(id) ?? (id || "?"), ...l })).sort((a, b) => b.booked - a.booked),
+    cut,
+  };
 }

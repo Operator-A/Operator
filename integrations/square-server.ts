@@ -11,7 +11,7 @@ import "server-only";
 //   the owner publishes from Square.
 import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import {
-  MAX_LOCATIONS, MAX_PAGES, SQ_ID, SQUARE_DRAFT_TOOL, checkSquareArgs, checkSquareDraftArgs, invoiceCents, listPage, readCustomers, readInvoice, readLocations, readMerchant, readOpenInvoices,
+  MAX_LOCATIONS, MAX_PAGES, SQ_ID, bookingWindow, readBookings, SQUARE_DRAFT_TOOL, checkSquareArgs, checkSquareDraftArgs, invoiceCents, listPage, readCustomers, readInvoice, readLocations, readMerchant, readOpenInvoices,
   readOrder, readPayments, readTokenScopes, refuseLocation, sinceIso, squareDraftBodies, squareRequest, type SquareArgs,
 } from "@/core/square-rules";
 import { errorText, squareFetch, squareJson, squareTokenStatus, type SquareConn } from "./square-api";
@@ -24,6 +24,7 @@ const DESCRIPTIONS: Record<string, string> = {
   square_locations: "The business's Square locations, active ones first, with their currency.",
   square_open_invoices: "Open invoices across the business's locations, most overdue first, with the amount still owed and days late.",
   square_customers: "The most recent customers, to pick one for an invoice.",
+  square_appointments: "Bookings over the last or next 1 to 31 days, by day and location, with cancellations and no-shows counted.",
   [SQUARE_DRAFT_TOOL]: "Creates one draft invoice for one customer at one location. Never publishes, sends or charges it.",
 };
 
@@ -66,6 +67,19 @@ async function read(c: SquareConn, a: SquareArgs): Promise<unknown> {
       const rows: Record<string, unknown>[] = [];
       for (const l of searched) rows.push(...listPage(await squareJson(c, squareRequest.invoices(l.id)), "invoices").rows);
       return { ...readOpenInvoices(rows, names, new Date(now).toISOString().slice(0, 10), a.limit), locations_searched: searched.length };
+    }
+    case "square_appointments": {
+      const { names } = await locationNames(c);
+      const w = bookingWindow(a.days, a.when, now);
+      const rows: Record<string, unknown>[] = [];
+      let cursor: string | undefined;
+      for (let i = 0; i < MAX_PAGES; i++) {
+        const page = listPage(await squareJson(c, squareRequest.bookings(w.from, w.to, cursor)), "bookings");
+        rows.push(...page.rows);
+        if (!page.next) return readBookings(rows, names, w, now, false);
+        cursor = page.next;
+      }
+      return readBookings(rows, names, w, now, true);
     }
     case "square_customers": return { customers: readCustomers(await squareJson(c, squareRequest.customers(a.limit))) };
   }

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { INTUIT_AUTH, MCP_SERVERS, authorizeUrl, checkedTools, isAppSignIn, isGoogle, isHosted, mayCall, mayReport, mayWrite, usesConnect } from "../core/mcp-rules";
 import {
   QBO_CATEGORIZE, QBO_CATEGORIZE_TOOL, QBO_READ_TOOLS, QBO_SCOPE, UNCATEGORIZED, checkCategorizeArgs, checkCategorized, checkQboArgs, companyName, expenseTarget, planCategorize, qboRequest,
-  readExpenseAccounts, readProfitLoss, readUncategorized, realmOk, refuseAccount, refuseCategorize, sinceDate, toCents, uncategorizedId,
+  readExpenseAccounts, readProfitLoss, readReceivables, readUncategorized, readUnpaidBills, realmOk, refuseAccount, refuseCategorize, sinceDate, toCents, uncategorizedId,
 } from "../core/quickbooks-rules";
 import { TOOLS, refuseProposal } from "../core/gateway/policy";
 import { SCOPE_WORDS, TILE_BY_ID, permissionsOf } from "../core/tools-step-rules";
@@ -45,10 +45,10 @@ assert.deepEqual(importers("quickbooks-server"), ["integrations/mcp.ts"]);
 const callers = all.filter((f) => !["core/quickbooks-rules.ts", "core/mcp-rules.ts"].includes(f) && readFileSync(f, "utf8").includes("quickbooks.api.intuit.com"));
 assert.deepEqual(callers, [], "QuickBooks' address lives only in the rules and the profile");
 const server = (readFileSync("integrations/quickbooks-server.ts", "utf8") + readFileSync("integrations/quickbooks-api.ts", "utf8")).replace(/^\s*\/\/.*$/gm, "");
-assert.doesNotMatch(server, /operation=delete|operation=void|"DELETE"|include=void|\bdelete\b\s*\(|createPurchase|qboRequest\.(?!profitLoss|uncategorizedAccount|purchasesSince|expenseAccounts|companyInfo|purchase|account|updatePurchase)\w+/, "no create, delete or void call");
+assert.doesNotMatch(server, /operation=delete|operation=void|"DELETE"|include=void|\bdelete\b\s*\(|createPurchase|qboRequest\.(?!profitLoss|uncategorizedAccount|purchasesSince|expenseAccounts|unpaidBills|agedReceivables|companyInfo|purchase|account|updatePurchase)\w+/, "no create, delete or void call");
 assert.equal((server.match(/qboPost\(/g) ?? []).length, 2, "POSTs: the definition and the one sparse update");
 const rules = readFileSync("core/quickbooks-rules.ts", "utf8");
-assert.equal((rules.match(/`SELECT /g) ?? []).length, 3, "three fixed queries");
+assert.equal((rules.match(/`SELECT /g) ?? []).length, 4, "four fixed queries");
 assert.doesNotMatch(rules, /operation=|DELETE FROM|"Deposit"|"BillPayment"|"Payment"/);
 
 // ---- inputs
@@ -58,6 +58,11 @@ assert.ok("problem" in checkQboArgs("quickbooks_profit_loss", { query: "SELECT *
 assert.deepEqual(checkQboArgs("quickbooks_uncategorized", { days: 30 }), { tool: "quickbooks_uncategorized", days: 30, limit: 25 });
 assert.ok("problem" in checkQboArgs("quickbooks_uncategorized", { days: 400 }) && "problem" in checkQboArgs("quickbooks_uncategorized", { limit: 51 }));
 assert.ok("problem" in checkQboArgs(QBO_CATEGORIZE_TOOL, {}), "the write isn't a read");
+assert.deepEqual(checkQboArgs("quickbooks_unpaid_bills", {}), { tool: "quickbooks_unpaid_bills", limit: 20 });
+assert.deepEqual(checkQboArgs("quickbooks_receivables", { limit: 50 }), { tool: "quickbooks_receivables", limit: 50 });
+assert.ok("problem" in checkQboArgs("quickbooks_receivables", { limit: 51 }) && "problem" in checkQboArgs("quickbooks_unpaid_bills", { vendor: "x" }), "no inputs beyond the limit");
+assert.match(qboRequest.unpaidBills().query.query, /^SELECT \* FROM Bill WHERE Balance > '0' ORDERBY DueDate MAXRESULTS \d+$/);
+assert.deepEqual(qboRequest.agedReceivables(), { path: "reports/AgedReceivables", query: {} });
 assert.equal(sinceDate(30, Date.parse("2026-11-21T12:00:00Z")), "2026-10-22");
 assert.throws(() => qboRequest.purchasesSince("2026-01-01' OR 1=1 --"));
 assert.throws(() => qboRequest.purchase("1 OR 1"));
@@ -147,6 +152,33 @@ assert.ok(checkCategorized({ Purchase: ps[0] }, { Purchase: changed }, "1", "7")
 const moved = JSON.parse(JSON.stringify(after)); moved.Line[1].AccountBasedExpenseLineDetail.AccountRef.value = "9";
 assert.ok(checkCategorized({ Purchase: ps[0] }, { Purchase: moved }, "1", "7"), "another line moved");
 
+// ---- unpaid bills and what customers owe: sums in code
+const bill = (vendor: string, due: string, balance: string, total: string) => ({ VendorRef: { name: vendor }, DueDate: due, Balance: balance, TotalAmt: total, CurrencyRef: { value: "USD" } });
+const ub = readUnpaidBills([bill("Roaster Supply", "2026-11-30", "200.00", "200.00"), bill("Landlord", "2026-11-01", "1500.00", "1500.00"), bill("Paid Co", "2026-11-10", "0", "50"), bill("Packaging", "2026-12-31", "80.10", "100.00"), bill("Utility", "2026-11-20", "59.95", "59.95")], "2026-11-22", 3, false);
+assert.deepEqual(ub.bills.map((b) => [b.vendor, b.balance, b.days_late]), [["Landlord", 1500, 21], ["Utility", 59.95, 2], ["Roaster Supply", 200, 0]], "soonest due first, paid bills left out");
+assert.deepEqual([ub.open, ub.owed, ub.overdue, ub.overdue_amount, ub.due_soon, ub.due_soon_amount], [4, 1840.05, 2, 1559.95, 1, 200]);
+const cols7 = { Column: ["Customer", "Current", "1 - 30", "31 - 60", "61 - 90", "91 and over", "Total"].map((t) => ({ ColTitle: t })) };
+const arRow = (name: string, ...v: string[]) => ({ type: "Data", ColData: [{ value: name }, ...v.map((value) => ({ value }))] });
+const ar = { Header: { EndPeriod: "2026-11-22", Currency: "USD" }, Columns: cols7, Rows: { Row: [
+  arRow("Cafe Uno", "100.00", "50.00", "", "", "", "150.00"),
+  { type: "Section", Header: { ColData: [{ value: "Wholesale" }] }, Rows: { Row: [arRow("Big Grocer", "0.00", "", "400.00", "", "250.50", "650.50"), arRow("Nobody", "", "", "", "", "", "")] }, Summary: { ColData: [{ value: "Total Wholesale" }, { value: "0" }, { value: "" }, { value: "400" }, { value: "" }, { value: "250.50" }, { value: "650.50" }] } },
+  { type: "Section", group: "GrandTotal", Summary: { ColData: [{ value: "TOTAL" }, { value: "100.00" }, { value: "50.00" }, { value: "400.00" }, { value: "0.00" }, { value: "250.50" }, { value: "800.50" }] } },
+] } };
+const rv = readReceivables(ar, 10);
+assert.ok(!("problem" in rv));
+if (!("problem" in rv)) {
+  assert.deepEqual(rv.totals, { current: 100, days_1_30: 50, days_31_60: 400, days_61_90: 0, over_90: 250.5, total: 800.5 }, "summed from customer rows, not section subtotals");
+  assert.deepEqual(rv.customers.map((x) => [x.customer, x.total]), [["Big Grocer", 650.5], ["Cafe Uno", 150]], "largest first; customers owing nothing left out");
+  assert.equal(rv.customer_count, 2);
+  assert.equal(rv.total_checked, true, "matches the report's own total");
+  assert.equal(rv.as_of, "2026-11-22");
+}
+const off = JSON.parse(JSON.stringify(ar)); off.Rows.Row[2].Summary.ColData[6].value = "999.00";
+assert.equal((readReceivables(off, 10) as { total_checked: boolean }).total_checked, false, "a total that doesn't match is flagged");
+const noTotal = JSON.parse(JSON.stringify(ar)); noTotal.Rows.Row.pop();
+assert.equal((readReceivables(noTotal, 10) as { total_checked: boolean }).total_checked, false, "nothing to check against isn't checked");
+assert.ok("problem" in readReceivables({ ...ar, Columns: { Column: cols7.Column.slice(0, 5) } }, 10), "a report shaped differently is refused, not guessed at");
+
 // ---- the server, end to end, on a fake QuickBooks
 type Call = { method: string; url: string; body: string };
 function fakeQbo(reply: (c: Call) => { status: number; json: unknown }) {
@@ -177,6 +209,14 @@ const q = (c: Call) => decodeURIComponent(new URL(c.url).searchParams.get("query
   const un = (await reader(rpc("quickbooks_uncategorized", { days: 30, limit: 10 }))) as Reply;
   assert.equal(un.result?.structuredContent?.result.count, 2);
   assert.ok(calls.every((c) => c.method === "GET"));
+  calls = fakeQbo((c) => (c.url.includes("/reports/AgedReceivables?") ? { status: 200, json: ar } : q(c).includes("FROM Bill") ? { status: 200, json: { QueryResponse: { Bill: [bill("Landlord", "2026-11-01", "1500.00", "1500.00")] } } } : { status: 404, json: {} }));
+  const bills = (await reader(rpc("quickbooks_unpaid_bills", { limit: 5 }))) as Reply;
+  assert.equal(bills.result?.structuredContent?.result.open, 1);
+  const recv = (await reader(rpc("quickbooks_receivables", {}))) as Reply;
+  assert.equal((recv.result?.structuredContent?.result.totals as { total: number }).total, 800.5);
+  assert.ok(calls.every((c) => c.method === "GET") && calls.length === 2);
+  fakeQbo(() => ({ status: 200, json: { ...ar, Columns: { Column: [] } } }));
+  assert.match(((await reader(rpc("quickbooks_receivables", {}))) as Reply).result?.content?.[0].text ?? "", /^QuickBooks report: /);
   assert.ok(((await reader(rpc(QBO_CATEGORIZE_TOOL, { purchaseId: "100", lineId: "1", accountId: "7" }))) as Reply).result?.isError, "an agent's read path can't write");
   assert.ok(((await quickbooksServer({ base: BASE, realm: null, token: "tok", write: false })(rpc("quickbooks_expense_accounts", {}))) as Reply).result?.isError, "no company, no call");
 

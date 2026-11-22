@@ -11,7 +11,7 @@ import "server-only";
 import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import {
   QBO_CATEGORIZE_TOOL, checkCategorizeArgs, checkCategorized, checkQboArgs, companyName, planCategorize, qboRequest, queryRows, readExpenseAccounts, readProfitLoss, readUncategorized,
-  realmOk, refuseAccount, sinceDate, uncategorizedId, QUERY_MAX, UNCATEGORIZED, type QboArgs,
+  realmOk, refuseAccount, sinceDate, uncategorizedId, QUERY_MAX, UNCATEGORIZED, type QboArgs, readReceivables, readUnpaidBills,
 } from "@/core/quickbooks-rules";
 import { errorText, qboGet, qboJson, qboPost, type QboConn } from "./quickbooks-api";
 
@@ -19,6 +19,8 @@ const DESCRIPTIONS: Record<string, string> = {
   quickbooks_profit_loss: "Profit and loss for a period: income, cost of goods, gross profit, expenses by account and net income.",
   quickbooks_uncategorized: "Expense lines still in Uncategorized Expense, newest first, with their count and total.",
   quickbooks_expense_accounts: "The company's active expense accounts, to pick a category from.",
+  quickbooks_unpaid_bills: "Bills with money still owed, soonest due first, with what is overdue and what falls due in the next 14 days.",
+  quickbooks_receivables: "What customers owe, by age (current, 1 to 30, 31 to 60, 61 to 90 and over 90 days), largest first.",
   [QBO_CATEGORIZE_TOOL]: "Moves one expense line out of Uncategorized Expense into an expense account. Changes nothing else.",
 };
 
@@ -46,6 +48,15 @@ async function read(c: QboConn, a: QboArgs): Promise<unknown> {
       if (!uncat) return { lines: [], count: 0, total: 0, cut: false };
       const rows = queryRows(await qboJson(c, qboRequest.purchasesSince(sinceDate(a.days, Date.now()))), "Purchase");
       return readUncategorized(rows, uncat, a.limit, rows.length >= QUERY_MAX);
+    }
+    case "quickbooks_unpaid_bills": {
+      const rows = queryRows(await qboJson(c, qboRequest.unpaidBills()), "Bill");
+      return readUnpaidBills(rows, new Date().toISOString().slice(0, 10), a.limit, rows.length >= QUERY_MAX);
+    }
+    case "quickbooks_receivables": {
+      const r = readReceivables(await qboJson(c, qboRequest.agedReceivables()), a.limit);
+      if ("problem" in r) throw new Error(`QuickBooks report: ${r.problem}`);
+      return r;
     }
   }
 }

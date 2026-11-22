@@ -130,7 +130,7 @@ export const TOOL_TILES: readonly ToolTile[] = [
     also: { mcp: "stripe_drafts", label: "Stripe invoice drafts", why: "To draft invoices you approve, paste a second restricted key that can write invoices and nothing else. Only the gateway uses it, and you finalize and send each invoice from Stripe." },
   },
   {
-    id: "quickbooks", name: "QuickBooks Online", gives: "Profit and loss, and expenses to categorize", icon: "book-open", mcp: "quickbooks",
+    id: "quickbooks", name: "QuickBooks Online", gives: "Profit and loss, bills, what customers owe, and expenses to categorize", icon: "book-open", mcp: "quickbooks",
     steps: [
       "Tap Connect QuickBooks below. Intuit’s own sign-in page opens.",
       "Sign in as an admin of the business’s QuickBooks company.",
@@ -139,7 +139,7 @@ export const TOOL_TILES: readonly ToolTile[] = [
     ],
   },
   {
-    id: "square", name: "Square", gives: "Sales, unpaid invoices, and invoice drafts", icon: "store", mcp: "square",
+    id: "square", name: "Square", gives: "Sales, appointments, unpaid invoices, and invoice drafts", icon: "store", mcp: "square",
     steps: [
       "Tap Connect Square below. Square’s own sign-in page opens.",
       "Sign in as the owner of the business’s Square account.",
@@ -175,13 +175,15 @@ export const SCOPE_WORDS: Record<string, string> = {
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts only: put an email you approved in Drafts. There is no send tool, so you send it from Gmail",
   "a Stripe restricted key with Read on Balance, Balance transaction sources, Subscriptions, Invoices and Customers, and None on everything else (a key that can change anything is refused)": "see your balance, payments, subscriptions, open invoices and customers. A key that can change anything is refused",
   "a Stripe restricted key with Write on Invoices and Invoice items, Read on Customers, and None on everything else, used only to make a draft invoice": "make a draft invoice you approved. It can’t finalize, send, charge or refund",
-  "com.intuit.quickbooks.accounting": "see your profit and loss, expenses and accounts, and move an expense out of Uncategorized Expense after you approve. Intuit’s one accounting permission can do more, so our server holds it to exactly that: it never changes an amount and never creates or deletes anything",
+  "com.intuit.quickbooks.accounting": "see your profit and loss, expenses, accounts, unpaid bills and what customers owe, and move an expense out of Uncategorized Expense after you approve. Intuit’s one accounting permission can do more, so our server holds it to exactly that: it never changes an amount and never creates or deletes anything",
   MERCHANT_PROFILE_READ: "see your business’s name and locations",
   PAYMENTS_READ: "see your payments, refunds and Square’s fees",
   CUSTOMERS_READ: "see your customers, so an invoice can name one",
   INVOICES_READ: "see your invoices and what is still owed",
   INVOICES_WRITE: "make a draft invoice you approved. Square’s permission can also publish and cancel invoices; our server has no code to do either, so you publish from Square",
   ORDERS_WRITE: "make the order a Square invoice sits on, only for a draft you approved. Our server never changes or cancels an order",
+  APPOINTMENTS_READ: "see your bookings in Square Appointments, counted by day. It can’t book, move or cancel one",
+  APPOINTMENTS_ALL_READ: "see bookings for every staff member and location, not only your own. Customer names and contact details aren’t read",
   "the app’s read scopes": "read orders, products and stock",
   write_orders: "add tags to an order, only after you approve",
   write_customers: "add tags to a customer, only after you approve",
