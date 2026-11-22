@@ -91,17 +91,10 @@ Lowering or setting a limit applies straight away. Raising or removing one needs
 
 **Checks.** `npm run check`, `npm run check:org` (who checks, the check's rules, draft codes, Today's grouping), `npm run build`.
 
-## On a phone
+## How Crew draws it now
 
-Desktop is unchanged. Under 760px wide (the owner picked option B of the phone mockups, 2026-11-14):
-
-- Each department folds to a summary card: name, seat counts, a face per seat (filled first, open last)
-  and who heads it. Tapping the card opens it in place; the budget line, rules and seats show as on
-  desktop.
-- Inside an open department, a lead's team folds behind a count ("1 planned · 2 open"), computed in
-  code from the seats. The head's own seats always show.
-- Seat rows drop the status line and get less padding, so each is one short row.
-- Edit chart unfolds everything, so every seat and department can be tapped to edit.
-
-The fold state lives in the page (`unfolded` in `OrgChart`, `shown` in `Tree`) and resets on reload.
-Desktop ignores it: `.org-body` and `.org-row` are `display: contents` there.
+Since 2026-11-22 Crew (`/crew`) draws the chart as the living canvas (`docs/crew-canvas.md`), on
+desktop and on a phone, and the phone folding that was here is gone with the read-only chart it
+folded. The structured chart described above is **Edit chart** (`/crew?view=edit`): every seat and
+department is a button, with the same actions and server checks. Goals, the budget meter and rules
+for a department show in the canvas's panel when the department is opened.

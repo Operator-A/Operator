@@ -90,8 +90,8 @@ reaction). `proposeLesson` stays for a lead's or head's send-back.
 
 **What the owner sees.**
 
-- **Crew > Org chart:** each department card leads with its goals (up to 3), above its budget and
-  seats, and stays visible when a department is folded on a phone. A tile shows the goal in his
+- **Crew:** an opened department leads with its goals (up to 3) in the canvas's panel
+  (`docs/crew-canvas.md`; before 2026-11-22 they sat on each department card). A tile shows the goal in his
   words, a status (On track, Behind, Reached, Missed, No measure yet, Couldn't read, Paused), what
   code counted ("1 of 5 won", "$1,240 of $3,000 this month", "48 days, at least 45 days") and a
   bar. **Set a goal for Sales** (or **Add a goal**) opens Set a goal with the department picked.

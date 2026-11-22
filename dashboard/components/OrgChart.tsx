@@ -1,21 +1,18 @@
 "use client";
-// Crew > Org chart (docs/org-chart.md, slice 1): you on top, Avery's company seat, then each
-// department with its head and the seats under it. A seat links to the agent sitting there, or for
-// an open seat to New agent with the seat filled in. Edit chart opens each seat and department to
-// rename it, add seats under it, pick who sits there or remove it. Slice 2: each department card
-// shows its monthly AI budget, and its Edit sheet sets the budget, the email cap and the rules
-// every agent in it follows. The server checks every change. Company mode slice 2: each department
-// card leads with its goals (docs/company-mode.md).
+// Crew > Edit chart (docs/org-chart.md, docs/crew-canvas.md): the structured chart for changing things.
+// You on top, the company seat, then each department with its head and the seats under it. Every
+// seat and department is a button: rename it, add seats under it, pick who sits there or remove it,
+// and set a department's monthly AI budget, email cap, rules and lead checks. The server checks
+// every change. Looking at the crew is the canvas's job (components/OrgCanvas.tsx).
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { DEPT_BUDGET_CEILING, LEAD_REVIEW_HOURS, deptBudgetChange, deptEmailChange } from "@/core/org-rules";
-import { MAX_GOALS_PER_DEPT } from "@/core/goal-rules";
 import type { ActionResult } from "../actions";
-import type { DeptView, OrgView, SeatAgent, SeatView } from "../org";
+import type { DeptView, OrgView, SeatView } from "../org";
 import { Modal, Toast, type Confirm } from "./client";
-import { GoalTile } from "./goals";
 import { Icon } from "./Icon";
 import { MemoryLine } from "./memory";
+import { AgentCard, DeptLimits, Face } from "./orgBits";
 
 type Act<T extends unknown[]> = (...a: T) => Promise<ActionResult>;
 export interface OrgActions {
@@ -39,14 +36,10 @@ export interface OrgActions {
 type Open = { kind: "seat"; seat: SeatView; head: boolean; company: boolean } | { kind: "dept"; dept: DeptView } | null;
 
 export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgActions; controls: boolean }) {
-  const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState<Open>(null);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
   const [dept, setDept] = useState("");
-  // On a phone each department folds to a summary card until tapped (desktop ignores this).
-  const [unfolded, setUnfolded] = useState<Set<string>>(() => new Set());
-  const toggle = (id: string) => setUnfolded((u) => { const n = new Set(u); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const run = (f: () => Promise<ActionResult>, after?: (r: ActionResult) => void) => start(async () => {
     let r: ActionResult;
     try { r = await f(); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
@@ -58,11 +51,9 @@ export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgAct
     <div className="org">
       <div className="row wrap" style={{ gap: 10, alignItems: "center" }}>
         <span className="ink2" style={{ flex: "1 1 300px", fontSize: 13, lineHeight: 1.5 }}>
-          Where each agent sits and who it reports to. A seat gives an agent nothing by itself: what it can read or do is still its own setup.
+          Click a seat or a department to change it. A seat gives an agent nothing by itself: what it can read or do is still its own setup.
         </span>
-        <button type="button" className={`btn ${editing ? "dark" : "outline"} sm`} onClick={() => setEditing((e) => !e)} aria-pressed={editing}>
-          <Icon name={editing ? "check" : "pencil"} size={14} />{editing ? "Done editing" : "Edit chart"}
-        </button>
+        <Link href="/crew" className="btn dark sm"><Icon name="check" size={14} />Done editing</Link>
       </div>
 
       {v.problems.length > 0 && <div className="card" style={{ borderLeft: "4px solid var(--red)", gap: 4 }}>{v.problems.map((p) => <span key={p} style={{ fontSize: 13 }}>{p}</span>)}</div>}
@@ -70,58 +61,42 @@ export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgAct
       <div className="org-top">
         <div className="org-seat you"><span className="av" style={{ width: 32, height: 32, background: "var(--ink)", color: "var(--ws)", fontSize: 13, fontWeight: 700 }}>Z</span><span className="org-who"><b>You</b><span>Owner · every approval is yours</span></span></div>
         <span className="org-stem" aria-hidden="true" />
-        {v.company ? <SeatCard s={v.company} editing={editing} onPick={() => pick(v.company!, false, true)} wide /> : <span className="muted" style={{ fontSize: 13 }}>No company seat yet.</span>}
+        {v.company ? <SeatCard s={v.company} onPick={() => pick(v.company!, false, true)} wide /> : <span className="muted" style={{ fontSize: 13 }}>No company seat yet.</span>}
         {v.departments.length > 0 && <span className="org-stem" aria-hidden="true" />}
       </div>
 
       <div className="org-depts">
-        {v.departments.map((d) => {
-          const folded = !editing && !unfolded.has(d.id);
-          return (
-            <section key={d.id} className={`card org-dept${wideDept(d) ? " wide" : ""}${folded ? " folded" : ""}`} aria-label={`${d.name} department`}>
-              {!editing && (
-                <button type="button" className="org-fold" aria-expanded={!folded} onClick={() => toggle(d.id)}>
-                  <span className="org-dept-n" style={{ flex: 1 }}>{d.name}</span>
-                  <span className="muted" style={{ fontSize: 12 }}>{deptCounts(d)}</span>
-                  <Icon name={folded ? "chevron-right" : "chevron-down"} size={18} style={{ flex: "none", opacity: 0.6 }} />
-                </button>
-              )}
-              {!editing && <DeptGoals d={d} />}
-              {folded && <DeptSummary d={d} />}
-              <div className={`org-dept-h${editing ? "" : " wide-only"}`}>
-                <span className="org-dept-n">{d.name}</span>
-                <span className="muted" style={{ fontSize: 12 }}>{deptCounts(d)}</span>
-                {editing && <button type="button" className="btn ghost xs" style={{ marginLeft: "auto" }} onClick={() => setOpen({ kind: "dept", dept: d })}>Edit</button>}
-              </div>
-              <div className="org-body">
-                <DeptLimits d={d} />
-                {d.rules.length > 0 && (
-                  <details className="org-rules">
-                    <summary>{d.rules.length} department rule{d.rules.length === 1 ? "" : "s"}</summary>
-                    <ul>{d.rules.map((r) => <li key={r.id}>{r.text}</li>)}</ul>
-                  </details>
-                )}
-                <Tree s={d.head} editing={editing} onPick={pick} head cols={wideDept(d)} />
-              </div>
-            </section>
-          );
-        })}
-        {editing && (
-          <section className="card dashed org-dept" aria-label="Add a department">
-            <span className="org-dept-n">New department</span>
-            <span className="ink2" style={{ fontSize: 13, lineHeight: 1.5 }}>It starts with an open head seat. Add seats under the head, then build agents for them.</span>
-            <div className="row" style={{ gap: 8 }}>
-              <input className="input" style={{ flex: 1, minWidth: 0 }} placeholder="Customer care" maxLength={60} value={dept} onChange={(e) => setDept(e.target.value)} aria-label="Department name" />
-              <button type="button" className="btn dark sm" disabled={busy || !dept.trim()} onClick={() => run(() => actions.addDept(dept), () => setDept(""))}>Add</button>
+        {v.departments.map((d) => (
+          <section key={d.id} className={`card org-dept${wideDept(d) ? " wide" : ""}`} aria-label={`${d.name} department`}>
+            <div className="org-dept-h">
+              <span className="org-dept-n">{d.name}</span>
+              <span className="muted" style={{ fontSize: 12 }}>{deptCounts(d)}</span>
+              <button type="button" className="btn ghost xs" style={{ marginLeft: "auto" }} onClick={() => setOpen({ kind: "dept", dept: d })}>Edit</button>
             </div>
+            <DeptLimits d={d} />
+            {d.rules.length > 0 && (
+              <details className="org-rules">
+                <summary>{d.rules.length} department rule{d.rules.length === 1 ? "" : "s"}</summary>
+                <ul>{d.rules.map((r) => <li key={r.id}>{r.text}</li>)}</ul>
+              </details>
+            )}
+            <Tree s={d.head} onPick={pick} head cols={wideDept(d)} />
           </section>
-        )}
+        ))}
+        <section className="card dashed org-dept" aria-label="Add a department">
+          <span className="org-dept-n">New department</span>
+          <span className="ink2" style={{ fontSize: 13, lineHeight: 1.5 }}>It starts with an open head seat. Add seats under the head, then build agents for them.</span>
+          <div className="row" style={{ gap: 8 }}>
+            <input className="input" style={{ flex: 1, minWidth: 0 }} placeholder="Customer care" maxLength={60} value={dept} onChange={(e) => setDept(e.target.value)} aria-label="Department name" />
+            <button type="button" className="btn dark sm" disabled={busy || !dept.trim()} onClick={() => run(() => actions.addDept(dept), () => setDept(""))}>Add</button>
+          </div>
+        </section>
       </div>
 
       {v.offChart.length > 0 && (
         <div className="stack" style={{ gap: 10 }}>
           <span className="card-t">Not on the chart yet</span>
-          <span className="ink2" style={{ fontSize: 13 }}>Put one in a seat with Edit chart, or from step 1 when you edit it.</span>
+          <span className="ink2" style={{ fontSize: 13 }}>Click a seat above and pick one of these to sit there, or do it from step 1 when you edit the agent.</span>
           <div className="crew-grid">{v.offChart.map((a) => <AgentCard key={a.id} a={a} />)}</div>
         </div>
       )}
@@ -136,103 +111,30 @@ export function OrgChart({ v, actions, controls }: { v: OrgView; actions: OrgAct
 /** A department with leads that have their own teams spreads its leads side by side, like a printed chart. */
 const wideDept = (d: DeptView) => d.head.kids.length >= 3 && d.head.kids.some((k) => k.kids.length > 0);
 
-function Tree({ s, editing, onPick, head, cols }: { s: SeatView; editing: boolean; onPick: (s: SeatView, head?: boolean) => void; head?: boolean; cols?: boolean }) {
-  // On a phone a lead's team folds behind a count until tapped; the head's own seats always show.
-  const [shown, setShown] = useState(false);
-  const folds = !head && !editing && s.kids.length > 0;
+function Tree({ s, onPick, head, cols }: { s: SeatView; onPick: (s: SeatView, head?: boolean) => void; head?: boolean; cols?: boolean }) {
   return (
-    <div className={`org-node${folds && !shown ? " folded" : ""}`}>
-      <div className="org-row">
-        <SeatCard s={s} editing={editing} onPick={() => onPick(s, head)} head={head} />
-        {folds && (
-          <button type="button" className="org-team" aria-expanded={shown} onClick={() => setShown((x) => !x)} aria-label={`${shown ? "Hide" : "Show"} the ${s.kids.length} seats under ${s.title}`}>
-            <span>{teamCounts(s)}</span>
-            <Icon name={shown ? "chevron-up" : "chevron-down"} size={15} style={{ flex: "none" }} />
-          </button>
-        )}
-      </div>
-      {s.kids.length > 0 && <div className={`org-kids${cols ? " cols" : ""}`}>{s.kids.map((k) => <Tree key={k.id} s={k} editing={editing} onPick={onPick} />)}</div>}
+    <div className="org-node">
+      <SeatCard s={s} onPick={() => onPick(s, head)} head={head} />
+      {s.kids.length > 0 && <div className={`org-kids${cols ? " cols" : ""}`}>{s.kids.map((k) => <Tree key={k.id} s={k} onPick={onPick} />)}</div>}
     </div>
   );
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const deptCounts = (d: DeptView) => `${plural(d.seats, "seat")}${d.open ? ` · ${d.open} open` : ""}`;
-const allSeats = (s: SeatView): SeatView[] => [s, ...s.kids.flatMap(allSeats)];
-/** What sits under a lead, counted in code: "3 filled · 2 open". */
-function teamCounts(s: SeatView) {
-  const team = s.kids.flatMap(allSeats);
-  const open = team.filter((k) => k.holder === "open").length;
-  const filled = team.length - open;
-  return [filled && `${filled} filled`, open && `${open} open`].filter(Boolean).join(" · ");
-}
 
-/** A department's goals lead its card (docs/company-mode.md, slice 2), with Set a goal when it has room. */
-function DeptGoals({ d }: { d: DeptView }) {
-  if (d.goals == null) return null;
+function SeatCard({ s, onPick, head, wide }: { s: SeatView; onPick: () => void; head?: boolean; wide?: boolean }) {
   return (
-    <div className="stack" style={{ gap: 8 }}>
-      {d.goals.map((g) => <GoalTile key={g.id} g={g} />)}
-      {d.goals.length < MAX_GOALS_PER_DEPT && <Link href={`/goals/new?dept=${d.id}`} className="goal-add"><Icon name="plus" size={14} />{d.goals.length ? "Add a goal" : `Set a goal for ${d.name}`}</Link>}
-    </div>
-  );
-}
-
-/** A folded department on a phone: a face per seat (filled first, open last) and who heads it. */
-function DeptSummary({ d }: { d: DeptView }) {
-  const seats = allSeats(d.head);
-  const rank = (s: SeatView) => (s.holder === "open" ? 1 : 0);
-  const faces = [...seats].sort((a, b) => rank(a) - rank(b));
-  const shown = faces.slice(0, 7);
-  const leads = d.head.kids.filter((k) => k.kids.length > 0).length;
-  const head = d.head.agent ? d.head.agent.name : d.head.holder === "owner" ? "you" : "open seat";
-  return (
-    <div className="org-sum">
-      <span className="org-faces" aria-hidden="true">
-        {shown.map((s) => s.agent ? <Face key={s.id} a={s.agent} size={24} /> : s.holder === "owner" ? <span key={s.id} className="av org-z" style={{ width: 24, height: 24 }}>Z</span> : <span key={s.id} className="av empty" style={{ width: 24, height: 24 }} />)}
-        {faces.length > shown.length && <span className="org-more">+{faces.length - shown.length}</span>}
-      </span>
-      <span className="ink2" style={{ fontSize: 12.5, flex: 1, textAlign: "right" }}>Head: {head}{leads ? ` · ${plural(leads, "lead")}` : ""}</span>
-    </div>
-  );
-}
-
-function Face({ a, size = 32 }: { a: SeatAgent; size?: number }) {
-  return <span className="av" style={{ width: size, height: size, background: a.hue ?? undefined }}><Icon name={a.icon} size={Math.round(size * 0.47)} style={a.hue ? undefined : { opacity: 0.6 }} /></span>;
-}
-
-function SeatCard({ s, editing, onPick, head, wide }: { s: SeatView; editing: boolean; onPick: () => void; head?: boolean; wide?: boolean }) {
-  const cls = `org-seat${s.holder === "open" ? " open" : s.holder === "owner" ? " you" : ""}${wide ? " wide" : ""}`;
-  const inner = (
-    <>
+    <button type="button" className={`org-seat${s.holder === "open" ? " open" : s.holder === "owner" ? " you" : ""}${wide ? " wide" : ""}`} onClick={onPick} aria-label={`Edit seat ${s.title}`}>
       {s.agent ? <Face a={s.agent} /> : s.holder === "owner" ? <span className="av" style={{ width: 32, height: 32, background: "var(--ink)", color: "var(--ws)", fontSize: 13, fontWeight: 700 }}>Z</span> : <span className="av org-plus" style={{ width: 32, height: 32 }}><Icon name="plus" size={15} /></span>}
       <span className="org-who">
         <b>{s.agent ? s.agent.name : s.holder === "owner" ? "You" : s.title}</b>
         <span>{s.agent || s.holder === "owner" ? [s.title, s.sub].filter(Boolean).join(" · ") : s.sub || "Open seat"}</span>
         {s.agent && <span className="org-last">{s.agent.look.label} · {s.agent.last}</span>}
-        {s.holder === "open" && !editing && !s.proposals.length && <span className="org-last">Open · build an agent for it</span>}
-        {!editing && s.proposals.map((p) => <span key={p.id} className="org-last" style={{ color: "var(--acc)" }}>Proposal · {p.text}</span>)}
       </span>
       {head && <span className="tag" style={{ flex: "none" }}>HEAD</span>}
-      {editing && <Icon name="pencil" size={13} style={{ flex: "none", opacity: 0.5 }} />}
-    </>
-  );
-  if (editing) return <button type="button" className={cls} onClick={onPick} aria-label={`Edit seat ${s.title}`}>{inner}</button>;
-  if (s.agent) return <Link href={s.agent.href} className={cls}>{inner}</Link>;
-  if (s.holder === "open") return <Link href={s.proposals.length ? `/proposals/${s.proposals[0].id}` : `/build/new?seat=${s.id}`} className={cls}>{inner}</Link>;
-  return <div className={cls}>{inner}</div>;
-}
-
-function AgentCard({ a }: { a: SeatAgent }) {
-  return (
-    <Link href={a.href} className="card crew-card">
-      <span className="row" style={{ gap: 12 }}>
-        <Face a={a} />
-        <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 15, fontWeight: 600 }}>{a.name}</span><span className="muted clip" style={{ fontSize: 12.5 }}>{a.role}</span></span>
-        <span className="pill sm" style={{ background: a.look.bg, color: a.look.fg }}>{a.look.label}</span>
-      </span>
-      <span className="muted" style={{ fontSize: 12 }}>{a.last}</span>
-    </Link>
+      <Icon name="pencil" size={13} style={{ flex: "none", opacity: 0.5 }} />
+    </button>
   );
 }
 
@@ -294,22 +196,6 @@ function SeatEditor({ o, v, busy, run, actions, close }: { o: Extract<Open, { ki
 }
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
-
-/** The budget meter on a department card: spent this month against its budget, or just spent when it has none. */
-function DeptLimits({ d }: { d: DeptView }) {
-  if (d.budget == null) return <span className="muted" style={{ fontSize: 12 }}>{usd(d.spent)} of AI this month · no department budget</span>;
-  const pct = d.budget > 0 ? Math.min(100, (d.spent / d.budget) * 100) : 100;
-  const out = Math.round(d.spent * 100) >= Math.round(d.budget * 100);
-  return (
-    <div className="stack" style={{ gap: 5 }}>
-      <div className="row" style={{ gap: 8, fontSize: 12 }}>
-        <span className={out ? "" : "ink2"} style={out ? { color: "var(--red-ink)", fontWeight: 600 } : undefined}>{usd(d.spent)} of {usd(d.budget)} this month</span>
-        {out && <span className="tag" style={{ color: "var(--red-ink)" }}>RUNS PAUSED</span>}
-      </div>
-      <div className="bar" style={{ height: 6, borderRadius: 999 }} role="img" aria-label={`${Math.round(pct)}% of the monthly budget used`}><span style={{ width: `${pct}%`, background: out ? "var(--red)" : pct >= 80 ? "var(--yel)" : "var(--mint)" }} /></div>
-    </div>
-  );
-}
 
 /** A number box saved on its own: blank means no department limit. Loosening asks for a confirm, and needs Controls on. */
 function LimitForm({ label, help, now, unit, check, save, busy, run, controls, confirmFor }: {
