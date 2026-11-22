@@ -5,7 +5,7 @@
 
 import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-rules";
 import { CUSTOMER_ID, INVOICE_FIELDS, refuseInvoice } from "@/core/stripe-rules";
-import { SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, refuseTags, shopifyTarget } from "@/core/shopify-actions";
+import { SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
 import { NOTE_FIELDS, orderIdOk, refuseNote } from "@/core/woo-rules";
@@ -30,7 +30,7 @@ export const DRAFT_EMAIL = "gmail.create_draft";
  * Tags added to one Shopify order or customer (docs/shopify-actions.md). Adds only; undo removes
  * exactly the tags it added. The target is a Shopify id from a Recent orders result.
  */
-export { SHOPIFY_TAGS };
+export { SHOPIFY_STOCK, SHOPIFY_TAGS };
 export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
 /**
  * A draft invoice in the business's Stripe, to one of its own Stripe customers (card 240). Stripe holds
@@ -155,6 +155,16 @@ export const TOOLS = {
     // a label on the business's own records, fully undoable: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
+  [SHOPIFY_STOCK]: {
+    // any agent an approver grants "Set stock at a location" on the Tools step; never a proposal
+    agents: "granted",
+    grant: SHOPIFY_STOCK_GRANT,
+    tier: "Draft" as Tier,
+    fields: ["from", "available", "reason"],
+    // the new count comes from the agent (a count sheet, an email), and numbers come from code, not a
+    // model: Draft for good, never promoted (decided 2026-11-21)
+    promotable: false,
+  },
 } as const satisfies Record<string, ActionDef>;
 export type ToolName = keyof typeof TOOLS;
 
@@ -236,6 +246,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (tool === META_PAUSE) return adIdOk(target) ? refusePause(args) : "The target is not a Meta ad id.";
   if (tool === INVOICE_DRAFT) return CUSTOMER_ID.test(target) ? refuseInvoice(args) : "The target is not a Stripe customer id.";
   if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
+  if (tool === SHOPIFY_STOCK) return stockTarget(target) ? refuseStock(args) : "The target is not a Shopify inventory item at a location.";
   if (tool === CALENDAR_HOLD) return target === `${args.start}/${args.end}` && isoMs(args.start) !== null ? refuseHold(args, now) : "The target is not the hold's own start and end.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";
   const extra = Object.keys(args).filter((k) => !(def.fields as readonly string[]).includes(k));
