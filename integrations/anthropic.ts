@@ -49,9 +49,21 @@ export async function claude(): Promise<Anthropic> {
 export const inputTokens = (u: Anthropic.Beta.BetaUsage | Anthropic.Usage) =>
   u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
 
-/** Cost in code from the price list, for any provider. Throws for a model without a price: an agent checks before it calls one. */
-export function costUsd(model: string, tokensIn: number, tokensOut: number, searches = 0) {
+/** Prompt caching (card 200): a cache write costs 1.25x the input price (5-minute cache), a cache read 0.1x. */
+export const CACHE_WRITE = 1.25;
+export const CACHE_READ = 0.1;
+
+/**
+ * Cost in code from the price list, for any provider. Throws for a model without a price: an agent checks
+ * before it calls one. `tokensIn` counts every input token; `cache` says how many of them were written to or
+ * read from the prompt cache, which bill at their own rates.
+ */
+export function costUsd(model: string, tokensIn: number, tokensOut: number, searches = 0, cache: { write?: number; read?: number } = {}) {
   const m = modelDef(model);
   if (!m) throw new Error(`No price for ${model} in integrations/models.ts`);
-  return Number((tokensIn * m.in + tokensOut * m.out + searches * WEB_SEARCH_USD).toFixed(4));
+  const write = Math.max(0, cache.write ?? 0), read = Math.max(0, cache.read ?? 0), plain = Math.max(0, tokensIn - write - read);
+  return Number(((plain + write * CACHE_WRITE + read * CACHE_READ) * m.in + tokensOut * m.out + searches * WEB_SEARCH_USD).toFixed(4));
 }
+
+/** The cache part of a response's usage, for costUsd. */
+export const cacheTokens = (u: Anthropic.Beta.BetaUsage | Anthropic.Usage) => ({ write: u.cache_creation_input_tokens ?? 0, read: u.cache_read_input_tokens ?? 0 });

@@ -17,7 +17,7 @@ import {
 } from "@/core/books/rules";
 import { round2 } from "@/core/num";
 import { loadBusiness } from "@/core/business";
-import { claude, costUsd, inputTokens, type Anthropic } from "@/integrations/anthropic";
+import { claude, cacheTokens, costUsd, inputTokens, type Anthropic } from "@/integrations/anthropic";
 import { GmailReader, hasGmailRead, type Mail } from "@/integrations/gmail-read";
 import { hasMercury, mercuryTransactions, type MercuryTxn } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, p as para, type Block } from "@/integrations/notion";
@@ -126,7 +126,7 @@ async function structured<T>(step: Reader, system: string, content: Anthropic.Co
   const tin = inputTokens(res.usage), tout = res.usage.output_tokens;
   u.in += tin; u.out += tout;
   // the two steps can use different models, so cost is added up per call
-  u.cost += costUsd(step.model, tin, tout);
+  u.cost += costUsd(step.model, tin, tout, 0, cacheTokens(res.usage));
   if (res.stop_reason === "refusal" || res.stop_reason === "max_tokens") return null;
   const text = res.content.find((b) => b.type === "text");
   if (!text || text.type !== "text") return null;
