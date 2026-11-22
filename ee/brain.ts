@@ -10,6 +10,8 @@ import { withOrg } from "@/core/tenancy";
 import { TEMPLATES } from "@/core/templates";
 import { adminOrgId } from "./admin";
 import { BANK_ID, BANK_SETTINGS, SYNC_KEY, syncDue, syncWith, type Bank } from "./brain-rules";
+import { syncPlaybook } from "./playbook-rules";
+import { publishedLessons } from "./playbook";
 
 const url = () => process.env.HINDSIGHT_API_URL?.trim() ?? "";
 const key = () => process.env.HINDSIGHT_API_KEY?.trim() ?? "";
@@ -55,7 +57,22 @@ export async function syncBrain(now: number): Promise<string> {
     // the time is kept first, so a sync that fails partway waits a week rather than retrying every round
     const { error } = await db().from("policies").upsert({ key: SYNC_KEY, value_json: { at: new Date(now).toISOString() }, updated_at: new Date(now).toISOString() });
     if (error) throw new Error(error.message);
-    const r = await syncWith(hindsightBank(), await brainPatterns(), kitNames());
-    return `retained ${r.retained}, removed ${r.removed}`;
+    const bank = hindsightBank();
+    const r = await syncWith(bank, await brainPatterns(), kitNames());
+    const p = await syncPlaybook(bank, (await publishedLessons()) ?? []);
+    return `patterns: retained ${r.retained}, removed ${r.removed}; playbook: retained ${p.retained}, removed ${p.removed}`;
   });
+}
+
+/**
+ * Puts the published playbook in the bank now (after a lesson is published, changed, taken back or
+ * deleted on Settings > Playbook). Without the Hindsight settings it does nothing; the weekly sync
+ * does the same again, so a push that fails is put right within a week.
+ */
+export async function pushPlaybook(): Promise<"off" | "pushed"> {
+  if (!hindsightReady()) return "off";
+  const bank = hindsightBank();
+  await bank.setBank();
+  await syncPlaybook(bank, (await publishedLessons()) ?? []);
+  return "pushed";
 }

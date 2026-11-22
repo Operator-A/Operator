@@ -160,6 +160,21 @@ const RECENT_ORDERS = gql`
   }
 `;
 
+// Tracked stock by location, with the ids a stock change names: product and variant, SKU, available
+// and on hand. 50 items a page; at most 10 locations each. No customer data.
+const STOCK_LEVELS = gql`
+  query AgentStockLevels($after: String) {
+    inventoryItems(first: 50, after: $after) {
+      nodes {
+        id tracked sku
+        variant { title product { title status } }
+        inventoryLevels(first: 10) { nodes { location { id name } quantities(names: ["available", "on_hand"]) { name quantity } } }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
 /** Core's Shopify tools: what every business on Shopify can read. */
 export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
   {
@@ -208,6 +223,17 @@ export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };
       if (!since) return { problem: "since must be YYYY-MM-DD" };
       return { variables: { query: `created_at:>='${since}T00:00:00${offsetOn(since, ctx.timeZone)}'`, after: cur } };
+    },
+  },
+  {
+    tool: "shopify_stock_levels",
+    description: "Stock of tracked items by location, 50 items a page, with their Shopify ids: product and variant, SKU, available and on hand. No customer data.",
+    inputSchema: { type: "object", properties: { after } },
+    doc: STOCK_LEVELS,
+    variables: (a) => {
+      const cur = afterArg(a);
+      if (cur === undefined) return { problem: "after must be a cursor from the last page" };
+      return { variables: { after: cur } };
     },
   },
   {

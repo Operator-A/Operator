@@ -31,8 +31,8 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
-import { SHOPIFY_TAGS_GRANT, TAG_LIMITS, tagList } from "@/core/shopify-actions";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
 import type { McPeriod } from "@/core/mailchimp-rules";
@@ -67,6 +67,7 @@ import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-num
 import { deliverBrief } from "@/core/brief";
 import { openCounts } from "@/core/brief/rules";
 import { openOrders, recentOrders } from "@/integrations/shopify/orders";
+import { stockLevels } from "@/integrations/shopify/stock";
 
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -176,6 +177,20 @@ const TOOLS_LIST: ToolDef[] = [
         };
       });
       return { data: { days: Number(days), orders: rows }, numbers: { orders: rows.length, customers: custPick.size }, picks };
+    },
+  },
+  {
+    id: "shopify_stock_levels", label: "Stock levels", detail: "Stock of tracked items in active products, by location (up to 200 rows): product and variant, SKU, available and on hand. No customer data. Each row has a pick code a stock change can name",
+    kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async () => {
+      const levels = await stockLevels();
+      const picks: Record<string, Pick> = {};
+      const rows = levels.map((l, i) => {
+        // the pick carries the count the change is staged against, so the model never supplies it
+        picks[`st${i + 1}`] = { kind: "stock", id: `${stockTargetOf(l.item, l.location)}|${l.available}`, label: `${l.name} at ${l.locationName}` };
+        return { pick: `st${i + 1}`, item: l.name, sku: l.sku, location: l.locationName, available: l.available, on_hand: l.onHand };
+      });
+      return { data: { rows }, numbers: { rows: rows.length, units_available: levels.reduce((n, l) => n + Math.max(0, l.available), 0) }, picks };
     },
   },
   {
@@ -1041,6 +1056,28 @@ const TOOLS_LIST: ToolDef[] = [
       const refused = refuseProposal(ctx.agentId, SHOPIFY_TAGS, target.id, args, undefined, ctx.granted ?? null);
       if (refused) return { problem: refused };
       return { gatewayTool: SHOPIFY_TAGS, target: target.id, args, actionType: order ? "order_tags" : "customer_tags", title: `${target.label}: ${args.tags.join(", ")}`, preview: { record: target.label, tags: args.tags, why: input.why } };
+    },
+  },
+  {
+    id: SHOPIFY_STOCK_GRANT, label: "Set stock at a location", detail: `Stages a new available count for one item at one location, for an approver to approve. Always an approval card: it never runs on its own. At most ${STOCK_LIMITS.change} units up or down, and refused if the count changed since. The item always comes from a Stock levels result`,
+    kind: "action", group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
+    agents: GATEWAY_TOOLS[SHOPIFY_STOCK].agents,
+    params: [
+      { name: "item", type: "pick", kind: "stock", description: "The item at its location, from a Stock levels result." },
+      { name: "available", type: "number", integer: true, description: `The new available count, a whole number from 0 to ${STOCK_LIMITS.max.toLocaleString("en-US")}, at most ${STOCK_LIMITS.change} away from the count the row shows.` },
+      { name: "reason", type: "enum", options: STOCK_REASONS, description: "Shopify's reason: received (a delivery came in), correction, cycle_count_available (a shelf count), damaged or shrinkage." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on where the number comes from, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const pick = input.item as Pick;
+      const [target, fromText] = pick.id.split("|");
+      const from = Number(fromText);
+      if (!stockTarget(target ?? "") || !Number.isInteger(from)) return { problem: "that row isn't an item from Stock levels" };
+      const args = { from, available: Number(input.available), reason: String(input.reason) };
+      const refused = refuseProposal(ctx.agentId, SHOPIFY_STOCK, target, args, undefined, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      const change = args.available - from;
+      return { gatewayTool: SHOPIFY_STOCK, target, args, actionType: "stock_set", title: `${pick.label}: ${from} → ${args.available}`, preview: { record: pick.label, from, available: args.available, change, reason: args.reason, why: input.why } };
     },
   },
 ];

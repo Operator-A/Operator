@@ -375,7 +375,7 @@ export interface ApprovalItem {
   status: string;
   created_at: string;
   decided_at: string | null;
-  preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null; charge?: string; to?: string; subject?: string; body?: string; list?: string; preview_text?: string; title?: string; slot?: string; minutes?: number; record?: string; tags?: string[]; order?: string; deal?: string; stage?: string; ad?: string; result?: string; period?: string; why?: string; customer?: string; currency?: string; lines?: { description: string; amount: number }[]; total?: string; days_until_due?: number; memo?: string | null };
+  preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null; charge?: string; to?: string; subject?: string; body?: string; list?: string; preview_text?: string; title?: string; slot?: string; minutes?: number; record?: string; tags?: string[]; from?: number; available?: number; change?: number; reason?: string; order?: string; deal?: string; stage?: string; ad?: string; result?: string; period?: string; why?: string; customer?: string; currency?: string; lines?: { description: string; amount: number }[]; total?: string; days_until_due?: number; memo?: string | null };
   /** The gateway tool: a Mercury change or a Gmail draft. */
   tool: string;
   /** A 10-minute signed link to the receipt file, so the owner can check it before approving. */

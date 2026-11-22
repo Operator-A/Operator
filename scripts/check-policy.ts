@@ -1,5 +1,5 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -78,6 +78,25 @@ t("tags refused with odd characters", sh({ tags: ["vip<script>"] }) !== null);
 t("tags refused with a comma inside", sh({ tags: ["a,b"] }) !== null);
 t("tags refused when repeated", sh({ tags: ["VIP", "vip"] }) !== null);
 t("tags refused with an extra field", sh({ ...tagsOk, remove: ["old"] }) !== null);
+// Shopify stock (docs/shopify-actions.md, slice 2)
+const inv = "gid://shopify/InventoryItem/77@gid://shopify/Location/5", stockOk = { from: 12, available: 40, reason: "received" };
+const st = (args: Record<string, unknown>, target = inv) => refuseProposal("b_ops_2", SHOPIFY_STOCK, target, args, 200, ["shopify_stock_levels", "shopify_stock"]);
+t("stock starts at Draft and is never promoted", TOOLS[SHOPIFY_STOCK].tier === "Draft" && !TOOLS[SHOPIFY_STOCK].promotable);
+t("stock is a granted action, named by the builder's tool", TOOLS[SHOPIFY_STOCK].agents === "granted" && TOOLS[SHOPIFY_STOCK].grant === "shopify_stock");
+t("stock refused for an agent that wasn't granted it", refuseProposal("b_ops_2", SHOPIFY_STOCK, inv, stockOk, 200, ["shopify_stock_levels", "shopify_tag"]) !== null);
+t("stock ok", st(stockOk) === null);
+t("stock ok down to zero", st({ from: 60, available: 0, reason: "shrinkage" }) === null);
+t("stock ok at exactly 100 units", st({ from: 0, available: 100, reason: "received" }) === null);
+t("stock refused over 100 units", st({ from: 0, available: 101, reason: "received" }) !== null);
+t("stock refused over 100 units down", st({ from: 150, available: 49, reason: "damaged" }) !== null);
+t("stock refused when negative", st({ from: 5, available: -1, reason: "correction" }) !== null);
+t("stock refused over 10,000", st({ from: 9950, available: 10001, reason: "received" }) !== null);
+t("stock refused when not whole", st({ from: 5, available: 6.5, reason: "received" }) !== null);
+t("stock refused when unchanged", st({ from: 5, available: 5, reason: "correction" }) !== null);
+t("stock refused with an unknown reason", st({ ...stockOk, reason: "promotion" }) !== null);
+t("stock refused with an extra field", st({ ...stockOk, location: "gid://shopify/Location/9" }) !== null);
+t("stock refused without the count it was staged against", st({ available: 40, reason: "received" }) !== null);
+t("stock refused on an order", st(stockOk, "gid://shopify/Order/1") !== null);
 t("tags refused when not a list", sh({ tags: "VIP" }) !== null);
 t("campaign list must be the business's own", refuseCampaignTo("XZRviM", [{ id: "XZRviM" }]) === null && refuseCampaignTo("Other1", [{ id: "XZRviM" }]) !== null);
 t("lead with address ok", refuseDraftTo({ email: "Ana@Fleet.coffee", stage: "new" }, new Set()) === null);

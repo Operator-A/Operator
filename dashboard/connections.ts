@@ -36,7 +36,7 @@ export interface Connection {
 export const CONNECTIONS: Connection[] = [
   {
     id: "shopify", name: "Shopify", sub: "Orders, products, stock", icon: "shopping-bag", builtIn: false, mcp: "shopify",
-    about: "Our own Shopify server, run in the app with the custom app the business makes in Shopify. Each read runs one fixed query written in code and can’t change anything; no tool takes GraphQL. Store actions (tagging an order or a customer) are one fixed change each, made only by the gateway after you approve. The app may have read scopes plus write_orders and write_customers; a key with any other write scope is refused when you paste it. Order reads carry no customer names or addresses.",
+    about: "Our own Shopify server, run in the app with the custom app the business makes in Shopify. Each read runs one fixed query written in code and can’t change anything; no tool takes GraphQL. Store actions (tagging an order or a customer, setting a stock count) are one fixed change each, made only by the gateway after you approve. The app may have read scopes plus write_orders, write_customers and write_inventory; a key with any other write scope is refused when you paste it. Order reads carry no customer names or addresses.",
     checks: [{ key: "shopify", label: "Store", setup: "Paste your OPERATOR app’s key below, and fill in the store (and the client id if the key is a client secret) on Settings > Where things go." }],
   },
   {

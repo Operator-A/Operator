@@ -170,6 +170,7 @@ export const SCOPE_WORDS: Record<string, string> = {
   "the app’s read scopes": "read orders, products and stock",
   write_orders: "add tags to an order, only after you approve",
   write_customers: "add tags to a customer, only after you approve",
+  write_inventory: "set an item’s stock count at a location, only after you approve each change",
 };
 
 /** The permissions a tile asks for, each with what it is for. */
