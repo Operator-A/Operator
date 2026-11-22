@@ -14,7 +14,7 @@ import { installTemplates } from "@/core/install";
 import { TEMPLATES, templateList } from "@/core/templates";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
-import { CATEGORY_IDS, TILE_BY_ID, TOOL_CATEGORIES, answerFact, categoryState, listedTool, readPlans, readSkipped, type CategoryId, type CategoryPlan, type ToolTileId } from "@/core/tools-step-rules";
+import { CATEGORY_IDS, TILE_BY_ID, TOOL_CATEGORIES, answerFact, partWords, categoryState, listedTool, readPlans, readSkipped, type CategoryId, type CategoryPlan, type ToolTileId } from "@/core/tools-step-rules";
 import { checkAddress } from "@/core/custom-mcp-rules";
 import { SNAPSHOT_DAYS, bankFacts, capSnapshot, emailFacts, siteFacts, snapshotPrefix, storeFacts, type SnapshotFact, type SnapshotTile } from "@/core/snapshot-rules";
 import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
@@ -275,9 +275,9 @@ function saveFactTool(held: { topic: string; text: string }[], have: number): To
  */
 function askToolTool(held: { cat: CategoryId | null }, open: ReadonlySet<CategoryId>): ToolDef {
   return {
-    id: "ask_tool", label: "Ask about a tool", detail: "Shows the founder a card for one part of the business, with the common tools for it to connect or name. Ask your question in words too",
+    id: "ask_tool", label: "Ask about a tool", detail: "Shows the founder a card for one part of the business, with the common tools for it to connect or name. Pick the part by what it covers: where a business rings up sales in person (a register or card reader) is payments, not store. Ask your question in words too",
     kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
-    params: [{ name: "part", type: "enum", options: [...CATEGORY_IDS], description: TOOL_CATEGORIES.map((c) => `${c.id}: ${c.area.toLowerCase()}`).join(". ") + "." }],
+    params: [{ name: "part", type: "enum", options: [...CATEGORY_IDS], description: TOOL_CATEGORIES.map(partWords).join(". ") + "." }],
     collect: (input, rows) => {
       if (rows.length) return { problem: "one card per reply" };
       const cat = String(input.part) as CategoryId;

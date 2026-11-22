@@ -7,7 +7,7 @@ import { TOOLS } from "../core/tools/catalog";
 import { readAsked, readSetupState, setupDirective, toolLines, FACT_TOPICS, NOTHING_CONNECTS } from "../core/setup-rules";
 import { SNAPSHOT_MAX, SNAPSHOT_TILES, bankFacts, capSnapshot, emailFacts, hasSnapshot, siteFacts, storeFacts } from "../core/snapshot-rules";
 import { waitLine } from "../core/company-rules";
-import { CATEGORY_IDS, NEED_TILE, SCOPE_WORDS, TOOL_CATEGORIES, TOOL_TILES, MAX_LISTED, answerFact, backTarget, cardCategory, categoryOfTile, categoryState, followUps, listedTool, partsShown, planKinds, planNotes, readPlans, readSkipped, tileOfMcp, type Plans, type ToolTileId, neededBy, permissionsOf, routeUnlisted, tilesFor, waitingOn, type TemplateTools } from "../core/tools-step-rules";
+import { CATEGORY_IDS, NEED_TILE, SCOPE_WORDS, TOOL_CATEGORIES, TOOL_TILES, MAX_LISTED, answerFact, partWords, backTarget, cardCategory, categoryOfTile, categoryState, followUps, listedTool, partsShown, planKinds, planNotes, readPlans, readSkipped, tileOfMcp, type Plans, type ToolTileId, neededBy, permissionsOf, routeUnlisted, tilesFor, waitingOn, type TemplateTools } from "../core/tools-step-rules";
 
 const read = (f: string) => readFileSync(f, "utf8");
 const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[id]?.needs ?? [];
@@ -109,10 +109,22 @@ assert.match(read("app/(room)/connections/[id]/callback/route.ts"), /req\.cookie
   assert.equal(categoryState(TOOL_CATEGORIES[0], new Set(["shopify"] as const), ["store"]), "connected", "connected wins over skipped");
   // Avery names a part only; its state comes from code, and the tools come from the list
   const lines = toolLines([{ id: "store", state: "connected" }, { id: "bookings", state: "open" }]);
-  assert.match(lines, /- store \(where you sell\): connected/);
-  assert.match(lines, new RegExp(`- bookings \\(bookings, only if it fits, ${NOTHING_CONNECTS}\\): open`), "a part where nothing connects says so (card 196)");
-  assert.ok(!toolLines([]).includes(`where you sell, ${NOTHING_CONNECTS}`), "a part with a tile that connects doesn't");
-  for (const c of TOOL_CATEGORIES) assert.equal(toolLines([]).includes(`- ${c.id} (${c.area.toLowerCase()}${c.core ? "" : ", only if it fits"}, ${NOTHING_CONNECTS})`), c.tiles.length === 0, `${c.id}: marked exactly when no tool connects`);
+  assert.match(lines, /- store \(an online store or shop software where customers order\): connected/);
+  assert.match(lines, new RegExp(`- bookings \\(appointments and online booking, only if it fits, ${NOTHING_CONNECTS}\\): open`), "a part where nothing connects says so (card 196)");
+  assert.ok(!toolLines([]).includes(`customers order, ${NOTHING_CONNECTS}`), "a part with a tile that connects doesn't");
+  for (const c of TOOL_CATEGORIES) assert.equal(toolLines([]).includes(`- ${c.id} (${c.covers}${c.core ? "" : ", only if it fits"}, ${NOTHING_CONNECTS})`), c.tiles.length === 0, `${c.id}: marked exactly when no tool connects`);
+  // card 206: Avery picks a card by what each part covers; the register at the counter is payments
+  for (const c of TOOL_CATEGORIES) assert.ok(c.covers.length > 8 && c.covers.length <= 100 && !/https?:/.test(c.covers), `${c.id}: says what it covers`);
+  const pay = TOOL_CATEGORIES.find((c) => c.id === "payments")!, store = TOOL_CATEGORIES.find((c) => c.id === "store")!;
+  assert.match(pay.covers, /register or card reader/);
+  assert.ok(pay.tools.some((t) => t.name === "Square") && pay.tools.some((t) => t.name === "Clover") && pay.tools.length <= MAX_LISTED);
+  assert.match(store.covers, /online/);
+  assert.equal(partWords(pay), `payments (${pay.covers})`);
+  const setupSrc = readFileSync("core/setup.ts", "utf8");
+  assert.match(setupSrc, /description: TOOL_CATEGORIES\.map\(partWords\)/, "Ask about a tool lists each part by what it covers");
+  assert.match(setupSrc, /rings up sales in person \(a register or card reader\) is payments, not store/);
+  assert.match(readFileSync("core/brain-tools.ts", "utf8"), /TOOL_CATEGORIES\.map\(partWords\)/);
+  assert.ok(toolLines([]).includes(`- payments (${pay.covers})`), "the directive reads the same words");
   assert.ok(!/Shopify|Calendly|https?:/.test(lines), "the directive lists parts, never tools or links");
   const dir = setupDirective("Avery", [], []);
   assert.match(dir, /call Ask about a tool with that part's id/);
