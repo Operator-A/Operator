@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { NO_SETTINGS, accountIds, checkSettingsEdit, notionId, readSettings, siteUrl, type SettingsEdit } from "../core/settings-rules";
+import { NO_SETTINGS, accountIds, checkSettingsEdit, emailLine, notionId, readSettings, siteUrl, type SettingsEdit } from "../core/settings-rules";
 
 // Notion ids from ids or links; nothing else
 const ID = "0123456789abcdef0123456789abcdef";
@@ -76,4 +76,11 @@ assert.ok("settings" in ownEdit && ownEdit.settings.costSource === "own" && ownE
 assert.match(readFileSync("dashboard/orgActions.ts", "utf8"), /export async function saveDailyNumbers\([^\n]*\n\s+const \{ me, no \} = await asRole\("owner"\)/);
 // email to the owner still has no recipient argument
 assert.match(readFileSync("integrations/email.ts", "utf8"), /export async function emailOwner\(subject: string, html: string, text: string\)/);
+// what Email to you tells an owner: whether emails go out and to whom, never a setting's name
+const said = [emailLine(null, true), emailLine(null, false), emailLine("owner@example.com", false), emailLine("owner@example.com", true)];
+assert.deepEqual(said.map((l) => l.ok), [false, false, false, true]);
+assert.match(said[3].text, /emailed to owner@example\.com/);
+assert.match(said[2].text, /No emails go out yet/);
+for (const l of said) assert.doesNotMatch(l.text, /RESEND|BRIEF_FROM|Vercel|Resend/);
+assert.doesNotMatch(readFileSync("dashboard/connections.ts", "utf8"), /RESEND_API_KEY|BRIEF_FROM/, "no setting names on an owner's card");
 console.log("check:settings ok");

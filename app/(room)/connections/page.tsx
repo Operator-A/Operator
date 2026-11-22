@@ -23,6 +23,7 @@ import { mercuryOrgName } from "@/integrations/mercury";
 import { ga4PickProperty, klaviyoPickList, metaSetTarget, mcpDisconnect, mcpSaveKey, vaultReseal } from "@/dashboard/connectionActions";
 import { ga4PropertyList } from "@/integrations/ga4";
 import { when } from "@/dashboard/format";
+import { emailState } from "@/integrations/email";
 
 /** An MCP connection's state for its panel: signed in or not, and Klaviyo's lists to pick the counted one from. */
 interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; properties?: { id: string; name: string; account: string }[] | null; targets?: Record<string, number | null> | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null }
@@ -215,7 +216,7 @@ function ToolRow({ t, f, locked }: { t: ToolDef; f: Floor; locked?: boolean }) {
   );
 }
 
-function Detail({ c, f, mcp, more, note }: { c: Connection; f: Floor; mcp: McpView | null; more: { id: McpId; v: McpView }[]; note: { ok: boolean; text: string } | null }) {
+function Detail({ c, f, mcp, more, note, line }: { c: Connection; f: Floor; mcp: McpView | null; more: { id: McpId; v: McpView }[]; note: { ok: boolean; text: string } | null; line?: { ok: boolean; text: string } | null }) {
   const t = toolsOf(c.id);
   const missing = c.checks.filter((k) => !f.health[k.key]);
   const section = (title: string, sub: string, list: ToolDef[], empty: string, locked?: boolean) => (
@@ -242,7 +243,8 @@ function Detail({ c, f, mcp, more, note }: { c: Connection; f: Floor; mcp: McpVi
         </div>
       ))}
       {c.checks.length > 1 && <span className="row wrap" style={{ gap: 6 }}>{c.checks.map((k) => <span key={k.key} className="pill sm" style={{ background: f.health[k.key] ? "var(--mint-soft)" : "var(--soft)", color: f.health[k.key] ? "var(--mint-ink)" : "var(--ink2)" }}>{k.label}: {f.health[k.key] ? "set up" : "not set up"}</span>)}</span>}
-      {!c.mcp && missing.map((k) => <span key={k.key} className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.checks.length > 1 ? `${k.label}: ` : ""}{k.setup}</span>)}
+      {line && <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45, background: line.ok ? "var(--mint-soft)" : undefined, color: line.ok ? "var(--mint-ink)" : undefined }}>{line.text}</span>}
+      {!c.mcp && !line && missing.map((k) => <span key={k.key} className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.checks.length > 1 ? `${k.label}: ` : ""}{k.setup}</span>)}
       {section("Can read", "Looks only. Nothing changes.", t.read, `Agents can’t read anything from ${c.name}.`)}
       {section("Can do", "Each one becomes a card on Approvals. Nothing happens until you tap Approve.", t.do, "Nothing yet.", true)}
       {section("Hands you", "Delivered by code after a run finishes. Never during a try.", t.hands, "Nothing.")}
@@ -302,7 +304,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
           <span className="side-label" style={{ padding: "4px 2px 0" }}>Your servers</span>
           <CustomTiles servers={customs} statuses={customStatuses} sel={custom?.id ?? (adding ? "new" : null)} />
         </div>
-        {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} more={more} note={note} /></div>}
+        {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} more={more} note={note} line={sel.id === "email" ? await emailState() : null} /></div>}
         {custom && <div className="conn-detail"><CustomDetail tz={f.tz} c={custom} status={customStatuses[custom.id] ?? null} log={customLog} controls={controlsOn()} note={note} usedBy={Object.keys(f.grants).filter((a) => f.grants[a].some((t) => serverOfToolId(t) === custom.id)).map((a) => f.agents[a]?.name ?? a)} /></div>}
         {adding && <div className="conn-detail"><AddServerCard controls={controlsOn()} known={knownServer(sp.known)} /></div>}
       </div>

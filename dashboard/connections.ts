@@ -124,8 +124,9 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     id: "email", name: "Email to you", sub: "Briefs and alerts", icon: "inbox", builtIn: false,
-    about: "Sends through Resend to the owner email on Settings > Where things go, always one of this business’s owners. The code has no way to name anyone else.",
-    checks: [{ key: "email", label: "Email", setup: "Set RESEND_API_KEY and BRIEF_FROM (a sender on a domain verified in Resend) in Vercel, and pick the owner email on Settings > Where things go." }],
+    about: "Your morning brief and alerts, emailed to one of this business’s owners. The code has no way to email anyone else.",
+    // what this card says it does (or why not) is worked out per business: emailLine in core/settings-rules.ts
+    checks: [{ key: "email", label: "Email", setup: "No emails go out yet. Pick who gets the morning brief and alerts on Settings > Business > Where things go." }],
   },
   {
     id: "web", name: "The web", sub: "Search and read pages", icon: "globe", builtIn: false,
