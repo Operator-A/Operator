@@ -2,7 +2,7 @@
 // The shared brain, slice 3 (docs/shared-brain.md, card 232): how a counted pattern becomes one plain
 // statement in the Hindsight bank. Pure, so `npm run check:ee` can test it. Words come only from lists
 // in code; numbers only from the count (brain_patterns(), over the floor). Nothing else is ever sent.
-import { BRAIN_FLOOR, SIMILAR_COUNTS, SIMILAR_LESSONS, isKind, patternOnAction, patternOnTopic, toolSlug, type BusinessKind, type PatternRow, type RevenueBand, type Similar, type SimilarAsk } from "@/core/brain-rules";
+import { BRAIN_FLOOR, REVEAL_COUNTS, SIMILAR_COUNTS, SIMILAR_LESSONS, isKind, patternOnAction, patternOnTopic, toolSlug, type BusinessKind, type PatternRow, type RevenueBand, type Similar, type SimilarAsk } from "@/core/brain-rules";
 import { TOOL_CATEGORIES } from "@/core/tools-step-rules";
 import { SHAPE_WORDS, isCampaignType } from "@/core/result-rules";
 
@@ -199,7 +199,7 @@ export function pickSimilar(o: {
   const order = (id: string, fallback: number) => (rank.has(id) ? rank.get(id)! : 1e6 + fallback);
   const counts = [...best.values()]
     .sort((a, b) => order(docIdOf(a), -a.hits / a.orgs) - order(docIdOf(b), -b.hits / b.orgs) || b.orgs - a.orgs)
-    .slice(0, SIMILAR_COUNTS)
+    .slice(0, o.ask.many ? REVEAL_COUNTS : SIMILAR_COUNTS)
     .map((r) => ({ statement: statementOf(r, o.kits)!, cohort: r.cohort, pattern: r.pattern, orgs: r.orgs, hits: r.hits }));
   // a lesson carries no topic: with Hindsight, only the lessons it found for this topic; without, this kind's first
   const lessons = o.lessons.filter((l) => (!l.kind || l.kind === o.ask.kind) && (!o.ranked || rank.has(`play-${l.id}`)));

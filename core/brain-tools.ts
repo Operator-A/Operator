@@ -10,7 +10,7 @@ import "server-only";
 //   that finishes, and only when the owner hasn't picked one on Settings > Shared brain.
 import { edition, similarBusinesses } from "@/core/extensions";
 import { brainSettings, savedSnapshot, saveBrainSettings } from "@/core/brain";
-import { BRAIN_TOPICS, BUSINESS_KINDS, KIND_WORDS, isKind, isTopic, workedBlock, workedNote, type Similar } from "@/core/brain-rules";
+import { BRAIN_TOPICS, BUSINESS_KINDS, KIND_WORDS, isKind, isTopic, whyFor, workedBlock, workedNote, type Similar } from "@/core/brain-rules";
 import { TOOL_CATEGORIES } from "@/core/tools-step-rules";
 import type { ToolDef } from "@/core/tools/types";
 
@@ -85,4 +85,13 @@ export async function workedFor(actionTypes: readonly string[]): Promise<{ block
   merged.playbook = merged.playbook.slice(0, 3);
   const block = workedBlock(merged), note = workedNote(merged);
   return block && note ? { block, note } : null;
+}
+
+/** The company reveal's "why" line per department (cloud edition), from counts over the floor only. Empty when there are none. */
+export async function revealWhy(depts: readonly { id: string; agents: readonly { tools: readonly string[] }[]; waitsOn: readonly string[] }[]): Promise<Record<string, string>> {
+  if (edition() !== "cloud" || !depts.length) return {};
+  const [s, snap] = await Promise.all([brainSettings(), savedSnapshot()]);
+  const got = await similarBusinesses({ topic: "starting", kind: s.kind, revenue: snap?.revenue_band ?? "unknown", many: true });
+  if (!got) return {};
+  return whyFor(depts.map((d) => ({ id: d.id, words: [...d.agents.flatMap((a) => a.tools), ...d.waitsOn] })), got.counts);
 }

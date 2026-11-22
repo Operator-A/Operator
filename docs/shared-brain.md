@@ -194,8 +194,12 @@ Avery uses the shared brain in the setup interview and in chat, on the cloud edi
   Settings > Shared brain, and says so in a note.
 - **Open edition**: the slot answers null, so neither tool is offered.
 
-Left for later: the "why" line under each department on the company reveal. Avery designs those departments
-for each business, so there are no counts for them yet; it fits with slice 4b's results.
+The "why" line under each department on the company reveal (cloud edition, `revealWhy` in
+`core/brain-tools.ts`, pure rules `whyFor` in `core/brain-rules.ts`): the page asks the slot once with topic
+`starting` and `many`, so up to `REVEAL_COUNTS` counts come back, and code picks one line per department. A
+starting kit's department takes its own count (`dept:<id>`); any department, including one Avery designed,
+can take a count for a tool whose whole name is in its tool labels or the tools it waits on. Each line is
+shown once, under the floor nothing shows, and a failure never stops the page.
 
 ### Tests
 
@@ -251,4 +255,4 @@ statements, and an agent's ask covering only its own action type.
 
 ### Not in this slice
 
-Results for other action types (they keep their approval counts), and the "why" line on the company reveal.
+Results for other action types (they keep their approval counts).

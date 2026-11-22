@@ -422,6 +422,10 @@ assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+HostedClaude,$/m, "the cl
   const forAgent = pickSimilar({ ask: { ...ask, topic: "approvals", action: "klaviyo.campaign_draft" }, rows: act, lessons, kits, ranked: null });
   assert.deepEqual(forAgent.counts.map((c) => c.pattern).sort(), ["action:klaviyo.campaign_draft", "result:klaviyo.campaign_draft:subject_short"], "only the agent's own action type");
   for (const c of forAgent.counts) assert.equal(statementProblem(c.statement), null, c.statement);
+  // the reveal asks for many: every counted pattern on the topic, not only the first five
+  const lots = [...rows, row("kind:online_store", "dept:email_marketing", 20, 11), row("kind:online_store", "tool:store:shopify", 26, 20), row("kind:online_store", "tool:money:mercury", 26, 9)];
+  assert.equal(pickSimilar({ ask: { ...ask, topic: "starting" }, rows: lots, lessons, kits, ranked: null }).counts.length, 5, "Avery's ask: at most five");
+  assert.equal(pickSimilar({ ask: { ...ask, topic: "starting", many: true }, rows: lots, lessons, kits, ranked: null }).counts.length, 7, "the reveal: every counted pattern on the topic");
   assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+similarBusinesses,$/m, "the cloud edition fills the similarBusinesses slot");
 }
 

@@ -289,4 +289,26 @@ assert.equal(similarNote({ counts: [], playbook: [{ title: "Connect the bank fir
   assert.match(readFileSync("app/(room)/approvals/page.tsx", "utf8"), /i\.brain_note && /);
 }
 
+// ---- 6. the company reveal: one "why" line per department, a kit's own count first, each line once
+{
+  assert.equal(B.patternToolName("tool:list:klaviyo"), "Klaviyo");
+  assert.equal(B.patternToolName("tool:list:acme"), null);
+  assert.equal(B.patternToolName("dept:finance"), null);
+  const c = (pattern: string, statement: string) => ({ statement, cohort: "kind:online_store", pattern, orgs: 20, hits: 12 });
+  const counts = [c("tool:list:klaviyo", "K."), c("dept:finance", "F."), c("tool:store:shopify", "S."), c("dept:email_marketing", "E.")];
+  const why = B.whyFor([
+    { id: "finance", words: ["Mercury transactions"] },
+    { id: "email_marketing", words: ["Klaviyo lists"] },
+    { id: "store_care", words: ["Shopify orders", "Klaviyo campaign results"] },
+    { id: "wholesale", words: ["Klaviyo lists"] },
+    { id: "ops", words: ["Shopifyish things"] },
+  ], counts);
+  assert.deepEqual(why, { finance: "F.", email_marketing: "E.", store_care: "K." }, "a kit's own count first, then a tool by its whole name, each line once");
+  assert.deepEqual(B.whyFor([], counts), {});
+  const tools = readFileSync("core/brain-tools.ts", "utf8");
+  assert.match(tools, /export async function revealWhy[\s\S]*if \(edition\(\) !== "cloud" \|\| !depts\.length\) return \{\};/, "the reveal line is cloud only");
+  assert.match(readFileSync("app/start/page.tsx", "utf8"), /revealWhy\(chart\.depts\)\.catch\(\(\) => \(\{\}\)\)/, "the page never fails on it");
+  assert.match(readFileSync("dashboard/components/setup.tsx", "utf8"), /\{why\[d\.id\] && /);
+}
+
 sql().then(() => console.log("check:brain ok"), (e) => { console.error(e); process.exit(1); });
