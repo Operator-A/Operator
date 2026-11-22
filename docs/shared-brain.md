@@ -168,3 +168,91 @@ Lesson rules (percentages, counts, addresses, links, lengths refused; small numb
 and its tags; the plan sends only lessons that pass and deletes only stale `play-` documents; the pattern sync
 leaves `play-` documents alone; the playbook sync against a fake bank; the actions are owners of the admin
 business only and audited; only the admin business's owners see the card.
+
+## Slice 4: Businesses like yours (card 233)
+
+Avery uses the shared brain in the setup interview and in chat, on the cloud edition only.
+
+### What it does
+
+- **Businesses like yours** (`core/brain-tools.ts`, a read tool): Avery names a topic from a fixed list
+  (`BRAIN_TOPICS`: what to set up first, one part of the business from `TOOL_CATEGORIES`, or approvals). That
+  topic is the only input, so nothing the founder typed is sent anywhere. The tool asks the
+  `similarBusinesses` slot with the topic, the business's kind and its revenue band.
+- **Hindsight orders, code says** (`ee/brain.ts`, `pickSimilar` in `ee/brain-rules.ts`): Hindsight is searched
+  with the topic's words from code (`topicWords`), limited to this kind's tags and those for every business.
+  It only orders what fits. Code says every count again from the live count (`brainPatterns`, over the
+  floor), so a pattern that fell under 5 businesses is dropped, and each pattern shows once, for the most
+  specific cohort the business is in (kind and revenue band, then kind, then every business). Lesson text
+  comes from the playbook table, never from Hindsight's text. Without Hindsight, or when it fails, code
+  orders them itself.
+- **The founder sees what she leaned on**: code adds a note under her reply, "Businesses like yours: …",
+  with at most three of the lines she was given (`similarNote`). The tool hands the counts' numbers as
+  numbers, so she quotes them exactly.
+- **Kind of business in the interview** (`set_business_kind`, setup only): Avery picks one from
+  `BUSINESS_KINDS`; code saves it after a run that finishes, only when the owner hasn't picked one on
+  Settings > Shared brain, and says so in a note.
+- **Open edition**: the slot answers null, so neither tool is offered.
+
+The "why" line under each department on the company reveal (cloud edition, `revealWhy` in
+`core/brain-tools.ts`, pure rules `whyFor` in `core/brain-rules.ts`): the page asks the slot once with topic
+`starting` and `many`, so up to `REVEAL_COUNTS` counts come back, and code picks one line per department. A
+starting kit's department takes its own count (`dept:<id>`); any department, including one Avery designed,
+can take a count for a tool whose whole name is in its tool labels or the tools it waits on. Each line is
+shown once, under the floor nothing shows, and a failure never stops the page.
+
+### Tests
+
+`npm run check:brain`: topics are from lists only, which patterns a topic covers, the note (at most three
+lines, none when nothing came back), both tools are cloud only and take only a topic or a kind, the owner's
+kind wins, setup and chat offer the tool and write the note in code. `npm run check:ee`: cohorts most specific
+first, recall tags, one line per pattern for the most specific cohort, on topic and this kind only, Hindsight's
+order wins but a pattern under the floor never comes back, lessons only for this kind or every business,
+numbers in the words are the live row's, Hindsight searched only with the topic's words.
+
+## Slice 4b: agents learn from results (card 234)
+
+Agents now draft with what has worked for businesses like theirs, and code measures how email campaigns
+turned out so there is something to learn from. Same rules: only patterns 5 businesses share cross, and
+every number is counted in code.
+
+### What it does
+
+- **Recording a campaign** (`core/campaign-results.ts`, rules in `core/result-rules.ts`). When the gateway
+  applies a Klaviyo or Mailchimp campaign draft, it saves a `campaign_results` row in the business's own
+  tables: the campaign's id in the service, and the draft's shape as bands (subject 40 characters or fewer,
+  41 to 60, or over 60; preview text or none; body short, medium or long). Never a word of the draft, the
+  list or a count. A failure here never fails the action.
+- **Checking it** (once a day, before the snapshot, cloud edition). Code reads campaign reports through the
+  read tools the business already connected (Klaviyo `get_campaign_report`, Mailchimp `mailchimp_campaigns`)
+  and finds the campaign by its id. Once it's sent, the send's day and time go in as bands (weekday or
+  weekend; morning, afternoon or evening). Seven days after the send, its opens, clicks and unsubscribes go
+  in as bands (opens under 20%, 20 to 35%, 35 to 50%, 50% or more). Not sent within 14 days: `not_sent`.
+- **The snapshot** gains `results`: per campaign type and shape, `good` when more than half of the
+  business's checked campaigns of that shape (last 90 days) reached 35% opens or more, else `low`.
+- **Counting**: `brain_patterns()` adds `result:<type>:<shape>`: businesses with that shape, and how many of
+  them were good. Same floor. Said by code: "Among online stores on OPERATOR, 9 of 14 that sent Klaviyo
+  campaign drafts with subjects of 40 characters or fewer usually saw opens of 35% or more."
+- **Agents** (`workedFor` in `core/brain-tools.ts`, cloud edition). Before a built agent's run, code asks
+  the `similarBusinesses` slot for each gateway action type the agent holds (`becomes` on each action tool),
+  with `action` set: its approval counts, promotions and results, plus playbook lessons. The answer goes in
+  the agent's prompt only when it may stage, marked as advice that never picks a recipient, list, product or
+  address. Code hands it over, so it works in playbook runs as well as explore runs.
+- **The approval card** shows one line under the draft, written by code (`workedNote`, saved in
+  `approvals.brain_note`): what the agent was shown.
+
+### Rolling it out
+
+Migration `20261228090000_campaign_results.sql`: apply, then merge. Until it's applied, recording is
+skipped, approval cards go without the line, and the snapshot can't be saved (it now holds `results`).
+
+### Tests
+
+`npm run check:brain`: the bands, the shape (never words), the send-time reading, when a campaign is checked,
+the snapshot's `good`/`low`, the table refusing words and rates, the result patterns under and over the
+floor on PGlite, each action tool becoming its stage's gateway type, and the wiring. `npm run check:ee`: the
+statements, and an agent's ask covering only its own action type.
+
+### Not in this slice
+
+Results for other action types (they keep their approval counts).

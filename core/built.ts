@@ -10,6 +10,7 @@ import { loadSpec } from "@/core/agent-spec";
 import { activePlaybook, afterRun, listPlaybooks } from "@/core/playbook";
 import { runExplore } from "@/core/runner";
 import { TOOLS } from "@/core/tools/catalog";
+import { workedFor } from "@/core/brain-tools";
 import { callTool } from "@/core/tools/call";
 import { checkInput, paramsOf, type ToolCtx } from "@/core/tools/types";
 import type { MemoryLoad } from "@/core/memory";
@@ -64,7 +65,10 @@ export async function runBuilt(agentId: string, opts: { runId?: string; dryRun?:
   const r = await ready(agentId);
   if ("problem" in r) return { status: "skipped", summary: `Not run on the runner: ${r.problem}.` };
   const h = opts.handoff ? { from: opts.handoff.from, summary: opts.handoff.summary ?? "", metrics: opts.handoff.metrics ?? {} } : null;
-  const res = await runExplore(r.spec, { agentId, runId: opts.runId, memoryBlock: opts.memory?.block ?? "", playbook: { version: r.playbook.version, steps: r.playbook.steps }, deliver: true, handoff: h });
+  // shared brain, slice 4b: what has worked for the action types it holds (cloud edition), never stops the run
+  const holds = r.spec.tools.map((id) => TOOLS[id]).filter((t) => t?.kind === "action" && t.becomes).map((t) => t!.becomes!);
+  const worked = holds.length ? await workedFor(holds).catch(() => null) : null;
+  const res = await runExplore(r.spec, { agentId, runId: opts.runId, memoryBlock: opts.memory?.block ?? "", playbook: { version: r.playbook.version, steps: r.playbook.steps }, deliver: true, handoff: h, worked });
   let note = "";
   try { note = ` ${await afterRun(agentId, opts.runId ?? null, res)}`; } catch (e) { note = ` (Playbook not updated: ${e instanceof Error ? e.message : String(e)})`; }
   return {

@@ -656,6 +656,23 @@ a.goal-add:hover { text-decoration: none; color: var(--ink); }
 @keyframes wgEnter { from { opacity: 0; transform: translateY(16px) scale(.985); filter: blur(10px); } to { opacity: 1; transform: none; filter: none; } }
 @keyframes wgDots { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
 @media (max-width: 720px) { .wg-steps li:not(.now) { display: none; } .wg-area { font-size: 16px; } }
+/* setup on a phone (card 199): one-line header, a compact steps pill that leaves the chat's Send button clear */
+@media (max-width: 720px) {
+  html:has(.wg) { scroll-padding-bottom: 96px; }
+  .wg-top { flex-wrap: nowrap; gap: 12px; }
+  .wg-brand { flex: 1 1 auto; min-width: 0; }
+  .wg-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wg-steps { flex: none; }
+  .wg-top .signout-word { display: none; }
+  .wg-talk { max-height: min(calc(100svh - 330px), 560px); }
+  .wg-nav { align-items: flex-end; pointer-events: none; }
+  .wg-nav-bar { background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0 !important; justify-content: flex-end !important; }
+  .wg-nav-bar > *, .wg-nav > .soft-box { pointer-events: auto; }
+  .wg-nav-bar > button { box-shadow: 0 10px 24px -10px rgba(20, 20, 26, .45); }
+  .wg-nav-bar > span:empty { display: none; }
+  .wg:has(.wg-card textarea:focus, .wg-card input:focus) .wg-nav { visibility: hidden; }
+}
+@media (max-width: 560px) { .wg-av-chat { display: none; } }
 @media (prefers-reduced-motion: reduce) { .wg-enter, .wg-pop, .wg-dots i { animation: none; } .wg-blob, .wg-line i { transition: none; } }
 
 /* the tools step (card 182): the question in the middle, the parts of the company around it */
@@ -681,7 +698,7 @@ button.wg-opt { width: 100%; font: inherit; text-align: left; cursor: pointer; }
 .wg-else[open] { flex-basis: 100%; }
 .wg-snap { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
 .wg-snap li { background: var(--soft); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; line-height: 1.4; font-variant-numeric: tabular-nums; }
-@media (max-width: 560px) { .wg-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .wg-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } .wg-tool { padding: 8px 6px; font-size: 14px; overflow-wrap: normal; word-break: normal; hyphens: manual; } }
 .wg-opt:hover { text-decoration: none; transform: translateY(-2px); border-color: #7C8CF8; box-shadow: 0 14px 28px -16px rgba(63, 71, 184, .5); }
 @keyframes wgDash { to { background-position: 24px 0; } }
 @media (max-width: 900px) {

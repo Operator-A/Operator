@@ -27,6 +27,8 @@ import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
 import { weekOf } from "@/core/plan-rules";
 import { DRAFT_PARTS, MAX_DRAFT_PARTS } from "@/core/department-rules";
+import { similarTool } from "@/core/brain-tools";
+import { similarNote, type Similar } from "@/core/brain-rules";
 import { MAX_FILED, MAX_REPLY, MAX_RULES, chatPrompt, deptNamed, inOwnWords, resolveRuleWho, savedLines, type ChatLine, type ChatReach } from "@/core/chat-rules";
 
 export const CHAT_MISSING = "The chat table isn’t in Supabase yet: apply the migration 20261124090000_avery_chat.sql. Until then Avery answers but the conversation isn’t kept.";
@@ -254,7 +256,10 @@ export async function askAvery(message: string): Promise<ChatAnswer> {
   const live = await liveAgentIds();
   const names = await agentNames([...live]);
   const reach: ChatReach = { agents: [...live].map((id) => ({ id, name: names[id] ?? id })), departments: org.departments.map((d) => ({ id: d.id, name: d.name })) };
-  const chatTools = [crewNowTool(org), saveRuleTool(message, reach, agentId), fileProposalTool(reach), departmentMenuTool(), departmentDraftTool()];
+  // the shared brain (card 233, cloud edition only): what businesses like this one found
+  const heldSimilar: { got: Similar[] } = { got: [] };
+  const similar = similarTool(heldSimilar);
+  const chatTools = [crewNowTool(org), saveRuleTool(message, reach, agentId), fileProposalTool(reach), departmentMenuTool(), departmentDraftTool(), ...(similar ? [similar] : [])];
   const reads = base.tools.filter((id) => (TOOLS[id]?.kind === "read" || TOOLS[id]?.kind === "calculate") && !TOOLS[id]?.server);
   const spec: AgentSpec = {
     ...base,
@@ -281,6 +286,8 @@ export async function askAvery(message: string): Promise<ChatAnswer> {
     return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd, metrics: r.metrics };
   }).catch((e: unknown) => ({ status: "failed" as const, summary: `I couldn't answer that: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`, costUsd: 0, runId: null }));
   const notes = savedLines(reports);
+  const like = finished ? similarNote(heldSimilar.got.at(-1) ?? null) : null;
+  if (like) notes.push(like);
   const reply = res.status === "skipped" ? `I can't answer right now: ${res.summary}` : (finished && said ? said : res.summary).slice(0, MAX_REPLY);
   const keptReply = kept && await keepChat({ role: "avery", text: reply, run_id: res.runId, notes });
   return { ok: res.status === "ok", reply, notes, runId: res.runId, costUsd: res.costUsd ?? 0, kept: !!keptReply };

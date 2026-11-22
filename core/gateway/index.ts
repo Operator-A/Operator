@@ -12,12 +12,13 @@ import { hasMercury, mercuryCategories, mercuryTransaction } from "@/integration
 import { callWriteTool, mcpStatus } from "@/integrations/mcp";
 import { startOf } from "@/core/time";
 import { orgTz } from "@/core/tz";
+import { recordCampaign } from "@/core/campaign-results";
 import { hasGmail } from "@/integrations/gmail";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
 import { invoiceCents, type InvoiceArgs } from "@/core/stripe-rules";
 import { QBO_CATEGORIZE_TOOL, UNCATEGORIZED, type CategorizeArgs } from "@/core/quickbooks-rules";
-import { refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
+import { productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
 import { refuseHold } from "@/core/calendar-rules";
@@ -26,9 +27,9 @@ import { orderIdOk, refuseNote } from "@/core/woo-rules";
 import { dealIdOk, refuseMove } from "@/core/hubspot-rules";
 import { adIdOk, refusePause, RESULT_LABEL, type MetaResult } from "@/core/meta-rules";
 import { metaTargets } from "@/core/meta-targets";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_STOCK, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_STOCK, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE } from "./policy";
 
 export interface Proposal {
   agentId: string;
@@ -40,6 +41,8 @@ export interface Proposal {
   title: string;
   reasoning?: string;
   preview?: Record<string, unknown>;
+  /** Shared brain, slice 4b: what the agent was shown before it drafted, in code's words (workedNote). */
+  brainNote?: string | null;
 }
 
 async function numPolicy(key: string, d: number) {
@@ -83,7 +86,10 @@ export async function propose(p: Proposal): Promise<{ status: "queued" | "schedu
     const [departmentId, checker] = await Promise.all([draftDepartment(p.agentId), draftChecker(p.agentId)]);
     const review = checker ? { reviewer_agent_id: checker.reviewer, review_status: "waiting", review_due: new Date(Date.now() + LEAD_REVIEW_HOURS * 36e5).toISOString() } : {};
     const card = { action_id: action.id, agent_id: p.agentId, title: p.title, reasoning: p.reasoning ?? null, preview: p.preview ?? {} };
-    let { error: e2 } = await db().from("approvals").insert({ ...card, department_id: departmentId, ...review });
+    const note = p.brainNote ? { brain_note: p.brainNote.slice(0, 600) } : {};
+    let { error: e2 } = await db().from("approvals").insert({ ...card, ...note, department_id: departmentId, ...review });
+    // before the slice 4b migration there's no brain_note column: the card goes without the line
+    if (p.brainNote && (e2?.code === "42703" || e2?.code === "PGRST204")) ({ error: e2 } = await db().from("approvals").insert({ ...card, department_id: departmentId, ...review }));
     // before the slice 4 migration the columns aren't there: the card goes straight to the owner, as before
     if (e2?.code === "42703" || e2?.code === "PGRST204") ({ error: e2 } = await db().from("approvals").insert(card));
     if (e2) { await db().from("agent_actions").delete().eq("id", action.id); throw new Error(`Gateway: could not queue the approval: ${e2.message}`); }
@@ -438,7 +444,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyShopifyStock(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids), applyMetaPauses(ids), applyCategorize(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyShopifyStock(ids), applyShopifyCopy(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids), applyMetaPauses(ids), applyCategorize(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -538,6 +544,7 @@ async function applyCampaign(a: ActionRow, runId: string) {
     const out = (await callWriteTool("klaviyo_drafts", "klaviyo_create_draft", { listId: a.target, subject: args.subject, preview: args.preview, body: args.body })) as { campaignId?: unknown; templateId?: unknown; listName?: unknown };
     if (typeof out?.campaignId !== "string" || !out.campaignId) throw new Error("Klaviyo didn't return a campaign id");
     await done({ status: "applied", result_json: { klaviyo_campaign_id: out.campaignId, klaviyo_template_id: out.templateId ?? null, list: out.listName ?? null, sent: false } });
+    await recordCampaign(a.id, CAMPAIGN_DRAFT, out.campaignId, args as unknown as Record<string, unknown>);
     return "applied" as const;
   } catch (e) {
     await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
@@ -694,6 +701,56 @@ async function applyStockChange(a: ActionRow, runId: string) {
   }
 }
 
+async function applyShopifyCopy(ids?: string[]) {
+  const rows = await approvedOf(SHOPIFY_COPY, ids);
+  if (!rows.length) return null;
+  if (!(await ready("shopify"))) return { ok: true, text: "Approved, not in Shopify yet: Shopify isn't connected (Connections, Shopify)." };
+  const cap = await numPolicy("max_shopify_writes_per_run", 25);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyCopyChange(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway updated copy on ${n.applied} approved Shopify product${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved copy changes are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applyCopyChange(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as Record<string, unknown>;
+    // the fields again, at execution time (an approver may have edited the text); the server re-checks the
+    // app's scopes, that the copy is still what the card was written against, and the facts in the new text
+    const no = productTarget(a.target) ? refuseCopy(args) : "The target is not a Shopify product id.";
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    const out = (await callWriteTool("shopify", "shopify_update_copy", { target: a.target, ...args })) as { refused?: unknown; before?: unknown; after?: unknown; set?: unknown; label?: unknown };
+    const label = typeof out?.label === "string" ? out.label : null;
+    // the copy moved since the card, or the text states a fact the product's data doesn't: a refusal, not a failure to retry
+    if (typeof out?.refused === "string") { await done({ status: "refused", reason: out.refused, result_json: { record: label } }); return "refused" as const; }
+    await done({
+      status: "applied",
+      diff_json: { before: out?.before ?? null, after: out?.after ?? null },
+      // what to put back: the old copy, and only while the store still shows the copy this action set
+      undo_json: { set_copy: out?.before ?? null, only_if_print: typeof out?.set === "string" ? out.set : null },
+      result_json: { record: label },
+    });
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
 /** Approved Stripe invoices: made as drafts in Stripe on the gateway's own key, at most max_invoice_drafts_per_run per agent. */
 async function applyInvoices(ids?: string[]) {
   const rows = await approvedOf(INVOICE_DRAFT, ids);
@@ -841,6 +898,7 @@ async function applyMailchimpOne(a: ActionRow, runId: string) {
     const out = (await callWriteTool("mailchimp_drafts", "mailchimp_create_draft", { audienceId: a.target, subject: args.subject, preview: args.preview, body: args.body })) as { campaignId?: unknown; audience?: unknown };
     if (typeof out?.campaignId !== "string" || !out.campaignId) throw new Error("Mailchimp didn't return a campaign id");
     await done({ status: "applied", result_json: { mailchimp_campaign_id: out.campaignId, audience: out.audience ?? null, sent: false } });
+    await recordCampaign(a.id, MAILCHIMP_DRAFT, out.campaignId, args as unknown as Record<string, unknown>);
     return "applied" as const;
   } catch (e) {
     await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });

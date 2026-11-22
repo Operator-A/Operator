@@ -6,7 +6,7 @@
 import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-rules";
 import { CUSTOMER_ID, INVOICE_FIELDS, refuseInvoice } from "@/core/stripe-rules";
 import { CATEGORIZE_FIELDS, QBO_CATEGORIZE, expenseTarget, refuseCategorize } from "@/core/quickbooks-rules";
-import { SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
+import { SHOPIFY_COPY, SHOPIFY_COPY_GRANT, SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
 import { NOTE_FIELDS, orderIdOk, refuseNote } from "@/core/woo-rules";
@@ -31,7 +31,7 @@ export const DRAFT_EMAIL = "gmail.create_draft";
  * Tags added to one Shopify order or customer (docs/shopify-actions.md). Adds only; undo removes
  * exactly the tags it added. The target is a Shopify id from a Recent orders result.
  */
-export { SHOPIFY_STOCK, SHOPIFY_TAGS };
+export { SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS };
 export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
 /**
  * A draft invoice in the business's Stripe, to one of its own Stripe customers (card 240). Stripe holds
@@ -181,6 +181,16 @@ export const TOOLS = {
     // model: Draft for good, never promoted (decided 2026-11-21)
     promotable: false,
   },
+  [SHOPIFY_COPY]: {
+    // any agent an approver grants "Rewrite product copy" on the Tools step; never a proposal
+    agents: "granted",
+    grant: SHOPIFY_COPY_GRANT,
+    tier: "Draft" as Tier,
+    fields: ["before", "description", "seo_title", "seo_description"],
+    // public text on the business's own store, like a post: it may earn trust (28 of 30 unedited); every
+    // number and claim word is checked against the product's Shopify data on every write (decided 2026-11-22)
+    promotable: true,
+  },
 } as const satisfies Record<string, ActionDef>;
 export type ToolName = keyof typeof TOOLS;
 
@@ -264,6 +274,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (tool === QBO_CATEGORIZE) return expenseTarget(target) ? refuseCategorize(args) : "The target is not a QuickBooks expense line.";
   if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
   if (tool === SHOPIFY_STOCK) return stockTarget(target) ? refuseStock(args) : "The target is not a Shopify inventory item at a location.";
+  if (tool === SHOPIFY_COPY) return productTarget(target) ? refuseCopy(args) : "The target is not a Shopify product id.";
   if (tool === CALENDAR_HOLD) return target === `${args.start}/${args.end}` && isoMs(args.start) !== null ? refuseHold(args, now) : "The target is not the hold's own start and end.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";
   const extra = Object.keys(args).filter((k) => !(def.fields as readonly string[]).includes(k));

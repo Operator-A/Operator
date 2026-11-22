@@ -171,6 +171,7 @@ export const SCOPE_WORDS: Record<string, string> = {
   write_orders: "add tags to an order, only after you approve",
   write_customers: "add tags to a customer, only after you approve",
   write_inventory: "set an item’s stock count at a location, only after you approve each change",
+  write_products: "rewrite a product’s description and SEO text, after you approve (later on its own, once it has earned trust); never prices or deletes",
 };
 
 /** The permissions a tile asks for, each with what it is for. */

@@ -10,6 +10,7 @@ import { PLAN, monthlyUsd, planBlockFor, planState, planWords, type Subscription
 import type { PlanAsk } from "../core/extension-types";
 import { CREDITS_TAX_CODE, MIN_BALANCE_USD, PACKS_USD, packLineItem, balanceOf, creditBlock, creditFromSession, creditWords, isPack, mayUsePooledKey, packProblem, packReturn, runCharge, SETUP_FREE_USD, setupFreeLeft, setupRunCharge, usdWords } from "./credit-rules";
 import { billingFor } from "../core/cost-rules";
+import { cohortsFor, pickSimilar, recallTags } from "./brain-rules";
 import { BANK_DIRECTIVE, BANK_SETTINGS, PATTERN_PREFIX, RETAIN_BATCH, SYNC_EVERY_MS, cohortWords, docIdOf, statementOf, statementProblem, syncDue, syncPlan, syncWith, tagsOf, type Bank } from "./brain-rules";
 import type { PatternRow } from "../core/brain-rules";
 import { PLAYBOOK_PREFIX, lessonDoc, lessonProblem, playbookPlan, readLesson, syncPlaybook } from "./playbook-rules";
@@ -377,4 +378,55 @@ assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+HostedClaude,$/m, "the cl
   assert.match(readFileSync("ee/playbook.ts", "utf8"), /return withOrg\(admin, fn\);/, "lessons are read and written as the admin business only");
 }
 
-console.log("check:ee ok (credits, plan, trial, grace, comped, Stripe signatures and rows, sign-up codes, shared brain bank, playbook)");
+// slice 4 (card 233): Hindsight only orders; code says every count from the live rows and every lesson from the table
+{
+  const kits = { finance: "Finance", email_marketing: "Email marketing" };
+  const row = (cohort: string, pattern: string, orgs: number, hits: number, num: number | null = null, den: number | null = null): PatternRow => ({ cohort, pattern, orgs, hits, num, den });
+  assert.deepEqual(cohortsFor("online_store", "under_10k"), ["kind:online_store|rev:under_10k", "kind:online_store", "all"]);
+  assert.deepEqual(cohortsFor("online_store", "unknown"), ["kind:online_store", "all"]);
+  assert.deepEqual(cohortsFor(null, "under_10k"), ["all"]);
+  assert.deepEqual(recallTags("services"), ["kind:services", "kind:all", "cohort:all"]);
+  assert.deepEqual(recallTags(null), ["kind:all", "cohort:all"]);
+  const rows = [
+    row("all", "tool:list:klaviyo", 40, 20), row("kind:online_store", "tool:list:klaviyo", 26, 18), row("kind:online_store|rev:under_10k", "tool:list:klaviyo", 12, 9),
+    row("kind:online_store", "tool:list:mailchimp", 26, 6), row("kind:services", "tool:list:kit", 9, 7), row("kind:online_store", "tool:books:xero", 26, 8),
+    row("kind:online_store", "dept:finance", 20, 12),
+  ];
+  const lessons = [
+    { id: "a1", title: "Start email with a welcome series", body: "Body one, long enough to be a lesson.", kind: "online_store" as const },
+    { id: "a2", title: "Connect the bank first", body: "Body two, long enough to be a lesson.", kind: null },
+    { id: "a3", title: "Invoice the day the work is done", body: "Body three, long enough to be a lesson.", kind: "agency" as const },
+  ];
+  const ask = { topic: "list" as const, kind: "online_store" as const, revenue: "under_10k" as const };
+  const s = pickSimilar({ ask, rows, lessons, kits, ranked: null });
+  assert.deepEqual(s.counts.map((c) => [c.cohort, c.pattern]), [["kind:online_store|rev:under_10k", "tool:list:klaviyo"], ["kind:online_store", "tool:list:mailchimp"]], "one line per pattern, the most specific cohort, on topic, this kind only");
+  assert.equal(s.counts[0].statement, "Among online stores under $10k a month on OPERATOR, 9 of 12 use Klaviyo for email marketing.");
+  assert.deepEqual(s.playbook.map((l) => l.title), ["Start email with a welcome series", "Connect the bank first"], "this kind's lessons first, never another kind's");
+  assert.equal(s.playbook[0].for, "online stores");
+  // with Hindsight: its order wins, lessons only those it found, and a document it names that is no longer counted is dropped
+  const r = pickSimilar({ ask, rows, lessons, kits, ranked: ["pat-kind:online_store--tool:list:mailchimp", "pat-all--tool:list:gone", "play-a2"] });
+  assert.equal(r.counts[0].pattern, "tool:list:mailchimp");
+  assert.ok(!r.counts.some((c) => c.pattern === "tool:list:gone"), "a pattern under the floor now never comes back");
+  assert.deepEqual(r.playbook.map((l) => l.title), ["Connect the bank first"]);
+  // no kind: every business only; a count's numbers are the live row's, never Hindsight's text
+  const none = pickSimilar({ ask: { topic: "starting", kind: null, revenue: "unknown" }, rows, lessons, kits, ranked: null });
+  assert.deepEqual(none.counts.map((c) => c.pattern), ["tool:list:klaviyo"]);
+  assert.deepEqual(none.playbook.map((l) => l.title), ["Connect the bank first"]);
+  for (const c of [...s.counts, ...r.counts]) assert.match(c.statement, new RegExp(`${c.hits} of ${c.orgs}`), "the numbers in the words are the row's");
+  assert.match(readFileSync("ee/brain.ts", "utf8"), /c\.recall\(BANK_ID, askWords\(ask\), \{ tags: recallTags\(ask\.kind\), tagsMatch: "any_strict"/, "Hindsight is searched only with words from code (askWords) and the kind's tags");
+  // slice 4b (card 234): result patterns, said by code, and an agent's ask covers only its action type
+  assert.equal(statementOf(row("kind:creator", "result:klaviyo.campaign_draft:subject_short", 7, 6), kits), "Among creators and media businesses on OPERATOR, 6 of 7 that sent Klaviyo campaign drafts with subjects of 40 characters or fewer usually saw opens of 35% or more.");
+  assert.equal(statementOf(row("all", "result:mailchimp.campaign_draft:time_morning", 9, 5), kits), "Among businesses on OPERATOR, 5 of 9 that sent Mailchimp campaign drafts with a morning send usually saw opens of 35% or more.");
+  for (const bad of ["result:gmail.create_draft:subject_short", "result:klaviyo.campaign_draft:Jane", "result:klaviyo.campaign_draft"]) assert.equal(statementOf(row("all", bad, 9, 6), kits), null, `${bad} is not said`);
+  const act = [...rows, row("kind:online_store", "result:klaviyo.campaign_draft:subject_short", 14, 9), row("kind:online_store", "action:klaviyo.campaign_draft", 14, 14, 80, 100), row("kind:online_store", "result:mailchimp.campaign_draft:subject_short", 10, 6)];
+  const forAgent = pickSimilar({ ask: { ...ask, topic: "approvals", action: "klaviyo.campaign_draft" }, rows: act, lessons, kits, ranked: null });
+  assert.deepEqual(forAgent.counts.map((c) => c.pattern).sort(), ["action:klaviyo.campaign_draft", "result:klaviyo.campaign_draft:subject_short"], "only the agent's own action type");
+  for (const c of forAgent.counts) assert.equal(statementProblem(c.statement), null, c.statement);
+  // the reveal asks for many: every counted pattern on the topic, not only the first five
+  const lots = [...rows, row("kind:online_store", "dept:email_marketing", 20, 11), row("kind:online_store", "tool:store:shopify", 26, 20), row("kind:online_store", "tool:money:mercury", 26, 9)];
+  assert.equal(pickSimilar({ ask: { ...ask, topic: "starting" }, rows: lots, lessons, kits, ranked: null }).counts.length, 5, "Avery's ask: at most five");
+  assert.equal(pickSimilar({ ask: { ...ask, topic: "starting", many: true }, rows: lots, lessons, kits, ranked: null }).counts.length, 7, "the reveal: every counted pattern on the topic");
+  assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+similarBusinesses,$/m, "the cloud edition fills the similarBusinesses slot");
+}
+
+console.log("check:ee ok (credits, plan, trial, grace, comped, Stripe signatures and rows, sign-up codes, shared brain bank, playbook, businesses like yours)");

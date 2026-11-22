@@ -1,5 +1,6 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { claimsIn, copyFacts, copyHtml, copyPrint, numbersIn, refuseCopyFacts } from "../core/shopify-actions";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -97,6 +98,42 @@ t("stock refused with an unknown reason", st({ ...stockOk, reason: "promotion" }
 t("stock refused with an extra field", st({ ...stockOk, location: "gid://shopify/Location/9" }) !== null);
 t("stock refused without the count it was staged against", st({ available: 40, reason: "received" }) !== null);
 t("stock refused on an order", st(stockOk, "gid://shopify/Order/1") !== null);
+// Shopify product copy (docs/shopify-actions.md, slice 3)
+const prod = "gid://shopify/Product/42", copyOk = { before: "0a1b2c3d", description: "A smooth everyday blend.\n\n- Easy to brew\n- Great with milk" };
+const pc = (args: Record<string, unknown>, target = prod) => refuseProposal("b_mkt_2", SHOPIFY_COPY, target, args, 200, ["shopify_product_copy", "shopify_copy"]);
+t("copy starts at Draft and may earn trust", TOOLS[SHOPIFY_COPY].tier === "Draft" && TOOLS[SHOPIFY_COPY].promotable);
+t("copy is a granted action, named by the builder's tool", TOOLS[SHOPIFY_COPY].agents === "granted" && TOOLS[SHOPIFY_COPY].grant === "shopify_copy");
+t("copy refused for an agent that wasn't granted it", refuseProposal("b_mkt_2", SHOPIFY_COPY, prod, copyOk, 200, ["shopify_product_copy"]) !== null);
+t("copy ok", pc(copyOk) === null);
+t("copy ok with SEO text only", pc({ before: "0a1b2c3d", seo_title: "Everyday blend", seo_description: "A smooth everyday blend." }) === null);
+t("copy refused with no field", pc({ before: "0a1b2c3d" }) !== null);
+t("copy refused without the fingerprint it was written against", pc({ description: "x" }) !== null);
+t("copy refused with a bad fingerprint", pc({ ...copyOk, before: "nope" }) !== null);
+t("copy refused when the description is too long", pc({ ...copyOk, description: "a".repeat(4001) }) !== null);
+t("copy refused when the SEO title is too long", pc({ before: "0a1b2c3d", seo_title: "a".repeat(71) }) !== null);
+t("copy refused when the SEO description is too long", pc({ before: "0a1b2c3d", seo_description: "a".repeat(321) }) !== null);
+t("copy refused with HTML", pc({ ...copyOk, description: "<b>Bold</b> claim" }) !== null);
+t("copy refused with an entity", pc({ ...copyOk, description: "Fish &amp; chips" }) !== null);
+t("copy refused with a link", pc({ ...copyOk, description: "See https://example.com" }) !== null);
+t("copy refused with a markdown link", pc({ ...copyOk, description: "See [here](x)" }) !== null);
+t("copy refused with a line break in the SEO title", pc({ before: "0a1b2c3d", seo_title: "a\nb" }) !== null);
+t("copy refused with an extra field", pc({ ...copyOk, title: "New name" }) !== null);
+t("copy refused with a price", pc({ ...copyOk, price: "9.99" }) !== null);
+t("copy refused on a variant", pc(copyOk, "gid://shopify/ProductVariant/42") !== null);
+// facts only from Shopify: numbers and claim words must already be in the product's data
+const facts = copyFacts(["Everyday Blend 12 oz", "Packed weekly. Organic leaves, 1,000 bags sold.", "tea", null, "loose-leaf"]);
+t("numbers are found and compared without commas", numbersIn("A 1,000-bag run of 12 oz bags, 3.5 stars").join() === "1000,12,3.5");
+t("claim words are found by their canonical name", claimsIn("Certified Fair-Trade and gluten free").join() === "certified,fair trade,gluten-free");
+t("facts ok when numbers and claims are in the data", refuseCopyFacts("Our organic 12 oz bag, over 1000 sold.", facts) === null);
+t("facts refused for a number not in the data", (refuseCopyFacts("A 16 oz bag.", facts) ?? "").includes("16"));
+t("facts refused for a year not in the data", refuseCopyFacts("Brewing since 2015.", facts) !== null);
+t("facts refused for a claim not in the data", (refuseCopyFacts("Fair trade leaves.", facts) ?? "").includes("fair trade"));
+t("facts refused for award-winning not in the data", refuseCopyFacts("Our award-winning blend.", facts) !== null);
+t("facts ok with no numbers or claims", refuseCopyFacts("Smooth, sweet and easy to brew.", facts) === null);
+// the description's HTML is built in code: escaped, paragraphs and bullets only
+t("copy html builds paragraphs and bullets", copyHtml("One\ntwo\n\n- a\n- b") === "<p>One<br>two</p>\n<ul><li>a</li><li>b</li></ul>");
+t("copy html escapes everything", copyHtml("5 < 6 & \"x\"") === "<p>5 &lt; 6 &amp; &quot;x&quot;</p>");
+t("copy fingerprint changes with the copy", copyPrint("<p>a</p>", "t", "d") === copyPrint("<p>a</p>", "t", "d") && copyPrint("<p>a</p>", "t", "d") !== copyPrint("<p>b</p>", "t", "d") && copyPrint("<p>a</p>", "t", null) !== copyPrint("<p>a</p>", "", "t"));
 t("tags refused when not a list", sh({ tags: "VIP" }) !== null);
 t("campaign list must be the business's own", refuseCampaignTo("XZRviM", [{ id: "XZRviM" }]) === null && refuseCampaignTo("Other1", [{ id: "XZRviM" }]) !== null);
 t("lead with address ok", refuseDraftTo({ email: "Ana@Fleet.coffee", stage: "new" }, new Set()) === null);

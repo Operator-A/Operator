@@ -2,6 +2,7 @@
 // core/extensions/none.ts and ee/index.ts can both import them without a cycle.
 import type { ComponentType } from "react";
 import type { Billing } from "@/core/cost-rules";
+import type { Similar, SimilarAsk } from "@/core/brain-rules";
 
 /** What a plan check is asked about. Each is checked as the current org, after the role check. */
 export type PlanAsk =
@@ -61,7 +62,14 @@ export interface Extensions {
    * edition's weekly shared-brain sync. Never stops the scheduler; says what it did in a few words.
    */
   afterSchedule(now: number): Promise<string | null>;
+  /**
+   * What businesses like this one found (card 233): counts over the shared brain's floor, said by
+   * code from the live count, and lessons from OPERATOR's playbook. Read-only advice for Avery's
+   * "Businesses like yours" tool, asked as the current business with only a topic from a fixed list,
+   * its kind and its revenue band. null: no shared brain (the open edition), so the tool isn't offered.
+   */
+  similarBusinesses(ask: SimilarAsk): Promise<Similar | null>;
 }
 
 /** Every slot, so check:open-core can make sure each edition fills each one. */
-export const SLOTS = ["edition", "planBlock", "SettingsCards", "HostedClaude", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun", "afterSchedule"] as const satisfies readonly (keyof Extensions)[];
+export const SLOTS = ["edition", "planBlock", "SettingsCards", "HostedClaude", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun", "afterSchedule", "similarBusinesses"] as const satisfies readonly (keyof Extensions)[];

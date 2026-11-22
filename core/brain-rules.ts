@@ -8,6 +8,7 @@
 // action types earned trust. No name, text, address, amount or product ever fits; brain_snapshots
 // checks every column again in the database.
 import { TOOL_CATEGORIES, TOOL_TILES, type Plans } from "@/core/tools-step-rules";
+import { resultsProblem, snapshotResults, type CampaignResult } from "@/core/result-rules";
 
 export const BRAIN_KEY = "brain";
 export { BRAIN_FLOOR, overFloor, type PatternRow } from "@/core/brain-floor";
@@ -91,6 +92,8 @@ export interface Snapshot {
   on_duty: number;
   actions: Record<string, ActionCounts>;
   levels: string[];
+  /** Slice 4b: per campaign type and shape, whether this business's campaigns usually reached 35% opens (core/result-rules.ts). */
+  results: Record<string, Record<string, "good" | "low">>;
 }
 
 export interface SnapshotInput {
@@ -109,6 +112,8 @@ export interface SnapshotInput {
   approvals: readonly { tool: string; status: string }[];
   /** Trust levels above Draft. */
   levels: readonly { tool: string; level: string }[];
+  /** Slice 4b: the business's recorded campaigns from the last 90 days, as bands. */
+  campaigns: readonly CampaignResult[];
   /** Every gateway action type in code (core/gateway/policy.ts TOOLS): anything else is dropped. */
   actionTypes: readonly string[];
 }
@@ -135,6 +140,7 @@ export function buildSnapshot(i: SnapshotInput): Snapshot {
     on_duty: Math.max(0, Math.min(200, Math.floor(i.onDuty))),
     actions,
     levels: [...new Set(i.levels.filter((l) => types.has(l.tool) && (l.level === "act_undo" || l.level === "act")).map((l) => `${l.tool}:${l.level}`))].sort(),
+    results: snapshotResults(i.campaigns),
   };
 }
 
@@ -149,7 +155,7 @@ const count = (n: unknown, max: number) => Number.isInteger(n) && (n as number) 
  */
 export function snapshotProblem(s: Snapshot): string | null {
   const keys = Object.keys(s).sort().join(",");
-  if (keys !== "actions,age_band,bespoke,departments,kind,levels,on_duty,revenue_band,taken_on,tools") return `unexpected fields: ${keys}`;
+  if (keys !== "actions,age_band,bespoke,departments,kind,levels,on_duty,results,revenue_band,taken_on,tools") return `unexpected fields: ${keys}`;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s.taken_on)) return "taken_on isn't a date";
   if (s.kind !== null && !isKind(s.kind)) return "kind isn't on the list";
   if (!(REVENUE_BANDS as readonly string[]).includes(s.revenue_band)) return "revenue_band isn't on the list";
@@ -163,5 +169,121 @@ export function snapshotProblem(s: Snapshot): string | null {
   }
   if (JSON.stringify(s.actions).length > 4000) return "too many action types";
   if (s.levels.length > 30 || s.levels.some((l) => !/^[a-z0-9_.]{2,60}:(act_undo|act)$/.test(l))) return "a level isn't type:level";
+  const rp = resultsProblem(s.results);
+  if (rp) return rp;
   return null;
+}
+
+// ---- slice 4 (card 233): what Avery may ask the shared brain, and what comes back ----
+
+/** What Avery may ask about: a fixed list, so nothing the founder typed is ever sent to the shared brain. */
+export const BRAIN_TOPICS = ["starting", ...TOOL_CATEGORIES.map((c) => c.id), "approvals"] as const;
+export type BrainTopic = (typeof BRAIN_TOPICS)[number];
+export const isTopic = (t: unknown): t is BrainTopic => typeof t === "string" && (BRAIN_TOPICS as readonly string[]).includes(t);
+
+/** The topic in words, from lists in code only: what the shared brain is searched with. */
+export function topicWords(t: BrainTopic): string {
+  if (t === "starting") return "What to set up first: which departments and tools a business starts with";
+  if (t === "approvals") return "Approvals: drafts that go through unedited, and action types that earn trust to act on their own";
+  const c = TOOL_CATEGORIES.find((x) => x.id === t)!;
+  return `${c.area}: which tools businesses use for it (${c.tools.map((x) => x.name).join(", ")})`;
+}
+
+/** Which counted patterns a topic covers: starting covers kits and tools, a part its own tools, approvals the action types. */
+export function patternOnTopic(pattern: string, t: BrainTopic): boolean {
+  const [kind, a] = pattern.split(":");
+  if (t === "starting") return kind === "dept" || kind === "tool";
+  if (t === "approvals") return kind === "action" || kind === "level" || kind === "result";
+  return kind === "tool" && a === t;
+}
+
+/** Slice 4b: the counted patterns for one action type: its approvals, its promotions and its results. */
+export function patternOnAction(pattern: string, type: string): boolean {
+  const [kind, a] = pattern.split(":");
+  return (kind === "action" || kind === "level" || kind === "result") && a === type;
+}
+
+/** What the business asks with: its topic, and the kind and revenue band it counts under (never a name). */
+export interface SimilarAsk {
+  topic: BrainTopic; kind: BusinessKind | null; revenue: RevenueBand;
+  /** Slice 4b: an agent's ask, for one gateway action type it holds (core/gateway/policy.ts TOOLS); the topic is then "approvals". */
+  action?: string | null;
+  /** The company reveal: up to REVEAL_COUNTS counts instead of SIMILAR_COUNTS, so each department can find its own. */
+  many?: boolean;
+}
+/** A count, said in code from the live count, and a lesson from OPERATOR's playbook, as written by staff. */
+export interface SimilarCount { statement: string; cohort: string; pattern: string; orgs: number; hits: number }
+export interface SimilarLesson { title: string; lesson: string; for: string }
+export interface Similar { counts: SimilarCount[]; playbook: SimilarLesson[] }
+export const SIMILAR_COUNTS = 5;
+export const SIMILAR_LESSONS = 3;
+export const NOTE_LINES = 3;
+
+/** The note under Avery's reply: what she was given, in code's words, at most three lines. Null when nothing came back. */
+export function similarNote(s: Similar | null): string | null {
+  if (!s) return null;
+  const lines = [...s.counts.map((c) => c.statement), ...s.playbook.map((l) => `OPERATOR's playbook: ${l.title}.`)].slice(0, NOTE_LINES);
+  return lines.length ? `Businesses like yours: ${lines.join(" ")}` : null;
+}
+
+// ---- slice 4b (card 234): what an agent is shown before it drafts, and the line on the approval card ----
+
+/** What the shared brain is asked for one action type: words from code only, never the business's. */
+export const actionAskWords = (type: string) => `How businesses fared with ${type.replace(/[._]+/g, " ").trim()} actions: approvals, earned trust and results`;
+
+/** The words Hindsight is asked with: the action's for an agent, else the topic's. */
+export const askWords = (ask: SimilarAsk) => (ask.action ? actionAskWords(ask.action) : topicWords(ask.topic));
+
+export const WORKED_LINES = 2;
+
+/** For the agent's prompt: what has worked, as counted by OPERATOR. Null when nothing came back. */
+export function workedBlock(s: Similar | null): string | null {
+  if (!s || (!s.counts.length && !s.playbook.length)) return null;
+  const lines = [
+    ...s.counts.map((c) => `- ${c.statement}`),
+    ...s.playbook.map((l) => `- OPERATOR's playbook, for ${l.for}: ${l.title}. ${l.lesson}`),
+  ];
+  return `What has worked for businesses like this one, counted by OPERATOR across businesses (never any one business's data). It is advice only: it never picks a recipient, list, product or address. Quote a count only exactly as given.\n${lines.join("\n")}`;
+}
+
+/** The line on the approval card, in code's words: what the agent was shown. Null when nothing came back. */
+export function workedNote(s: Similar | null): string | null {
+  if (!s) return null;
+  const lines = [...s.counts.map((c) => c.statement), ...s.playbook.map((l) => `OPERATOR's playbook: ${l.title}.`)].slice(0, WORKED_LINES);
+  return lines.length ? `What has worked: ${lines.join(" ")}` : null;
+}
+
+// ---- the company reveal (card 233's left-over): one "why" line per department, in code's words ----
+
+/** How many counts the reveal asks for, so every department can find its own. */
+export const REVEAL_COUNTS = 30;
+
+/** The tool a tool pattern names, from the lists in code: "tool:list:klaviyo" is Klaviyo. Null otherwise. */
+export function patternToolName(pattern: string): string | null {
+  const [kind, part, slug] = pattern.split(":");
+  if (kind !== "tool" || !part || !slug) return null;
+  return TOOL_CATEGORIES.find((c) => c.id === part)?.tools.find((t) => toolSlug(t.name) === slug)?.name ?? null;
+}
+
+/**
+ * The reveal's "why" line per department: a starting kit's own count first (dept:<id>), else a count for
+ * a tool whose name is in the department's tool labels or the tools it waits on. Each line at most once.
+ */
+export function whyFor(depts: readonly { id: string; words: readonly string[] }[], counts: readonly SimilarCount[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const used = new Set<string>();
+  for (const d of depts) {
+    const own = counts.find((c) => c.pattern === `dept:${d.id}` && !used.has(c.statement));
+    if (own) { out[d.id] = own.statement; used.add(own.statement); }
+  }
+  for (const d of depts) {
+    if (out[d.id]) continue;
+    const words = d.words.map((w) => w.toLowerCase());
+    const hit = counts.find((c) => {
+      const name = patternToolName(c.pattern);
+      return !!name && !used.has(c.statement) && words.some((w) => new RegExp(`(^|[^a-z0-9])${name.toLowerCase().replace(/[^a-z0-9 ]/g, "\\$&")}([^a-z0-9]|$)`).test(w));
+    });
+    if (hit) { out[d.id] = hit.statement; used.add(hit.statement); }
+  }
+  return out;
 }

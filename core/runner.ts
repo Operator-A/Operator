@@ -178,6 +178,11 @@ export interface ExploreOpts {
    */
   chat?: boolean;
   prompt?: string;
+  /**
+   * Shared brain, slice 4b (core/brain-tools.ts workedFor): what has worked for the action types this agent
+   * holds, counted by OPERATOR. The block goes in the prompt when it may stage; the note on each card it stages.
+   */
+  worked?: { block: string; note: string } | null;
   /** In a chain: what the agent before reported (core/chain.ts). Another agent's words, so untrusted data. */
   handoff?: { from: string; summary: string; metrics: Record<string, number> } | null;
   /** Tests only: stand-ins for the gateway and for report delivery. */
@@ -226,6 +231,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
     ...(opts.memoryBlock ? [{ type: "text" as const, text: opts.memoryBlock }] : []),
     ...(serverTools.length ? [{ type: "text" as const, text: WEB_RULES }] : []),
     ...(hasCustom ? [{ type: "text" as const, text: CUSTOM_RULES }] : []),
+    ...(actionTools.length && opts.worked ? [{ type: "text" as const, text: opts.worked.block }] : []),
     ...(reportTools.length || actionTools.length ? [{ type: "text" as const, text: [
       reportTools.length ? `When you finish, code delivers your result and its numbers: ${reportTools.map((t) => t.label.toLowerCase()).join("; ")}. Write the result for ${ownerWord(biz)} to read there.` : "",
       collectTools.length ? `Hand rows with ${collectTools.map((t) => t.label).join("; ")}, one call per row, up to ${MAX_ROWS}. Code checks each row and saves them only after you finish.` : "",
@@ -443,7 +449,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
     if (result != null && !stopped && opts.deliver) {
       for (const a of actions) {
         try {
-          const res = await (opts.propose ?? propose)({ agentId: opts.agentId, runId: opts.runId ?? null, tool: a.gatewayTool as Proposal["tool"], target: a.target, args: a.args as Proposal["args"], actionType: a.actionType || "change", title: a.title, reasoning: String(a.preview.why ?? "") || undefined, preview: a.preview });
+          const res = await (opts.propose ?? propose)({ agentId: opts.agentId, runId: opts.runId ?? null, tool: a.gatewayTool as Proposal["tool"], target: a.target, args: a.args as Proposal["args"], actionType: a.actionType || "change", title: a.title, reasoning: String(a.preview.why ?? "") || undefined, preview: a.preview, brainNote: opts.worked?.note ?? null });
           a.status = res.status; a.note = res.reason;
         } catch (e) { a.status = "refused"; a.note = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
       }

@@ -182,6 +182,23 @@ numbers come from code: it always waits for an approver).
   and an idempotency key (the action's id). The action stores `undo_json` = the count before, valid only
   while the count is still the one it set.
 
+## `shopify.update_copy` (docs/shopify-actions.md)
+
+A new description and/or SEO title and description on one Shopify product. Any agent an approver grants
+"Rewrite product copy" on the Tools step. Draft tier, promotable (public text on the business's own
+store, like a post; the facts checks run on every write).
+
+- The target is a product gid, a pick from a Product copy result, which also carries the fingerprint of
+  the copy as it stood (`before`). The proposal holds only `before` and at least one of `description`
+  (plain text, 4,000), `seo_title` (70) and `seo_description` (320) (`refuseCopy` in
+  `core/shopify-actions.ts`). Every number and claim word must already be in the product's Shopify data
+  (`refuseCopyFacts`), checked at staging and again by the server against the live product.
+- Applying needs Shopify connected with `write_products`, through `callWriteTool("shopify",
+  "shopify_update_copy")`; at most `policies.max_shopify_writes_per_run` (25) per apply. The server
+  re-checks the scope, the fingerprint (refused if the copy moved) and the facts, builds the HTML in code
+  and sends the one fixed `productUpdate`. The action stores `undo_json` = the old copy, valid only while
+  the store still shows the copy it set.
+
 ## Caps, vendors and suppressed addresses
 
 The fences the payment and email action types will have to pass. Neither action type exists yet.

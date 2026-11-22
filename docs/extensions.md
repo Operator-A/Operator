@@ -22,6 +22,7 @@ each slot has a do-nothing default in core:
 | `pooledKey()` | by `integrations/anthropic.ts`, only when the business has no Claude key of its own | none, so the run is refused |
 | `afterRun({ runId, costUsd, billing })` | after every run that cost something (`core/runs.ts`) | nothing |
 | `afterSchedule(now)` | once per scheduler round, after every business's turn (`/api/dispatch`): the cloud edition's weekly shared-brain sync to Hindsight (card 232) | nothing |
+| `similarBusinesses(ask)` | Avery's "Businesses like yours" tool (card 233), asked with a topic from a fixed list, the kind and the revenue band: counts over the shared brain's floor, said by code from the live count, and lessons from OPERATOR's playbook. Read-only advice; it chooses nothing. Slice 4b (card 234) also asks it with `action`, for what has worked for one action type a built agent holds | null: the tool isn't offered, and agents aren't shown anything |
 | `edition` | for anything that needs to say which edition it is | `"open"` |
 
 ## How the swap works

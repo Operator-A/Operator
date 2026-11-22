@@ -11,7 +11,7 @@ export function SignOutButton({ look = "row" }: { look?: "row" | "button" }) {
       {look === "row" ? (
         <button type="submit" className="side-item"><Icon name="log-out" size={17} /><span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap" }}>Sign out</span></button>
       ) : (
-        <button type="submit" className="btn outline sm"><Icon name="log-out" size={15} />Sign out</button>
+        <button type="submit" className="btn outline sm signout-btn" aria-label="Sign out"><Icon name="log-out" size={15} /><span className="signout-word">Sign out</span></button>
       )}
     </form>
   );

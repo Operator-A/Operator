@@ -7,7 +7,7 @@ import { controlsOn } from "@/dashboard/session";
 import { ActionButton } from "@/dashboard/components/client";
 import { RejectButton } from "@/dashboard/components/react";
 import { Avatar, Empty } from "@/dashboard/components/ui";
-import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, SHOPIFY_STOCK, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
+import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
 
 // Applying a batch calls Mercury once or twice per change.
 export const maxDuration = 300;
@@ -131,7 +131,7 @@ function Tags({ i }: { i: ApprovalItem }) {
   );
 }
 
-const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [SHOPIFY_STOCK]: "Shopify stock", [INVOICE_DRAFT]: "Stripe invoice draft", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note", [HUBSPOT_MOVE]: "HubSpot deal move", [META_PAUSE]: "Meta ad pause", [QBO_CATEGORIZE]: "QuickBooks category" };
+const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [SHOPIFY_STOCK]: "Shopify stock", [SHOPIFY_COPY]: "Shopify product copy", [INVOICE_DRAFT]: "Stripe invoice draft", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note", [HUBSPOT_MOVE]: "HubSpot deal move", [META_PAUSE]: "Meta ad pause", [QBO_CATEGORIZE]: "QuickBooks category" };
 
 /** A Shopify stock change: the item at its location, the count before and after, and Shopify's reason. */
 function Stock({ i }: { i: ApprovalItem }) {
@@ -145,6 +145,25 @@ function Stock({ i }: { i: ApprovalItem }) {
   );
 }
 
+/** A Shopify product copy change: the product, then each field's words before and after, exactly as they'll be saved. */
+function Copy({ i }: { i: ApprovalItem }) {
+  const p = i.preview;
+  const box = { whiteSpace: "pre-wrap" as const, overflowWrap: "anywhere" as const, fontSize: 13, lineHeight: 1.5 };
+  return (
+    <div style={{ borderRadius: 16, background: "var(--soft)", padding: "6px 16px" }}>
+      <div className="row" style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13 }}><span className="muted">Product</span><span style={{ fontWeight: 500, textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>{p.record ?? "?"}</span></div>
+      {(p.copy ?? []).map((c) => (
+        <div key={c.field} className="rule" style={{ padding: "9px 0", display: "grid", gap: 6 }}>
+          <span className="muted" style={{ fontSize: 12 }}>{c.field}</span>
+          <div className="muted" style={{ ...box, textDecoration: c.before ? "line-through" : undefined }}>{c.before || "(empty)"}</div>
+          <div style={{ ...box, fontWeight: 500 }}>{c.after}</div>
+        </div>
+      ))}
+      <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Refused if the copy in Shopify changes before this is applied, or if the text states a number or certification that isn’t in the product’s Shopify data.</div>
+    </div>
+  );
+}
+
 function Change({ i }: { i: ApprovalItem }) {
   const p = i.preview;
   if (i.tool === DRAFT_EMAIL) return <Draft i={i} />;
@@ -154,6 +173,7 @@ function Change({ i }: { i: ApprovalItem }) {
   if (i.tool === CALENDAR_HOLD) return <Hold i={i} />;
   if (i.tool === SHOPIFY_TAGS) return <Tags i={i} />;
   if (i.tool === SHOPIFY_STOCK) return <Stock i={i} />;
+  if (i.tool === SHOPIFY_COPY) return <Copy i={i} />;
   if (i.tool === WOO_NOTE) return <OrderNote i={i} />;
   if (i.tool === HUBSPOT_MOVE) return <DealMove i={i} />;
   if (i.tool === META_PAUSE) return <AdPause i={i} />;
@@ -216,6 +236,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
           <span style={{ fontSize: 17, fontWeight: 600 }}>{i.title}</span>
           {i.reasoning && <span style={{ fontSize: 13, lineHeight: 1.5 }} className="ink2">{i.reasoning}</span>}
           {view && <LeadBits i={i} view={view} tz={f.tz} />}
+          {i.brain_note && <span className="sub">{i.brain_note}</span>}
           <div className="row" style={{ gap: 8, marginTop: 6 }}>
             <ActionButton className="btn primary" action={approve.bind(null, i.id)}>Approve</ActionButton>
             <RejectButton reject={reject.bind(null, i.id)} agentName={name} rules={rules[i.agent_id] ?? noRules} />

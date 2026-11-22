@@ -63,14 +63,14 @@ export function readAudiences(j: unknown): Audience[] {
   return lists.filter((l) => audienceIdOk(l.id)).slice(0, 100).map((l) => ({ id: String(l.id), name: plain(l.name, 100), members: num(l.stats?.member_count), unsubscribed: num(l.stats?.unsubscribe_count), campaigns: num(l.stats?.campaign_count) }));
 }
 
-export interface CampaignRow { title: string; subject: string; audience: string; sent_at: string; sent: number; opens: number; clicks: number; unsubscribes: number; orders: number; revenue: number; opens_per_100: number; clicks_per_100: number; unsubscribes_per_100: number }
+export interface CampaignRow { id: string; title: string; subject: string; audience: string; sent_at: string; sent: number; opens: number; clicks: number; unsubscribes: number; orders: number; revenue: number; opens_per_100: number; clicks_per_100: number; unsubscribes_per_100: number }
 /** Campaign reports with rates and totals worked out here. Titles and subjects were written by the business, but may quote anyone, so they are cut. */
 export function readReports(j: unknown) {
   const reps = ((j ?? {}) as { reports?: Record<string, unknown>[] }).reports ?? [];
   const campaigns: CampaignRow[] = reps.slice(0, 100).map((r) => {
     const sent = num(r.emails_sent), opens = num((r.opens as Record<string, unknown> | undefined)?.unique_opens), clicks = num((r.clicks as Record<string, unknown> | undefined)?.unique_subscriber_clicks), unsubscribes = num(r.unsubscribed);
     const ecom = (r.ecommerce ?? {}) as Record<string, unknown>;
-    return { title: plain(r.campaign_title, 100), subject: plain(r.subject_line, 150), audience: plain(r.list_name, 100), sent_at: plain(r.send_time, 30), sent, opens, clicks, unsubscribes, orders: num(ecom.total_orders), revenue: Math.round(num(ecom.total_revenue) * 100) / 100, opens_per_100: per100(opens, sent), clicks_per_100: per100(clicks, sent), unsubscribes_per_100: per100(unsubscribes, sent) };
+    return { id: plain(r.id, 80), title: plain(r.campaign_title, 100), subject: plain(r.subject_line, 150), audience: plain(r.list_name, 100), sent_at: plain(r.send_time, 30), sent, opens, clicks, unsubscribes, orders: num(ecom.total_orders), revenue: Math.round(num(ecom.total_revenue) * 100) / 100, opens_per_100: per100(opens, sent), clicks_per_100: per100(clicks, sent), unsubscribes_per_100: per100(unsubscribes, sent) };
   });
   const t = campaigns.reduce((s, c) => ({ sent: s.sent + c.sent, opens: s.opens + c.opens, clicks: s.clicks + c.clicks, unsubscribes: s.unsubscribes + c.unsubscribes, orders: s.orders + c.orders, revenue: s.revenue + c.revenue }), { sent: 0, opens: 0, clicks: 0, unsubscribes: 0, orders: 0, revenue: 0 });
   return { campaigns, totals: { campaigns: campaigns.length, ...t, revenue: Math.round(t.revenue * 100) / 100, opens_per_100: per100(t.opens, t.sent), clicks_per_100: per100(t.clicks, t.sent), unsubscribes_per_100: per100(t.unsubscribes, t.sent) } };

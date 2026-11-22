@@ -31,8 +31,8 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
-import { SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { COPY_LIMITS, SHOPIFY_COPY_GRANT, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, copyText, productTarget, refuseCopyFacts, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
 import type { McPeriod } from "@/core/mailchimp-rules";
@@ -68,6 +68,7 @@ import { deliverBrief } from "@/core/brief";
 import { openCounts } from "@/core/brief/rules";
 import { openOrders, recentOrders } from "@/integrations/shopify/orders";
 import { stockLevels } from "@/integrations/shopify/stock";
+import { productCopy } from "@/integrations/shopify/copy";
 
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -191,6 +192,22 @@ const TOOLS_LIST: ToolDef[] = [
         return { pick: `st${i + 1}`, item: l.name, sku: l.sku, location: l.locationName, available: l.available, on_hand: l.onHand };
       });
       return { data: { rows }, numbers: { rows: rows.length, units_available: levels.reduce((n, l) => n + Math.max(0, l.available), 0) }, picks };
+    },
+  },
+  {
+    id: "shopify_product_copy", label: "Product copy", detail: "Active products (up to 50): title, type, vendor, tags, description and SEO title and description. No customer data. Each product has a pick code a copy change can name",
+    kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async () => {
+      const list = await productCopy();
+      const picks: Record<string, Pick> = {};
+      const clip = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+      const rows = list.map((p, i) => {
+        // the pick carries the copy's fingerprint, the copy as it stands (for the card) and the facts the
+        // product's own data allows, so the model never supplies any of them
+        picks[`pc${i + 1}`] = { kind: "product", label: p.title, id: JSON.stringify({ p: p.id, f: p.print, n: p.facts.numbers, c: p.facts.claims, d: clip(p.description, 2000), st: p.seoTitle, sd: p.seoDescription }) };
+        return { pick: `pc${i + 1}`, title: p.title, type: p.type, vendor: p.vendor, tags: p.tags, description: clip(p.description, 1500), seo_title: p.seoTitle, seo_description: p.seoDescription };
+      });
+      return { data: { products: rows, note: "A new text may state only numbers and certification words already in that product's data here." }, numbers: { products: rows.length }, picks };
     },
   },
   {
@@ -885,7 +902,7 @@ const TOOLS_LIST: ToolDef[] = [
   // ---- Actions (slice 5): proposals only, queued at core/gateway after the run, Draft tier
   {
     id: "mercury_propose_annotation", label: "Propose a category or memo on a charge", detail: "Stages a change for the owner to approve: a category from Mercury's own list and/or a short memo, on a charge from Mercury. Never writes by itself",
-    kind: "action", group: "mercury", trusted: true, needs: MERCURY, costUsd: 0,
+    kind: "action", becomes: ANNOTATE, group: "mercury", trusted: true, needs: MERCURY, costUsd: 0,
     agents: GATEWAY_TOOLS[ANNOTATE].agents,
     params: [
       { name: "charge", type: "pick", kind: "charge", description: "The charge, from a Charges result." },
@@ -910,7 +927,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
   {
     id: "gmail_draft_lead", label: "Draft an email to a lead", detail: "Stages a plain-text email to a lead on the leads list, for the owner to approve. Approving puts it in Gmail as a draft; the owner sends it from Gmail. The address always comes from the leads list. First emails are approval-only for good",
-    kind: "action", group: "gmail", trusted: true, needs: GMAIL, costUsd: 0,
+    kind: "action", becomes: DRAFT_EMAIL, group: "gmail", trusted: true, needs: GMAIL, costUsd: 0,
     agents: GATEWAY_TOOLS[DRAFT_EMAIL].agents,
     params: [
       { name: "lead", type: "pick", kind: "lead", description: "The lead, from a Leads list result." },
@@ -928,7 +945,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
   {
     id: "klaviyo_campaign_draft", label: "Draft a Klaviyo campaign", detail: "Stages one email campaign to one of the business's Klaviyo lists, for the owner to approve. Approving makes it a draft in Klaviyo; the owner sends it from Klaviyo. Nothing here can send or schedule a campaign. Claims about products come only from Product facts",
-    kind: "action", group: "klaviyo", trusted: true, needs: KLAVIYO, costUsd: 0,
+    kind: "action", becomes: CAMPAIGN_DRAFT, group: "klaviyo", trusted: true, needs: KLAVIYO, costUsd: 0,
     agents: GATEWAY_TOOLS[CAMPAIGN_DRAFT].agents,
     params: [
       { name: "list", type: "pick", kind: "list", description: "The list it goes to, from an Email lists result." },
@@ -947,7 +964,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
   {
     id: "hubspot_move_deal", label: "Move a HubSpot deal", detail: "Stages moving one deal from HubSpot deals to another stage of its own pipeline, with a note saying why, for the owner to approve. Approving changes the stage in HubSpot and logs the note on the deal. Nothing here can create, delete or merge a record, change an amount or owner, or email anyone",
-    kind: "action", group: "hubspot", trusted: true, needs: HUBSPOT_DEALS, costUsd: 0,
+    kind: "action", becomes: HUBSPOT_MOVE, group: "hubspot", trusted: true, needs: HUBSPOT_DEALS, costUsd: 0,
     agents: GATEWAY_TOOLS[HUBSPOT_MOVE].agents,
     params: [
       { name: "deal", type: "pick", kind: "deal", description: "The deal, from a HubSpot deals result." },
@@ -965,7 +982,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
   {
     id: "meta_pause_ad", label: "Pause a Meta ad", detail: "Stages pausing one active ad from Meta Ads results whose cost per result is over the owner’s target for that result (Connections, Meta Ads pauses), for the owner to approve. Approving pauses it in Meta if it is still running and still over the target then. Nothing here can change a budget or bid, start, resume, edit or delete anything",
-    kind: "action", group: "meta", trusted: true, needs: META_PAUSES, costUsd: 0,
+    kind: "action", becomes: META_PAUSE, group: "meta", trusted: true, needs: META_PAUSES, costUsd: 0,
     agents: GATEWAY_TOOLS[META_PAUSE].agents,
     params: [
       { name: "ad", type: "pick", kind: "ad", description: "The ad, from a Meta Ads results result. Only running ads carry a pick." },
@@ -983,7 +1000,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
   {
     id: "woo_order_note", label: "Note on a WooCommerce order", detail: "Stages a private note on one order from WooCommerce orders, for the owner to approve. Approving adds it in WooCommerce, where store staff see it and the customer doesn’t. Nothing here can change an order, its status, stock or a customer",
-    kind: "action", group: "woo", trusted: true, needs: WOO_NOTES, costUsd: 0,
+    kind: "action", becomes: WOO_NOTE, group: "woo", trusted: true, needs: WOO_NOTES, costUsd: 0,
     agents: GATEWAY_TOOLS[WOO_NOTE].agents,
     params: [
       { name: "order", type: "pick", kind: "order", description: "The order, from a WooCommerce orders result." },
@@ -1000,7 +1017,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
   {
     id: "mailchimp_campaign_draft", label: "Draft a Mailchimp campaign", detail: "Stages one email campaign to one of the business’s Mailchimp audiences, for the owner to approve. Approving makes it a draft in Mailchimp; the owner sends it from Mailchimp. Nothing here can send or schedule a campaign. Claims about products come only from Product facts",
-    kind: "action", group: "mailchimp", trusted: true, needs: MAILCHIMP_DRAFTS, costUsd: 0,
+    kind: "action", becomes: MAILCHIMP_DRAFT, group: "mailchimp", trusted: true, needs: MAILCHIMP_DRAFTS, costUsd: 0,
     agents: GATEWAY_TOOLS[MAILCHIMP_DRAFT].agents,
     params: [
       { name: "audience", type: "pick", kind: "audience", description: "The audience it goes to, from a Mailchimp audiences result." },
@@ -1019,7 +1036,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
   {
     id: "calendar_hold", label: "Hold time on the calendar", detail: "Stages a private hold on the business’s Google Calendar, in a free slot from Free time, for the owner to approve. Approving adds it as a busy, private event with no guests; it never invites or emails anyone, and nothing here can move or delete an event",
-    kind: "action", group: "calendar", trusted: true, needs: CALENDAR_HOLDS, costUsd: 0,
+    kind: "action", becomes: CALENDAR_HOLD, group: "calendar", trusted: true, needs: CALENDAR_HOLDS, costUsd: 0,
     agents: GATEWAY_TOOLS[CALENDAR_HOLD].agents,
     params: [
       { name: "slot", type: "pick", kind: "slot", description: "The free slot, from a Free time result. The hold starts when the slot starts." },
@@ -1040,7 +1057,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
   {
     id: SHOPIFY_TAGS_GRANT, label: "Tag an order or customer", detail: "Stages tags to add to one Shopify order or one customer, for an approver to approve (later on its own, once it has earned trust). Adds only: never removes a tag. The order or customer always comes from a Recent orders result",
-    kind: "action", group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
+    kind: "action", becomes: SHOPIFY_TAGS, group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
     agents: GATEWAY_TOOLS[SHOPIFY_TAGS].agents,
     params: [
       { name: "order", type: "pick", kind: "order", optional: true, description: "The order, from a Recent orders result. Name an order or a customer, not both." },
@@ -1059,8 +1076,38 @@ const TOOLS_LIST: ToolDef[] = [
     },
   },
   {
+    id: SHOPIFY_COPY_GRANT, label: "Rewrite product copy", detail: `Stages a new description and/or SEO title and description for one Shopify product, for an approver to approve (later on its own, once it has earned trust). Plain text: code builds the HTML. Every number and certification word must already be in the product's Shopify data. Refused if the copy changed since. The product always comes from a Product copy result`,
+    kind: "action", becomes: SHOPIFY_COPY, group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
+    agents: GATEWAY_TOOLS[SHOPIFY_COPY].agents,
+    params: [
+      { name: "product", type: "pick", kind: "product", description: "The product, from a Product copy result." },
+      { name: "description", type: "text", maxLength: COPY_LIMITS.description, multiline: true, optional: true, description: `The new description, plain text up to ${COPY_LIMITS.description.toLocaleString("en-US")} characters. A blank line starts a paragraph; lines starting with "- " make a bullet list. No HTML or links.` },
+      { name: "seo_title", type: "text", maxLength: COPY_LIMITS.seo_title, optional: true, description: `The new search title, up to ${COPY_LIMITS.seo_title} characters.` },
+      { name: "seo_description", type: "text", maxLength: COPY_LIMITS.seo_description, optional: true, description: `The new search description, up to ${COPY_LIMITS.seo_description} characters.` },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on what the new text improves, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const pick = input.product as Pick;
+      let row: { p?: unknown; f?: unknown; n?: unknown; c?: unknown; d?: unknown; st?: unknown; sd?: unknown };
+      try { row = JSON.parse(pick.id); } catch { return { problem: "that row isn't a product from Product copy" }; }
+      const target = typeof row.p === "string" ? row.p : "";
+      if (!productTarget(target) || typeof row.f !== "string") return { problem: "that row isn't a product from Product copy" };
+      const args: Record<string, unknown> = { before: row.f };
+      for (const f of ["description", "seo_title", "seo_description"] as const) if (typeof input[f] === "string" && String(input[f]).trim()) args[f] = String(input[f]).trim();
+      const refused = refuseProposal(ctx.agentId, SHOPIFY_COPY, target, args, undefined, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+      const facts = refuseCopyFacts(copyText(args), { numbers: strs(row.n), claims: strs(row.c) });
+      if (facts) return { problem: facts };
+      const was = { description: String(row.d ?? ""), seo_title: String(row.st ?? ""), seo_description: String(row.sd ?? "") };
+      const LABEL = { description: "Description", seo_title: "SEO title", seo_description: "SEO description" } as const;
+      const copy = (["description", "seo_title", "seo_description"] as const).filter((f) => args[f] !== undefined).map((f) => ({ field: LABEL[f], before: was[f], after: args[f] as string }));
+      return { gatewayTool: SHOPIFY_COPY, target, args, actionType: "product_copy", title: `${pick.label}: new ${copy.map((c) => c.field.toLowerCase()).join(", ")}`, preview: { record: pick.label, copy, why: input.why } };
+    },
+  },
+  {
     id: SHOPIFY_STOCK_GRANT, label: "Set stock at a location", detail: `Stages a new available count for one item at one location, for an approver to approve. Always an approval card: it never runs on its own. At most ${STOCK_LIMITS.change} units up or down, and refused if the count changed since. The item always comes from a Stock levels result`,
-    kind: "action", group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
+    kind: "action", becomes: SHOPIFY_STOCK, group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
     agents: GATEWAY_TOOLS[SHOPIFY_STOCK].agents,
     params: [
       { name: "item", type: "pick", kind: "stock", description: "The item at its location, from a Stock levels result." },
@@ -1091,7 +1138,7 @@ const INVOICE_LINE_PARAMS: Param[] = Array.from({ length: INVOICE_LIMITS.lines }
 const STRIPE_ACTIONS: ToolDef[] = [
   {
     id: "stripe_invoice_draft", label: "Draft a Stripe invoice", detail: `Stages one invoice for one of the business's Stripe customers, for the owner to approve. Approving makes it a draft in Stripe; nothing is finalized, sent or charged until the owner does it in Stripe. Up to ${INVOICE_LIMITS.lines} lines, at most ${MAX_INVOICE_USD.toLocaleString("en-US")} in total`,
-    kind: "action", group: "stripe", trusted: true, needs: STRIPE, costUsd: 0,
+    kind: "action", becomes: INVOICE_DRAFT, group: "stripe", trusted: true, needs: STRIPE, costUsd: 0,
     agents: GATEWAY_TOOLS[INVOICE_DRAFT].agents,
     params: [
       { name: "customer", type: "pick", kind: "stripe_customer", description: "The customer, from a Stripe customers result." },
@@ -1161,7 +1208,7 @@ const QUICKBOOKS_TOOLS: ToolDef[] = [
   },
   {
     id: "quickbooks_categorize_expense", label: "Categorize a QuickBooks expense", detail: "Stages moving one expense line out of Uncategorized Expense into one of the business's expense accounts, for the owner to approve (later on its own, once it has earned trust). Changes the category only: never an amount, payee, date or other line, and never creates or deletes anything",
-    kind: "action", group: "quickbooks", trusted: true, needs: QUICKBOOKS, costUsd: 0,
+    kind: "action", becomes: QBO_CATEGORIZE, group: "quickbooks", trusted: true, needs: QUICKBOOKS, costUsd: 0,
     agents: GATEWAY_TOOLS[QBO_CATEGORIZE].agents,
     params: [
       { name: "expense", type: "pick", kind: "qbo_expense", description: "The expense line, from an Uncategorized expenses result." },

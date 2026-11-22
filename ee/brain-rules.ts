@@ -2,8 +2,9 @@
 // The shared brain, slice 3 (docs/shared-brain.md, card 232): how a counted pattern becomes one plain
 // statement in the Hindsight bank. Pure, so `npm run check:ee` can test it. Words come only from lists
 // in code; numbers only from the count (brain_patterns(), over the floor). Nothing else is ever sent.
-import { BRAIN_FLOOR, isKind, toolSlug, type BusinessKind, type PatternRow, type RevenueBand } from "@/core/brain-rules";
+import { BRAIN_FLOOR, REVEAL_COUNTS, SIMILAR_COUNTS, SIMILAR_LESSONS, isKind, patternOnAction, patternOnTopic, toolSlug, type BusinessKind, type PatternRow, type RevenueBand, type Similar, type SimilarAsk } from "@/core/brain-rules";
 import { TOOL_CATEGORIES } from "@/core/tools-step-rules";
+import { SHAPE_WORDS, isCampaignType } from "@/core/result-rules";
 
 export const BANK_ID = "operator-patterns";
 /** Every pattern document's id starts with this; anything else in the bank (slice 5's playbook) is never deleted by the sync. */
@@ -53,6 +54,10 @@ const ACTION_WORDS: Record<string, string> = {
   "calendar.hold": "calendar holds",
   "shopify.add_tags": "Shopify order and customer tags",
   "stripe.invoice_draft": "Stripe invoice drafts",
+  "mailchimp.campaign_draft": "Mailchimp campaign drafts",
+  "woocommerce.order_note": "WooCommerce order notes",
+  "hubspot.deal_stage": "HubSpot deal moves",
+  "meta.pause_ad": "Meta ad pauses",
 };
 const actionWords = (type: string) => ACTION_WORDS[type] ?? `${type.replace(/[._]+/g, " ").trim()} actions`;
 
@@ -94,6 +99,11 @@ export function statementOf(r: PatternRow, kits: Readonly<Record<string, string>
   }
   if (kind === "level" && a && !b) {
     return `${who}, ${r.hits} of ${r.orgs} that used ${actionWords(a)} earned enough trust to let them act with an undo window or on their own.`;
+  }
+  if (kind === "result" && a && b) {
+    const shape = SHAPE_WORDS[b];
+    if (!isCampaignType(a) || !shape) return null;
+    return `${who}, ${r.hits} of ${r.orgs} that sent ${actionWords(a)} with ${shape} usually saw opens of 35% or more.`;
   }
   return null;
 }
@@ -155,4 +165,48 @@ export async function syncWith(bank: Bank, rows: readonly PatternRow[], kits: Re
   for (let i = 0; i < plan.retain.length; i += RETAIN_BATCH) await bank.retain(plan.retain.slice(i, i + RETAIN_BATCH));
   for (const id of plan.remove) await bank.remove(id);
   return { retained: plan.retain.length, removed: plan.remove.length };
+}
+
+/** The cohorts a business counts under, most specific first: kind and revenue band, then kind, then every business. */
+export function cohortsFor(kind: BusinessKind | null, revenue: RevenueBand): string[] {
+  if (!kind) return ["all"];
+  return [...(REVENUE_PHRASE[revenue] ? [`kind:${kind}|rev:${revenue}`] : []), `kind:${kind}`, "all"];
+}
+
+/** Tags a recall is limited to: this kind's patterns and lessons, and those for every business. */
+export const recallTags = (kind: BusinessKind | null) => (kind ? [`kind:${kind}`, "kind:all", "cohort:all"] : ["kind:all", "cohort:all"]);
+
+/**
+ * What Avery is given (slice 4, card 233). Hindsight only orders what fits (`ranked`, document ids,
+ * best first; null when it can't be asked); every count is said again by code from the live count, so
+ * one that has fallen under the floor is dropped, and every lesson is the playbook table's own text.
+ * Each pattern shows once, for the most specific cohort the business is in.
+ */
+export function pickSimilar(o: {
+  ask: SimilarAsk; rows: readonly PatternRow[]; lessons: readonly { id: string; title: string; body: string; kind: BusinessKind | null }[];
+  kits: Readonly<Record<string, string>>; ranked: readonly string[] | null;
+}): Similar {
+  const cohorts = cohortsFor(o.ask.kind, o.ask.revenue);
+  const rank = new Map((o.ranked ?? []).map((id, i) => [id, i]));
+  const best = new Map<string, PatternRow>();
+  for (const r of o.rows) {
+    const at = cohorts.indexOf(r.cohort);
+    const on = o.ask.action ? patternOnAction(r.pattern, o.ask.action) : patternOnTopic(r.pattern, o.ask.topic);
+    if (at < 0 || !on || !statementOf(r, o.kits)) continue;
+    const had = best.get(r.pattern);
+    if (!had || at < cohorts.indexOf(had.cohort)) best.set(r.pattern, r);
+  }
+  const order = (id: string, fallback: number) => (rank.has(id) ? rank.get(id)! : 1e6 + fallback);
+  const counts = [...best.values()]
+    .sort((a, b) => order(docIdOf(a), -a.hits / a.orgs) - order(docIdOf(b), -b.hits / b.orgs) || b.orgs - a.orgs)
+    .slice(0, o.ask.many ? REVEAL_COUNTS : SIMILAR_COUNTS)
+    .map((r) => ({ statement: statementOf(r, o.kits)!, cohort: r.cohort, pattern: r.pattern, orgs: r.orgs, hits: r.hits }));
+  // a lesson carries no topic: with Hindsight, only the lessons it found for this topic; without, this kind's first
+  const lessons = o.lessons.filter((l) => (!l.kind || l.kind === o.ask.kind) && (!o.ranked || rank.has(`play-${l.id}`)));
+  const playbook = lessons
+    .map((l, i) => ({ l, at: order(`play-${l.id}`, (l.kind ? 0 : 1000) + i) }))
+    .sort((a, b) => a.at - b.at)
+    .slice(0, SIMILAR_LESSONS)
+    .map(({ l }) => ({ title: l.title, lesson: l.body, for: l.kind ? KIND_PHRASE[l.kind] : "every business" }));
+  return { counts, playbook };
 }

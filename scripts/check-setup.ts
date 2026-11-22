@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import {
   FACT_MAX, FACT_TOPICS, MAX_FACTS, SETUP_AGENT, SETUP_TEMPLATE, STAGES, STAGE_WORDS,
   shownStage, wrapScreen, INTERVIEW_AREAS, SETUP_EFFORT, SETUP_MODEL, coverage, leaningOf, type Fact,
-  SETUP_HANDOFF, cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
+  SETUP_HANDOFF, SETUP_STOPPED, setupLimits, cleanFact, factProblem, factsLine, needsSetup, nextStage, prevStage, readSetupState, readStage, stageProgress, setupDirective, setupPrompt, stateFor,
 } from "../core/setup-rules";
 import { MAX_DESIGNS, REASON_MAX, applyDesign, saidLine, unquote, designGaps, designKey, pickId, readDesigns, type Design, type Kit } from "../core/design-rules";
 import { peopleOf, type DraftCtx } from "../core/department-rules";
@@ -17,6 +17,7 @@ import { mergeTemplates, templateProblems, type Template } from "../core/templat
 import { DEPT_STATUS_WORDS, agentsOf, bespokeDept, companyDepts, companyTotals, deptMonth, deptStatus, initialPick, readPick, runsFor } from "../core/company-rules";
 import { monthCost, runCost } from "../core/cost-rules";
 import { TEMPLATES } from "../core/templates";
+import { modelDef } from "../integrations/models";
 
 const read = (f: string) => readFileSync(f, "utf8");
 const tpl = (id: string) => JSON.parse(read(`templates/${id}.json`)) as Template;
@@ -35,9 +36,39 @@ assert.ok(!/https?:|Shopify|Klaviyo|Mercury/.test(SETUP_HANDOFF) && SETUP_HANDOF
   assert.match(fin, /const was = await setupState\(\)/);
   assert.match(fin, /if \(!was\.done\) await keepChat\(\{ role: "avery", text: SETUP_HANDOFF \}\)\.catch\(/, "only the first time setup ends, and a missing chat table never stops it");
 }
+// card 199: setup on a phone
+{
+  const css = read("app/globals.css"), ui = read("dashboard/components/setup.tsx"), src = read("core/setup.ts");
+  assert.match(ui, /\{tot\.agents === 1 \? "agent" : "agents"\}/, "1 agent, 2 agents");
+  assert.ok(!src.includes("on the right"), "facts sit below the chat on a phone");
+  assert.match(src, /Edit or remove any under What I’ve learned so far\./);
+  const phone = css.slice(css.indexOf("setup on a phone (card 199)"));
+  for (const rule of ["scroll-padding-bottom", ".wg-name", ".signout-word { display: none; }", "100svh", ".wg-nav-bar", "textarea:focus, .wg-card input:focus) .wg-nav { visibility: hidden; }"]) assert.ok(phone.includes(rule), rule);
+  assert.match(css, /\.wg-av-chat \{ display: none; \}/);
+  assert.match(css, /\.wg-tool \{ padding: 8px 6px; font-size: 14px; overflow-wrap: normal;/, "tool names break between words only");
+  assert.match(ui, /className="stack wg-nav"/);
+}
 // card 196: a fact cut off mid-sentence is refused, so Avery sends the whole line
 assert.match(factProblem("goals", "Greg doesn't know whether the van pays for itself and wants to", 0)!, /stops mid-sentence/);
 for (const end of ["and", "or", "the", "a", "of", "for", "with", "because"]) assert.ok(factProblem("other", `Something about ${end}`, 0), `ends on "${end}"`);
+// card 198: "that" can end a whole sentence
+assert.equal(factProblem("other", "Tried a winter tune-up flyer once, nothing beyond that", 0), null);
+// card 198: a sketch reply has room for the shared brain, three departments and finish; an interview reply stays small
+{
+  const talk = setupLimits(false), sketch = setupLimits(true);
+  assert.deepEqual(talk, { maxSteps: 6, maxCostUsd: 0.3 });
+  assert.ok(sketch.maxSteps >= 2 + 3 * 3 + 1, "brain tools, about/head/goal for three departments, a fact");
+  // the runner refuses a turn when spent + its worst case (input + 3000, 8000 out) passes the limit
+  const m = modelDef(SETUP_MODEL)!, turn = (tin: number, tout: number) => tin * m.in + tout * m.out;
+  let spent = 0, turns = 0;
+  for (let i = 0; i < 10; i++) { const tin = 9000 + i * 1500; if (spent + turn(tin + 3000, 8000) > sketch.maxCostUsd) break; spent += turn(tin, 1600); turns++; }
+  assert.ok(turns >= 4, `a sketch reply affords ${turns} model turns, needs at least 4`);
+  // a stopped reply says so in code's words, never the runner's summary
+  assert.ok(!/\$|cost limit|tool calls/.test(SETUP_STOPPED));
+  const src = read("core/setup.ts");
+  assert.match(src, /limits: setupLimits\(ready\)/);
+  assert.match(src, /res\.status === "ok" && !finished \? SETUP_STOPPED/);
+}
 assert.equal(factProblem("goals", "Wants to know whether the van pays", 0), null, "a whole line is fine");
 assert.equal(factProblem("sells", "Sells a monthly membership", 0), null);
 assert.match(factProblem("sells", "ok", MAX_FACTS)!, /at most 40 facts/);
