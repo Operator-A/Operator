@@ -13,7 +13,7 @@
 //   date and every other line are sent back exactly as read, and checked again after the write.
 //   The server has no code to create, delete or void anything, or to touch an amount.
 
-export const QBO_READ_TOOLS = ["quickbooks_profit_loss", "quickbooks_uncategorized", "quickbooks_expense_accounts"] as const;
+export const QBO_READ_TOOLS = ["quickbooks_profit_loss", "quickbooks_uncategorized", "quickbooks_expense_accounts", "quickbooks_unpaid_bills", "quickbooks_receivables"] as const;
 export type QboReadTool = (typeof QBO_READ_TOOLS)[number];
 export const QBO_CATEGORIZE_TOOL = "quickbooks_categorize_expense";
 /** The gateway action type: an expense line moved out of Uncategorized Expense. */
@@ -50,17 +50,24 @@ export const realmOk = (s: unknown): s is string => typeof s === "string" && QBO
 export type QboArgs =
   | { tool: "quickbooks_profit_loss"; period: QboPeriod }
   | { tool: "quickbooks_uncategorized"; days: number; limit: number }
-  | { tool: "quickbooks_expense_accounts" };
+  | { tool: "quickbooks_expense_accounts" }
+  | { tool: "quickbooks_unpaid_bills"; limit: number }
+  | { tool: "quickbooks_receivables"; limit: number };
 
 /** A read tool's input, checked again on our server. Anything not named here is refused. */
 export function checkQboArgs(tool: string, raw: unknown): QboArgs | { problem: string } {
   const a = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const allowed: Record<QboReadTool, string[]> = { quickbooks_profit_loss: ["period"], quickbooks_uncategorized: ["days", "limit"], quickbooks_expense_accounts: [] };
+  const allowed: Record<QboReadTool, string[]> = { quickbooks_profit_loss: ["period"], quickbooks_uncategorized: ["days", "limit"], quickbooks_expense_accounts: [], quickbooks_unpaid_bills: ["limit"], quickbooks_receivables: ["limit"] };
   if (!(tool in allowed)) return { problem: `${tool || "that"} isn't a QuickBooks read tool` };
   const t = tool as QboReadTool;
   const extra = Object.keys(a).filter((k) => !allowed[t].includes(k));
   if (extra.length) return { problem: `unknown input: ${extra.join(", ")}` };
   if (t === "quickbooks_expense_accounts") return { tool: t };
+  if (t === "quickbooks_unpaid_bills" || t === "quickbooks_receivables") {
+    const limit = a.limit === undefined ? 20 : Number(a.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_ROWS) return { problem: `limit is a whole number from 1 to ${MAX_ROWS}` };
+    return { tool: t, limit };
+  }
   if (t === "quickbooks_profit_loss") {
     const period = (a.period ?? "last_month") as QboPeriod;
     if (!QBO_PERIODS.includes(period)) return { problem: `period is one of ${QBO_PERIODS.join(", ")}` };
@@ -90,6 +97,9 @@ export const qboRequest = {
     return { path: "query", query: { query: `SELECT * FROM Purchase WHERE TxnDate >= '${date}' ORDERBY TxnDate DESC MAXRESULTS ${QUERY_MAX}` } };
   },
   expenseAccounts: () => ({ path: "query", query: { query: `SELECT * FROM Account WHERE Classification = 'Expense' AND Active = true MAXRESULTS ${QUERY_MAX}` } }),
+  unpaidBills: () => ({ path: "query", query: { query: `SELECT * FROM Bill WHERE Balance > '0' ORDERBY DueDate MAXRESULTS ${QUERY_MAX}` } }),
+  /** Intuit's aged receivables summary, as of today, in its standard 30-day buckets. */
+  agedReceivables: () => ({ path: "reports/AgedReceivables", query: {} }),
   companyInfo: (realm: string) => ({ path: `companyinfo/${checkedId(realm)}`, query: {} }),
   purchase: (id: string) => ({ path: `purchase/${checkedId(id)}`, query: {} }),
   account: (id: string) => ({ path: `account/${checkedId(id)}`, query: {} }),
@@ -119,7 +129,7 @@ export function toCents(x: unknown): number | null {
 const usd = (cents: number) => Math.round(cents) / 100;
 
 /** The rows of a `query` reply for one entity. */
-export function queryRows(reply: unknown, entity: "Account" | "Purchase"): Json[] {
+export function queryRows(reply: unknown, entity: "Account" | "Purchase" | "Bill"): Json[] {
   return arr(obj(obj(reply).QueryResponse)[entity]).map(obj);
 }
 
@@ -299,4 +309,101 @@ export function checkCategorized(before: unknown, after: unknown, lineId: string
     if (String(l.Id) === lineId ? acct(m) !== accountId : acct(m) !== acct(l)) return "QuickBooks put a line in a different account than approved.";
   }
   return null;
+}
+
+// ---- Unpaid bills and receivables by age (2026-11-22). Sums in cents, here.
+
+/** Days a bill is shown as due soon. */
+export const DUE_SOON_DAYS = 14;
+
+export interface UnpaidBill {
+  /** Who is owed, as QuickBooks has it: untrusted text. */
+  vendor: string;
+  due: string | null; balance: number; total: number; currency: string; days_late: number;
+}
+
+/**
+ * Bills with money still owed, soonest due first, with what is overdue and what falls due within
+ * DUE_SOON_DAYS worked out here. `today` is YYYY-MM-DD.
+ */
+export function readUnpaidBills(rows: Json[], today: string, limit: number, cut: boolean) {
+  const t0 = Date.parse(`${today}T00:00:00Z`);
+  const all: (UnpaidBill & { cents: number })[] = [];
+  for (const b of rows) {
+    const cents = toCents(b.Balance);
+    if (cents === null || cents <= 0) continue;
+    const due = /^\d{4}-\d{2}-\d{2}$/.test(str(b.DueDate, 10)) ? str(b.DueDate, 10) : null;
+    const late = due ? Math.floor((t0 - Date.parse(`${due}T00:00:00Z`)) / 86_400_000) : 0;
+    all.push({ vendor: str(obj(b.VendorRef).name, 80) || "Unknown vendor", due, balance: usd(cents), cents, total: usd(toCents(b.TotalAmt) ?? cents), currency: str(obj(b.CurrencyRef).value, 3) || "USD", days_late: Math.max(0, late) });
+  }
+  all.sort((a, b) => (a.due ?? "9999") < (b.due ?? "9999") ? -1 : (a.due ?? "9999") > (b.due ?? "9999") ? 1 : b.cents - a.cents);
+  const sum = (xs: { cents: number }[]) => usd(xs.reduce((s, x) => s + x.cents, 0));
+  const overdue = all.filter((b) => b.days_late > 0);
+  const soon = all.filter((b) => b.due && b.days_late === 0 && Date.parse(`${b.due}T00:00:00Z`) - t0 <= DUE_SOON_DAYS * 86_400_000);
+  return {
+    bills: all.slice(0, limit).map((b): UnpaidBill => ({ vendor: b.vendor, due: b.due, balance: b.balance, total: b.total, currency: b.currency, days_late: b.days_late })),
+    open: all.length, owed: sum(all),
+    overdue: overdue.length, overdue_amount: sum(overdue),
+    due_soon: soon.length, due_soon_amount: sum(soon), due_soon_days: DUE_SOON_DAYS,
+    cut,
+  };
+}
+
+export const AGE_BUCKETS = ["current", "days_1_30", "days_31_60", "days_61_90", "over_90"] as const;
+export type AgeBucket = (typeof AGE_BUCKETS)[number];
+
+export interface Receivables {
+  as_of: string; currency: string;
+  /** What all customers owe, by age, summed here from the customer rows. */
+  totals: Record<AgeBucket, number> & { total: number };
+  /** The customers who owe the most, largest first. Names are untrusted text. */
+  customers: ({ customer: string } & Record<AgeBucket, number> & { total: number })[];
+  customer_count: number;
+  /** Whether the sum worked out here matches the report's own total line (false when it has none). */
+  total_checked: boolean;
+}
+
+/**
+ * An AgedReceivables report: columns are the customer, then Current, 1-30, 31-60, 61-90, 91 and over,
+ * and Total. Each customer's total is worked out here from its buckets.
+ */
+export function readReceivables(reply: unknown, limit: number): Receivables | { problem: string } {
+  const r = obj(reply);
+  const h = obj(r.Header);
+  const cols = arr(obj(r.Columns).Column);
+  if (cols.length !== 7) return { problem: `the aged receivables report had ${cols.length} columns, not the 7 expected` };
+  const zero = () => Object.fromEntries(AGE_BUCKETS.map((b) => [b, 0])) as Record<AgeBucket, number>;
+  const sums = zero();
+  const rows: { customer: string; cents: Record<AgeBucket, number>; total: number }[] = [];
+  let reported: number | null = null;
+  const walk = (list: unknown[]) => {
+    for (const row of list.map(obj)) {
+      if (row.type === "Section") { walk(arr(obj(row.Rows).Row)); continue; }
+      const cells = arr(row.ColData).map(obj);
+      if (cells.length !== 7) continue;
+      const name = str(cells[0].value, 80);
+      if (/^total$/i.test(name)) continue;
+      const c = zero();
+      AGE_BUCKETS.forEach((b, i) => { c[b] = toCents(cells[i + 1].value) ?? 0; });
+      const total = AGE_BUCKETS.reduce((s, b) => s + c[b], 0);
+      if (total === 0) continue;
+      rows.push({ customer: name || "Unknown customer", cents: c, total });
+      AGE_BUCKETS.forEach((b) => { sums[b] += c[b]; });
+    }
+  };
+  walk(arr(obj(r.Rows).Row));
+  // the report's own grand total line (a top-level section whose summary starts with "TOTAL")
+  for (const row of arr(obj(r.Rows).Row).map(obj)) {
+    const cells = arr(obj(row.Summary).ColData).map(obj);
+    if (cells.length === 7 && (row.group === "GrandTotal" || /^total$/i.test(str(cells[0].value, 20)))) reported = toCents(cells[6].value);
+  }
+  const all = AGE_BUCKETS.reduce((s, b) => s + sums[b], 0);
+  rows.sort((a, b) => b.total - a.total);
+  return {
+    as_of: str(h.EndPeriod, 10) || str(h.ReportDate, 10), currency: str(h.Currency, 3) || "USD",
+    totals: { ...(Object.fromEntries(AGE_BUCKETS.map((b) => [b, usd(sums[b])])) as Record<AgeBucket, number>), total: usd(all) },
+    customers: rows.slice(0, limit).map((x) => ({ customer: x.customer, ...(Object.fromEntries(AGE_BUCKETS.map((b) => [b, usd(x.cents[b])])) as Record<AgeBucket, number>), total: usd(x.total) })),
+    customer_count: rows.length,
+    total_checked: reported !== null && Math.abs(reported - all) <= 1,
+  };
 }

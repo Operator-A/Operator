@@ -118,7 +118,7 @@ export const CONNECTIONS: Connection[] = [
     checks: [{ key: "quickbooks", label: "Books", setup: "Tap Connect and sign in to QuickBooks as an admin, picking the business’s company on Intuit’s page. Needs QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET in Vercel (the app’s Intuit OAuth client, docs/mcp-everywhere.md)." }],
   },
   {
-    id: "square", name: "Square", sub: "Sales and invoices", icon: "store", builtIn: false, mcp: "square",
+    id: "square", name: "Square", sub: "Sales, appointments, invoices", icon: "store", builtIn: false, mcp: "square",
     about: "Our own Square server, run in the app, signed in on Square’s own page. Square’s own MCP server isn’t used: it reaches everything Square’s APIs offer. The sign-in asks only for what our tools need and is refused if Square grants more. Each read runs fixed requests and every total is worked out in code. The only change it can make is a draft invoice you approved, to one of your Square customers: nothing is published, sent or charged, you do that from Square. Square’s invoice permission could also publish or cancel; our server has no code to do either.",
     checks: [{ key: "square", label: "Sales and invoices", setup: "Tap Connect and sign in to Square as the business’s owner, then tap Allow. Needs SQUARE_CLIENT_ID and SQUARE_CLIENT_SECRET in Vercel (the app’s Square application, docs/mcp-everywhere.md)." }],
   },

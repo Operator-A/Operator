@@ -60,9 +60,9 @@ import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Param, Pick, ReportInput, ToolDef, ToolResult } from "./types";
 import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, WOO, WOO_NOTES, HUBSPOT, HUBSPOT_DEALS, META, META_PAUSES, GMAIL, KLAVIYO, MERCURY, NOTION, QUICKBOOKS, SHOPIFY, SQUARE, STRIPE, SUPABASE, daysParam, usd } from "./shared";
-import { qboExpenseAccounts, qboProfitLoss, qboUncategorized } from "@/integrations/quickbooks";
-import { squareCustomers, squareLocations, squareOpenInvoices, squarePayments } from "@/integrations/square";
-import { MAX_DAYS as SQ_MAX_DAYS, MAX_ROWS as SQ_MAX_ROWS, SQUARE_INVOICE } from "@/core/square-rules";
+import { qboExpenseAccounts, qboProfitLoss, qboReceivables, qboUncategorized, qboUnpaidBills } from "@/integrations/quickbooks";
+import { squareAppointments, squareCustomers, squareLocations, squareOpenInvoices, squarePayments } from "@/integrations/square";
+import { MAX_BOOKING_DAYS, MAX_DAYS as SQ_MAX_DAYS, MAX_ROWS as SQ_MAX_ROWS, SQUARE_INVOICE } from "@/core/square-rules";
 import { MAX_DAYS as QBO_MAX_DAYS, MAX_ROWS as QBO_MAX_ROWS, QBO_PERIODS, type QboPeriod } from "@/core/quickbooks-rules";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
@@ -1209,6 +1209,24 @@ const QUICKBOOKS_TOOLS: ToolDef[] = [
     },
   },
   {
+    id: "quickbooks_unpaid_bills", label: "QuickBooks unpaid bills", detail: "Bills in QuickBooks with money still owed, soonest due first: vendor, due date, balance and days late, plus what is overdue and what falls due in the next 14 days, all worked out in code. Vendor names come from outside, so they are untrusted",
+    kind: "read", group: "quickbooks", trusted: false, needs: QUICKBOOKS, costUsd: 0,
+    params: [{ name: "limit", type: "int", min: 1, max: QBO_MAX_ROWS, default: 20, description: "How many bills to list." }],
+    run: async (p) => {
+      const r = await qboUnpaidBills(Number(p.limit ?? 20));
+      return { data: { ...r, more_than_read: r.cut }, numbers: { qbo_bills_open: r.open, qbo_bills_owed: r.owed, qbo_bills_overdue: r.overdue, qbo_bills_overdue_amount: r.overdue_amount, qbo_bills_due_soon: r.due_soon, qbo_bills_due_soon_amount: r.due_soon_amount } };
+    },
+  },
+  {
+    id: "quickbooks_receivables", label: "QuickBooks receivables by age", detail: "What customers owe the business in QuickBooks, by age (current, 1 to 30, 31 to 60, 61 to 90 and over 90 days), with the customers who owe the most, all summed in code. Customer names come from outside, so they are untrusted",
+    kind: "read", group: "quickbooks", trusted: false, needs: QUICKBOOKS, costUsd: 0,
+    params: [{ name: "limit", type: "int", min: 1, max: QBO_MAX_ROWS, default: 20, description: "How many customers to list." }],
+    run: async (p) => {
+      const r = await qboReceivables(Number(p.limit ?? 20));
+      return { data: r, numbers: { qbo_receivables_total: r.totals.total, qbo_receivables_current: r.totals.current, qbo_receivables_over_30: Math.round((r.totals.days_31_60 + r.totals.days_61_90 + r.totals.over_90) * 100) / 100, qbo_receivables_over_90: r.totals.over_90, qbo_receivables_customers: r.customer_count } };
+    },
+  },
+  {
     id: "quickbooks_categorize_expense", label: "Categorize a QuickBooks expense", detail: "Stages moving one expense line out of Uncategorized Expense into one of the business's expense accounts, for the owner to approve (later on its own, once it has earned trust). Changes the category only: never an amount, payee, date or other line, and never creates or deletes anything",
     kind: "action", becomes: QBO_CATEGORIZE, group: "quickbooks", trusted: true, needs: QUICKBOOKS, costUsd: 0,
     agents: GATEWAY_TOOLS[QBO_CATEGORIZE].agents,
@@ -1254,6 +1272,18 @@ const SQUARE_TOOLS: ToolDef[] = [
     kind: "read", group: "square", trusted: false, needs: SQUARE, costUsd: 0,
     params: [{ name: "limit", type: "int", min: 1, max: SQ_MAX_ROWS, default: 10, description: "How many invoices to list." }],
     run: async (p) => { const r = await squareOpenInvoices(Number(p.limit ?? 10)); return { data: { invoices: r.invoices, open: r.open, overdue: r.overdue, overdue_amount: r.overdue_amount }, numbers: { square_open_invoices: r.open, square_overdue_invoices: r.overdue } }; },
+  },
+  {
+    id: "square_appointments", label: "Square appointments", detail: "Bookings in Square Appointments over the last or next 1 to 31 days: booked, cancelled and no-shows by day and by location, minutes booked and the no-show rate, all counted in code. No customer names or contact details",
+    kind: "read", group: "square", trusted: true, needs: SQUARE, costUsd: 0,
+    params: [
+      { name: "when", type: "enum", options: ["next", "past"], default: "next", description: "The coming days or the days just gone." },
+      { name: "days", type: "int", min: 1, max: MAX_BOOKING_DAYS, default: 7, description: "How many days." },
+    ],
+    run: async (p) => {
+      const r = await squareAppointments(Number(p.days ?? 7), p.when === "past" ? "past" : "next");
+      return { data: r, numbers: { square_booked: r.totals.booked, square_cancelled: r.totals.cancelled, square_no_shows: r.totals.no_shows, square_no_show_rate: r.totals.no_show_rate, square_minutes_booked: r.totals.minutes_booked } };
+    },
   },
   {
     id: "square_customers", label: "Square customers", detail: "The business's most recent Square customers, each with a pick so an invoice can name one. Names come from outside, so they are untrusted",

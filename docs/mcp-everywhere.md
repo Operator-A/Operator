@@ -576,12 +576,15 @@ runs in the app, signed in on Intuit's own page.
   kept on the connection's row, so Connections shows which company it is. The sign-in is cancelled at
   Intuit and not kept when either is missing. Access tokens last an hour; every refresh hands back a new
   refresh token, which replaces the old one at once. Disconnect asks Intuit to revoke it.
-- **Profile** `quickbooks` (`core/mcp-rules.ts`): three read tools, each one fixed request in
+- **Profile** `quickbooks` (`core/mcp-rules.ts`): five read tools, each one fixed request in
   `core/quickbooks-rules.ts`: `quickbooks_profit_loss` (Intuit's ProfitAndLoss report for a period named
   with Intuit's own date macros, so the company's fiscal year applies; income, cost of goods, gross profit,
   expenses by account, net income, and a check that the parts add up), `quickbooks_uncategorized` (expense
   lines still in Uncategorized Expense, newest first, with picks) and `quickbooks_expense_accounts` (active
-  expense accounts, with picks). Query text is written in the rules file; the only values in it are a
+  expense accounts, with picks), `quickbooks_unpaid_bills` (bills with a balance, soonest due first, with
+  what is overdue and what falls due in 14 days) and `quickbooks_receivables` (Intuit's AgedReceivables
+  report: what customers owe in current, 1-30, 31-60, 61-90 and over-90 buckets, summed from the customer
+  rows and checked against the report's own total). Query text is written in the rules file; the only values in it are a
   date code made and a fixed account name. Every sum is made in code, in cents.
 - **One write** `quickbooks_categorize_expense`, the gateway action type `quickbooks.categorize_expense`
   (Draft), offered only on the gateway's `callWriteTool` path. The server re-reads the account (it must be
@@ -629,7 +632,7 @@ a profile. Our own server runs in the app, signed in on Square's own page.
 - **Sign-in** (`auth: "square"`): the app's own Square application. `SQUARE_CLIENT_ID` and
   `SQUARE_CLIENT_SECRET` live in Vercel; the secret is never put in the vault, a cookie or the browser.
   Connect asks for exactly `MERCHANT_PROFILE_READ PAYMENTS_READ CUSTOMERS_READ INVOICES_READ INVOICES_WRITE
-  ORDERS_WRITE`, with `session=false` so the person signs in to the account they mean. Square's code flow
+  ORDERS_WRITE APPOINTMENTS_READ APPOINTMENTS_ALL_READ`, with `session=false` so the person signs in to the account they mean. Square's code flow
   with a secret (no PKCE), so the refresh token lasts; access tokens last 30 days and are renewed a minute
   before they run out. Square's token reply doesn't list scopes, so right after Connect the server reads
   the business (`merchants/me`) and the token's scopes (`oauth2/token/status`): anything missing or more,
@@ -638,12 +641,15 @@ a profile. Our own server runs in the app, signed in on Square's own page.
 - **One sign-in, not two:** Square's revoke ends every sign-in a business gave our app, so a separate
   drafts sign-in couldn't be cancelled on its own. Reads and the draft share one sign-in; the server offers
   the write only on the gateway's `callWriteTool` path, and agents' `callMcpTool` path serves reads only.
-- **Profile** `square` (`core/mcp-rules.ts`): four read tools, fixed requests in `core/square-rules.ts`:
+- **Profile** `square` (`core/mcp-rules.ts`): five read tools, fixed requests in `core/square-rules.ts`:
   `square_payments` (completed payments over 1 to 90 days, paged up to 1,000: gross, refunds, Square's
   fees, net, by day and by location, average sale; one currency, others counted but not added in),
   `square_locations` (active first, with picks), `square_open_invoices` (unpaid, scheduled and partly paid
   invoices across up to 10 active locations, most overdue first, amount still owed and days late) and
-  `square_customers` (most recent, with picks). Every sum is made in code, in minor units.
+  `square_customers` (most recent, with picks) and `square_appointments` (bookings over the last or next 1
+  to 31 days, Square's limit: booked, cancelled and no-shows by day and location, minutes booked and the
+  no-show rate; customer ids are never returned, and no names or contacts are read; Square needs both
+  appointment scopes for a business to read all its bookings). Every sum is made in code, in minor units.
 - **One write** `square_create_invoice_draft`, the gateway action type `square.invoice_draft` (Draft,
   promotable). The target is `customerId@locationId`, both picks. The server re-reads the customer and the
   location (it must be active and take the invoice's currency), makes an order of ad hoc lines (no catalog

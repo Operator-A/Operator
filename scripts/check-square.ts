@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { MCP_SERVERS, checkedTools, isAppSignIn, isGoogle, isHosted, mayCall, mayReport, mayWrite, usesConnect } from "../core/mcp-rules";
 import {
   SQUARE_DRAFT_TOOL, SQUARE_HOST, SQUARE_INVOICE, SQUARE_INVOICE_GRANT, SQUARE_READ_TOOLS, SQUARE_SANDBOX_HOST, SQUARE_SCOPES, SQUARE_VERSION, checkSquareArgs, checkSquareDraftArgs, dueDate,
-  readCustomers, readInvoice, readLocations, readOpenInvoices, readOrder, readPayments, readTokenScopes, refuseLocation, refuseSquareInvoice, splitTarget, squareAuth, squareAuthorizeUrl,
+  bookingWindow, readBookings, readCustomers, readInvoice, readLocations, readOpenInvoices, readOrder, readPayments, readTokenScopes, refuseLocation, refuseSquareInvoice, splitTarget, squareAuth, squareAuthorizeUrl,
   squareDraftBodies, squareExpiresIn, squareScopeProblem, squareTarget,
 } from "../core/square-rules";
 import { TOOLS, refuseProposal } from "../core/gateway/policy";
@@ -17,7 +17,7 @@ import { squareServer, squareWho } from "../integrations/square-server";
 const p = MCP_SERVERS.square;
 assert.equal(p.auth, "square");
 assert.ok(isAppSignIn("square") && usesConnect("square") && !isHosted("square") && !isGoogle("square"));
-assert.deepEqual([...p.scopes], ["MERCHANT_PROFILE_READ", "PAYMENTS_READ", "CUSTOMERS_READ", "INVOICES_READ", "INVOICES_WRITE", "ORDERS_WRITE"], "exactly these scopes: no payments write, refunds, customers write, items or team");
+assert.deepEqual([...p.scopes], ["MERCHANT_PROFILE_READ", "PAYMENTS_READ", "CUSTOMERS_READ", "INVOICES_READ", "INVOICES_WRITE", "ORDERS_WRITE", "APPOINTMENTS_READ", "APPOINTMENTS_ALL_READ"], "exactly these scopes: no payments write, appointments write, refunds, customers write, items or team");
 assert.deepEqual([...p.readTools], [...SQUARE_READ_TOOLS]);
 assert.deepEqual(p.writeTools, [{ tool: SQUARE_DRAFT_TOOL, actionType: SQUARE_INVOICE }]);
 assert.deepEqual(p.reportTools, []);
@@ -56,7 +56,7 @@ assert.deepEqual(importers("square-server"), ["integrations/mcp.ts"]);
 const callers = all.filter((f) => f !== "core/square-rules.ts" && /squareup(sandbox)?\.com/.test(readFileSync(f, "utf8")));
 assert.deepEqual(callers, [], "Square's address lives only in the rules");
 const server = (readFileSync("integrations/square-server.ts", "utf8") + readFileSync("integrations/square-api.ts", "utf8")).replace(/^\s*(\/\/|\*).*$/gm, "");
-assert.doesNotMatch(server, /\/publish|\/cancel|"refunds|refunds\/|"DELETE"|"PUT"|squareRequest\.(?!merchant|locations|location|payments|invoices|customers|customer|invoice|createOrder|createInvoice)\w+/, "no publish, cancel, delete, refund or update call");
+assert.doesNotMatch(server, /\/publish|\/cancel|"refunds|refunds\/|"DELETE"|"PUT"|squareRequest\.(?!merchant|locations|location|payments|invoices|customers|customer|invoice|bookings|createOrder|createInvoice)\w+/, "no publish, cancel, delete, refund or update call");
 const rules = readFileSync("core/square-rules.ts", "utf8").replace(/^\s*(\/\/|\*).*$/gm, "");
 assert.doesNotMatch(rules, /\/publish|\/cancel|path: "refunds|refunds\/|"DELETE"|"PUT"|payments"\s*,\s*body|"POST", path: "payments"/, "no write path but the order and the draft");
 assert.equal((rules.match(/method: "POST"/g) ?? []).length, 3, "POSTs: invoice search, the order, the draft invoice");
@@ -68,6 +68,10 @@ assert.deepEqual(checkSquareArgs("square_open_invoices", { limit: 5 }), { tool: 
 assert.ok("problem" in checkSquareArgs("square_customers", { limit: 26 }));
 assert.ok("problem" in checkSquareArgs("square_locations", { query: "x" }), "no inputs from outside beyond the named ones");
 assert.ok("problem" in checkSquareArgs(SQUARE_DRAFT_TOOL, {}), "the write isn't a read");
+assert.deepEqual(checkSquareArgs("square_appointments", {}), { tool: "square_appointments", days: 7, when: "next" });
+assert.deepEqual(checkSquareArgs("square_appointments", { days: 31, when: "past" }), { tool: "square_appointments", days: 31, when: "past" });
+assert.ok("problem" in checkSquareArgs("square_appointments", { days: 32 }), "Square reads at most 31 days of bookings");
+assert.ok("problem" in checkSquareArgs("square_appointments", { when: "all" }));
 
 // ---- readers: totals in code
 const names = new Map([["LOC1", "Main St"], ["LOC2", "Market"]]);
@@ -96,6 +100,18 @@ assert.equal(oi.open, 3, "paid and draft invoices are not open");
 assert.deepEqual(oi.invoices.map((i) => [i.number, i.amount_due, i.days_late]), [["1", 50, 10], ["2", 20, 2], ["5", 20, 0]], "most overdue first, what is still owed");
 assert.equal(oi.overdue, 2);
 assert.deepEqual(oi.overdue_amount, { usd: 70 });
+// ---- appointments: counted in code, no-show rate over bookings whose time has passed
+assert.deepEqual(bookingWindow(7, "next", now), { from: "2026-11-22T12:00:00.000Z", to: "2026-11-29T12:00:00.000Z" });
+assert.deepEqual(bookingWindow(7, "past", now), { from: "2026-11-15T12:00:00.000Z", to: "2026-11-22T12:00:00.000Z" });
+const bk = (status: string, start: string, mins: number[], loc = "LOC1") => ({ status, start_at: start, location_id: loc, appointment_segments: mins.map((m) => ({ duration_minutes: m })) });
+const ap = readBookings([
+  bk("ACCEPTED", "2026-11-20T15:00:00Z", [30, 15]), bk("NO_SHOW", "2026-11-20T17:00:00Z", [60]), bk("CANCELLED_BY_CUSTOMER", "2026-11-21T10:00:00Z", [30]),
+  bk("DECLINED", "2026-11-21T11:00:00Z", [30]), bk("PENDING", "2026-11-23T09:00:00Z", [45], "LOC2"), bk("ACCEPTED", "2026-11-23T10:00:00Z", [30]), bk("ACCEPTED", "not a date", [30]),
+], names, bookingWindow(7, "past", now), now, false);
+assert.deepEqual(ap.totals, { booked: 4, cancelled: 2, no_shows: 1, pending: 1, minutes_booked: 180, no_show_rate: 0.5 }, "a no-show was booked; cancelled and declined aren't; rate over the 2 past bookings");
+assert.deepEqual(ap.days, [{ date: "2026-11-20", booked: 2, cancelled: 0, no_shows: 1 }, { date: "2026-11-21", booked: 0, cancelled: 2, no_shows: 0 }, { date: "2026-11-23", booked: 2, cancelled: 0, no_shows: 0 }]);
+assert.deepEqual(ap.locations, [{ location: "Main St", booked: 3, no_shows: 1 }, { location: "Market", booked: 1, no_shows: 0 }]);
+assert.equal(readBookings([], names, bookingWindow(1, "next", now), now, false).totals.no_show_rate, 0);
 assert.deepEqual(readCustomers({ customers: [{ id: "CUST1", company_name: "Acme" }, { id: "CUST2", given_name: "Ada" }, { id: "x" }] }), [{ id: "CUST1", label: "Acme" }, { id: "CUST2", label: "Ada" }]);
 
 // ---- the draft's guards (Stripe's: up to 5 plain lines, whole cents, the ceiling, due in 1 to 90 days)
@@ -153,7 +169,7 @@ type Reply = { result?: { isError?: boolean; structuredContent?: { result: Recor
 
 (async () => {
   // reads: the read side serves reads only; nothing is created
-  let calls = fakeSquare((c) => (c.path === "locations" ? { status: 200, json: locs } : c.path === "payments" ? { status: 200, json: { payments: pays } } : c.path === "invoices/search" ? { status: 200, json: { invoices: [inv("1", "UNPAID", "2026-11-12", 5000, 0)] } } : { status: 404, json: {} }));
+  let calls = fakeSquare((c) => (c.path === "locations" ? { status: 200, json: locs } : c.path === "payments" ? { status: 200, json: { payments: pays } } : c.path === "invoices/search" ? { status: 200, json: { invoices: [inv("1", "UNPAID", "2026-11-12", 5000, 0)] } } : c.path === "bookings" ? { status: 200, json: { bookings: [bk("ACCEPTED", "2026-11-23T10:00:00Z", [30])] } } : { status: 404, json: {} }));
   const reader = squareServer({ host: SQUARE_HOST, token: "tok", write: false });
   const list = (await reader({ jsonrpc: "2.0", id: 1, method: "tools/list" })) as { result: { tools: { name: string; annotations: { readOnlyHint: boolean } }[] } };
   assert.deepEqual(list.result.tools.map((t) => t.name), [...SQUARE_READ_TOOLS]);
@@ -162,6 +178,9 @@ type Reply = { result?: { isError?: boolean; structuredContent?: { result: Recor
   assert.equal((pr.result?.structuredContent?.result.totals as { net: number }).net, 28.38);
   const open = (await reader(rpc("square_open_invoices", { limit: 5 }))) as Reply;
   assert.equal(open.result?.structuredContent?.result.locations_searched, 1, "active locations only");
+  const appts = (await reader(rpc("square_appointments", { days: 3 }))) as Reply;
+  assert.equal((appts.result?.structuredContent?.result.totals as { booked: number }).booked, 1);
+  assert.ok(((await reader(rpc("square_appointments", { days: 60 }))) as Reply).result?.isError, "a window over 31 days is refused before Square is called");
   assert.ok(calls.every((c) => c.method === "GET" || c.path === "invoices/search"), "reads only: GETs and the invoice search");
   assert.ok(((await reader(rpc(SQUARE_DRAFT_TOOL, { customerId: "CUST1", locationId: "L1xx", requestKey: key, ...ok }))) as Reply).result?.isError, "an agent's read path can't write");
 
