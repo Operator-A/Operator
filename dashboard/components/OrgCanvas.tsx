@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { defaultOpen, deptBox, layoutCanvas, moveLines, seatName, teamSize, type Box, type CanvasData, type CanvasDept, type CanvasRun, type CanvasSeat, type Line } from "../org-canvas";
+import { PAD, SPINE, defaultOpen, deptBox, layoutCanvas, moveLines, seatName, teamSize, type Box, type CanvasData, type CanvasDept, type CanvasRun, type CanvasSeat, type Line } from "../org-canvas";
 import { GoalTile } from "./goals";
 import { Icon } from "./Icon";
 import { DeptLimits } from "./orgBits";
@@ -24,6 +24,8 @@ type Curve = [number, number][];
 const seed = (id: string, salt: number) => { let h = salt; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 9973; return h / 9973; };
 
 function curve(l: Line, A: Node, B: Node, opened: boolean): Curve {
+  // the phone's spine: out of the card's left side, up the gutter, across into the box above
+  if (l.shape === "spine") { const x = PAD + SPINE / 2; return [[A.px - A.hw, A.py], [x, A.py], [x, B.py], [B.px - B.hw, B.py]]; }
   if (l.shape === "elbow") { const sx = B.px - B.hw + 8; return [[A.px - A.hw, A.py], [sx, A.py], [sx, A.py], [sx, B.py + B.hh]]; }
   if (l.shape === "tree" && A.py - A.hh > B.py + B.hh + 6) {
     const p0: [number, number] = [A.px, A.py - A.hh], p3: [number, number] = [B.px, B.py + B.hh], gap = p0[1] - p3[1], lift = opened ? gap / 2 : Math.min(40, gap * .6);
@@ -35,6 +37,13 @@ function curve(l: Line, A: Node, B: Node, opened: boolean): Curve {
   const ta = edge(A), tb = edge(B), p0: [number, number] = [A.px + ux * ta, A.py + uy * ta], p3: [number, number] = [B.px - ux * tb, B.py - uy * tb], b = dist * .13 * l.bend;
   const c = [(p0[0] + p3[0]) / 2 - uy * b, (p0[1] + p3[1]) / 2 + ux * b];
   return [p0, [p0[0] + (c[0] - p0[0]) * .67, p0[1] + (c[1] - p0[1]) * .67], [p3[0] + (c[0] - p3[0]) * .67, p3[1] + (c[1] - p3[1]) * .67], p3];
+}
+/** A point part way along the spine's three straight runs, by length. */
+function along(g: Curve, u: number): [number, number] {
+  const seg = [0, 1, 2].map((i) => Math.hypot(g[i + 1][0] - g[i][0], g[i + 1][1] - g[i][1])), total = seg[0] + seg[1] + seg[2] || 1;
+  let d = u * total;
+  for (let i = 0; i < 3; i++) { if (d <= seg[i] || i === 2) { const t = seg[i] ? Math.min(1, d / seg[i]) : 0; return [g[i][0] + (g[i + 1][0] - g[i][0]) * t, g[i][1] + (g[i + 1][1] - g[i][1]) * t]; } d -= seg[i]; }
+  return g[3];
 }
 const at = (g: Curve, u: number): [number, number] => { const v = 1 - u, a = v * v * v, b = 3 * v * v * u, c = 3 * v * u * u, d = u * u * u; return [a * g[0][0] + b * g[1][0] + c * g[2][0] + d * g[3][0], a * g[0][1] + b * g[1][1] + c * g[2][1] + d * g[3][1]]; };
 
@@ -138,13 +147,16 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
           ctx.globalAlpha = e.lit ? (e.hs.has(l.a) || e.hs.has(l.b) ? .95 : .12) : l.type === "report" ? .55 : .75;
           ctx.strokeStyle = ctx.fillStyle = col[l.type === "report" ? "--lc-report" : "--lc-handoff"] || "#6272EE"; ctx.lineWidth = 1.7; ctx.lineCap = "round";
           ctx.setLineDash(l.type === "handoff" ? [7, 7] : []); ctx.lineDashOffset = calm ? 0 : -t * 16;
-          ctx.beginPath(); ctx.moveTo(g[0][0], g[0][1]); ctx.bezierCurveTo(g[1][0], g[1][1], g[2][0], g[2][1], g[3][0], g[3][1]); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(g[0][0], g[0][1]);
+          if (l.shape === "spine") { ctx.arcTo(g[1][0], g[1][1], g[2][0], g[2][1], 10); ctx.arcTo(g[2][0], g[2][1], g[3][0], g[3][1], 10); ctx.lineTo(g[3][0], g[3][1]); }
+          else ctx.bezierCurveTo(g[1][0], g[1][1], g[2][0], g[2][1], g[3][0], g[3][1]);
+          ctx.stroke();
           if (l.type === "handoff") { ctx.setLineDash([]); ctx.beginPath(); ctx.arc(g[3][0], g[3][1], 3, 0, 6.3); ctx.fill(); }
         }
         ctx.setLineDash([]); ctx.globalAlpha = 1;
         for (const p of e.parts) {
           const g = curves.get(p.line); if (!g) continue;
-          const [x, y] = at(g, p.u < .5 ? 2 * p.u * p.u : 1 - 2 * (1 - p.u) * (1 - p.u)), color = col[p.color] || "#6272EE";
+          const [x, y] = (p.line.shape === "spine" ? along : at)(g, p.u < .5 ? 2 * p.u * p.u : 1 - 2 * (1 - p.u) * (1 - p.u)), color = col[p.color] || "#6272EE";
           ctx.shadowColor = color; ctx.shadowBlur = 14; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 4.5, 0, 6.3); ctx.fill(); ctx.shadowBlur = 0;
         }
       }

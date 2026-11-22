@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import type { Chain } from "../core/flow-rules";
-import { FOLD_AT, YOU, colsFor, defaultOpen, deptBox, foldBox, handoffsOf, layoutCanvas, teamSize, moveLines, seatName, type Box, type CanvasData, type CanvasDept, type CanvasSeat } from "../dashboard/org-canvas";
+import { FOLD_AT, PAD, SPINE, YOU, colsFor, defaultOpen, deptBox, foldBox, handoffsOf, layoutCanvas, teamSize, moveLines, seatName, type Box, type CanvasData, type CanvasDept, type CanvasSeat } from "../dashboard/org-canvas";
 
 const read = (p: string) => readFileSync(p, "utf8");
 
@@ -163,8 +163,19 @@ assert.ok(one.height > loads.height, "the canvas grows when a team opens");
 // the folded sales head still takes Morgan's hand-off, and Reese's to Rico (folded) draws no line
 assert.deepEqual(loads.lines.filter((l) => l.type === "handoff").map((l) => `${l.a}>${l.b}`), ["m1>s1"]);
 
-// columns: two on a phone, never more than five or than there are departments
-assert.equal(colsFor(326, 5), 2);
+// a phone stacks departments full width, right of the gutter where each head's line runs up
+const phone = layoutCanvas(full, 390, null);
+for (const x of depts) {
+  const cell = phone.boxes[deptBox(x.id)];
+  assert.equal(cell.x - cell.w / 2, PAD + SPINE, `${x.id} starts right of the spine`);
+  assert.equal(cell.x + cell.w / 2, 390 - PAD, `${x.id} runs to the right edge`);
+  assert.deepEqual(phone.lines.filter((l) => l.a === x.seats[0].id && l.type === "report").map((l) => l.shape), ["spine"], `${x.id}'s head line runs up the spine`);
+}
+assert.ok(!layoutCanvas(full, 886, null).lines.some((l) => l.shape === "spine"), "only a phone has the spine");
+
+// columns: one on a phone, never more than five or than there are departments
+assert.equal(colsFor(326, 5), 1, "a phone stacks departments one per row");
+assert.equal(colsFor(600, 5), 4);
 assert.equal(colsFor(326, 1), 1);
 assert.equal(colsFor(1500, 9), 5);
 assert.equal(colsFor(886, 3), 3);

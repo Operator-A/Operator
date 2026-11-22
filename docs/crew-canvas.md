@@ -59,3 +59,13 @@ The owner, 2026-11-22, with a phone screenshot of a 12-seat Marketing department
 - Seats grow out of the seat above them when its row opens, and fold back into it.
 
 **Tests.** `npm run check:org-canvas` lays every sample out as the page loads, with every team open and with every team folded, and checks that a seat shows only when every seat above it is open, that each seat with a team has its row right under it, and that hand-off lines land on the nearest seat that shows.
+
+## Slice 1c: one column on a phone
+
+The owner asked, 2026-11-22, for ways to make Crew more phone friendly. Recommended and built: one column.
+
+- Below 560px wide (`PHONE`) departments stack one per row, full width, folded as in slice 1b. Names stop being cut off at two across.
+- Each head's line runs out of its card's left side, up a gutter on the left edge (`SPINE`) and across into the company seat, so no report line crosses a card.
+- Opening a department on a phone is unchanged.
+
+**Tests.** `npm run check:org-canvas` checks that on a phone every department runs from the spine to the right edge, that each head's line is a spine line, and that only a phone has one.

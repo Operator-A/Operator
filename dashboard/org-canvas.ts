@@ -85,18 +85,25 @@ export interface Box {
   /** A fold row: the seat whose team it shows or hides. */
   of: string | null;
 }
-/** elbow: a seat to the seat above it in a column. tree: up to a box above. side: two cards in one column. free: anywhere. */
-export type LineShape = "elbow" | "tree" | "side" | "free";
+/** elbow: a seat to the seat above it in a column. tree: up to a box above. spine: up the left edge of a phone to a box above. side: two cards in one column. free: anywhere. */
+export type LineShape = "elbow" | "tree" | "spine" | "side" | "free";
 export interface Line { a: string; b: string; type: "report" | "handoff"; shape: LineShape; bend: 1 | -1 }
 export interface Layout { boxes: Record<string, Box>; lines: Line[]; height: number; cols: number }
 
-const PAD = 16, GAP = 12, CH = 44, FH = 26, INDENT = 16, COL_MIN = 128, COL_MAX = 260;
+export const PAD = 16;
+const GAP = 12, CH = 44, FH = 26, INDENT = 16, COL_MIN = 128, COL_MAX = 260;
 /** A department with more seats than this starts folded down to its head. */
 export const FOLD_AT = 5;
 export const foldBox = (seat: string) => `fold:${seat}`;
 
-/** Departments across at a width: two on a phone, up to five. */
+/** Below this width (a phone) departments stack one per row, full width. */
+export const PHONE = 560;
+/** The left gutter on a phone, where every head's line runs up to the company seat. */
+export const SPINE = 14;
+
+/** Departments across at a width: one on a phone, up to five. */
 export function colsFor(W: number, depts: number) {
+  if (W < PHONE) return Math.min(1, depts) || 1;
   const fit = Math.floor((W - 2 * PAD + GAP) / (COL_MIN + GAP));
   return Math.max(1, Math.min(depts, Math.max(2, Math.min(5, fit))));
 }
@@ -140,7 +147,7 @@ export function layoutCanvas(d: CanvasData, W: number, focus: string | null, ope
   for (const dp of d.depts) for (const s of dp.seats) deptOfSeat[s.id] = dp.id;
   const top = d.company?.id ?? YOU;
   const opened = focus ? d.depts.find((x) => x.id === focus) ?? null : null;
-  const narrow = W < 560;
+  const narrow = W < PHONE;
   const parentOf: Record<string, string | null> = {};
   for (const dp of d.depts) for (const s of dp.seats) parentOf[s.id] = s.parent;
   // a hand-off to a seat that is folded away lands on the nearest seat above it that shows
@@ -171,12 +178,12 @@ export function layoutCanvas(d: CanvasData, W: number, focus: string | null, ope
   let bottom: number;
 
   if (!opened) {
-    const cols = colsFor(W, d.depts.length), colW = Math.min(COL_MAX, (W - 2 * PAD - (cols - 1) * GAP) / cols);
+    const cols = colsFor(W, d.depts.length), left = narrow ? SPINE : 0, colW = narrow ? W - 2 * PAD - left : Math.min(COL_MAX, (W - 2 * PAD - (cols - 1) * GAP) / cols);
     box(YOU, "you", W / 2, 44, Math.min(168, W - 2 * PAD), CH);
     if (d.company) { box(d.company.id, "seat", W / 2, 122, Math.min(190, W - 2 * PAD), CH); line(d.company.id, YOU, "report", "tree"); }
     let y = d.company ? 196 : 118;
     for (let r = 0; r * cols < d.depts.length; r++) {
-      const row = d.depts.slice(r * cols, (r + 1) * cols), x0 = (W - row.length * colW - (row.length - 1) * GAP) / 2;
+      const row = d.depts.slice(r * cols, (r + 1) * cols), x0 = narrow ? PAD + left : (W - row.length * colW - (row.length - 1) * GAP) / 2;
       let maxH = 0;
       row.forEach((dp, i) => {
         const head = dp.seats[0], rows = head ? branch(dp, head, open) : [];
@@ -184,12 +191,12 @@ export function layoutCanvas(d: CanvasData, W: number, focus: string | null, ope
         maxH = Math.max(maxH, h);
         box(id, "dept", cx, y + h / 2, colW, h);
         column(rows, cx, y + 40, colW - 20, id, head?.depth ?? 0);
-        if (head) line(head.id, top, "report", "tree");
+        if (head) line(head.id, top, "report", narrow ? "spine" : "tree");
         hideRest(dp, id);
       });
-      y += maxH + 44;
+      y += maxH + (narrow ? 20 : 44);
     }
-    bottom = (d.depts.length ? y - 44 : y) + 18;
+    bottom = (d.depts.length ? y - (narrow ? 20 : 44) : y) + 18;
     const seen = new Set<string>();
     for (const h of d.handoffs) {
       const a = shownUp(h.from), b = shownUp(h.to);
