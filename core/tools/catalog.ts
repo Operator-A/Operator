@@ -59,8 +59,10 @@ import { INVOICE_CURRENCIES, INVOICE_LIMITS, MAX_INVOICE_USD, STRIPE_PERIODS, in
 import type { Ga4Period } from "@/core/ga4-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 import type { Param, Pick, ReportInput, ToolDef, ToolResult } from "./types";
-import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, WOO, WOO_NOTES, HUBSPOT, HUBSPOT_DEALS, META, META_PAUSES, GMAIL, KLAVIYO, MERCURY, NOTION, QUICKBOOKS, SHOPIFY, STRIPE, SUPABASE, daysParam, usd } from "./shared";
+import { ANALYTICS, CALENDAR, CALENDAR_HOLDS, EMAIL, MAILCHIMP, MAILCHIMP_DRAFTS, WOO, WOO_NOTES, HUBSPOT, HUBSPOT_DEALS, META, META_PAUSES, GMAIL, KLAVIYO, MERCURY, NOTION, QUICKBOOKS, SHOPIFY, SQUARE, STRIPE, SUPABASE, daysParam, usd } from "./shared";
 import { qboExpenseAccounts, qboProfitLoss, qboUncategorized } from "@/integrations/quickbooks";
+import { squareCustomers, squareLocations, squareOpenInvoices, squarePayments } from "@/integrations/square";
+import { MAX_DAYS as SQ_MAX_DAYS, MAX_ROWS as SQ_MAX_ROWS, SQUARE_INVOICE } from "@/core/square-rules";
 import { MAX_DAYS as QBO_MAX_DAYS, MAX_ROWS as QBO_MAX_ROWS, QBO_PERIODS, type QboPeriod } from "@/core/quickbooks-rules";
 import { snapshot } from "@/core/daily-numbers";
 import { shift, weekNumbers, weekOverWeek, type DayRow } from "@/core/weekly-numbers-rules";
@@ -1226,7 +1228,78 @@ const QUICKBOOKS_TOOLS: ToolDef[] = [
 ];
 
 /** Every tool. An id is never used twice. */
-const ALL: ToolDef[] = [...TOOLS_LIST, ...STRIPE_ACTIONS, ...QUICKBOOKS_TOOLS];
+// ---- Square (card 242): our own server on the business's Square sign-in. Totals in code.
+const SQUARE_TOOLS: ToolDef[] = [
+  {
+    id: "square_payments", label: "Square sales", detail: "Completed Square payments over a period: gross, refunds, Square's fees and net, by day and by location, and the average sale, all worked out in code",
+    kind: "read", group: "square", trusted: true, needs: SQUARE, costUsd: 0,
+    params: [daysParam(30, SQ_MAX_DAYS, "How far back to look, in days.")],
+    run: async (p) => {
+      const r = await squarePayments(Number(p.days ?? 30));
+      return { data: r, numbers: { square_gross: r.totals.gross, square_refunds: r.totals.refunds, square_fees: r.totals.fees, square_net: r.totals.net, square_payments: r.totals.payments, square_average_sale: r.totals.average_sale } };
+    },
+  },
+  {
+    id: "square_locations", label: "Square locations", detail: "The business's Square locations, active ones first, with their currency, each active one with a pick so an invoice can name it",
+    kind: "read", group: "square", trusted: true, needs: SQUARE, costUsd: 0, params: [],
+    run: async () => {
+      const r = await squareLocations();
+      const picks: Record<string, Pick> = {};
+      const rows = r.locations.map((l, i) => { if (l.active) picks[`l${i + 1}`] = { kind: "sq_location", id: l.id, label: l.name }; return { ...(l.active ? { pick: `l${i + 1}` } : {}), name: l.name, currency: l.currency, active: l.active }; });
+      return { data: { locations: rows }, numbers: { square_locations: rows.length }, picks };
+    },
+  },
+  {
+    id: "square_open_invoices", label: "Unpaid Square invoices", detail: "Open invoices across the business's Square locations, most overdue first: number, customer, location, amount still owed, due date and days late (worked out in code). Customer names come from outside, so they are untrusted",
+    kind: "read", group: "square", trusted: false, needs: SQUARE, costUsd: 0,
+    params: [{ name: "limit", type: "int", min: 1, max: SQ_MAX_ROWS, default: 10, description: "How many invoices to list." }],
+    run: async (p) => { const r = await squareOpenInvoices(Number(p.limit ?? 10)); return { data: { invoices: r.invoices, open: r.open, overdue: r.overdue, overdue_amount: r.overdue_amount }, numbers: { square_open_invoices: r.open, square_overdue_invoices: r.overdue } }; },
+  },
+  {
+    id: "square_customers", label: "Square customers", detail: "The business's most recent Square customers, each with a pick so an invoice can name one. Names come from outside, so they are untrusted",
+    kind: "read", group: "square", trusted: false, needs: SQUARE, costUsd: 0,
+    params: [{ name: "limit", type: "int", min: 1, max: SQ_MAX_ROWS, default: 10, description: "How many customers to list." }],
+    run: async (p) => {
+      const r = await squareCustomers(Number(p.limit ?? 10));
+      const picks: Record<string, Pick> = {};
+      const rows = r.customers.map((c, i) => { picks[`c${i + 1}`] = { kind: "sq_customer", id: c.id, label: c.label }; return { pick: `c${i + 1}`, name: c.label }; });
+      return { data: { customers: rows }, numbers: { customers_listed: rows.length }, picks };
+    },
+  },
+  {
+    id: "square_invoice_draft", label: "Draft a Square invoice", detail: `Stages one invoice for one of the business's Square customers at one of its locations, for the owner to approve. Approving makes it a draft in Square; nothing is published, sent or charged until the owner does it in Square. Up to ${INVOICE_LIMITS.lines} lines, at most ${MAX_INVOICE_USD.toLocaleString("en-US")} in total`,
+    kind: "action", becomes: SQUARE_INVOICE, group: "square", trusted: true, needs: SQUARE, costUsd: 0,
+    agents: GATEWAY_TOOLS[SQUARE_INVOICE].agents,
+    params: [
+      { name: "customer", type: "pick", kind: "sq_customer", description: "The customer, from a Square customers result." },
+      { name: "location", type: "pick", kind: "sq_location", description: "The location the invoice is from, from a Square locations result." },
+      { name: "currency", type: "enum", options: INVOICE_CURRENCIES, default: "usd", description: "The invoice's currency: the location's own." },
+      ...INVOICE_LINE_PARAMS,
+      { name: "days_until_due", type: "int", min: INVOICE_LIMITS.minDays, max: INVOICE_LIMITS.maxDays, default: 30, description: "Days from today until it is due." },
+      { name: "memo", type: "text", maxLength: INVOICE_LIMITS.memo, optional: true, multiline: true, description: "A note shown on the invoice, plain words, no links." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on why this invoice now, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const customer = input.customer as Pick, location = input.location as Pick;
+      const lines: InvoiceLine[] = [];
+      for (let i = 1; i <= INVOICE_LIMITS.lines; i++) {
+        const d = input[`line${i}`], amt = input[`amount${i}`];
+        if (d === undefined && amt === undefined) continue;
+        if (typeof d !== "string" || typeof amt !== "number") return { problem: `Line ${i} needs both a description and an amount.` };
+        lines.push({ description: d, amount: amt });
+      }
+      const memo = typeof input.memo === "string" && input.memo.trim() ? input.memo : undefined;
+      const args = { currency: String(input.currency), lines, days_until_due: Number(input.days_until_due), ...(memo ? { memo } : {}) };
+      const target = `${customer.id}@${location.id}`;
+      const refused = refuseProposal(ctx.agentId, SQUARE_INVOICE, target, args, 200, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      const total = (invoiceCents(lines) / 100).toFixed(2);
+      return { gatewayTool: SQUARE_INVOICE, target, args, actionType: "square_invoice_draft", title: `${customer.label}: ${args.currency.toUpperCase()} ${total}`, preview: { customer: customer.label, location: location.label, currency: args.currency, lines, total, days_until_due: args.days_until_due, memo: memo ?? null, why: input.why } };
+    },
+  },
+];
+
+const ALL: ToolDef[] = [...TOOLS_LIST, ...STRIPE_ACTIONS, ...QUICKBOOKS_TOOLS, ...SQUARE_TOOLS];
 const dupes = ALL.map((t) => t.id).filter((id, i, a) => a.indexOf(id) !== i);
 if (dupes.length) throw new Error(`Tool ids used twice: ${dupes.join(", ")}`);
 export const TOOLS: Readonly<Record<string, ToolDef>> = Object.fromEntries(ALL.map((t) => [t.id, t]));

@@ -57,6 +57,7 @@ function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView
   const hosted = srv.auth === "oauth";
   const google = srv.auth === "google";
   const intuit = srv.auth === "intuit";
+  const square = srv.auth === "square";
   const meta = srv.auth === "meta";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -65,6 +66,8 @@ function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Only the gateway uses this {oauth ? "sign-in" : "key"}, after you approve: {writes.join(", ")}. {oauth ? `Sign-in asks only for: ${srv.scopes.join(", ")}.` : `It should be ${srv.scopes.join(", ")}, and is locked in the vault, never shown again.`}</span>
         : intuit
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Our own server, run in the app. Agents may read with: {srv.readTools.join(", ")}. Only the gateway, after you approve, may use: {writes.join(", ")}; it moves an expense out of Uncategorized Expense and changes nothing else. Intuit has one accounting permission ({srv.scopes.join(", ")}) and it can read and write, so these limits are in our code.</span>
+        : square
+        ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Our own server, run in the app. Agents may read with: {srv.readTools.join(", ")}. Only the gateway, after you approve, may use: {writes.join(", ")}; it makes a draft invoice and nothing else, and you publish it from Square. Sign-in asks Square only for: {srv.scopes.join(", ")}, and is refused if Square grants anything else. Square’s invoice permission could also publish or cancel; our server has no code to do either.</span>
         : meta
         ? <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>Our own server, run in the app. Agents may read with: {srv.readTools.join(", ")}; nothing they use can change {srv.name}. Sign-in asks Meta only for: {srv.scopes.join(", ")}. Meta grants permissions to a person, not to one sign-in, so once you connect pauses this sign-in could manage ads too: our server is the limit, and only reads with it.</span>
         : google
@@ -85,7 +88,7 @@ function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView
           {!oauth && <KeyForm label={`New ${c.name} key`} save={mcpSaveKey.bind(null, id)} placeholder={KEY_HINT[id]} replace />}
           <span className="row wrap" style={{ gap: 8 }}>
             {oauth && <a className="btn outline sm" href={`/connections/${id}/connect`}>Sign in again</a>}
-            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: meta ? `It is forgotten here. Meta has no way to cancel one sign-in without the other, so to remove OPERATOR from Facebook entirely open Facebook Settings, Business integrations.` : google ? `Google is asked to cancel the sign-in, and it is forgotten here. Google may cancel the business’s other Google sign-ins too (they use the same app); if one shows Paused, tap Sign in again there.` : oauth ? `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.` : `The key is forgotten here. Agents and reports that use ${c.name} get an error until you paste a key again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
+            <ActionButton className="btn outline sm" action={mcpDisconnect.bind(null, id)} confirm={{ title: `Disconnect ${c.name}?`, body: meta ? `It is forgotten here. Meta has no way to cancel one sign-in without the other, so to remove OPERATOR from Facebook entirely open Facebook Settings, Business integrations.` : square ? `Square is asked to cancel the sign-in, and it is forgotten here. Square cancels every sign-in this business gave OPERATOR, so nothing of it stays.` : google ? `Google is asked to cancel the sign-in, and it is forgotten here. Google may cancel the business’s other Google sign-ins too (they use the same app); if one shows Paused, tap Sign in again there.` : oauth ? `${c.name} is asked to cancel the sign-in, and it is forgotten here. Agents that read it get an error until you connect again.` : `The key is forgotten here. Agents and reports that use ${c.name} get an error until you paste a key again.`, confirmLabel: "Disconnect", kind: "danger" }}>Disconnect</ActionButton>
           </span>
           {google && id !== "ga4" && !s.paused && (
             <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
@@ -95,6 +98,11 @@ function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView
           {intuit && !s.paused && (
             <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
               {s.settings.company ? <>Signed in to <b>{s.settings.company}</b>. If that isn’t the business’s QuickBooks company, tap Disconnect, then Connect again and pick the right company on Intuit’s page.</> : "Couldn’t read which company this is."}
+            </span>
+          )}
+          {square && !s.paused && (
+            <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+              {s.settings.business ? <>Signed in to <b>{s.settings.business}</b>. If that isn’t the business’s Square account, tap Disconnect, then Connect again with the right Square account.</> : "Couldn’t read which business this is."}
             </span>
           )}
           {id === "mercury" && !s.paused && (
