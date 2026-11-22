@@ -7,7 +7,7 @@ import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-
 import { CUSTOMER_ID, INVOICE_FIELDS, refuseInvoice } from "@/core/stripe-rules";
 import { CATEGORIZE_FIELDS, QBO_CATEGORIZE, expenseTarget, refuseCategorize } from "@/core/quickbooks-rules";
 import { SQUARE_INVOICE, SQUARE_INVOICE_FIELDS, SQUARE_INVOICE_GRANT, refuseSquareInvoice, squareTarget } from "@/core/square-rules";
-import { SHOPIFY_DISCOUNT, SHOPIFY_DISCOUNT_GRANT, DISCOUNT_LIMITS, discountTarget, refuseDiscount, SHOPIFY_COPY, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP, SHOPIFY_SHIP_GRANT, refuseShip, SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
+import { SHOPIFY_REFUND, SHOPIFY_REFUND_GRANT, REFUND_LIMITS, refuseRefund, SHOPIFY_DISCOUNT, SHOPIFY_DISCOUNT_GRANT, DISCOUNT_LIMITS, discountTarget, refuseDiscount, SHOPIFY_COPY, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP, SHOPIFY_SHIP_GRANT, refuseShip, SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
 import { NOTE_FIELDS, orderIdOk, refuseNote } from "@/core/woo-rules";
@@ -32,7 +32,7 @@ export const DRAFT_EMAIL = "gmail.create_draft";
  * Tags added to one Shopify order or customer (docs/shopify-actions.md). Adds only; undo removes
  * exactly the tags it added. The target is a Shopify id from a Recent orders result.
  */
-export { SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS };
+export { SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_REFUND, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS };
 export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
 /**
  * A draft invoice in the business's Stripe, to one of its own Stripe customers (card 240). Stripe holds
@@ -225,7 +225,16 @@ export const TOOLS = {
     fields: ["title", "percent", "uses", "starts", "ends"],
     // money off every order that uses it: an approval card for good, inside the caps (decided 2026-11-22)
     promotable: false,
+  },  [SHOPIFY_REFUND]: {
+    // any agent an approver grants "Refund an order" on the Tools step; never a proposal
+    agents: "granted",
+    grant: SHOPIFY_REFUND_GRANT,
+    tier: "Draft" as Tier,
+    fields: ["whole", "lines", "amount", "refunded_before"],
+    // money back to a customer, with no undo: an approval card for good, inside the caps (decided 2026-11-22)
+    promotable: false,
   },
+
 
 } as const satisfies Record<string, ActionDef>;
 export type ToolName = keyof typeof TOOLS;
@@ -311,6 +320,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (tool === QBO_CATEGORIZE) return expenseTarget(target) ? refuseCategorize(args) : "The target is not a QuickBooks expense line.";
   if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
   if (tool === SHOPIFY_STOCK) return stockTarget(target) ? refuseStock(args) : "The target is not a Shopify inventory item at a location.";
+  if (tool === SHOPIFY_REFUND) return shopifyTarget(target)?.kind === "Order" ? refuseRefund(args) : "The target is not a Shopify order id.";
   if (tool === SHOPIFY_DISCOUNT) return discountTarget(target) ? refuseDiscount(args) : "The target is not a discount code.";
   if (tool === SHOPIFY_SHIP) return shopifyTarget(target)?.kind === "Order" ? refuseShip(args) : "The target is not a Shopify order id.";
   if (tool === SHOPIFY_COPY) return productTarget(target) ? refuseCopy(args) : "The target is not a Shopify product id.";
@@ -381,7 +391,7 @@ export const planIsEmpty = (p: Plan) => !p.attach && !p.categoryId && !p.note;
 // a limit in code that no row can pass. "looser" says which way is riskier: a bigger purchase
 // cap, more emails, or a shorter undo window. Tightening is always allowed.
 
-export type CapKey = "max_purchase_usd" | "max_monthly_spend_usd" | "max_emails_per_day" | "undo_window_minutes" | "max_discount_percent" | "max_discount_uses" | "max_discount_days";
+export type CapKey = "max_purchase_usd" | "max_monthly_spend_usd" | "max_emails_per_day" | "undo_window_minutes" | "max_discount_percent" | "max_discount_uses" | "max_discount_days" | "max_refund_usd" | "max_monthly_refunds_usd";
 export interface CapDef {
   label: string;
   /** The owner's starting value (Nov 11), used when the row is missing or unreadable. */
@@ -403,6 +413,8 @@ export const CAPS: Record<CapKey, CapDef> = {
   max_discount_percent: { label: "Discount code: percent off", start: DISCOUNT_LIMITS.percent, looser: "up", limit: DISCOUNT_LIMITS.percent, safest: 0, unit: "count", about: "The most off any discount code an agent makes. Every code covers all products, once per customer." },
   max_discount_uses: { label: "Discount code: uses", start: DISCOUNT_LIMITS.uses, looser: "up", limit: DISCOUNT_LIMITS.uses, safest: 0, unit: "count", about: "The most times one agent-made code can be used. Every code has a use limit." },
   max_discount_days: { label: "Discount code: days", start: DISCOUNT_LIMITS.days, looser: "up", limit: DISCOUNT_LIMITS.days, safest: 0, unit: "count", about: "The longest an agent-made code can run, start to end. Every code has an end date." },
+  max_refund_usd: { label: "Refund: per refund", start: REFUND_LIMITS.perRefund, looser: "up", limit: REFUND_LIMITS.perRefund, safest: 0, unit: "usd", about: "The most one Shopify refund can be, worked out by Shopify. Every refund waits for you." },
+  max_monthly_refunds_usd: { label: "Refunds: per calendar month", start: REFUND_LIMITS.monthly, looser: "up", limit: REFUND_LIMITS.monthly, safest: 0, unit: "usd", about: "All refunds agents made this calendar month together, counted from applied refunds." },
 };
 export const CAP_KEYS = Object.keys(CAPS) as CapKey[];
 

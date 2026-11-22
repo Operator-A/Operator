@@ -185,7 +185,7 @@ export const SCOPE_WORDS: Record<string, string> = {
   APPOINTMENTS_READ: "see your bookings in Square Appointments, counted by day. It can’t book, move or cancel one",
   APPOINTMENTS_ALL_READ: "see bookings for every staff member and location, not only your own. Customer names and contact details aren’t read",
   "the app’s read scopes": "read orders, products and stock",
-  write_orders: "add tags to an order, only after you approve",
+  write_orders: "add tags to an order, and refund an order to its original payment inside your refund caps on Settings, each only after you approve",
   write_customers: "add tags to a customer, only after you approve",
   write_inventory: "set an item’s stock count at a location, only after you approve each change",
   write_products: "rewrite a product’s description and SEO text, after you approve (later on its own, once it has earned trust); never prices or deletes",

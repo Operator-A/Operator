@@ -140,6 +140,44 @@ action causes, and it is Shopify's template, not text a model wrote.
 - Not in this slice: shipping part of an order, more than one location, a custom carrier or link,
   editing or cancelling a fulfillment, and orders a fulfillment app handles.
 
+### `shopify.refund` (slice 6)
+Refunds one order, all of it or some items, back to the order's own payments. Write tool
+`shopify_refund`, mutation `refundCreate` (`REFUND_CREATE`) with `notify: true` and an idempotency key
+written in the document. Shopify works out the amount (`suggestedRefund`), never a model, and emails the
+customer its own refund confirmation (decided 2026-11-22). Items are never restocked (`NO_RESTOCK`). No
+custom amount, gift card or store credit can be sent.
+
+- **Target**: an order gid, always a pick from an Orders to refund result (`shopify_orders_to_refund`),
+  never typed by the model. The pick carries what the order had refunded, Shopify's whole-order refund,
+  and each item's line, refundable quantity and price per unit after discounts with tax.
+- **Args**: exactly `whole` (true for the whole order with shipping, false for some items), `lines`
+  (none for the whole order; else 1 to 20 `{ line, qty }`), `amount` (dollars and cents, worked out in
+  code from the pick: Shopify's whole-order refund, or quantity times price per unit) and
+  `refunded_before` (`refuseRefund`).
+- **Caps** (decided 2026-11-22): at most $100 per refund and $500 per calendar month in the business's
+  time zone (`REFUND_LIMITS`). The owner can set each lower on Settings (`max_refund_usd`,
+  `max_monthly_refunds_usd` in `CAPS`), never higher. The month counts applied refunds' amounts
+  (`monthRefundedUsd`), shown on Settings next to the cap.
+- **What can be refunded here** (`refundable`): paid or partly refunded, not cancelled or a test order, in
+  US dollars (the caps are in dollars), from the last 60 days. Any other order shows in Orders to refund
+  with the reason and no pick: the owner does it in Shopify.
+- **Scope**: `write_orders`, already asked for by tags. Shopify has no narrower refund scope, so our server
+  is the limit.
+- **Apply**: the gateway checks the per-refund cap again and what's left of the month (`refuseRefundMonth`),
+  then the server reads the live order and Shopify's refund for these items (`REFUND_OF`). It is refused
+  and nothing is written if the order can't be refunded here now, refunded anything since the card was
+  staged, Shopify's amount is more than the card's (plus 5 cents of rounding) or over what the caps allow
+  now, or any of Shopify's suggested transactions isn't back to an original payment (`planRefund`). The
+  transactions sent are exactly the ones Shopify suggested. Records `diff_json` and `result_json`
+  (`amount_usd`, `customer_emailed: true`). No undo: money sent back can't be taken back, so `undo_json`
+  is null.
+- **Card**: the order, the whole order or each item and quantity, the amount, what it had refunded before,
+  and a line saying the customer gets the money and Shopify's email.
+- **Draft only, never promoted** (decided 2026-11-22): it moves money. Granted only by an approver on the
+  Tools step ("Refund an order").
+- Not in this slice: a custom amount, refunding shipping alone, restocking, store credit or gift cards,
+  orders in other currencies or older than 60 days, and returns.
+
 ### `shopify.create_discount` (slice 4)
 Creates one percent-off discount code. Write tool `shopify_create_discount`, mutation
 `discountCodeBasicCreate` (`DISCOUNT_CREATE`). Only the title, code, percent, start and end and use limit
@@ -172,12 +210,11 @@ list can be sent.
 
 ## Not built (each its own slice, with a spec first)
 
-Product titles, refunds (moves money: needs per-refund and monthly caps from
-the owner). Price changes, gift cards, cancelling orders and any delete stay out.
+Product titles. Price changes, gift cards, cancelling orders and any delete stay out.
 
 ## Setting it up in Shopify
 
-The write scopes are `write_orders` and `write_customers` (tags), `write_inventory` (stock),
+The write scopes are `write_orders` and `write_customers` (tags; `write_orders` also covers refunds), `write_inventory` (stock),
 `write_products` (product copy) and `write_merchant_managed_fulfillment_orders` (mark shipped; add
 `read_merchant_managed_fulfillment_orders` too) and `write_discounts` (discount codes; add
 `read_discounts` too). Add only the ones for the actions you'll grant.

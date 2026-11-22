@@ -7,7 +7,7 @@ import { CTX_META, callThrough, createHost, listThrough, served } from "../core/
 import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
 import { SHOPIFY_DOCS, SHOPIFY_QUERIES, WHO, assertReadOnly, shopifyKeyKind, shopifyVariables, scopesBeyond } from "../core/shopify-queries";
-import { DISCOUNT_CREATE, DISCOUNT_OF, SHOPIFY_DISCOUNT, SHOPIFY_DISCOUNT_TOOL, agentLiveCount, discountTarget, planDiscount, COPY_OF, COPY_SET, SHIP_CREATE, SHIP_OF, SHOPIFY_SHIP, SHOPIFY_SHIP_TOOL, planShip, shippable, type ShipOrder, SHOPIFY_COPY, SHOPIFY_COPY_TOOL, SHOPIFY_MUTATIONS, SHOPIFY_STOCK, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_OF, assertFixedMutation, mayUndoCopy, mayUndoStock, planCopy, productTarget, planStock, planTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "../core/shopify-actions";
+import { REFUND_CREATE, REFUND_OF, REFUND_LIMITS, SHOPIFY_REFUND, SHOPIFY_REFUND_TOOL, planRefund, refundable, refuseRefund, refuseRefundMonth, type RefundOrder, DISCOUNT_CREATE, DISCOUNT_OF, SHOPIFY_DISCOUNT, SHOPIFY_DISCOUNT_TOOL, agentLiveCount, discountTarget, planDiscount, COPY_OF, COPY_SET, SHIP_CREATE, SHIP_OF, SHOPIFY_SHIP, SHOPIFY_SHIP_TOOL, planShip, shippable, type ShipOrder, SHOPIFY_COPY, SHOPIFY_COPY_TOOL, SHOPIFY_MUTATIONS, SHOPIFY_STOCK, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_OF, assertFixedMutation, mayUndoCopy, mayUndoStock, planCopy, productTarget, planStock, planTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "../core/shopify-actions";
 import { checkGmailArgs, draftRaw, isPlainAddress, readMail } from "../core/gmail-rules";
 import { GA4_TOOLS, checkGa4Args, dateRange, rate, readChannels, readOverview, readProperties, readTopPages, reportBodies } from "../core/ga4-rules";
 import { checkReceiptArgs, looksLikeMercuryToken } from "../core/mercury-rules";
@@ -288,9 +288,9 @@ assert.equal(MCP_SERVERS.shopify.auth, "token");
 assert.deepEqual([...MCP_SERVERS.shopify.readTools].sort(), Object.keys(SHOPIFY_DOCS).sort(), "every Shopify tool runs exactly one fixed query");
 // store actions (docs/shopify-actions.md): each write tool runs one fixed mutation, only the gateway reaches it
 assert.deepEqual(MCP_SERVERS.shopify.reportTools, [], "no report tools on Shopify");
-assert.deepEqual(MCP_SERVERS.shopify.writeTools, [{ tool: SHOPIFY_TAGS_TOOL, actionType: SHOPIFY_TAGS }, { tool: SHOPIFY_STOCK_TOOL, actionType: SHOPIFY_STOCK }, { tool: SHOPIFY_COPY_TOOL, actionType: SHOPIFY_COPY }, { tool: SHOPIFY_SHIP_TOOL, actionType: SHOPIFY_SHIP }, { tool: SHOPIFY_DISCOUNT_TOOL, actionType: SHOPIFY_DISCOUNT }], "five store actions so far: tags, stock, product copy, mark shipped and discount codes");
+assert.deepEqual(MCP_SERVERS.shopify.writeTools, [{ tool: SHOPIFY_TAGS_TOOL, actionType: SHOPIFY_TAGS }, { tool: SHOPIFY_STOCK_TOOL, actionType: SHOPIFY_STOCK }, { tool: SHOPIFY_COPY_TOOL, actionType: SHOPIFY_COPY }, { tool: SHOPIFY_SHIP_TOOL, actionType: SHOPIFY_SHIP }, { tool: SHOPIFY_DISCOUNT_TOOL, actionType: SHOPIFY_DISCOUNT }, { tool: SHOPIFY_REFUND_TOOL, actionType: SHOPIFY_REFUND }], "six store actions so far: tags, stock, product copy, mark shipped, discount codes and refunds");
 assert.deepEqual(Object.keys(SHOPIFY_MUTATIONS).sort(), MCP_SERVERS.shopify.writeTools.map((w) => w.tool).sort(), "every write tool has exactly one fixed mutation, and no mutation without a write tool");
-for (const doc of Object.values(SHOPIFY_MUTATIONS)) { assert.ok(/^\s*mutation\s/.test(doc), "a fixed mutation"); assert.ok(!/\b(Delete|delete|Remove|remove|cancel|refund|Refund)\w*\s*\(/.test(doc), "no delete, remove, cancel or refund"); assert.throws(() => assertReadOnly(doc), "the read path refuses a store action"); }
+for (const doc of Object.values(SHOPIFY_MUTATIONS)) { assert.ok(/^\s*mutation\s/.test(doc), "a fixed mutation"); assert.ok(!/\b(Delete|delete|Remove|remove|cancel|Cancel)\w*\s*\(/.test(doc), "no delete, remove or cancel"); if (doc !== REFUND_CREATE) assert.ok(!/refund/i.test(doc), "only the refund action refunds"); assert.throws(() => assertReadOnly(doc), "the read path refuses a store action"); }
 assert.ok(mayWrite("shopify", SHOPIFY_TAGS_TOOL) && !mayCall("shopify", SHOPIFY_TAGS_TOOL) && !mayReport("shopify", SHOPIFY_TAGS_TOOL), "only the gateway can reach the tag tool");
 assert.ok(!mayWrite("shopify", "shopify_orders_between") && !mayWrite("shopify", "tagsRemove") && !mayWrite("shopify", "productDelete"), "reads aren't writes; nothing else is a write");
 assert.throws(() => assertFixedMutation("mutation M { productDelete(input: {id: \"1\"}) { deletedProductId } }"), "any other mutation is refused");
@@ -364,6 +364,58 @@ assert.deepEqual(planShip(["gid://shopify/FulfillmentOrder/2", "gid://shopify/Fu
 assert.ok("refuse" in planShip(["gid://shopify/FulfillmentOrder/1"], ord([fo(1), fo(2)])), "an order whose fulfillment orders changed since the card is refused");
 assert.ok("refuse" in planShip(["gid://shopify/FulfillmentOrder/1"], ord([fo(1)], { cancelledAt: "2026-11-01T00:00:00Z" })), "an order that can't be marked here any more is refused");
 assert.ok("refuse" in planShip(["gid://shopify/FulfillmentOrder/1"], null), "an order that's gone is refused");
+// refunds (slice 6): one recent order back to its original payment, Shopify's amount, inside caps in code
+assert.ok(mayWrite("shopify", SHOPIFY_REFUND_TOOL) && !mayCall("shopify", SHOPIFY_REFUND_TOOL) && !mayReport("shopify", SHOPIFY_REFUND_TOOL), "only the gateway can reach the refund tool");
+assert.doesNotThrow(() => assertReadOnly(REFUND_OF), "the live check before a refund is a read");
+assert.ok(/refundCreate\(input: \{ orderId: \$orderId, notify: true, note: \$note, refundLineItems: \$lines, shipping: \$shipping, transactions: \$transactions \}\) @idempotent\(key: \$key\)/.test(REFUND_CREATE), "the refund mutation names only the order, items, shipping, Shopify's transactions, Shopify's own email and an idempotency key");
+assert.ok(!/\$notify|currency|giftCard|storeCredit|refundMethods|refundDuties|orderEditCommit|returnCreate/i.test(REFUND_CREATE), "no email switch, currency, gift card, store credit, duties or return can be sent");
+assert.ok(srv.includes("planRefund(") && srv.includes("refuseRefund(") && srv.includes('restockType: "NO_RESTOCK"'), "the server re-checks the args and the live order, and never restocks");
+assert.ok(!/\b(email|phone|address|firstName|lastName|displayName|customer)\b/.test(REFUND_OF), "the live refund read has no customer details");
+assert.equal(REFUND_LIMITS.perRefund, 100); assert.equal(REFUND_LIMITS.monthly, 500);
+const L1 = "gid://shopify/LineItem/11", L2 = "gid://shopify/LineItem/12";
+assert.equal(refuseRefund({ whole: true, lines: [], amount: "42.10", refunded_before: "0.00" }), null);
+assert.equal(refuseRefund({ whole: false, lines: [{ line: L1, qty: 2 }, { line: L2, qty: 1 }], amount: "30.00", refunded_before: "5.00" }), null);
+for (const [bad, why] of [
+  [{ whole: true, lines: [], amount: "42.10", refunded_before: "0.00", gateway: "x" }, "an extra field"],
+  [{ whole: true, lines: [{ line: L1, qty: 1 }], amount: "1.00", refunded_before: "0.00" }, "a whole refund naming items"],
+  [{ whole: false, lines: [], amount: "1.00", refunded_before: "0.00" }, "some items naming none"],
+  [{ whole: false, lines: [{ line: "gid://shopify/Product/1", qty: 1 }], amount: "1.00", refunded_before: "0.00" }, "not a line item"],
+  [{ whole: false, lines: [{ line: L1, qty: 1.5 }], amount: "1.00", refunded_before: "0.00" }, "a part quantity"],
+  [{ whole: false, lines: [{ line: L1, qty: 1 }, { line: L1, qty: 1 }], amount: "1.00", refunded_before: "0.00" }, "an item twice"],
+  [{ whole: true, lines: [], amount: "100.01", refunded_before: "0.00" }, "over $100"],
+  [{ whole: true, lines: [], amount: "0.00", refunded_before: "0.00" }, "nothing"],
+  [{ whole: true, lines: [], amount: "5", refunded_before: "0.00" }, "no cents"],
+] as const) assert.ok(refuseRefund(bad as Record<string, unknown>) !== null, why);
+assert.ok(refuseRefund({ whole: true, lines: [], amount: "60.00", refunded_before: "0.00" }, { perRefund: 50 }) !== null, "the owner's lower cap holds");
+assert.equal(refuseRefund({ whole: true, lines: [], amount: "100.00", refunded_before: "0.00" }, { perRefund: 900 }), null, "a cap row above the code limit never passes it");
+assert.ok(refuseRefund({ whole: true, lines: [], amount: "100.01", refunded_before: "0.00" }, { perRefund: 900 }) !== null);
+assert.equal(refuseRefundMonth(5000, 45000), null); assert.ok(refuseRefundMonth(5001, 45000) !== null, "over $500 in the month");
+assert.ok(refuseRefundMonth(2000, 0, { monthly: 10 }) !== null, "the owner's lower monthly cap holds");
+const now6 = new Date("2026-11-22T12:00:00Z");
+const ro = (over: Partial<RefundOrder> = {}, tx: Partial<NonNullable<RefundOrder["suggestedRefund"]>["suggestedTransactions"][number]>[] = [{}], amt = "42.10"): RefundOrder => ({
+  id: "gid://shopify/Order/9", name: "#1009", createdAt: "2026-11-10T00:00:00Z", cancelledAt: null, test: false, displayFinancialStatus: "PAID", currencyCode: "USD",
+  totalRefundedSet: { shopMoney: { amount: "0.00" } },
+  suggestedRefund: { amountSet: { shopMoney: { amount: amt, currencyCode: "USD" } }, refundLineItems: [], suggestedTransactions: tx.map((t) => ({ gateway: "shopify_payments", kind: "SUGGESTED_REFUND", amountSet: { shopMoney: { amount: amt } }, parentTransaction: { id: "gid://shopify/OrderTransaction/1" }, ...t })) },
+  ...over,
+});
+assert.equal(refundable(ro(), now6), null);
+assert.equal(refundable(ro({ cancelledAt: "2026-11-11T00:00:00Z" }), now6), "cancelled");
+assert.equal(refundable(ro({ test: true }), now6), "a test order");
+assert.equal(refundable(ro({ displayFinancialStatus: "REFUNDED" }), now6), "refunded already");
+assert.equal(refundable(ro({ displayFinancialStatus: "PENDING" }), now6), "not paid");
+assert.ok(refundable(ro({ currencyCode: "CAD" }), now6)?.includes("US dollars"));
+assert.ok(refundable(ro({ createdAt: "2026-09-01T00:00:00Z" }), now6)?.includes("60 days"));
+const whole6 = { whole: true, lines: [], amount: "42.10", refunded_before: "0.00" };
+assert.deepEqual(planRefund(whole6, ro(), 10000, now6), { write: true, amountCents: 4210 });
+assert.deepEqual(planRefund(whole6, ro({}, [{}], "42.15"), 10000, now6), { write: true, amountCents: 4215 }, "a few cents of rounding are allowed");
+assert.ok("refuse" in planRefund(whole6, ro({}, [{}], "42.16"), 10000, now6), "Shopify's amount over the card's is refused");
+assert.ok("refuse" in planRefund(whole6, ro(), 4000, now6), "over what the caps allow now is refused");
+assert.ok("refuse" in planRefund(whole6, ro({ totalRefundedSet: { shopMoney: { amount: "1.00" } } }), 10000, now6), "refunded since the card is refused");
+assert.ok("refuse" in planRefund(whole6, ro({}, [{ parentTransaction: null }]), 10000, now6), "a refund with no original payment is refused");
+assert.ok("refuse" in planRefund(whole6, ro({}, [{ gateway: "gift_card" }]), 10000, now6), "back to a gift card is refused");
+assert.ok("refuse" in planRefund(whole6, ro({}, [{ amountSet: { shopMoney: { amount: "40.00" } } }]), 10000, now6), "transactions that don't add up are refused");
+assert.ok("refuse" in planRefund(whole6, ro({ cancelledAt: "2026-11-11T00:00:00Z" }), 10000, now6), "an order that can't be refunded here now is refused");
+assert.ok("refuse" in planRefund(whole6, null, 10000, now6), "an order that's gone is refused");
 assert.ok(srv.includes("scopesBeyond(w.scopes, SHOPIFY_WRITE_SCOPES)"), "the paste check refuses scopes beyond the profile");
 for (const [tool, doc] of Object.entries(SHOPIFY_DOCS)) { assert.doesNotThrow(() => assertReadOnly(doc), tool); assert.ok(!/\b(email|phone|address|firstName|lastName|displayName)\b/.test(doc), `${tool} reads no customer details`); }
 assert.doesNotThrow(() => assertReadOnly(WHO));
