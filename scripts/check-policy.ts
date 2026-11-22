@@ -1,6 +1,6 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
-import { claimsIn, copyFacts, copyHtml, copyPrint, numbersIn, refuseCopyFacts } from "../core/shopify-actions";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { CARRIERS, normTracking, claimsIn, copyFacts, copyHtml, copyPrint, numbersIn, refuseCopyFacts } from "../core/shopify-actions";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -98,6 +98,28 @@ t("stock refused with an unknown reason", st({ ...stockOk, reason: "promotion" }
 t("stock refused with an extra field", st({ ...stockOk, location: "gid://shopify/Location/9" }) !== null);
 t("stock refused without the count it was staged against", st({ available: 40, reason: "received" }) !== null);
 t("stock refused on an order", st(stockOk, "gid://shopify/Order/1") !== null);
+// Shopify mark shipped (docs/shopify-actions.md, slice 5)
+const ordr = "gid://shopify/Order/7", shipOk = { fulfillment_orders: ["gid://shopify/FulfillmentOrder/1"], carrier: "UPS", tracking: "1Z999AA10123456784" };
+const shp = (args: Record<string, unknown>, target = ordr) => refuseProposal("b_ops_1", SHOPIFY_SHIP, target, args, 200, ["shopify_orders_to_ship", "shopify_ship"]);
+t("ship is Draft only and never promoted", TOOLS[SHOPIFY_SHIP].tier === "Draft" && !TOOLS[SHOPIFY_SHIP].promotable);
+t("ship is a granted action, named by the builder's tool", TOOLS[SHOPIFY_SHIP].agents === "granted" && TOOLS[SHOPIFY_SHIP].grant === "shopify_ship");
+t("ship refused for an agent that wasn't granted it", refuseProposal("b_ops_1", SHOPIFY_SHIP, ordr, shipOk, 200, ["shopify_orders_to_ship"]) !== null);
+t("ship ok", shp(shipOk) === null);
+for (const [carrier, tracking] of [["USPS", "9400111899223197428490"], ["USPS", "EA123456789US"], ["FedEx", "123456789012"], ["DHL Express", "1234567890"], ["Canada Post", "1234567890123456"], ["Royal Mail", "AB123456789GB"], ["Australia Post", "AB123456789AU"]]) t(`ship ok with a ${carrier} number`, shp({ ...shipOk, carrier, tracking }) === null);
+t("every carrier has a number shape", CARRIERS.every((c) => c.re instanceof RegExp && c.shape.length > 0));
+t("tracking numbers drop spaces and dashes", normTracking(" 1z 999-aa1 0123456784 ") === "1Z999AA10123456784");
+t("ship refused with spaces left in the number", shp({ ...shipOk, tracking: "1Z999AA1 0123456784" }) !== null);
+t("ship refused with a number in another carrier's shape", shp({ ...shipOk, carrier: "FedEx" }) !== null);
+t("ship refused with a made-up carrier", shp({ ...shipOk, carrier: "Speedy Couriers" }) !== null);
+t("ship refused with no fulfillment orders", shp({ ...shipOk, fulfillment_orders: [] }) !== null);
+t("ship refused with a fulfillment order that isn't one", shp({ ...shipOk, fulfillment_orders: ["gid://shopify/Order/1"] }) !== null);
+t("ship refused with a repeated fulfillment order", shp({ ...shipOk, fulfillment_orders: ["gid://shopify/FulfillmentOrder/1", "gid://shopify/FulfillmentOrder/1"] }) !== null);
+t("ship refused with more than 10 fulfillment orders", shp({ ...shipOk, fulfillment_orders: Array.from({ length: 11 }, (_, i) => `gid://shopify/FulfillmentOrder/${i + 1}`) }) !== null);
+t("ship refused with a tracking link", shp({ ...shipOk, url: "https://example.com/track" }) !== null);
+t("ship refused with a customer message", shp({ ...shipOk, message: "On its way!" }) !== null);
+t("ship refused with notify switched", shp({ ...shipOk, notify: false }) !== null);
+t("ship refused on a customer", shp(shipOk, "gid://shopify/Customer/7") !== null);
+t("ship refused on a product", shp(shipOk, "gid://shopify/Product/7") !== null);
 // Shopify product copy (docs/shopify-actions.md, slice 3)
 const prod = "gid://shopify/Product/42", copyOk = { before: "0a1b2c3d", description: "A smooth everyday blend.\n\n- Easy to brew\n- Great with milk" };
 const pc = (args: Record<string, unknown>, target = prod) => refuseProposal("b_mkt_2", SHOPIFY_COPY, target, args, 200, ["shopify_product_copy", "shopify_copy"]);

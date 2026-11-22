@@ -9,9 +9,9 @@ import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import { settings } from "@/core/settings";
 import { DEFAULT_TZ } from "@/core/time";
 import { SHOPIFY_QUERIES, shopifyKeyKind, shopifyVariables, scopesBeyond } from "@/core/shopify-queries";
-import { COPY_OF, COPY_SET, SHOPIFY_COPY_TOOL, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_ADD, TAGS_OF, copyHtml, copyPrint, copyText, factsOf, planCopy, planStock, planTags, printOf, productTarget, refuseCopy, refuseCopyFacts, refuseStock, refuseTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "@/core/shopify-actions";
+import { COPY_OF, COPY_SET, SHIP_CREATE, SHIP_OF, SHIP_SCOPE, SHOPIFY_COPY_TOOL, SHOPIFY_SHIP_TOOL, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_ADD, TAGS_OF, copyHtml, copyPrint, copyText, factsOf, planCopy, planShip, planStock, planTags, printOf, productTarget, refuseCopy, refuseCopyFacts, refuseShip, refuseStock, refuseTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "@/core/shopify-actions";
 import { NO_FIELDS_KEY } from "@/core/shopify-rules";
-import type { CopyProduct } from "@/core/shopify-actions";
+import type { CopyProduct, ShipOrder } from "@/core/shopify-actions";
 import { shopifyMutate, shopifyQuery, whoIs } from "./shopify-api";
 
 const READS = MCP_SERVERS.shopify.readTools as readonly string[];
@@ -29,6 +29,10 @@ const WRITE_ABOUT: Record<string, { description: string; inputSchema: unknown }>
   [SHOPIFY_COPY_TOOL]: {
     description: "Sets a new description and/or SEO title and description on one product, only while its copy is still what the card was written against and only with facts in its Shopify data. Only the gateway calls it, after an approver approves or the trust ladder allows it.",
     inputSchema: { type: "object", required: ["target", "before"], properties: { target: { type: "string" }, before: { type: "string" }, description: { type: "string" }, seo_title: { type: "string" }, seo_description: { type: "string" } } },
+  },
+  [SHOPIFY_SHIP_TOOL]: {
+    description: "Marks every remaining item on one order shipped with one carrier and tracking number, only while its open fulfillment orders are still the ones the card was staged against. Shopify emails the customer its own shipping confirmation. Only the gateway calls it, after an approver approves.",
+    inputSchema: { type: "object", required: ["target", "fulfillment_orders", "carrier", "tracking", "key"], properties: { target: { type: "string" }, fulfillment_orders: { type: "array", items: { type: "string" } }, carrier: { type: "string" }, tracking: { type: "string" }, key: { type: "string" } } },
   },
 };
 
@@ -150,6 +154,34 @@ async function setCopy(key: string, raw: unknown): Promise<Record<string, unknow
   return { before, after, set: copyPrint(after.description_html, after.seo_title, after.seo_description), label };
 }
 
+type ShipMade = { fulfillmentCreate: { fulfillment: { id: string; status: string } | null; userErrors: { field?: string[]; message: string }[] } };
+
+/**
+ * Marks one order shipped: the inputs checked again, the app's live scopes, the live order (its open
+ * fulfillment orders must still be exactly the card's, shipped by the business itself from one location,
+ * not on hold), then Shopify's fulfillmentCreate with only those fulfillment order ids, the carrier and the
+ * number, keyed by the action's id so a retry never fulfills twice.
+ */
+async function markShipped(key: string, raw: unknown): Promise<Record<string, unknown>> {
+  const a = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const target = typeof a.target === "string" ? shopifyTarget(a.target) : null;
+  if (!target || target.kind !== "Order") throw new Error("the target isn't a Shopify order id");
+  if (!stockKeyOk(a.key)) throw new Error("a ship change needs the action's id as its idempotency key");
+  const args = { fulfillment_orders: a.fulfillment_orders, carrier: a.carrier, tracking: a.tracking };
+  const no = refuseShip(args);
+  if (no) throw new Error(no);
+  const { scopes } = await whoIs(key);
+  if (!scopes.includes(SHIP_SCOPE)) throw new Error(addScope(SHIP_SCOPE));
+  const live = (await shopifyQuery<{ order: ShipOrder | null }>(key, SHIP_OF, { id: target.gid })).order;
+  const label = live ? `order ${live.name}` : "order";
+  const plan = planShip(args.fulfillment_orders as string[], live && live.id === target.gid ? live : null);
+  if ("refuse" in plan) return { refused: plan.refuse, label };
+  const out = await shopifyMutate<ShipMade>(key, SHIP_CREATE, { fos: plan.fos.map((id) => ({ fulfillmentOrderId: id })), company: args.carrier, number: args.tracking, key: a.key });
+  const errs = out.fulfillmentCreate.userErrors ?? [];
+  if (errs.length) throw new Error(`Shopify refused to mark it shipped: ${errs.map((e) => e.message).join("; ").slice(0, 200)}`);
+  return { fulfillment: out.fulfillmentCreate.fulfillment?.id ?? null, label, carrier: args.carrier, tracking: args.tracking };
+}
+
 /** A JSON-RPC handler for one call, with the key the vault opened. */
 export function shopifyServer(key: string) {
   const reply = (id: unknown, result: unknown) => ({ jsonrpc: "2.0", id, result });
@@ -164,12 +196,12 @@ export function shopifyServer(key: string) {
       case "tools/list":
         return reply(id, { tools: [
           ...READS.map((name) => ({ name, description: TOOLS[name].description, inputSchema: TOOLS[name].inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })),
-          ...WRITES.map((name) => ({ name, ...WRITE_ABOUT[name], annotations: { readOnlyHint: false, destructiveHint: name === SHOPIFY_STOCK_TOOL, idempotentHint: true, openWorldHint: false } })),
+          ...WRITES.map((name) => ({ name, ...WRITE_ABOUT[name], annotations: { readOnlyHint: false, destructiveHint: name === SHOPIFY_STOCK_TOOL || name === SHOPIFY_SHIP_TOOL, idempotentHint: true, openWorldHint: false } })),
         ] });
       case "tools/call": {
         const name = typeof req.params?.name === "string" ? req.params.name : "";
         // integrations/mcp.ts lets only callWriteTool (the gateway) reach a write tool
-        const write = name === SHOPIFY_TAGS_TOOL ? addTags : name === SHOPIFY_STOCK_TOOL ? setStock : name === SHOPIFY_COPY_TOOL ? setCopy : null;
+        const write = name === SHOPIFY_TAGS_TOOL ? addTags : name === SHOPIFY_STOCK_TOOL ? setStock : name === SHOPIFY_COPY_TOOL ? setCopy : name === SHOPIFY_SHIP_TOOL ? markShipped : null;
         if (write && WRITES.includes(name)) {
           try {
             return reply(id, { structuredContent: await write(key, req.params?.arguments), content: [{ type: "text", text: "ok" }] });

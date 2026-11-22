@@ -7,7 +7,7 @@
 import { gql } from "@/core/shopify-rules";
 
 /** The write scopes the Shopify profile asks for. A key with any other write scope is refused. */
-export const SHOPIFY_WRITE_SCOPES = ["write_orders", "write_customers", "write_inventory", "write_products"] as const;
+export const SHOPIFY_WRITE_SCOPES = ["write_orders", "write_customers", "write_inventory", "write_products", "write_merchant_managed_fulfillment_orders"] as const;
 
 /** Gateway action type: add tags to one order or one customer. Undo removes only the tags it added. */
 export const SHOPIFY_TAGS = "shopify.add_tags";
@@ -316,8 +316,126 @@ export const COPY_SET = gql`
   }
 `;
 
+// ---------- slice 5: mark an order shipped with a carrier and tracking number ----------
+
+/** Gateway action type: mark every remaining item on one order shipped, with tracking. Draft only, never promoted. */
+export const SHOPIFY_SHIP = "shopify.mark_shipped";
+/** The write tool on our Shopify server that applies it. */
+export const SHOPIFY_SHIP_TOOL = "shopify_mark_shipped";
+/** The builder's tool an approver grants (core/tools/catalog.ts). */
+export const SHOPIFY_SHIP_GRANT = "shopify_ship";
+/** The write scope it needs: fulfillment orders the business ships itself (not a fulfillment app's). */
+export const SHIP_SCOPE = "write_merchant_managed_fulfillment_orders";
+/** How long a tracking number already used on another order is refused, in days. */
+export const SHIP_REPEAT_DAYS = 60;
+
+/**
+ * The carriers an agent may name, by the company name Shopify knows (so Shopify builds the tracking link
+ * itself), each with the shape its tracking numbers take. A number that doesn't fit is refused.
+ */
+export const CARRIERS: readonly { name: string; re: RegExp; shape: string }[] = [
+  { name: "USPS", re: /^(\d{20,22}|[A-Z]{2}\d{9}US)$/, shape: "20 to 22 digits, or 2 letters, 9 digits and US" },
+  { name: "UPS", re: /^1Z[0-9A-Z]{16}$/, shape: "1Z and 16 letters or digits" },
+  { name: "FedEx", re: /^(\d{12}|\d{15}|\d{20}|\d{22})$/, shape: "12, 15, 20 or 22 digits" },
+  { name: "DHL Express", re: /^\d{10}$/, shape: "10 digits" },
+  { name: "Canada Post", re: /^(\d{16}|[A-Z]{2}\d{9}CA)$/, shape: "16 digits, or 2 letters, 9 digits and CA" },
+  { name: "Royal Mail", re: /^[A-Z]{2}\d{9}GB$/, shape: "2 letters, 9 digits and GB" },
+  { name: "Australia Post", re: /^([A-Z]{2}\d{9}AU|[0-9A-Z]{12,23})$/, shape: "12 to 23 letters or digits, or 2 letters, 9 digits and AU" },
+];
+export const CARRIER_NAMES = CARRIERS.map((c) => c.name);
+
+/** A tracking number the way carriers print it, made comparable: spaces and dashes dropped, upper case. */
+export const normTracking = (v: unknown) => String(v ?? "").replace(/[\s-]+/g, "").toUpperCase();
+const FO = /^gid:\/\/shopify\/FulfillmentOrder\/\d{1,20}$/;
+
+/**
+ * Why a ship change is refused, or null: the order's open fulfillment order ids (from an Orders to ship
+ * row), a carrier from the list and a tracking number in that carrier's shape, nothing else.
+ */
+export function refuseShip(args: Record<string, unknown>): string | null {
+  const extra = Object.keys(args).filter((k) => !["fulfillment_orders", "carrier", "tracking"].includes(k));
+  if (extra.length) return `Fields not on the allow-list: ${extra.join(", ")}. A ship change holds only the order's fulfillment orders, the carrier and the tracking number.`;
+  const fos = args.fulfillment_orders;
+  if (!Array.isArray(fos) || !fos.length || fos.length > 10 || fos.some((f) => typeof f !== "string" || !FO.test(f)) || new Set(fos).size !== fos.length) return "fulfillment_orders must be the order's open fulfillment orders, from an Orders to ship row.";
+  const carrier = CARRIERS.find((c) => c.name === args.carrier);
+  if (!carrier) return `carrier must be one of: ${CARRIER_NAMES.join(", ")}.`;
+  if (typeof args.tracking !== "string" || args.tracking !== normTracking(args.tracking)) return "tracking must be the tracking number without spaces.";
+  if (!carrier.re.test(args.tracking)) return `${args.tracking.slice(0, 30)} isn't a ${carrier.name} tracking number (${carrier.shape}).`;
+  return null;
+}
+
+/** One order as Orders to ship and the live check before a write return it. No names or addresses. */
+export interface ShipOrder {
+  id: string; name: string; createdAt?: string; cancelledAt: string | null; closed: boolean; displayFulfillmentStatus: string;
+  fulfillmentOrders: { nodes: {
+    id: string; status: string; requestStatus: string; supportedActions: { action: string }[]; fulfillmentHolds: { id: string }[];
+    deliveryMethod: { methodType: string } | null; assignedLocation: { name: string; location: { id: string } | null };
+    lineItems: { nodes: { remainingQuantity: number }[] };
+  }[] };
+}
+
+/**
+ * Whether an order can be marked shipped here, and how: every open fulfillment order must be one the
+ * business ships itself (CREATE_FULFILLMENT, not sent to a fulfillment app), by shipping, not on hold, all
+ * from one location. Anything else is for the owner to do in Shopify.
+ */
+export function shippable(o: ShipOrder): { fos: string[]; items: number; from: string } | { not: string } {
+  if (o.cancelledAt) return { not: "cancelled" };
+  if (o.closed) return { not: "archived" };
+  const open = o.fulfillmentOrders.nodes.filter((f) => (f.status === "OPEN" || f.status === "IN_PROGRESS") && f.lineItems.nodes.some((l) => l.remainingQuantity > 0));
+  if (!open.length) return { not: "nothing left to ship" };
+  if (o.fulfillmentOrders.nodes.some((f) => f.status === "ON_HOLD") || open.some((f) => f.fulfillmentHolds.length)) return { not: "on hold" };
+  if (open.some((f) => f.deliveryMethod && f.deliveryMethod.methodType !== "SHIPPING")) return { not: "pickup or local delivery" };
+  if (open.some((f) => f.requestStatus !== "UNSUBMITTED" || !f.supportedActions.some((a) => a.action === "CREATE_FULFILLMENT"))) return { not: "handled by a fulfillment app" };
+  if (new Set(open.map((f) => f.assignedLocation.location?.id ?? f.assignedLocation.name)).size > 1) return { not: "ships from more than one location" };
+  if (o.displayFulfillmentStatus === "PARTIALLY_FULFILLED") return { not: "partly shipped already" };
+  return { fos: open.map((f) => f.id).sort(), items: open.reduce((n, f) => n + f.lineItems.nodes.reduce((m, l) => m + Math.max(0, l.remainingQuantity), 0), 0), from: open[0].assignedLocation.name };
+}
+
+/** What a staged ship change may still do: write only while the order's open fulfillment orders are exactly the card's. */
+export function planShip(cardFos: readonly string[], live: ShipOrder | null): { write: true; fos: string[] } | { refuse: string } {
+  if (!live) return { refuse: "Shopify doesn't have this order any more." };
+  const s = shippable(live);
+  if ("not" in s) return { refuse: `This order can't be marked shipped here now (${s.not}). Nothing was written; do this one in Shopify.` };
+  const want = [...cardFos].sort();
+  if (want.join() !== s.fos.join()) return { refuse: "The order changed since this was staged. Nothing was written." };
+  return { write: true, fos: s.fos };
+}
+
+// The live order, read right before the write: its status and open fulfillment orders. No names or
+// addresses. A read, so it may live here.
+export const SHIP_OF = gql`
+  query AgentShipOf($id: ID!) {
+    order(id: $id) {
+      id name cancelledAt closed displayFulfillmentStatus
+      fulfillmentOrders(first: 10) {
+        nodes {
+          id status requestStatus
+          supportedActions { action }
+          fulfillmentHolds { id }
+          deliveryMethod { methodType }
+          assignedLocation { name location { id } }
+          lineItems(first: 50) { nodes { remainingQuantity } }
+        }
+      }
+    }
+  }
+`;
+
+// The only Shopify write in the repo for this action type: fulfill the order's open fulfillment orders
+// with one carrier and tracking number. Shopify emails the customer its own shipping confirmation
+// (decided 2026-11-22) and builds the tracking link from the carrier; no link can be sent here.
+export const SHIP_CREATE = gql`
+  mutation AgentShip($fos: [FulfillmentOrderLineItemsInput!]!, $company: String!, $number: String!, $key: String!) {
+    fulfillmentCreate(fulfillment: { lineItemsByFulfillmentOrder: $fos, notifyCustomer: true, trackingInfo: { company: $company, number: $number } }) @idempotent(key: $key) {
+      fulfillment { id status }
+      userErrors { field message }
+    }
+  }
+`;
+
 /** Every mutation our Shopify server may run, by write tool. The server refuses any other document. */
-export const SHOPIFY_MUTATIONS: Readonly<Record<string, string>> = { [SHOPIFY_TAGS_TOOL]: TAGS_ADD, [SHOPIFY_STOCK_TOOL]: STOCK_SET, [SHOPIFY_COPY_TOOL]: COPY_SET };
+export const SHOPIFY_MUTATIONS: Readonly<Record<string, string>> = { [SHOPIFY_TAGS_TOOL]: TAGS_ADD, [SHOPIFY_STOCK_TOOL]: STOCK_SET, [SHOPIFY_COPY_TOOL]: COPY_SET, [SHOPIFY_SHIP_TOOL]: SHIP_CREATE };
 
 /** A document is exactly one of the fixed mutations above. */
 export function assertFixedMutation(doc: string): void {

@@ -31,8 +31,8 @@ import { callMcpTool } from "@/integrations/mcp";
 import { mercuryCash, mercuryCategories, mercuryTransactions } from "@/integrations/mercury";
 import { divider, h2, h3, li, notionConnected, notionPage, notionPageText, p as para, quote } from "@/integrations/notion";
 import { emailOwner } from "@/integrations/email";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
-import { COPY_LIMITS, SHOPIFY_COPY_GRANT, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, copyText, productTarget, refuseCopyFacts, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
+import { CARRIER_NAMES, COPY_LIMITS, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP_GRANT, normTracking, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, copyText, productTarget, refuseCopyFacts, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
 import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
 import type { McPeriod } from "@/core/mailchimp-rules";
@@ -69,6 +69,7 @@ import { openCounts } from "@/core/brief/rules";
 import { openOrders, recentOrders } from "@/integrations/shopify/orders";
 import { stockLevels } from "@/integrations/shopify/stock";
 import { productCopy } from "@/integrations/shopify/copy";
+import { ordersToShip } from "@/integrations/shopify/ship";
 
 const LEAD_TYPES = ["cafe", "restaurant", "office", "grocery", "other"] as const;
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -208,6 +209,22 @@ const TOOLS_LIST: ToolDef[] = [
         return { pick: `pc${i + 1}`, title: p.title, type: p.type, vendor: p.vendor, tags: p.tags, description: clip(p.description, 1500), seo_title: p.seoTitle, seo_description: p.seoDescription };
       });
       return { data: { products: rows, note: "A new text may state only numbers and certification words already in that product's data here." }, numbers: { products: rows.length }, picks };
+    },
+  },
+  {
+    id: "shopify_orders_to_ship", label: "Orders to ship", detail: "Open, unshipped orders (up to 50), newest first: order number, date, items left and the location they ship from, or why one can't be marked shipped here. No names or addresses. Each order that can be has a pick code a ship change can name",
+    kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async () => {
+      const list = await ordersToShip();
+      const picks: Record<string, Pick> = {};
+      const rows = list.map((o, i) => {
+        // the pick carries the fulfillment orders the change is staged against, so the model never supplies them
+        if (!o.not) picks[`sh${i + 1}`] = { kind: "ship", label: `Order ${o.name}`, id: JSON.stringify({ o: o.id, f: o.fos, n: o.items }) };
+        return o.not
+          ? { order: o.name, date: o.createdAt?.slice(0, 10) ?? null, cannot_mark_here: o.not }
+          : { pick: `sh${i + 1}`, order: o.name, date: o.createdAt?.slice(0, 10) ?? null, items_left: o.items, ships_from: o.from };
+      });
+      return { data: { orders: rows, note: "A tracking number must come from the owner or a carrier label, never be made up." }, numbers: { orders: rows.length, can_mark: Object.keys(picks).length }, picks };
     },
   },
   {
@@ -1103,6 +1120,29 @@ const TOOLS_LIST: ToolDef[] = [
       const LABEL = { description: "Description", seo_title: "SEO title", seo_description: "SEO description" } as const;
       const copy = (["description", "seo_title", "seo_description"] as const).filter((f) => args[f] !== undefined).map((f) => ({ field: LABEL[f], before: was[f], after: args[f] as string }));
       return { gatewayTool: SHOPIFY_COPY, target, args, actionType: "product_copy", title: `${pick.label}: new ${copy.map((c) => c.field.toLowerCase()).join(", ")}`, preview: { record: pick.label, copy, why: input.why } };
+    },
+  },
+  {
+    id: SHOPIFY_SHIP_GRANT, label: "Mark an order shipped", detail: `Stages marking every remaining item on one Shopify order shipped, with a carrier and tracking number, for an approver to approve. Always an approval card: it never runs on its own. Shopify then emails the customer its own shipping confirmation with the tracking link. Refused if the order changed since, or if the tracking number was used on another order. The order always comes from an Orders to ship result`,
+    kind: "action", becomes: SHOPIFY_SHIP, group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
+    agents: GATEWAY_TOOLS[SHOPIFY_SHIP].agents,
+    params: [
+      { name: "order", type: "pick", kind: "ship", description: "The order, from an Orders to ship result." },
+      { name: "carrier", type: "enum", options: CARRIER_NAMES, description: `The carrier: ${CARRIER_NAMES.join(", ")}.` },
+      { name: "tracking", type: "text", maxLength: 40, description: "The tracking number exactly as the owner or the carrier's label gives it. Never make one up." },
+      { name: "why", type: "text", maxLength: 300, description: "One line for the owner on where the tracking number came from, shown on the approval card." },
+    ],
+    stage: (input, ctx) => {
+      const pick = input.order as Pick;
+      let row: { o?: unknown; f?: unknown; n?: unknown };
+      try { row = JSON.parse(pick.id); } catch { return { problem: "that row isn't an order from Orders to ship" }; }
+      const target = typeof row.o === "string" ? row.o : "";
+      if (!Array.isArray(row.f)) return { problem: "that row isn't an order from Orders to ship" };
+      const args = { fulfillment_orders: row.f, carrier: String(input.carrier), tracking: normTracking(input.tracking) };
+      const refused = refuseProposal(ctx.agentId, SHOPIFY_SHIP, target, args, undefined, ctx.granted ?? null);
+      if (refused) return { problem: refused };
+      const items = typeof row.n === "number" ? row.n : null;
+      return { gatewayTool: SHOPIFY_SHIP, target, args, actionType: "order_shipped", title: `${pick.label}: shipped by ${args.carrier}`, preview: { record: pick.label, items, carrier: args.carrier, tracking: args.tracking, notify: true, why: input.why } };
     },
   },
   {
