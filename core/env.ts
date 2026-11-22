@@ -48,6 +48,12 @@ export const env = {
   quickbooksClientId: v("QUICKBOOKS_CLIENT_ID"),
   quickbooksClientSecret: v("QUICKBOOKS_CLIENT_SECRET"),
   quickbooksSandbox: v("QUICKBOOKS_SANDBOX") === "1",
+  // the app's Square application (card 242), for the Square sign-in made with Connect on Connections.
+  // The sign-in lives in the token vault and the secret stays here. SQUARE_SANDBOX=1 points the sign-in
+  // and our server at Square's sandbox, for test accounts.
+  squareClientId: v("SQUARE_CLIENT_ID"),
+  squareClientSecret: v("SQUARE_CLIENT_SECRET"),
+  squareSandbox: v("SQUARE_SANDBOX") === "1",
   // OPERATOR's own Meta app (Facebook Login), for the two Meta Ads sign-ins made with Connect on
   // Connections (card 255). The sign-ins live in the token vault; the secret stays here only.
   metaAppId: v("META_APP_ID"),

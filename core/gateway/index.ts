@@ -18,6 +18,7 @@ import { klaviyoLists } from "@/integrations/klaviyo";
 import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
 import { invoiceCents, type InvoiceArgs } from "@/core/stripe-rules";
 import { QBO_CATEGORIZE_TOOL, UNCATEGORIZED, type CategorizeArgs } from "@/core/quickbooks-rules";
+import { SQUARE_DRAFT_TOOL, splitTarget } from "@/core/square-rules";
 import { productTarget, refuseCopy, refuseShip, refuseStock, refuseTags, SHIP_REPEAT_DAYS, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
@@ -27,9 +28,9 @@ import { orderIdOk, refuseNote } from "@/core/woo-rules";
 import { dealIdOk, refuseMove } from "@/core/hubspot-rules";
 import { adIdOk, refusePause, RESULT_LABEL, type MetaResult } from "@/core/meta-rules";
 import { metaTargets } from "@/core/meta-targets";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, SQUARE_INVOICE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, SQUARE_INVOICE } from "./policy";
 
 export interface Proposal {
   agentId: string;
@@ -348,7 +349,7 @@ export async function writeBlocker(): Promise<string | null> {
 }
 
 /** A gateway sign-in is connected and not paused. */
-async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify" | "stripe_drafts" | "mailchimp_drafts" | "woo_notes" | "hubspot_deals" | "meta_pauses" | "quickbooks"): Promise<boolean> {
+async function ready(id: "mercury_write" | "mercury_files" | "klaviyo_drafts" | "calendar_holds" | "shopify" | "stripe_drafts" | "mailchimp_drafts" | "woo_notes" | "hubspot_deals" | "meta_pauses" | "quickbooks" | "square"): Promise<boolean> {
   const s = await mcpStatus(id);
   return !!s?.connected && !s.paused;
 }
@@ -444,7 +445,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyShopifyStock(ids), applyShopifyCopy(ids), applyShopifyShip(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids), applyMetaPauses(ids), applyCategorize(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyShopifyStock(ids), applyShopifyCopy(ids), applyShopifyShip(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids), applyMetaPauses(ids), applyCategorize(ids), applySquareInvoices(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -857,6 +858,68 @@ async function applyInvoice(a: ActionRow, runId: string) {
   }
 }
 const INVOICE_GRANT = TOOLS[INVOICE_DRAFT].grant;
+
+/** Approved Square invoices (card 242): made as drafts in Square on the business's Square sign-in, at most max_invoice_drafts_per_run per agent. */
+async function applySquareInvoices(ids?: string[]) {
+  const rows = await approvedOf(SQUARE_INVOICE, ids);
+  if (!rows.length) return null;
+  if (!(await ready("square"))) return { ok: true, text: "Approved, not in Square yet: Square isn't connected (Connections, Square)." };
+  const cap = await numPolicy("max_invoice_drafts_per_run", 5);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applySquareInvoice(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway made ${n.applied} approved Square draft invoice${n.applied === 1 ? "" : "s"}${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}. The owner publishes them from Square.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved invoices are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+async function applySquareInvoice(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as InvoiceArgs;
+    // the allow-list again at execution time (the grant was checked by refuseUngranted); the server re-reads the customer and the location
+    const no = refuseProposal(a.agent_id, SQUARE_INVOICE, a.target, args as unknown as Record<string, unknown>, 200, [SQUARE_INVOICE_GRANT_ID]);
+    const t = splitTarget(a.target);
+    if (no || !t) { await done({ status: "refused", reason: no ?? "The target is not a Square customer at a Square location." }); return "refused" as const; }
+    let out: { invoiceId?: unknown; orderId?: unknown; total_cents?: unknown; status?: unknown };
+    try {
+      out = (await callWriteTool("square", SQUARE_DRAFT_TOOL, { customerId: t.customerId, locationId: t.locationId, requestKey: a.id, ...args })) as typeof out;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // the customer or location is gone, closed, or in another currency: refused on the fresh check, nothing made
+      if (/isn't in the business's Square any more|location isn't active|location takes [A-Z]{3}, not|Input refused/.test(msg)) { await done({ status: "refused", reason: msg.slice(0, 300) }); return "refused" as const; }
+      throw e;
+    }
+    if (typeof out?.invoiceId !== "string" || !out.invoiceId) throw new Error("Partly made draft: Square didn't return an invoice id");
+    const approved = invoiceCents(args.lines);
+    // the draft exists either way: a total that doesn't match is shown, never retried (it would make a second draft)
+    const matches = out.total_cents === approved && out.status === "DRAFT";
+    await done({
+      status: matches ? "applied" : "partial",
+      ...(matches ? {} : { reason: `Square's draft ${out.invoiceId} asks for ${String(out.total_cents)} cents (${String(out.status)}), not the ${approved} approved. Check it in Square before publishing.` }),
+      result_json: { square_invoice_id: out.invoiceId, square_order_id: typeof out.orderId === "string" ? out.orderId : null, approved_cents: approved, total_cents: out.total_cents ?? null, published: false },
+    });
+    return "applied" as const;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // an order or draft was made before the failure: partly done, so a retry can't make it twice
+    if (msg.includes("Partly made draft")) { await done({ status: "partial", reason: msg.slice(0, 300) }); return "failed" as const; }
+    await done({ status: "failed", reason: msg.slice(0, 300) });
+    return "failed" as const;
+  }
+}
+const SQUARE_INVOICE_GRANT_ID = TOOLS[SQUARE_INVOICE].grant;
 
 /** Approved QuickBooks categories: each expense line moved on the business's Intuit sign-in, at most max_qbo_categorize_per_run per agent. */
 async function applyCategorize(ids?: string[]) {

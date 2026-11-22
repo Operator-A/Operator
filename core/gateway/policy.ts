@@ -6,6 +6,7 @@
 import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-rules";
 import { CUSTOMER_ID, INVOICE_FIELDS, refuseInvoice } from "@/core/stripe-rules";
 import { CATEGORIZE_FIELDS, QBO_CATEGORIZE, expenseTarget, refuseCategorize } from "@/core/quickbooks-rules";
+import { SQUARE_INVOICE, SQUARE_INVOICE_FIELDS, SQUARE_INVOICE_GRANT, refuseSquareInvoice, squareTarget } from "@/core/square-rules";
 import { SHOPIFY_COPY, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP, SHOPIFY_SHIP_GRANT, refuseShip, SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
@@ -47,6 +48,14 @@ export const INVOICE_DRAFT = "stripe.invoice_draft";
  * never changed, and the server re-reads the line right before the write. Moves no money.
  */
 export { QBO_CATEGORIZE };
+/**
+ * A draft invoice in the business's Square, to one of its own Square customers at one of its own active
+ * locations (card 242): an order of ad hoc lines and an invoice on it that Square keeps as a DRAFT.
+ * Nothing is published, sent or charged until the owner does it in Square. The target is
+ * `customerId@locationId`, both picked from Square results and re-read right before the write. Same
+ * guards as Stripe's draft. Asks a customer for money; never spends any.
+ */
+export { SQUARE_INVOICE };
 /**
  * A private hold on the business's primary Google Calendar (card 251): a title, a start and an end,
  * no guests, made with sendUpdates=none so it emails no one. The time is a free slot code found, and
@@ -144,6 +153,14 @@ export const TOOLS = {
     tier: "Draft" as Tier,
     fields: INVOICE_FIELDS,
     // a draft the owner finalizes in Stripe, to an existing customer: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [SQUARE_INVOICE]: {
+    agents: "granted",
+    grant: SQUARE_INVOICE_GRANT,
+    tier: "Draft" as Tier,
+    fields: SQUARE_INVOICE_FIELDS,
+    // a draft the owner publishes in Square, to an existing customer: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
   [QBO_CATEGORIZE]: {
@@ -281,6 +298,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (tool === HUBSPOT_MOVE) return dealIdOk(target) ? refuseMove(args) : "The target is not a HubSpot deal id.";
   if (tool === META_PAUSE) return adIdOk(target) ? refusePause(args) : "The target is not a Meta ad id.";
   if (tool === INVOICE_DRAFT) return CUSTOMER_ID.test(target) ? refuseInvoice(args) : "The target is not a Stripe customer id.";
+  if (tool === SQUARE_INVOICE) return squareTarget(target) ? refuseSquareInvoice(args) : "The target is not a Square customer at a Square location.";
   if (tool === QBO_CATEGORIZE) return expenseTarget(target) ? refuseCategorize(args) : "The target is not a QuickBooks expense line.";
   if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
   if (tool === SHOPIFY_STOCK) return stockTarget(target) ? refuseStock(args) : "The target is not a Shopify inventory item at a location.";

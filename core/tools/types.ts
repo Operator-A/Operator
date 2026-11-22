@@ -12,7 +12,7 @@
 export type ToolKind = "read" | "calculate" | "report" | "action";
 
 /** Groups on the builder screen, one per integration. */
-export type ToolGroup = "shopify" | "mercury" | "supabase" | "notion" | "calculate" | "agents" | "web" | "gmail" | "email" | "klaviyo" | "analytics" | "calendar" | "stripe" | "mailchimp" | "woo" | "hubspot" | "meta" | "quickbooks"
+export type ToolGroup = "shopify" | "mercury" | "supabase" | "notion" | "calculate" | "agents" | "web" | "gmail" | "email" | "klaviyo" | "analytics" | "calendar" | "stripe" | "mailchimp" | "woo" | "hubspot" | "meta" | "quickbooks" | "square"
   /** A turned-on tool on a server the owner added by its address (docs/custom-servers.md), built from its row, not written here. */
   | "custom";
 

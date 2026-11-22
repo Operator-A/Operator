@@ -619,3 +619,62 @@ runs in the app, signed in on Intuit's own page.
 **Connecting a business:** in the Control Room, open **Connections > QuickBooks Online**, tap
 **Connect**, sign in to Intuit as an admin of the company, pick the company and tap **Connect**. Back on
 Connections, check that the company name shown is the business.
+
+## Square on our own server (card 242)
+
+A business's own Square account. Square's hosted MCP server reaches everything Square's APIs offer
+(payments, refunds, orders, catalog, team) and lets only allow-listed apps sign in, so it can't be held to
+a profile. Our own server runs in the app, signed in on Square's own page.
+
+- **Sign-in** (`auth: "square"`): the app's own Square application. `SQUARE_CLIENT_ID` and
+  `SQUARE_CLIENT_SECRET` live in Vercel; the secret is never put in the vault, a cookie or the browser.
+  Connect asks for exactly `MERCHANT_PROFILE_READ PAYMENTS_READ CUSTOMERS_READ INVOICES_READ INVOICES_WRITE
+  ORDERS_WRITE`, with `session=false` so the person signs in to the account they mean. Square's code flow
+  with a secret (no PKCE), so the refresh token lasts; access tokens last 30 days and are renewed a minute
+  before they run out. Square's token reply doesn't list scopes, so right after Connect the server reads
+  the business (`merchants/me`) and the token's scopes (`oauth2/token/status`): anything missing or more,
+  or no refresh token, and the sign-in is revoked at Square and not kept. The business's name is kept on
+  the connection's row, so Connections shows which account it is.
+- **One sign-in, not two:** Square's revoke ends every sign-in a business gave our app, so a separate
+  drafts sign-in couldn't be cancelled on its own. Reads and the draft share one sign-in; the server offers
+  the write only on the gateway's `callWriteTool` path, and agents' `callMcpTool` path serves reads only.
+- **Profile** `square` (`core/mcp-rules.ts`): four read tools, fixed requests in `core/square-rules.ts`:
+  `square_payments` (completed payments over 1 to 90 days, paged up to 1,000: gross, refunds, Square's
+  fees, net, by day and by location, average sale; one currency, others counted but not added in),
+  `square_locations` (active first, with picks), `square_open_invoices` (unpaid, scheduled and partly paid
+  invoices across up to 10 active locations, most overdue first, amount still owed and days late) and
+  `square_customers` (most recent, with picks). Every sum is made in code, in minor units.
+- **One write** `square_create_invoice_draft`, the gateway action type `square.invoice_draft` (Draft,
+  promotable). The target is `customerId@locationId`, both picks. The server re-reads the customer and the
+  location (it must be active and take the invoice's currency), makes an order of ad hoc lines (no catalog
+  items, so Square adds no tax or discount), checks the order's total is the approved one, then makes an
+  invoice on it that Square keeps as a `DRAFT`, and reads it back. Idempotency keys come from the action's
+  id, so a retried request never makes a second order or draft. Once the order exists, any failure says
+  "Partly made draft" with the order id, so the gateway marks it partly done and never retries. Same guards
+  as Stripe's draft: up to 5 plain lines, whole cents, at most $5,000, due in 1 to 90 days, no links. There
+  is no publish, cancel, delete, refund, payment or order update call; `check:square` fails on one. The
+  owner publishes and sends from Square.
+- **Who drafts:** no agent is named in code. An approver gives `square_invoice_draft` on the builder's
+  Tools step (granted actions). At most `policies.max_invoice_drafts_per_run` (5) per apply.
+- **Files:** `integrations/square-api.ts` is the only file that calls Square for a business, only
+  `integrations/square-server.ts` imports it, and only `integrations/mcp.ts` imports the server (lint
+  and `check:square`). `Square-Version` pinned; requests never follow redirects; a 401 pauses the sign-in.
+  `SQUARE_SANDBOX=1` points the sign-in and the server at Square's sandbox.
+
+**Setting up the Square application (once, for the whole app):**
+
+1. Go to **developer.squareup.com** and sign in with the account that should own the app. Open the
+   **Developer Console** and click **+** (or **Create your first application**). Name it "OPERATOR" and
+   click **Save**.
+2. Open the app. At the top, make sure **Production** is selected (not Sandbox).
+3. In the left menu click **OAuth**. In **Redirect URL**, paste
+   `https://<Control Room domain>/connections/square/callback` and click **Save**.
+4. On the same page, copy the **Application ID**, then click **Show** next to **Application secret** and
+   copy it. In Vercel, add them as `SQUARE_CLIENT_ID` and `SQUARE_CLIENT_SECRET` (secret marked
+   Sensitive), then redeploy.
+5. For a test first: switch the top toggle to **Sandbox**, repeat steps 3 and 4 with the sandbox values,
+   and add `SQUARE_SANDBOX=1` in Vercel. Remove it and put the production values back when done.
+
+**Connecting a business:** in the Control Room, open **Connections > Square**, tap **Connect**, sign in
+to Square as the business's owner and tap **Allow**. Back on Connections, check that the business name
+shown is right.

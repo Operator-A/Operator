@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { SHOPIFY_TOOLS } from "@/core/shopify-queries";
 import { STRIPE_DRAFT_TOOL, STRIPE_READ_TOOLS } from "@/core/stripe-rules";
 import { QBO_CATEGORIZE, QBO_CATEGORIZE_TOOL, QBO_READ_TOOLS, QBO_SCOPE } from "@/core/quickbooks-rules";
+import { SQUARE_DRAFT_TOOL, SQUARE_HOST, SQUARE_INVOICE, SQUARE_READ_TOOLS, SQUARE_SCOPES } from "@/core/square-rules";
 import { SHOPIFY_COPY, SHOPIFY_COPY_TOOL, SHOPIFY_SHIP, SHOPIFY_SHIP_TOOL, SHOPIFY_STOCK, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES } from "@/core/shopify-actions";
 
 /**
@@ -29,9 +30,10 @@ export interface McpServer {
    * we run ourselves, signed in on Facebook's own page (Connect) with OPERATOR's Meta app (META_APP_ID
    * and META_APP_SECRET), asking for the profile's permissions only. "intuit": a server we run ourselves,
    * signed in on Intuit's own page with the app's Intuit OAuth client (QUICKBOOKS_CLIENT_ID and
-   * QUICKBOOKS_CLIENT_SECRET), for QuickBooks Online.
+   * QUICKBOOKS_CLIENT_SECRET), for QuickBooks Online. "square": a server we run ourselves, signed in on
+   * Square's own page with the app's Square application (SQUARE_CLIENT_ID and SQUARE_CLIENT_SECRET).
    */
-  auth: "oauth" | "token" | "google" | "meta" | "intuit";
+  auth: "oauth" | "token" | "google" | "meta" | "intuit" | "square";
   /** The server's address (for a token server, the API our own server calls), with read-only switches on where it has them. */
   url: string;
   /** The only tools code may call on it, by the server's own names. Read tools only. */
@@ -333,6 +335,24 @@ export const MCP_SERVERS = {
     writeTools: [{ tool: QBO_CATEGORIZE_TOOL, actionType: QBO_CATEGORIZE }],
     signInHint: "Sign in as an admin of the business’s QuickBooks company, and pick that company on Intuit’s page.",
   },
+  square: {
+    id: "square",
+    name: "Square",
+    // Our own server (integrations/square-server.ts, card 242). Square's hosted MCP server reaches
+    // everything Square's APIs offer and lets only allow-listed apps sign in. One sign-in, held to these
+    // scopes exactly (checked with Square right after Connect): each read tool runs fixed requests
+    // (core/square-rules.ts) and totals are made there; the one write tool, called only by the gateway
+    // after an approver approves, makes a draft invoice that Square never sends. ORDERS_WRITE is there only
+    // because a Square invoice must sit on an order; INVOICES_WRITE also covers publish and cancel, which
+    // our server never sends.
+    auth: "square",
+    url: SQUARE_HOST,
+    readTools: SQUARE_READ_TOOLS,
+    reportTools: [],
+    scopes: SQUARE_SCOPES,
+    writeTools: [{ tool: SQUARE_DRAFT_TOOL, actionType: SQUARE_INVOICE }],
+    signInHint: "Sign in as the owner of the business’s Square account and allow what Square lists. Invoices are only ever made as drafts; you publish them from Square.",
+  },
   calendar: {
     id: "calendar",
     name: "Google Calendar",
@@ -419,8 +439,8 @@ export function mayReport(id: string, tool: string): boolean {
 export const isHosted = (id: McpId) => MCP_SERVERS[id].auth === "oauth";
 /** Servers we run ourselves, signed in on Google's page with our own OAuth client. */
 export const isGoogle = (id: McpId) => MCP_SERVERS[id].auth === "google";
-/** Servers we run ourselves, signed in on the service's own page with the app's own OAuth client or app: Google, Meta and Intuit. */
-export const isAppSignIn = (id: McpId) => ["google", "meta", "intuit"].includes(MCP_SERVERS[id].auth);
+/** Servers we run ourselves, signed in on the service's own page with the app's own OAuth client or app: Google, Meta, Intuit and Square. */
+export const isAppSignIn = (id: McpId) => ["google", "meta", "intuit", "square"].includes(MCP_SERVERS[id].auth);
 export const isMeta = (id: McpId) => MCP_SERVERS[id].auth === "meta";
 /** Signed in with a Connect button (hosted or Google), not a pasted key. */
 export const usesConnect = (id: McpId) => MCP_SERVERS[id].auth !== "token";
