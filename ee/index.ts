@@ -2,7 +2,7 @@
 // The cloud edition's slots (docs/extensions.md). Built in only when OPERATOR_EDITION=cloud.
 import type { Extensions } from "@/core/extension-types";
 import { planBlock } from "./plan";
-import { SettingsCards } from "./settings-cards";
+import { settingsSections } from "./settings-sections";
 import { stripeWebhook, syncSeats } from "./billing";
 import { SignupPage } from "./signup-page";
 import { chargeRun, pooledKey } from "./credits";
@@ -12,7 +12,7 @@ import { similarBusinesses, syncBrain } from "./brain";
 const cloud: Extensions = {
   edition: "cloud",
   planBlock,
-  SettingsCards,
+  settingsSections,
   HostedClaude,
   SignupPage,
   api: { stripe: stripeWebhook },

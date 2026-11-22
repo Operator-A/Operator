@@ -246,11 +246,11 @@ assert.ok(!mayUsePooledKey({ balance: 0, planBlocked: false, keySet: true, setup
 // where Stripe comes back to after a pack (card 162): a fixed list, never an address from the form
 assert.deepEqual(packReturn("start"), { place: "start", success: "/start?claude=hosted&credits=added", cancel: "/start?claude=hosted" });
 assert.equal(packReturn("connections").success, "/connections?credits=added#claude");
-assert.equal(packReturn("settings").success, "/settings?credits=added#billing");
+assert.equal(packReturn("settings").success, "/settings/billing?credits=added");
 for (const bad of [null, undefined, "", "https://evil.example", "//evil.example", "/start", "START", ["start"]]) assert.equal(packReturn(bad).place, "settings", `${String(bad)} comes back to Settings`);
 for (const p of ["start", "connections", "settings"] as const) {
   const r = packReturn(p);
-  for (const u of [r.success, r.cancel, packProblem(p, "x")]) assert.match(u, /^\/(start|connections|settings)[?#]/, "a path on this app, never another host");
+  for (const u of [r.success, r.cancel, packProblem(p, "x")]) assert.match(u, /^\/(start|connections|settings\/billing)([?#]|$)/, "a path on this app, never another host");
 }
 assert.equal(packProblem("start", "a&b#c"), "/start?claude=hosted&credits_problem=a%26b%23c", "the problem is encoded");
 assert.ok(packProblem("connections", "x".repeat(500)).length < 260, "the problem is cut");
@@ -368,12 +368,14 @@ assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+HostedClaude,$/m, "the cl
   })().catch((e) => { console.error(e); process.exit(1); });
   // written only in the admin business, by its owners, and audited
   const acts = readFileSync("ee/playbook-actions.ts", "utf8");
-  for (const fn of ["playbookSave", "playbookPublish", "playbookRemove"]) {
+  for (const fn of ["playbookSave", "playbookRemove"]) {
     const body = acts.split(`export async function ${fn}`)[1].split("\nexport ")[0];
     assert.match(body, /await asRole\("owner"\)/, `${fn} is owners only`);
     assert.match(body, /me\.orgId !== adminOrgId\(\)/, `${fn} is the admin business only`);
     assert.match(body, /await audit\(me, /, `${fn} is audited`);
   }
+  // Publish in the editor saves the edits first, then publishes, each audited (docs/settings.md)
+  assert.match(acts, /then === "publish" \|\| then === "unpublish"[\s\S]*await setPublished\(saved, then === "publish"\)[\s\S]*await audit\(me, then === "publish" \? "playbook_publish" : "playbook_unpublish", saved\)/, "publish from the editor saves, then publishes, and is audited");
   assert.match(readFileSync("ee/playbook-card.tsx", "utf8"), /if \(me\.orgId !== adminOrgId\(\) \|\| me\.role !== "owner"\) return null;/, "only the admin business's owners see the card");
   assert.match(readFileSync("ee/playbook.ts", "utf8"), /return withOrg\(admin, fn\);/, "lessons are read and written as the admin business only");
 }

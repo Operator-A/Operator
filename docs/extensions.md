@@ -14,7 +14,7 @@ each slot has a do-nothing default in core:
 | `planBlock({ kind: "invite" })` | an owner adds a person on Settings > People | never blocks |
 | `planBlock({ kind: "agent_on" })` | putting an agent on duty, or the first job | never blocks |
 | `planBlock({ kind: "custom_server" })` | adding a custom MCP server on Connections | never blocks |
-| `SettingsCards` | extra cards at the bottom of Settings | none |
+| `settingsSections` | extra sections of Settings (Billing, Shared brain), each at `/settings/<slug>` (docs/settings.md) | none |
 | `SignupPage` | the page at `/signup` | none, so `/signup` is not found |
 | `api` | POST `/api/ee/<name>` (`app/api/ee/[name]/route.ts`), such as Stripe's webhook; each route checks its own caller | none, so every name is not found |
 | `afterMembersChange()` | after someone is added to or removed from People | nothing |

@@ -15,7 +15,12 @@ export function ThemeToggle({ initial, wide }: { initial: "light" | "dark"; wide
     document.documentElement.dataset.theme = t;
     document.cookie = `cr_theme=${t}; path=/; max-age=31536000; samesite=lax`;
   };
-  if (wide) return <button className="btn ghost sm" onClick={flip}>Switch light / dark</button>;
+  if (wide) return (
+    <span className="seg" role="group" aria-label="Theme">
+      <button type="button" aria-pressed={theme === "light"} onClick={() => theme !== "light" && flip()}>Light</button>
+      <button type="button" aria-pressed={theme === "dark"} onClick={() => theme !== "dark" && flip()}>Dark</button>
+    </span>
+  );
   return <button className="round" title="Switch theme" onClick={flip}><Icon name={theme === "dark" ? "sun" : "moon"} /></button>;
 }
 

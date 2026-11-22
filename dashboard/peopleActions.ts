@@ -10,7 +10,7 @@ import type { ActionResult } from "./actions";
 import { asRole } from "./data";
 
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
-const done = (text: string): ActionResult => { revalidatePath("/settings"); return { ok: true, text }; };
+const done = (text: string): ActionResult => { revalidatePath("/settings", "layout"); return { ok: true, text }; };
 
 export async function peopleAdd(email: string, role: string): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;

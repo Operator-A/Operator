@@ -74,6 +74,6 @@ assert.equal(collectionFacts({ collectionByIdentifier: null }, []), null);
 // ---- The tool is core's and takes no params; Settings has the card
 const catalog = readFileSync("core/tools/catalog.ts", "utf8");
 assert.match(catalog, /id: "product_facts", [^\n]*\n\s+kind: "read", group: "shopify", params: \[\], trusted: true/);
-assert.match(readFileSync("app/(room)/settings/page.tsx", "utf8"), /ProductFactsForm[^\n]*save=\{saveProductFacts\}/);
+assert.match(readFileSync("app/(room)/settings/business/page.tsx", "utf8"), /ProductFactsForm[^\n]*save=\{saveProductFacts\}/);
 
 console.log("check:product-facts ok");

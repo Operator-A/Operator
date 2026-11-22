@@ -548,7 +548,7 @@ export async function addVendor(form: { name: string; kind: string; mercuryRecip
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, text: "That contact email doesn’t look right." };
   const { error } = await db().from("vendors").insert({ name, kind, mercury_recipient_id: rid || null, contact_email: email || null, added_by: me.email });
   if (error) return fail(error.code === "23505" ? "That Mercury recipient is already a vendor." : error.message);
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   await audit(me, "add_vendor", form.name, { kind: form.kind });
   return { ok: true, text: `${name} added to vendors.${rid ? "" : " Add its Mercury recipient id before anything can be paid to it."}` };
 }
@@ -560,7 +560,7 @@ export async function suppressEmail(address: string, reason: string): Promise<Ac
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, text: "That isn’t an email address." };
   const { error } = await db().from("email_suppressions").upsert({ email, reason: String(reason ?? "").trim().slice(0, 200) || `Added by ${me.email}`, source: "owner" });
   if (error) return fail(error.message);
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   await audit(me, "suppress_email", address);
   return { ok: true, text: `No agent will email ${email}.` };
 }

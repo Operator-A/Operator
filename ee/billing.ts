@@ -36,7 +36,7 @@ export async function checkoutUrl(base: string): Promise<string> {
     customer: r?.stripe_customer_id && isCustomerId(r.stripe_customer_id) ? r.stripe_customer_id : undefined,
     subscription_data: { metadata: { org_id: org }, trial_end: trialEnd },
     metadata: { org_id: org },
-    success_url: `${base}/settings?billing=added`,
+    success_url: `${base}/settings/billing?billing=added`,
     cancel_url: `${base}/settings`,
   });
   if (!s.url?.startsWith("https://checkout.stripe.com/")) throw new Error("Stripe didn’t return a checkout page.");

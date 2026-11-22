@@ -1,5 +1,5 @@
 // Copyright Operator Enterprises and Technologies, LLC. Licensed under ee/LICENSE, not the AGPL-3.0.
-// Settings > Billing (the SettingsCards slot): where the business stands, what it pays, and for the
+// Settings > Billing (the settingsSections slot): where the business stands, what it pays, and for the
 // owner the buttons to Stripe's own pages (Checkout to add a card, the portal to change or cancel).
 import { orgTz } from "@/core/tz";
 import "server-only";

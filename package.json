@@ -33,6 +33,7 @@
     "check:open-core": "npx --yes tsx scripts/check-open-core.ts",
     "check:business": "npx --yes tsx scripts/check-business.ts",
     "check:settings": "npx --yes tsx scripts/check-settings.ts",
+    "check:settings-sections": "npx --yes tsx scripts/check-settings-sections.ts",
     "check:books": "npx --yes tsx scripts/check-books.ts",
     "check:product-facts": "npx --yes tsx scripts/check-product-facts.ts",
     "check:goal-numbers": "npx --yes tsx scripts/check-goal-numbers.ts",
