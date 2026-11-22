@@ -1075,7 +1075,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
   {
     id: SHOPIFY_COPY_GRANT, label: "Rewrite product copy", detail: `Stages a new description and/or SEO title and description for one Shopify product, for an approver to approve (later on its own, once it has earned trust). Plain text: code builds the HTML. Every number and certification word must already be in the product's Shopify data. Refused if the copy changed since. The product always comes from a Product copy result`,
-    kind: "action", group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
+    kind: "action", becomes: SHOPIFY_COPY, group: "shopify", trusted: true, needs: SHOPIFY, costUsd: 0,
     agents: GATEWAY_TOOLS[SHOPIFY_COPY].agents,
     params: [
       { name: "product", type: "pick", kind: "product", description: "The product, from a Product copy result." },
