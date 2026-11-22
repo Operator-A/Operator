@@ -5,61 +5,86 @@ import { OrgDay } from "@/dashboard/components/OrgDay";
 import { planOrgOn } from "@/dashboard/orgPlan";
 import { OrgSwitch } from "@/dashboard/components/OrgSwitch";
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
-import { deptExtras, orgView } from "@/dashboard/org";
+import { canvasData, deptExtras, orgView } from "@/dashboard/org";
 import { goalsByDept } from "@/dashboard/goals";
 import { listProposals, proposalsBySeat } from "@/core/proposals";
 import { GOALS_MISSING } from "@/core/goals";
 import { orgAddDepartment, orgAddDeptRule, orgAddSeat, orgEditDeptRule, orgEditSeat, orgForgetDeptRule, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetDeptBudget, orgSetDeptEmails, orgSetHolder, orgSetLeadChecks } from "@/dashboard/orgActions";
 import { controlsOn } from "@/dashboard/session";
 import { loadOrg } from "@/core/org";
+import { loadFlow } from "@/core/flow";
+import { AgentCard } from "@/dashboard/components/orgBits";
+import { OrgCanvas } from "@/dashboard/components/OrgCanvas";
 import { CrewCanvas } from "@/dashboard/components/CrewCanvas";
 import { Icon } from "@/dashboard/components/Icon";
 import { OrgChart } from "@/dashboard/components/OrgChart";
 
-// Crew: the Org chart (docs/org-chart.md, slice 1: departments, seats and who sits in them, with the
-// agents not on the chart yet below it) and New agent, which opens the builder flow; and a Schedule
-// view: the org switch (docs/org-schedule.md) and the chains that were the Crew canvas, the one
-// place a schedule is turned on.
+// Crew has three views. Canvas (docs/crew-canvas.md): the org chart as a living thing, read only,
+// where you open a department to see what its agents are doing. Edit chart (docs/org-chart.md):
+// the structured chart for seats, budgets and rules. Schedule (docs/org-schedule.md): the org
+// switch and the chains, the one place a schedule is turned on. New agent opens the builder flow.
 
 // Preview dry-runs up to three agents in a row. (Goals read Shopify or Mercury when the chart opens.)
 export const maxDuration = 300;
 
+const VIEWS = { canvas: ["/crew", "Canvas"], edit: ["/crew?view=edit", "Edit chart"], schedule: ["/crew?view=schedule", "Schedule"] } as const;
+const SUBS = {
+  canvas: "Your agents by department. Open a department to see what each agent is doing and how work moves between them.",
+  edit: "Add and rename seats and departments, pick who sits where, and set each department’s budget and rules.",
+  schedule: "When your org works, what it costs, and when you hear from it.",
+};
+
 export default async function Crew({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
-  const view = (await searchParams).view === "schedule" ? "schedule" : "org";
+  const q = (await searchParams).view;
+  const view = q === "schedule" || q === "edit" ? q : "canvas";
   const f = await getFloor();
   return (
     <>
       <div className="row wrap" style={{ gap: 12, alignItems: "flex-end" }}>
         <div className="stack" style={{ gap: 6, flex: "1 1 320px" }}>
           <h1 className="h1">Crew</h1>
-          <span className="sub">{view === "org" ? "Your agents by department, each led by its goals. Open one to see how it’s doing, edit it, teach it or replay its runs." : "When your org works, what it costs, and when you hear from it."}</span>
+          <span className="sub">{SUBS[view]}</span>
         </div>
         <Link href="/build/new" className="btn dark"><Icon name="user-plus" size={15} />New agent</Link>
       </div>
       <nav className="seg" aria-label="Crew view">
-        <Link href="/crew" className={view === "org" ? "on" : ""} aria-current={view === "org" ? "page" : undefined}>Org chart</Link>
-        <Link href="/crew?view=schedule" className={view === "schedule" ? "on" : ""} aria-current={view === "schedule" ? "page" : undefined}>Schedule</Link>
+        {(Object.keys(VIEWS) as (keyof typeof VIEWS)[]).map((k) => <Link key={k} href={VIEWS[k][0]} className={view === k ? "on" : ""} aria-current={view === k ? "page" : undefined}>{VIEWS[k][1]}</Link>)}
       </nav>
-      {view === "org" ? <Chart f={f} /> : <Schedule f={f} />}
+      {view === "schedule" ? <Schedule f={f} /> : <Chart f={f} edit={view === "edit"} />}
     </>
   );
 }
 
-async function Chart({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
+const NO_ORG = "The org chart tables aren’t up to date: apply the org chart migrations (20261115090000_org_chart.sql, 20261116090000_department_budgets.sql).";
+
+async function Chart({ f, edit }: { f: Awaited<ReturnType<typeof getFloor>>; edit: boolean }) {
   const org = await loadOrg();
-  if (!org) return <div className="card"><span className="sub">The org chart tables aren’t up to date: apply the org chart migrations (20261115090000_org_chart.sql, 20261116090000_department_budgets.sql).</span></div>;
-  const [extras, goals, pending] = await Promise.all([deptExtras(org), goalsByDept(org), listProposals(["pending"]).catch(() => null)]);
-  return (
-    <>
-    {goals == null && <div className="card"><span className="sub">{GOALS_MISSING}</span></div>}
+  if (!org) return <div className="card"><span className="sub">{NO_ORG}</span></div>;
+  // the canvas also draws hand-offs, from the chains that are on; without the flow it draws none
+  const [extras, goals, pending, flow] = await Promise.all([deptExtras(org), goalsByDept(org), listProposals(["pending"]).catch(() => null), edit ? null : loadFlow(f.palette).catch(() => null)]);
+  const v = orgView(f, org, extras, goals, pending ? proposalsBySeat(org, pending) : {});
+  if (edit) return (
     <OrgChart
-      v={orgView(f, org, extras, goals, pending ? proposalsBySeat(org, pending) : {})}
+      v={v}
       controls={controlsOn()}
       actions={{
         addDept: orgAddDepartment, renameDept: orgRenameDepartment, removeDept: orgRemoveDepartment, addSeat: orgAddSeat, editSeat: orgEditSeat, removeSeat: orgRemoveSeat, setHolder: orgSetHolder,
         setBudget: orgSetDeptBudget, setEmails: orgSetDeptEmails, addRule: orgAddDeptRule, editRule: orgEditDeptRule, forgetRule: orgForgetDeptRule, setLeadChecks: orgSetLeadChecks,
       }}
     />
+  );
+  return (
+    <>
+      {goals == null && <div className="card"><span className="sub">{GOALS_MISSING}</span></div>}
+      {v.problems.length > 0 && <div className="card" style={{ borderLeft: "4px solid var(--red)", gap: 4 }}>{v.problems.map((p) => <span key={p} style={{ fontSize: 13 }}>{p}</span>)}</div>}
+      <OrgCanvas d={canvasData(f, v, flow?.flow.chains ?? [])} />
+      {v.offChart.length > 0 && (
+        <div className="stack" style={{ gap: 10 }}>
+          <span className="card-t">Not on the chart yet</span>
+          <span className="ink2" style={{ fontSize: 13 }}>Put one in a seat with <Link href="/crew?view=edit">Edit chart</Link>, or from step 1 when you edit it.</span>
+          <div className="crew-grid">{v.offChart.map((a) => <AgentCard key={a.id} a={a} />)}</div>
+        </div>
+      )}
     </>
   );
 }

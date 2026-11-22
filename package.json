@@ -14,6 +14,7 @@
     "check:policy": "npx --yes tsx scripts/check-policy.ts",
     "check:runner": "npx --yes tsx --conditions=react-server scripts/check-runner.ts",
     "check:org": "npx --yes tsx scripts/check-org.ts",
+    "check:org-canvas": "npx --yes tsx scripts/check-org-canvas.ts",
     "check:roster": "npx --yes tsx scripts/check-roster.ts",
     "check:reactions": "npx --yes tsx scripts/check-reactions.ts",
     "check:goals": "npx --yes tsx scripts/check-goals.ts",
