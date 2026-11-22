@@ -14,7 +14,7 @@ They hold for every business on OPERATOR. "The owner" is the business's owner; "
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
-The tool gateway (`core/gateway`) has thirteen action types so far, all starting at Draft: receipt, category
+The tool gateway (`core/gateway`) has fourteen action types so far, all starting at Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), a Gmail draft to a lead
 on the leads list (the prospecting lead finder; the owner sends it from Gmail), a draft email campaign
 to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), a draft
@@ -29,9 +29,11 @@ finalizes and sends it from Stripe), a private note on an order in the business'
 agent an approver gives it to; the customer doesn't see it), a deal moved to another stage of its own
 pipeline, with a note, in the business's HubSpot (any agent an approver gives it to; it emails no one),
 a pause of one running Meta ad whose cost per result is over the owner's target (any agent an approver gives
-it to; no budget is changed and nothing is started), and moving one QuickBooks expense line out of
+it to; no budget is changed and nothing is started), moving one QuickBooks expense line out of
 Uncategorized Expense into one of the business's own expense accounts (any agent an approver gives it to; never
-an amount, and nothing is created or deleted). No
+an amount, and nothing is created or deleted), and a draft invoice to one of the business's existing Square
+customers at one of its active locations (any agent an approver gives it to; the owner publishes and sends it
+from Square). No
 send, payment or publish action type is built, so no agent can send, pay or publish.
 
 
@@ -93,7 +95,8 @@ send, payment or publish action type is built, so no agent can send, pay or publ
   Mercury receipt files, Klaviyo campaign drafts, Stripe with one fixed request per read tool and a
   drafts-only invoice key, Mailchimp reads and campaign drafts, WooCommerce reads and private order notes,
   HubSpot deal reads and deal moves, Meta Ads reads and ad pauses, QuickBooks Online with one fixed request per
-  read tool and one write that only moves an expense out of Uncategorized Expense).
+  read tool and one write that only moves an expense out of Uncategorized Expense, Square with fixed requests per
+  read tool and one write that only makes a draft invoice).
   Each of our own servers is the only file that calls its service's API, and only
   `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).
 - One tool path: agents read only through `callMcpTool` (read tools), or a turned-on custom tool
@@ -106,10 +109,10 @@ send, payment or publish action type is built, so no agent can send, pay or publ
   wrapped by `MCP_SECRET_KEY` (never derived from another secret), connected on Connections.
   Only `integrations/mcp.ts` and `core/gateway` import the vault (lint enforces it). Settings in
   Vercel hold only the app's own infrastructure (Supabase, Claude, Resend for emails to the owner, Stripe
-  for the hosted edition's own billing, which no agent calls, the vault key, the app's Google and Intuit OAuth clients and its
+  for the hosted edition's own billing, which no agent calls, the vault key, the app's Google, Intuit and Square OAuth clients and its
   Meta app) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
-  that carries more (Google scopes, Shopify write scopes). Where a service offers nothing narrower
-(Mailchimp keys reach the whole account; Intuit's one accounting scope reads and writes everything; Shopify's `write_products` also covers prices and deletes, which our
+  that carries more (Google scopes, Shopify write scopes, Square scopes). Where a service offers nothing narrower
+(Mailchimp keys reach the whole account; Intuit's one accounting scope reads and writes everything; Square's `INVOICES_WRITE` also publishes and cancels invoices, which our server never sends; Shopify's `write_products` also covers prices and deletes, which our
   server never sends; Meta grants permissions to a person, so one Meta Ads sign-in can
   manage ads once pauses are connected), our own server is the limit and Connections says so. No token in a prompt, log, error or the
   browser (`scrubSecrets`); requests carrying a token or code never follow redirects. A refused or

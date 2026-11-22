@@ -41,6 +41,8 @@ import { looksLikeMailchimpKey } from "@/core/mailchimp-rules";
 import { checkStripeDraftsKey, checkStripeReadKey, stripeServer } from "./stripe-server";
 import { quickbooksCompany, quickbooksServer } from "./quickbooks-server";
 import { QBO_BASE, QBO_SANDBOX_BASE, realmOk } from "@/core/quickbooks-rules";
+import { squareServer, squareWho } from "./square-server";
+import { SQUARE_HOST, SQUARE_SANDBOX_HOST, squareAuth, squareAuthorizeUrl, squareExpiresIn, squareScopeProblem } from "@/core/square-rules";
 import { looksLikeStripeKey } from "@/core/stripe-rules";
 import {
   CUSTOM_ID, MAX_CUSTOM_SERVERS, acceptTools, cantTurnOn, customArgs, customReply, checkAddress, checkCustomTools, checkLabel, checkLine, checkPins, checkScopes, checkServerName, customCheckNote, isCustomId, isPublicIp, looksLikeKey, readToolList,
@@ -148,7 +150,7 @@ async function openSecret<T>(sealed: string): Promise<T | null> {
 
 // ---- Who a connection is for: a built-in server's profile in code, or a custom server's row.
 
-interface Prof { id: string; name: string; url: string; kind: "oauth" | "google" | "meta" | "intuit" | "token" | "custom"; customAuth?: CustomAuth; scopes: readonly string[] }
+interface Prof { id: string; name: string; url: string; kind: "oauth" | "google" | "meta" | "intuit" | "square" | "token" | "custom"; customAuth?: CustomAuth; scopes: readonly string[] }
 const builtIn = (id: McpId): Prof => ({ id, name: MCP_SERVERS[id].name, url: MCP_SERVERS[id].url, kind: MCP_SERVERS[id].auth, scopes: MCP_SERVERS[id].scopes });
 const customProf = (c: CustomServer): Prof => ({ id: c.id, name: c.name, url: c.url, kind: "custom", customAuth: c.auth, scopes: c.scopes });
 /** Signed in on the server's own page with dynamic client registration: hosted servers and custom ones that use it. */
@@ -323,6 +325,7 @@ async function disconnectProf(p: Prof): Promise<{ revoked: boolean; note: string
         const res = p.kind === "google"
           ? [await fetchJson(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: tries[0].token }) })]
           : p.kind === "intuit" ? [await intuitRevoke(tries[0].token)]
+          : p.kind === "square" ? [await squareRevoke(s.tokens.accessToken)]
           : await Promise.all(tries.map((t) => tokenRequest(endpoint!, s.clientId, s.clientSecret, t)));
         revoked = res.every((x) => x.ok);
         if (!revoked) note = scrubSecrets(`${p.name} didn't confirm the cancel (${res.map((x) => x.status).join(", ")}). Remove the app in its own settings too.`, secrets);
@@ -437,6 +440,15 @@ export async function startConnect(id: string, redirectUri: string): Promise<{ u
     const p: Pending = { id, state, verifier, clientId: env.quickbooksClientId, clientSecret: null, tokenEndpoint: INTUIT_AUTH.token_endpoint, revocationEndpoint: INTUIT_AUTH.revocation_endpoint ?? null, redirectUri, at: Date.now() };
     return { url, pending: seal(p) };
   }
+  if (prof.kind === "square") {
+    // the app's own Square application, like Intuit's: the secret stays in Vercel, never in the cookie or the vault.
+    // Square's code flow with a secret takes no PKCE, so the state is the check.
+    if (!env.squareClientId || !env.squareClientSecret) throw new Error("set SQUARE_CLIENT_ID and SQUARE_CLIENT_SECRET in Vercel (the app's Square application) first");
+    const a = squareAuth(squareHost());
+    const url = squareAuthorizeUrl(squareHost(), { clientId: env.squareClientId, redirectUri, state });
+    const p: Pending = { id, state, verifier, clientId: env.squareClientId, clientSecret: null, tokenEndpoint: a.token_endpoint, revocationEndpoint: a.revocation_endpoint, redirectUri, at: Date.now() };
+    return { url, pending: seal(p) };
+  }
   const custom = prof.kind === "custom";
   const a = await discover(prof.url, custom);
   // a custom server: only the scopes the owner ticked, or none at all; never the server's whole list
@@ -455,7 +467,7 @@ export async function startConnect(id: string, redirectUri: string): Promise<{ u
 }
 
 /** The client secret for a token request: Google's, Meta's and Intuit's live only in Vercel (GMAIL_CLIENT_SECRET, META_APP_SECRET, QUICKBOOKS_CLIENT_SECRET). */
-const clientSecretOf = (p: Prof, stored: string | null) => (p.kind === "google" ? env.gmailClientSecret ?? null : p.kind === "meta" ? env.metaAppSecret ?? null : p.kind === "intuit" ? env.quickbooksClientSecret ?? null : stored);
+const clientSecretOf = (p: Prof, stored: string | null) => (p.kind === "google" ? env.gmailClientSecret ?? null : p.kind === "meta" ? env.metaAppSecret ?? null : p.kind === "intuit" ? env.quickbooksClientSecret ?? null : p.kind === "square" ? env.squareClientSecret ?? null : stored);
 /** RFC 8707 resource: servers that sign in on their own page only (Google doesn't take it). The token is for that address alone. */
 const resourceFor = (p: Prof): Record<string, string> => (signsInOwnPage(p) ? { resource: resourceOf(p.url) } : {});
 
@@ -466,10 +478,30 @@ async function intuitRevoke(token: string) {
   return fetchJson(INTUIT_AUTH.revocation_endpoint!, { method: "POST", headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ token }) });
 }
 
-async function tokenRequest(endpoint: string, clientId: string, clientSecret: string | null, form: Record<string, string>) {
-  const body = new URLSearchParams({ ...form, client_id: clientId, ...(clientSecret ? { client_secret: clientSecret } : {}) });
-  return fetchJson(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" }, body });
+const squareHost = () => (env.squareSandbox ? SQUARE_SANDBOX_HOST : SQUARE_HOST);
+
+/**
+ * Square's revoke: JSON with the app's secret as `Client` auth. It ends every sign-in this business gave
+ * the app, which is why Square has one sign-in, not one for reads and one for drafts.
+ */
+async function squareRevoke(accessToken: string) {
+  if (!env.squareClientId || !env.squareClientSecret) return { ok: false, status: 0, json: null, text: "" };
+  return fetchJson(squareAuth(squareHost()).revocation_endpoint, { method: "POST", headers: { Authorization: `Client ${env.squareClientSecret}`, "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ client_id: env.squareClientId, access_token: accessToken }) });
 }
+
+/** A token request. Square's endpoint takes JSON (`json`); the others take a form. */
+async function tokenRequest(endpoint: string, clientId: string, clientSecret: string | null, form: Record<string, string>, json = false) {
+  const fields = { ...form, client_id: clientId, ...(clientSecret ? { client_secret: clientSecret } : {}) };
+  if (json) return fetchJson(endpoint, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(fields) });
+  return fetchJson(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" }, body: new URLSearchParams(fields) });
+}
+
+/** A token reply as Tokens: Square names when it runs out (`expires_at`), the others how long it lasts. */
+const tokensOf = (p: Prof, j: unknown, now: number, keepRefresh: string | null = null) => {
+  if (p.kind !== "square") return readTokens(j, now, keepRefresh);
+  const secs = squareExpiresIn(j, now);
+  return readTokens(secs == null ? j : { ...(j as object), expires_in: secs }, now, keepRefresh);
+};
 
 /** Back from the sign-in page: checks the state, trades the code for a token and keeps it. */
 export async function finishConnect(id: string, sealedPending: string | undefined, q: { code?: string | null; state?: string | null; error?: string | null; realmId?: string | null }) {
@@ -480,8 +512,9 @@ export async function finishConnect(id: string, sealedPending: string | undefine
   const prof = await profOf(id);
   const secret = clientSecretOf(prof, p.clientSecret);
   if (prof.kind === "custom") await assertPublic(p.tokenEndpoint);
-  const r = await tokenRequest(p.tokenEndpoint, p.clientId, secret, { grant_type: "authorization_code", code: q.code, redirect_uri: p.redirectUri, code_verifier: p.verifier, ...resourceFor(prof) });
-  const tokens = r.ok ? readTokens(r.json, Date.now()) : null;
+  const sq = prof.kind === "square";
+  const r = await tokenRequest(p.tokenEndpoint, p.clientId, secret, { grant_type: "authorization_code", code: q.code, redirect_uri: p.redirectUri, ...(sq ? {} : { code_verifier: p.verifier }), ...resourceFor(prof) }, sq);
+  const tokens = r.ok ? tokensOf(prof, r.json, Date.now()) : null;
   if (!tokens) throw new Error(`the server didn't hand over a token (${r.status}): ${scrubSecrets(r.text, [q.code, secret, p.verifier]).slice(0, 160)}`);
   if (prof.kind === "google") {
     // exactly the profile's scope, or the sign-in is cancelled at Google and not kept
@@ -514,6 +547,24 @@ export async function finishConnect(id: string, sealedPending: string | undefine
       const why = problem ?? (who && "problem" in who ? who.problem : `${prof.name} didn't say whose sign-in this is`);
       await logEvent(id, "refused", why, secrets);
       throw new Error(`${why}, so it was cancelled. Tap Connect again.`);
+    }
+    await store(id, { clientId: p.clientId, clientSecret: null, tokenEndpoint: p.tokenEndpoint, revocationEndpoint: p.revocationEndpoint, tokens });
+    await db().from("mcp_connections").update({ settings: who.settings }).eq("id", id);
+    await logEvent(id, "connected", who.label, secrets);
+    return;
+  }
+  if (prof.kind === "square") {
+    // the business and the sign-in's scopes are read with the new token: exactly the profile's scopes and a
+    // refresh token, or it is cancelled at Square and not kept
+    const secrets = [tokens.accessToken, tokens.refreshToken, secret];
+    let who: OwnWho;
+    try {
+      who = tokens.refreshToken ? await OWN_SIGN_IN.square!.who(tokens.accessToken) : { problem: "Square didn't hand over a refresh token" };
+    } catch (e) { who = { problem: scrubSecrets(e instanceof Error ? e.message : String(e), secrets) }; }
+    if ("problem" in who) {
+      await squareRevoke(tokens.accessToken).catch(() => undefined);
+      await logEvent(id, "refused", who.problem, secrets);
+      throw new Error(`${who.problem}, so it was cancelled. Tap Connect again.`);
     }
     await store(id, { clientId: p.clientId, clientSecret: null, tokenEndpoint: p.tokenEndpoint, revocationEndpoint: p.revocationEndpoint, tokens });
     await db().from("mcp_connections").update({ settings: who.settings }).eq("id", id);
@@ -566,9 +617,9 @@ async function accessToken(p: Prof, o: { evenIfPaused?: boolean } = {}): Promise
   if (!needsRefresh(s.tokens, Date.now())) return { token: s.tokens.accessToken, secrets, row: r! };
   if (!s.tokens.refreshToken) { await pause(id, `${name}'s sign-in ran out`, "refresh_failed", secrets); throw new Error(`${name}'s sign-in ran out. Tap Sign in again on Connections.`); }
   if (p.kind === "custom") await assertPublic(s.tokenEndpoint);
-  const t = await tokenRequest(s.tokenEndpoint, s.clientId, clientSecret, { grant_type: "refresh_token", refresh_token: s.tokens.refreshToken, ...resourceFor(p) });
+  const t = await tokenRequest(s.tokenEndpoint, s.clientId, clientSecret, { grant_type: "refresh_token", refresh_token: s.tokens.refreshToken, ...resourceFor(p) }, p.kind === "square");
   // a new refresh token replaces the old one at once; the old one is kept only when none is sent
-  const tokens = t.ok ? readTokens(t.json, Date.now(), s.tokens.refreshToken) : null;
+  const tokens = t.ok ? tokensOf(p, t.json, Date.now(), s.tokens.refreshToken) : null;
   if (!tokens) {
     const e = `${name}'s sign-in couldn't be renewed (${t.status})`;
     await pause(id, e, "refresh_failed", secrets);
@@ -719,7 +770,7 @@ const metaWho = async (id: McpId, token: string): Promise<OwnWho> => {
 const qboBase = () => (env.quickbooksSandbox ? QBO_SANDBOX_BASE : QBO_BASE);
 /**
  * Our own servers signed in on the service's own page: Gmail (slice 6), Google Analytics (card 152b), Google Calendar (card 251),
- * Meta Ads (card 255) and QuickBooks Online (card 241). `write` is true only from callWriteTool, so a server serving reads
+ * Meta Ads (card 255), QuickBooks Online (card 241) and Square (card 242). `write` is true only from callWriteTool, so a server serving reads
  * and a write offers the write to the gateway alone. `q.realmId` is the company Intuit names on the redirect.
  */
 const OWN_SIGN_IN: Partial<Record<McpId, { server: (profile: McpId, token: string, settings: Record<string, string>, write: boolean) => Handler; who: (token: string, q?: { realmId: string | null }) => Promise<OwnWho> }>> = {
@@ -749,6 +800,11 @@ const OWN_SIGN_IN: Partial<Record<McpId, { server: (profile: McpId, token: strin
       return name ? { label: `for ${name}`, settings: { realmId: realm, company: name } } : { problem: "QuickBooks didn't say which company this is" };
     },
   },
+  // who signed in, and the sign-in's scopes held to the profile exactly (Square's token reply doesn't list them)
+  square: {
+    server: (_p, t, _s, write) => squareServer({ host: squareHost(), token: t, write }),
+    who: async (token) => { const w = await squareWho(squareHost(), token); const problem = squareScopeProblem(w.scopes); return problem ? { problem } : { label: `for ${w.name}`, settings: { merchantId: w.merchantId, business: w.name } }; },
+  },
 };
 
 /**
@@ -768,7 +824,7 @@ async function callOwnSignInTool(id: McpId, tool: string, args: Record<string, u
   const out = "error" in rep ? { error: rep.error } : toolPayload(rep.result);
   if ("error" in out) {
     const msg = scrubSecrets(out.error, secrets);
-    if (/^(Gmail|Analytics|Calendar|Meta|QuickBooks) 401\b/.test(msg)) { const by = isMeta(id) ? "Meta" : MCP_SERVERS[id].auth === "intuit" ? "Intuit" : "Google"; await pause(id, `${by} refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: ${by} refused the sign-in. Tap Sign in again on Connections.`); }
+    if (/^(Gmail|Analytics|Calendar|Meta|QuickBooks|Square) 401\b/.test(msg)) { const by = isMeta(id) ? "Meta" : MCP_SERVERS[id].auth === "intuit" ? "Intuit" : MCP_SERVERS[id].auth === "square" ? "Square" : "Google"; await pause(id, `${by} refused the sign-in (401)`, "refused", secrets); throw new Error(`${name}: ${by} refused the sign-in. Tap Sign in again on Connections.`); }
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;

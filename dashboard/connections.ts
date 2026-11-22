@@ -9,7 +9,7 @@ import type { ToolDef, ToolGroup } from "@/core/tools/types";
 import type { IntegrationId } from "./crew";
 import type { McpId } from "@/core/mcp-rules";
 
-export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "mailchimp" | "woo" | "hubspot" | "meta" | "email" | "web" | "agents" | "control_room" | "math" | "stripe" | "quickbooks";
+export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "mailchimp" | "woo" | "hubspot" | "meta" | "email" | "web" | "agents" | "control_room" | "math" | "stripe" | "quickbooks" | "square";
 /** A server the owner added by its address (docs/custom-servers.md): its id is the connection's. */
 export type CustomConnId = `c_${string}`;
 
@@ -118,6 +118,11 @@ export const CONNECTIONS: Connection[] = [
     checks: [{ key: "quickbooks", label: "Books", setup: "Tap Connect and sign in to QuickBooks as an admin, picking the business’s company on Intuit’s page. Needs QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET in Vercel (the app’s Intuit OAuth client, docs/mcp-everywhere.md)." }],
   },
   {
+    id: "square", name: "Square", sub: "Sales and invoices", icon: "store", builtIn: false, mcp: "square",
+    about: "Our own Square server, run in the app, signed in on Square’s own page. Square’s own MCP server isn’t used: it reaches everything Square’s APIs offer. The sign-in asks only for what our tools need and is refused if Square grants more. Each read runs fixed requests and every total is worked out in code. The only change it can make is a draft invoice you approved, to one of your Square customers: nothing is published, sent or charged, you do that from Square. Square’s invoice permission could also publish or cancel; our server has no code to do either.",
+    checks: [{ key: "square", label: "Sales and invoices", setup: "Tap Connect and sign in to Square as the business’s owner, then tap Allow. Needs SQUARE_CLIENT_ID and SQUARE_CLIENT_SECRET in Vercel (the app’s Square application, docs/mcp-everywhere.md)." }],
+  },
+  {
     id: "email", name: "Email to you", sub: "Briefs and alerts", icon: "inbox", builtIn: false,
     about: "Sends through Resend to the owner email on Settings > Where things go, always one of this business’s owners. The code has no way to name anyone else.",
     checks: [{ key: "email", label: "Email", setup: "Set RESEND_API_KEY and BRIEF_FROM (a sender on a domain verified in Resend) in Vercel, and pick the owner email on Settings > Where things go." }],
@@ -149,7 +154,7 @@ export const CONN_BY_ID = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c])) 
 /** Which connection each tool group belongs to. */
 type BuiltInGroup = Exclude<ToolGroup, "custom">;
 const GROUP_CONN: Record<BuiltInGroup, ConnId> = {
-  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", stripe: "stripe", quickbooks: "quickbooks", mailchimp: "mailchimp", woo: "woo", hubspot: "hubspot", meta: "meta", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
+  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", stripe: "stripe", quickbooks: "quickbooks", square: "square", mailchimp: "mailchimp", woo: "woo", hubspot: "hubspot", meta: "meta", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
 };
 /** For tools on the list in code. A custom server's tools belong to that server (dashboard/builder.ts customMenuFor). */
 export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group as BuiltInGroup];
