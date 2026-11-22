@@ -606,7 +606,7 @@ button.org-seat { cursor: pointer; }
 .lc-meta b { font-size: 13px; font-weight: 700; line-height: 1.25; } .lc-role { font-size: 11px; line-height: 1.25; color: var(--ink2); }
 .lc-meta b, .lc-role { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lc-more { display: flex; flex-direction: column; gap: 3px; max-height: 0; overflow: hidden; opacity: 0; transition: opacity .5s .15s; }
-.lc-card.lc-big .lc-more { opacity: 1; max-height: 80px; margin-top: 5px; } .lc-card.lc-big .lc-in { align-items: flex-start; padding: 11px 12px; border-radius: 18px; } .lc-card.lc-big .lc-sd { margin-top: 5px; } .lc-card.lc-big .lc-meta b { font-size: 14.5px; }
+.lc-card.lc-big .lc-more { opacity: 1; max-height: 80px; margin-top: 5px; } .lc-card.lc-big .lc-in { align-items: flex-start; padding: 12px 13px 15px; border-radius: 18px; } .lc-card.lc-big .lc-sd { margin-top: 5px; } .lc-card.lc-big .lc-meta b { font-size: 14.5px; }
 .lc-doing { font-size: 11.5px; line-height: 1.35; color: var(--ink2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lc-st { display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; color: var(--mut); white-space: nowrap; }
 .lc-st.on { color: var(--mint-ink); } .lc-st.run { color: var(--acc-ink); } .lc-st.call { color: var(--ink2); } .lc-st.over, .lc-st.missing { color: var(--red-ink); }
