@@ -175,3 +175,14 @@ export function checkSettingsEdit(e: SettingsEdit, ownerEmails: readonly string[
   if (text(e.timeZone) && !s.timeZone) return { problem: "Pick a time zone from the list, like America/New_York." };
   return { settings: s };
 }
+
+/**
+ * What the "Email to you" connection tells an owner (Connections, Status): whether the brief and
+ * alerts are emailed, and to whom. No setting names: an owner can only pick the owner email; the
+ * app's own sender is set by whoever runs OPERATOR (docs/self-host.md).
+ */
+export function emailLine(ownerEmail: string | null, appCanSend: boolean): { ok: boolean; text: string } {
+  if (!ownerEmail) return { ok: false, text: "No emails go out yet. Pick who gets the morning brief and alerts on Settings > Business > Where things go." };
+  if (!appCanSend) return { ok: false, text: `No emails go out yet: this copy of OPERATOR isn’t set up to send email. Once it is, they go to ${ownerEmail}.` };
+  return { ok: true, text: `The morning brief and alerts are emailed to ${ownerEmail}. Change who gets them on Settings > Business > Where things go.` };
+}

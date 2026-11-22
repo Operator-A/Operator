@@ -192,7 +192,7 @@ async function destinations(): Promise<{ email: boolean; notion: { kind: "databa
 async function sendBrief(f: Facts, judgment: Judgment, sections: readonly string[] = SECTIONS, runId: string | null = null): Promise<string> {
   const view = (notionUrl?: string) => briefView(f, judgment, sections, notionUrl, runId);
   const { email, notion: target } = await destinations();
-  if (!email && !target) throw new Error("Nowhere to send the brief: email needs RESEND_API_KEY, BRIEF_FROM and an owner email on Settings; Notion needs its key pasted on Connections and a briefs database or page on Settings");
+  if (!email && !target) throw new Error("Nowhere to send the brief: email needs an owner email on Settings > Business > Where things go (and the app able to send email); Notion needs its key pasted on Connections and a briefs database or page on Settings");
 
   // Notion first, so the email can link to its copy. A Notion failure never stops the email.
   let url: string | undefined, rowId: string | undefined, notionError = "";
