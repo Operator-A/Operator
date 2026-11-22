@@ -26,6 +26,18 @@ export const AREAS_TO_DESIGN = 5;
 export const SETUP_MODEL = "claude-opus-5-5";
 export const SETUP_EFFORT = "high" as const;
 
+/**
+ * How much one setup reply may do (card 198). An interview reply stays small. A reply where Avery can
+ * sketch needs about, head and goal for up to three departments, plus the shared brain and finish, so it
+ * gets more room. The runner refuses a turn whose worst case would pass the cost limit.
+ */
+export function setupLimits(ready: boolean): { maxSteps: number; maxCostUsd: number } {
+  return ready ? { maxSteps: 14, maxCostUsd: 0.7 } : { maxSteps: 6, maxCostUsd: 0.3 };
+}
+
+/** Avery's reply when a setup run stops before it finishes (card 198): nothing was saved, so say so. */
+export const SETUP_STOPPED = "That one needed more work than a single reply allows, so I stopped before saving anything. Send your message again and I'll pick it up.";
+
 /** Which areas the founder has covered: known facts only (a fact read from a site counts once confirmed). */
 export function coverage(facts: readonly Pick<Fact, "topic" | "state">[]): { covered: Area[]; missing: Area[]; ready: boolean } {
   const covered = INTERVIEW_AREAS.filter((a) => facts.some((f) => f.topic === a && f.state === "known"));
@@ -54,7 +66,7 @@ export function cleanFact(raw: unknown): string | null {
 }
 
 /** A line that ends on a word that needs more after it (card 196: "…and wants to"). */
-const DANGLING = /\b(to|and|or|but|the|a|an|of|for|with|that|because|whether|than)$/i;
+const DANGLING = /\b(to|and|or|but|the|a|an|of|for|with|because|whether|than)$/i;
 
 /** What's wrong with a fact the founder or Avery wants saved, or null. */
 export function factProblem(topic: unknown, text: unknown, have: number): string | null {

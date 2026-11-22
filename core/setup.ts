@@ -25,7 +25,7 @@ import {
   FACT_TOPICS, MAX_FACTS_PER_MESSAGE, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
   cleanFact, coverage, factProblem, SETUP_EFFORT, SETUP_MODEL, isStage, isTopic, MAX_FACTS, needsSetup, readAsked, readSetupState, setupDirective, setupPrompt, stateFor,
   type Fact, type FactState, type SetupState, type Stage,
-  SETUP_HANDOFF,
+  SETUP_HANDOFF, SETUP_STOPPED, setupLimits,
 } from "@/core/setup-rules";
 import { applyDesign, designGaps, pickId, BESPOKE_PREFIX, DESIGN_PARTS, MAX_DESIGN_PARTS, MAX_DESIGNS, REASON_MAX, type Design, type Kit } from "@/core/design-rules";
 
@@ -390,7 +390,7 @@ export async function askSetup(message: string, siteRaw: string, connected: Read
     model: SETUP_MODEL,
     effort: SETUP_EFFORT,
     tools: tools.map((t) => t.id),
-    limits: { maxSteps: Math.min(base.limits.maxSteps, 6), maxCostUsd: base.limits.maxCostUsd },
+    limits: setupLimits(ready),
     outputName: "setup reply",
   };
   let finished = false, said: string | null = null, readAPage = false;
@@ -427,7 +427,7 @@ export async function askSetup(message: string, siteRaw: string, connected: Read
     const like = similarNote(heldSimilar.got.at(-1) ?? null);
     if (like) notes.push(like);
   }
-  const reply = res.status === "skipped" ? `I can't answer right now: ${res.summary}` : (finished && said ? said : res.summary).slice(0, MAX_REPLY);
+  const reply = res.status === "skipped" ? `I can't answer right now: ${res.summary}` : res.status === "ok" && !finished ? SETUP_STOPPED : (finished && said ? said : res.summary).slice(0, MAX_REPLY);
   const keptReply = kept && await keepChat({ role: "avery", text: reply, run_id: res.runId, notes });
   return { ok: res.status === "ok", reply, notes, runId: res.runId, costUsd: res.costUsd ?? 0, kept: !!keptReply, saved, suggested };
 }
