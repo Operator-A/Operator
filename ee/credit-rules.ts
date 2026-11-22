@@ -112,7 +112,7 @@ export function packReturn(raw: unknown): { place: ReturnPlace; success: string;
   const place: ReturnPlace = (RETURN_PLACES as readonly unknown[]).includes(raw) ? (raw as ReturnPlace) : "settings";
   if (place === "start") return { place, success: "/start?claude=hosted&credits=added", cancel: "/start?claude=hosted" };
   if (place === "connections") return { place, success: "/connections?credits=added#claude", cancel: "/connections#claude" };
-  return { place, success: "/settings?credits=added#billing", cancel: "/settings#billing" };
+  return { place, success: "/settings/billing?credits=added", cancel: "/settings/billing" };
 }
 
 /** The page a failed pack purchase goes back to, with the problem shown there (cut to 200 characters). */
@@ -120,5 +120,5 @@ export function packProblem(place: ReturnPlace, problem: string): string {
   const q = `credits_problem=${encodeURIComponent(problem.slice(0, 200))}`;
   if (place === "start") return `/start?claude=hosted&${q}`;
   if (place === "connections") return `/connections?${q}#claude`;
-  return `/settings?billing_problem=${encodeURIComponent(problem.slice(0, 200))}#billing`;
+  return `/settings/billing?billing_problem=${encodeURIComponent(problem.slice(0, 200))}`;
 }

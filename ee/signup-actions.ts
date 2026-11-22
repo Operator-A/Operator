@@ -27,17 +27,17 @@ export async function signUp(form: FormData): Promise<void> {
 const adminOnly = { ok: false as const, text: "Sign-up codes are made by the admin business." };
 
 export async function createSignupCode(form: FormData): Promise<void> {
-  const { me, no } = await asRole("owner"); if (no) redirect(`/settings?billing_problem=${encodeURIComponent(no.text)}`);
-  if (me.orgId !== adminOrgId()) redirect(`/settings?billing_problem=${encodeURIComponent(adminOnly.text)}`);
+  const { me, no } = await asRole("owner"); if (no) redirect(`/settings/billing?billing_problem=${encodeURIComponent(no.text)}`);
+  if (me.orgId !== adminOrgId()) redirect(`/settings/billing?billing_problem=${encodeURIComponent(adminOnly.text)}`);
   const code = await makeCode(String(form.get("note") ?? ""), me.email);
   await audit(me, "signup_code_add", null, { note: String(form.get("note") ?? "").slice(0, 60) });
-  redirect(`/settings?new_code=${encodeURIComponent(code)}#billing`);
+  redirect(`/settings/billing?new_code=${encodeURIComponent(code)}`);
 }
 
 export async function revokeSignupCode(form: FormData): Promise<void> {
-  const { me, no } = await asRole("owner"); if (no) redirect(`/settings?billing_problem=${encodeURIComponent(no.text)}`);
-  if (me.orgId !== adminOrgId()) redirect(`/settings?billing_problem=${encodeURIComponent(adminOnly.text)}`);
+  const { me, no } = await asRole("owner"); if (no) redirect(`/settings/billing?billing_problem=${encodeURIComponent(no.text)}`);
+  if (me.orgId !== adminOrgId()) redirect(`/settings/billing?billing_problem=${encodeURIComponent(adminOnly.text)}`);
   const id = String(form.get("id") ?? "");
   if (/^[0-9a-f-]{36}$/.test(id)) { await revokeCode(id); await audit(me, "signup_code_revoke", id); }
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
 }

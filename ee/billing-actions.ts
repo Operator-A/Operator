@@ -15,7 +15,7 @@ async function base() {
   const host = h.get("x-forwarded-host") ?? h.get("host");
   return host ? `https://${host}` : "";
 }
-const back = (problem: string): never => redirect(`/settings?billing_problem=${encodeURIComponent(problem.slice(0, 200))}`);
+const back = (problem: string): never => redirect(`/settings/billing?billing_problem=${encodeURIComponent(problem.slice(0, 200))}`);
 
 export async function addCard(): Promise<void> {
   const { no } = await asRole("owner"); if (no) back(no.text);

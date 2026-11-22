@@ -15,6 +15,14 @@ export type PlanAsk =
 export const RETURN_PLACES = ["settings", "start", "connections"] as const;
 export type ReturnPlace = (typeof RETURN_PLACES)[number];
 
+/** One extra Settings section from the paid layer. */
+export interface SettingsSection {
+  slug: string;
+  label: string;
+  hint: string;
+  Page: ComponentType<{ query: Readonly<Record<string, string | undefined>> }>;
+}
+
 export interface Extensions {
   /** "open" is the AGPL app on its own; "cloud" is the hosted edition built with ee/. */
   edition: "open" | "cloud";
@@ -25,10 +33,11 @@ export interface Extensions {
    */
   planBlock(ask: PlanAsk): Promise<string | null>;
   /**
-   * Extra cards at the bottom of Settings (billing, seats). Server component, given the page's query
-   * (a card's own short messages, such as a problem after a redirect); null for none.
+   * Extra sections of Settings (docs/settings.md), such as Billing, each at /settings/<slug> after the
+   * core ones. Page is a server component, given the page's query (a card's own short messages, such
+   * as a problem after a redirect). A slug that clashes with a core section is ignored. Empty: none.
    */
-  SettingsCards: ComponentType<{ query: Readonly<Record<string, string | undefined>> }> | null;
+  settingsSections: readonly SettingsSection[];
   /**
    * The hosted Claude option (card 162): the credit balance, the price and the buttons to buy credits,
    * shown on setup step 1 and Connections > Claude when the founder picks OPERATOR's Claude. Server
@@ -72,4 +81,4 @@ export interface Extensions {
 }
 
 /** Every slot, so check:open-core can make sure each edition fills each one. */
-export const SLOTS = ["edition", "planBlock", "SettingsCards", "HostedClaude", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun", "afterSchedule", "similarBusinesses"] as const satisfies readonly (keyof Extensions)[];
+export const SLOTS = ["edition", "planBlock", "settingsSections", "HostedClaude", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun", "afterSchedule", "similarBusinesses"] as const satisfies readonly (keyof Extensions)[];

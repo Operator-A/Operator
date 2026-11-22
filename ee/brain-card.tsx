@@ -11,7 +11,7 @@ export async function BrainCard({ query }: { query: Readonly<Record<string, stri
   const [me, s, snap] = await Promise.all([requireSession(), brainSettings(), savedSnapshot()]);
   const owner = me.role === "owner";
   return (
-    <div className="card" id="brain" style={{ padding: "16px 22px", gap: 8 }}>
+    <div className="card set-card pad" id="brain">
       <span className="card-t">Shared brain</span>
       <span className="sub">
         Help OPERATOR learn from businesses like yours. Only counts leave your business, such as which tools and
@@ -20,23 +20,25 @@ export async function BrainCard({ query }: { query: Readonly<Record<string, stri
       </span>
       {query.brain === "saved" && <span className="sub" style={{ color: "var(--mint-ink)" }}>Saved.</span>}
       {query.brain_problem && <span style={{ fontSize: 13, color: "var(--red-ink)" }}>{query.brain_problem.slice(0, 200)}</span>}
-      <form action={saveBrain} className="stack" style={{ gap: 8 }}>
-        <label className="row" style={{ gap: 8, alignItems: "center", fontSize: 14 }}>
-          <input type="checkbox" name="share" id="brain-share" defaultChecked={s.share} disabled={!owner} />
-          Add my business&apos;s counts
+      <form action={saveBrain} className="stack" style={{ gap: 0 }}>
+        <label className="set-row" htmlFor="brain-share">
+          <span className="set-row-k">Add my business&apos;s counts<span className="muted set-hint">Off deletes what was counted at once.</span></span>
+          <input type="checkbox" className="switch" name="share" id="brain-share" defaultChecked={s.share} disabled={!owner} />
         </label>
-        <label className="stack" style={{ gap: 4, fontSize: 13 }}>
-          <span className="muted">Kind of business, so you&apos;re compared with businesses like yours</span>
-          <select name="kind" id="brain-kind" defaultValue={s.kind ?? ""} disabled={!owner}>
+        <div className="set-row rule">
+          <label className="set-row-k" htmlFor="brain-kind">Kind of business<span className="muted set-hint">So you&apos;re compared with businesses like yours.</span></label>
+          <select className="input" name="kind" id="brain-kind" defaultValue={s.kind ?? ""} disabled={!owner} style={{ maxWidth: 260 }}>
             <option value="">Not picked yet</option>
             {BUSINESS_KINDS.map((k) => <option key={k} value={k}>{KIND_WORDS[k]}</option>)}
           </select>
-        </label>
-        {owner ? <button className="btn sm" style={{ alignSelf: "flex-start" }}>Save</button> : <span className="muted" style={{ fontSize: 12 }}>Only an owner can change this.</span>}
+        </div>
+        <div className="row rule" style={{ justifyContent: "flex-end", paddingTop: 12 }}>
+          {owner ? <button className="btn dark sm">Save</button> : <span className="muted" style={{ fontSize: 12 }}>Only an owner can change this.</span>}
+        </div>
       </form>
       {s.share && (
         <details style={{ fontSize: 13 }}>
-          <summary className="muted">What your business adds</summary>
+          <summary className="ink2" style={{ cursor: "pointer" }}>What your business adds</summary>
           {snap ? (
             <div className="stack" style={{ gap: 2, paddingTop: 6 }}>
               <span>Counted on {snap.taken_on}. Revenue band: {snap.revenue_band.replace(/_/g, " ")}. Time on OPERATOR: {snap.age_band.replace("_plus", "+").replace("_", " to ")} days.</span>
