@@ -8,7 +8,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import {
-  BRAIN_FLOOR, NO_BRAIN, ageBand, buildSnapshot, overFloor, readBrainSettings, revenueBand, snapshotProblem, toolSlug, toolsOf,
+  BRAIN_FLOOR, BRAIN_TOPICS, NO_BRAIN, NOTE_LINES, ageBand, isTopic, patternOnTopic, similarNote, topicWords, buildSnapshot, overFloor, readBrainSettings, revenueBand, snapshotProblem, toolSlug, toolsOf,
   type Snapshot, type SnapshotInput,
 } from "../core/brain-rules";
 
@@ -182,6 +182,32 @@ async function sql() {
   const grants = (await pg.query<{ grantee: string }>("select grantee from information_schema.routine_privileges where routine_name = 'brain_patterns'")).rows.map((r) => r.grantee);
   assert.ok(grants.includes("service_role") && !grants.includes("authenticated") && !grants.includes("anon") && !grants.includes("PUBLIC"), `grants: ${grants.join(", ")}`);
   await pg.close();
+}
+
+// ---- 4. slice 4 (card 233): Avery asks with a topic from a list, and code writes the note
+assert.ok(BRAIN_TOPICS.includes("starting") && BRAIN_TOPICS.includes("approvals") && BRAIN_TOPICS.includes("list"));
+assert.ok(isTopic("books") && !isTopic("my secret plans") && !isTopic(""));
+for (const t of BRAIN_TOPICS) assert.match(topicWords(t), /^[A-Za-z0-9 ,.:()'&-]+$/, `${t}: words from lists only`);
+assert.match(topicWords("list"), /^Email marketing: .*Klaviyo/);
+assert.ok(patternOnTopic("tool:list:klaviyo", "list") && !patternOnTopic("tool:books:xero", "list"));
+assert.ok(patternOnTopic("dept:finance", "starting") && patternOnTopic("tool:store:shopify", "starting") && !patternOnTopic("action:x", "starting"));
+assert.ok(patternOnTopic("action:gmail.create_draft", "approvals") && patternOnTopic("level:calendar.hold", "approvals") && !patternOnTopic("dept:finance", "approvals"));
+assert.equal(similarNote(null), null);
+assert.equal(similarNote({ counts: [], playbook: [] }), null, "nothing came back: no note");
+const many = { counts: Array.from({ length: 5 }, (_, i) => ({ statement: `Count ${i}.`, cohort: "all", pattern: `dept:x${i}`, orgs: 9, hits: 6 })), playbook: [{ title: "Lesson", lesson: "Body", for: "every business" }] };
+assert.equal(similarNote(many), "Businesses like yours: Count 0. Count 1. Count 2.", `at most ${NOTE_LINES} lines`);
+assert.equal(similarNote({ counts: [], playbook: [{ title: "Connect the bank first", lesson: "x", for: "every business" }] }), "Businesses like yours: OPERATOR's playbook: Connect the bank first.");
+// the tools: offered only on the cloud edition, a topic is the only input, and the note is code's
+{
+  const t = readFileSync("core/brain-tools.ts", "utf8");
+  assert.match(t, /if \(edition\(\) !== "cloud"\) return null;[\s\S]*if \(edition\(\) !== "cloud"\) return null;/, "both tools are cloud only");
+  assert.match(t, /params: \[\{\s*name: "topic", type: "enum", options: \[\.\.\.BRAIN_TOPICS\]/, "the only input is a topic from the list");
+  assert.match(t, /if \(s\.kind\) return `kept the kind already picked/, "the owner's pick wins");
+  for (const f of ["core/setup.ts", "core/avery-chat.ts"]) {
+    const src = readFileSync(f, "utf8");
+    assert.match(src, /similarTool\(heldSimilar\)/, `${f} offers Businesses like yours`);
+    assert.match(src, /similarNote\(heldSimilar\.got\.at\(-1\) \?\? null\)/, `${f}: the note is code's`);
+  }
 }
 
 sql().then(() => console.log("check:brain ok"), (e) => { console.error(e); process.exit(1); });

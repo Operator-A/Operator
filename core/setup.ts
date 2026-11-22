@@ -19,6 +19,8 @@ import { checkAddress } from "@/core/custom-mcp-rules";
 import { SNAPSHOT_DAYS, bankFacts, capSnapshot, emailFacts, siteFacts, snapshotPrefix, storeFacts, type SnapshotFact, type SnapshotTile } from "@/core/snapshot-rules";
 import { chatHistory, keepChat, type ChatAnswer } from "@/core/avery-chat";
 import { MAX_REPLY } from "@/core/chat-rules";
+import { kindTool, similarTool } from "@/core/brain-tools";
+import { similarNote, type Similar } from "@/core/brain-rules";
 import {
   FACT_TOPICS, MAX_FACTS_PER_MESSAGE, NO_SETUP, SETUP_AGENT, SETUP_TEMPLATE,
   cleanFact, coverage, factProblem, SETUP_EFFORT, SETUP_MODEL, isStage, isTopic, MAX_FACTS, needsSetup, readAsked, readSetupState, setupDirective, setupPrompt, stateFor,
@@ -376,7 +378,10 @@ export async function askSetup(message: string, siteRaw: string, connected: Read
   const open = new Set(parts.filter((p) => p.state === "open").map((p) => p.id));
   // the interview comes first (card 192): Avery designs (card 193) only once code counts enough of it
   const ready = coverage(facts).ready;
-  const tools = [saveFactTool(heldFacts, facts.length), askToolTool(heldAsk, open), ...(ready ? [designTool(heldDesign)] : []), ...(site ? [siteTool(new URL(site).hostname)] : [])];
+  // the shared brain (card 233, cloud edition only): what businesses like this one found, and its kind
+  const heldSimilar: { got: Similar[] } = { got: [] }, heldKind: { said: string | null } = { said: null };
+  const brain = [similarTool(heldSimilar), kindTool(heldKind)].filter((t): t is ToolDef => !!t);
+  const tools = [saveFactTool(heldFacts, facts.length), askToolTool(heldAsk, open), ...(ready ? [designTool(heldDesign)] : []), ...(site ? [siteTool(new URL(site).hostname)] : []), ...brain];
   const base = loaded.spec;
   const spec: AgentSpec = {
     ...base,
@@ -418,6 +423,9 @@ export async function askSetup(message: string, siteRaw: string, connected: Read
     }
     if (heldAsk.cat) { const now = await setupState(); await saveSetupState({ ...now, asked: readAsked([...now.asked, heldAsk.cat]) }); }
     if (saved || suggested) await forgetBusiness();
+    if (heldKind.said) notes.push(heldKind.said);
+    const like = similarNote(heldSimilar.got.at(-1) ?? null);
+    if (like) notes.push(like);
   }
   const reply = res.status === "skipped" ? `I can't answer right now: ${res.summary}` : (finished && said ? said : res.summary).slice(0, MAX_REPLY);
   const keptReply = kept && await keepChat({ role: "avery", text: reply, run_id: res.runId, notes });

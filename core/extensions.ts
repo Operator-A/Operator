@@ -4,6 +4,7 @@ import "server-only";
 // file imports it (check:open-core).
 import ext from "operator-extensions";
 import type { Extensions, PlanAsk, ReturnPlace } from "@/core/extension-types";
+import type { Similar, SimilarAsk } from "@/core/brain-rules";
 import type { Billing } from "@/core/cost-rules";
 
 export type { PlanAsk, ReturnPlace };
@@ -43,4 +44,9 @@ export async function runEnded(run: { runId: string; costUsd: number; billing: B
 export async function afterSchedule(now: number): Promise<string | null> {
   try { return await extensions.afterSchedule(now); }
   catch (e) { return `failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`; }
+}
+
+/** Businesses like this one (card 233): null in the open edition, and when the shared brain can't be read. Never throws. */
+export async function similarBusinesses(ask: SimilarAsk): Promise<Similar | null> {
+  try { return await extensions.similarBusinesses(ask); } catch { return null; }
 }

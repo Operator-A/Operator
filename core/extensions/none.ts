@@ -17,6 +17,7 @@ const none: Extensions = {
   afterRun: async () => undefined,
   // no shared brain: a self-hosted OPERATOR is one company, with nobody to learn from
   afterSchedule: async () => null,
+  similarBusinesses: async () => null,
 };
 
 export default none;

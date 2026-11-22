@@ -168,3 +168,40 @@ Lesson rules (percentages, counts, addresses, links, lengths refused; small numb
 and its tags; the plan sends only lessons that pass and deletes only stale `play-` documents; the pattern sync
 leaves `play-` documents alone; the playbook sync against a fake bank; the actions are owners of the admin
 business only and audited; only the admin business's owners see the card.
+
+## Slice 4: Businesses like yours (card 233)
+
+Avery uses the shared brain in the setup interview and in chat, on the cloud edition only.
+
+### What it does
+
+- **Businesses like yours** (`core/brain-tools.ts`, a read tool): Avery names a topic from a fixed list
+  (`BRAIN_TOPICS`: what to set up first, one part of the business from `TOOL_CATEGORIES`, or approvals). That
+  topic is the only input, so nothing the founder typed is sent anywhere. The tool asks the
+  `similarBusinesses` slot with the topic, the business's kind and its revenue band.
+- **Hindsight orders, code says** (`ee/brain.ts`, `pickSimilar` in `ee/brain-rules.ts`): Hindsight is searched
+  with the topic's words from code (`topicWords`), limited to this kind's tags and those for every business.
+  It only orders what fits. Code says every count again from the live count (`brainPatterns`, over the
+  floor), so a pattern that fell under 5 businesses is dropped, and each pattern shows once, for the most
+  specific cohort the business is in (kind and revenue band, then kind, then every business). Lesson text
+  comes from the playbook table, never from Hindsight's text. Without Hindsight, or when it fails, code
+  orders them itself.
+- **The founder sees what she leaned on**: code adds a note under her reply, "Businesses like yours: …",
+  with at most three of the lines she was given (`similarNote`). The tool hands the counts' numbers as
+  numbers, so she quotes them exactly.
+- **Kind of business in the interview** (`set_business_kind`, setup only): Avery picks one from
+  `BUSINESS_KINDS`; code saves it after a run that finishes, only when the owner hasn't picked one on
+  Settings > Shared brain, and says so in a note.
+- **Open edition**: the slot answers null, so neither tool is offered.
+
+Left for later: the "why" line under each department on the company reveal. Avery designs those departments
+for each business, so there are no counts for them yet; it fits with slice 4b's results.
+
+### Tests
+
+`npm run check:brain`: topics are from lists only, which patterns a topic covers, the note (at most three
+lines, none when nothing came back), both tools are cloud only and take only a topic or a kind, the owner's
+kind wins, setup and chat offer the tool and write the note in code. `npm run check:ee`: cohorts most specific
+first, recall tags, one line per pattern for the most specific cohort, on topic and this kind only, Hindsight's
+order wins but a pattern under the floor never comes back, lessons only for this kind or every business,
+numbers in the words are the live row's, Hindsight searched only with the topic's words.
