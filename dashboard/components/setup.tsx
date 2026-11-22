@@ -81,7 +81,7 @@ export function SetupChat({ name, initial, send, ready, blocked, foot, zone, car
           ? <div key={m.id} className="wg-me wg-pop">{m.text}</div>
           : (
             <div key={m.id} className="row wg-pop" style={{ gap: 12, alignItems: "flex-start" }}>
-              <span className="wg-av" aria-hidden>{name[0]}</span>
+              <span className="wg-av wg-av-chat" aria-hidden>{name[0]}</span>
               <div className="wg-her">
                 <span style={{ whiteSpace: "pre-wrap" }}>{m.text}</span>
                 {m.notes.map((n, i) => <span key={i} className="wg-note"><Icon name="check" size={14} />{n}</span>)}
@@ -132,8 +132,8 @@ export function StageNav({ back, next, go }: { back: { stage: string; label: str
   const [bad, setBad] = useState<string | null>(null);
   const to = (stage: string) => start(async () => { const r = await go(stage); if (r.ok) { setBad(null); window.scrollTo({ top: 0 }); } else setBad(r.text); });
   return (
-    <nav aria-label="Setup steps" className="stack" style={{ gap: 8, position: "sticky", bottom: 12, zIndex: 5 }}>
-      <div className="row wrap wg-glass" style={{ gap: 10, justifyContent: "space-between", padding: 10, borderRadius: 16 }}>
+    <nav aria-label="Setup steps" className="stack wg-nav" style={{ gap: 8, position: "sticky", bottom: 12, zIndex: 5 }}>
+      <div className="row wrap wg-glass wg-nav-bar" style={{ gap: 10, justifyContent: "space-between", padding: 10, borderRadius: 16 }}>
         {back ? <button type="button" className="btn outline" disabled={busy} onClick={() => to(back.stage)}>{back.label}</button> : <span />}
         {next && <button type="button" className={next.quiet ? "btn outline" : "btn dark"} disabled={busy} onClick={() => to(next.stage)}>{next.label}</button>}
       </div>
@@ -331,7 +331,7 @@ export function CompanyChart({ owner, company, depts, initial, install, back, em
 
       <div className="wg-glass wg-card wg-pop" style={{ width: "100%", animationDelay: `${1.1 + on.length * 0.18}s` }}>
         <div className="stack" style={{ gap: 2 }} aria-live="polite">
-          <b style={{ fontSize: 15 }}>{tot.agents} agents · about {usd(tot.month)} a month once on duty</b>
+          <b style={{ fontSize: 15 }}>{tot.agents} {tot.agents === 1 ? "agent" : "agents"} · about {usd(tot.month)} a month once on duty</b>
           <span className="muted" style={{ fontSize: 12.5 }}>At most {usd(tot.atMost)} a month on these schedules{tot.unknown.length ? `, plus ${tot.unknown.join(", ")} (cost unknown)` : ""} · estimates until each has run{billing ? ` · ${BILLING_WORDS[billing]}` : ""}</span>
         </div>
         {also.length > 0 && (

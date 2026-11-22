@@ -144,6 +144,10 @@ that connect, their steps and what each permission is for are still `TOOL_TILES`
   gets 6 tool calls and $0.30; a reply where Avery can sketch gets 14 and $0.70, room for the shared brain,
   about / head / goal for three departments, and finish. If a reply still stops before finishing, nothing is
   saved and Avery's message is code's fixed `SETUP_STOPPED` line, never the runner's summary.
+- **On a phone** (card 199, 720 px and under): the header stays one line (name with an ellipsis, Sign out as
+  an icon), the steps bar is a compact pill on the right that hides while a chat field has focus, the
+  chat box fits one screen (`100svh`), Avery's chat avatar is hidden at 560 px and under, and tool buttons
+  break only between words.
 - **The hand-off** (card 197). When setup ends (`finishSetup`), code keeps one fixed Avery line
   (`SETUP_HANDOFF`) in the chat, once, so the Desk panel opens on it and not on the interview's last
   question.

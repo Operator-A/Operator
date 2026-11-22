@@ -36,6 +36,18 @@ assert.ok(!/https?:|Shopify|Klaviyo|Mercury/.test(SETUP_HANDOFF) && SETUP_HANDOF
   assert.match(fin, /const was = await setupState\(\)/);
   assert.match(fin, /if \(!was\.done\) await keepChat\(\{ role: "avery", text: SETUP_HANDOFF \}\)\.catch\(/, "only the first time setup ends, and a missing chat table never stops it");
 }
+// card 199: setup on a phone
+{
+  const css = read("app/globals.css"), ui = read("dashboard/components/setup.tsx"), src = read("core/setup.ts");
+  assert.match(ui, /\{tot\.agents === 1 \? "agent" : "agents"\}/, "1 agent, 2 agents");
+  assert.ok(!src.includes("on the right"), "facts sit below the chat on a phone");
+  assert.match(src, /Edit or remove any under What I’ve learned so far\./);
+  const phone = css.slice(css.indexOf("setup on a phone (card 199)"));
+  for (const rule of ["scroll-padding-bottom", ".wg-name", ".signout-word { display: none; }", "100svh", ".wg-nav-bar", "textarea:focus, .wg-card input:focus) .wg-nav { visibility: hidden; }"]) assert.ok(phone.includes(rule), rule);
+  assert.match(css, /\.wg-av-chat \{ display: none; \}/);
+  assert.match(css, /\.wg-tool \{ padding: 8px 6px; font-size: 14px; overflow-wrap: normal;/, "tool names break between words only");
+  assert.match(ui, /className="stack wg-nav"/);
+}
 // card 196: a fact cut off mid-sentence is refused, so Avery sends the whole line
 assert.match(factProblem("goals", "Greg doesn't know whether the van pays for itself and wants to", 0)!, /stops mid-sentence/);
 for (const end of ["and", "or", "the", "a", "of", "for", "with", "because"]) assert.ok(factProblem("other", `Something about ${end}`, 0), `ends on "${end}"`);

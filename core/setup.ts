@@ -414,7 +414,7 @@ export async function askSetup(message: string, siteRaw: string, connected: Read
       if (error) { notes.push(`Not saved (“${f.text}”): ${error.message}`); continue; }
       if (state === "suggested") suggested++; else saved++;
     }
-    if (saved) notes.push(`Saved ${saved} fact${saved === 1 ? "" : "s"}. Edit or remove any on the right.`);
+    if (saved) notes.push(`Saved ${saved} fact${saved === 1 ? "" : "s"}. Edit or remove any under What I’ve learned so far.`);
     if (suggested) notes.push(`${suggested} fact${suggested === 1 ? "" : "s"} from your site wait for you to confirm.`);
     if (heldDesign.parts.length) {
       const d = await applyDesigns(heldDesign.parts);
