@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (fromStart) back.searchParams.set("c", id);
   const q = req.nextUrl.searchParams;
   try {
-    await finishConnect(id, req.cookies.get(PENDING_COOKIE)?.value, { code: q.get("code"), state: q.get("state"), error: q.get("error") });
+    await finishConnect(id, req.cookies.get(PENDING_COOKIE)?.value, { code: q.get("code"), state: q.get("state"), error: q.get("error"), realmId: q.get("realmId") });
     await audit(me, "connect", id);
     back.searchParams.set("connected", "1");
     revalidatePath("/", "layout");

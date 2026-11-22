@@ -170,6 +170,8 @@ export function health(): Record<IntegrationId, boolean> {
     // the business's Stripe read key and the gateway's invoice-drafts key, pasted on Connections into the vault
     stripe: false,
     stripe_drafts: false,
+    // the business's Intuit sign-in, made with Connect on Connections
+    quickbooks: false,
     // both Google Calendar sign-ins (reads, the gateway's holds) are made on Connections
     calendar: false,
     calendar_holds: false,

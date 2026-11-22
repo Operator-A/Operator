@@ -32,6 +32,7 @@ async function check() {
     gmail_read: await hasGmailRead(),
     ga4: await localReady("ga4"),
     stripe: await localReady("stripe"),
+    quickbooks: await localReady("quickbooks"),
     calendar: await localReady("calendar"),
     calendar_holds: await localReady("calendar_holds"),
     mailchimp: await localReady("mailchimp"),

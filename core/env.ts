@@ -42,6 +42,12 @@ export const env = {
   gmailClientId: v("GMAIL_CLIENT_ID"),
   gmailClientSecret: v("GMAIL_CLIENT_SECRET"),
 
+  // the app's Intuit OAuth client (card 241), for the QuickBooks sign-in made with Connect on Connections.
+  // Like Google's, the sign-in lives in the token vault and the secret stays here. QUICKBOOKS_SANDBOX=1
+  // points our server at Intuit's test companies, while the app is on its development keys.
+  quickbooksClientId: v("QUICKBOOKS_CLIENT_ID"),
+  quickbooksClientSecret: v("QUICKBOOKS_CLIENT_SECRET"),
+  quickbooksSandbox: v("QUICKBOOKS_SANDBOX") === "1",
   // OPERATOR's own Meta app (Facebook Login), for the two Meta Ads sign-ins made with Connect on
   // Connections (card 255). The sign-ins live in the token vault; the secret stays here only.
   metaAppId: v("META_APP_ID"),

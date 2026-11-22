@@ -7,7 +7,7 @@ import { controlsOn } from "@/dashboard/session";
 import { ActionButton } from "@/dashboard/components/client";
 import { RejectButton } from "@/dashboard/components/react";
 import { Avatar, Empty } from "@/dashboard/components/ui";
-import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
+import { CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, writeBlocker } from "@/core/gateway";
 
 // Applying a batch calls Mercury once or twice per change.
 export const maxDuration = 300;
@@ -56,6 +56,19 @@ function Invoice({ i }: { i: ApprovalItem }) {
       {rows.map(([k, v], n) => <div key={n} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13, fontWeight: k === "Total" ? 600 : undefined }}><span className={k === "Total" ? undefined : "muted"} style={{ minWidth: 0, overflowWrap: "anywhere" }}>{k}</span><span style={{ fontWeight: 500, textAlign: "right", whiteSpace: "nowrap" }}>{v}</span></div>)}
       {p.memo && <div className="rule" style={{ padding: "10px 0", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{p.memo}</div>}
       <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Approving makes a draft in Stripe. Nothing is finalized, sent or charged: you do that from Stripe.</div>
+    </div>
+  );
+}
+
+/** A QuickBooks category (card 241): the expense as code read it, and where it moves. Approving changes the category only. */
+function Category({ i }: { i: ApprovalItem }) {
+  const p = i.preview;
+  const rows: [string, string][] = [["Expense", p.record ?? "?"], ["From", "Uncategorized Expense"], ["To", p.category ?? "?"]];
+  return (
+    <div style={{ borderRadius: 16, background: "var(--soft)", padding: "6px 16px" }}>
+      {rows.map(([k, v], n) => <div key={n} className={"row" + (n ? " rule" : "")} style={{ justifyContent: "space-between", gap: 16, padding: "9px 0", fontSize: 13 }}><span className="muted">{k}</span><span style={{ fontWeight: 500, textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>{v}</span></div>)}
+      {p.why && <div className="rule" style={{ padding: "10px 0", fontSize: 13, lineHeight: 1.55, overflowWrap: "anywhere" }}>{p.why}</div>}
+      <div className="rule muted" style={{ padding: "9px 0", fontSize: 12 }}>Approving moves this one line in QuickBooks. The amount, payee, date and other lines stay exactly as they are.</div>
     </div>
   );
 }
@@ -118,7 +131,7 @@ function Tags({ i }: { i: ApprovalItem }) {
   );
 }
 
-const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [SHOPIFY_STOCK]: "Shopify stock", [SHOPIFY_COPY]: "Shopify product copy", [INVOICE_DRAFT]: "Stripe invoice draft", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note", [HUBSPOT_MOVE]: "HubSpot deal move", [META_PAUSE]: "Meta ad pause" };
+const KIND_LABEL: Record<string, string> = { [DRAFT_EMAIL]: "Gmail draft", [CAMPAIGN_DRAFT]: "Klaviyo campaign draft", [CALENDAR_HOLD]: "Calendar hold", [SHOPIFY_TAGS]: "Shopify tags", [SHOPIFY_STOCK]: "Shopify stock", [SHOPIFY_COPY]: "Shopify product copy", [INVOICE_DRAFT]: "Stripe invoice draft", [MAILCHIMP_DRAFT]: "Mailchimp campaign draft", [WOO_NOTE]: "WooCommerce order note", [HUBSPOT_MOVE]: "HubSpot deal move", [META_PAUSE]: "Meta ad pause", [QBO_CATEGORIZE]: "QuickBooks category" };
 
 /** A Shopify stock change: the item at its location, the count before and after, and Shopify's reason. */
 function Stock({ i }: { i: ApprovalItem }) {
@@ -156,6 +169,7 @@ function Change({ i }: { i: ApprovalItem }) {
   if (i.tool === DRAFT_EMAIL) return <Draft i={i} />;
   if (i.tool === CAMPAIGN_DRAFT || i.tool === MAILCHIMP_DRAFT) return <Campaign i={i} />;
   if (i.tool === INVOICE_DRAFT) return <Invoice i={i} />;
+  if (i.tool === QBO_CATEGORIZE) return <Category i={i} />;
   if (i.tool === CALENDAR_HOLD) return <Hold i={i} />;
   if (i.tool === SHOPIFY_TAGS) return <Tags i={i} />;
   if (i.tool === SHOPIFY_STOCK) return <Stock i={i} />;

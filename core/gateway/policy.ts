@@ -5,6 +5,7 @@
 
 import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-rules";
 import { CUSTOMER_ID, INVOICE_FIELDS, refuseInvoice } from "@/core/stripe-rules";
+import { CATEGORIZE_FIELDS, QBO_CATEGORIZE, expenseTarget, refuseCategorize } from "@/core/quickbooks-rules";
 import { SHOPIFY_COPY, SHOPIFY_COPY_GRANT, SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
@@ -39,6 +40,13 @@ export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
  * the write. Asks a customer for money; never spends any.
  */
 export const INVOICE_DRAFT = "stripe.invoice_draft";
+/**
+ * An expense line in the business's QuickBooks moved out of Uncategorized Expense into one of its own
+ * expense accounts (card 241). The target is `purchaseId:lineId` from an uncategorized expenses result;
+ * the account is picked from an expense accounts result. The amount, payee, date and other lines are
+ * never changed, and the server re-reads the line right before the write. Moves no money.
+ */
+export { QBO_CATEGORIZE };
 /**
  * A private hold on the business's primary Google Calendar (card 251): a title, a start and an end,
  * no guests, made with sendUpdates=none so it emails no one. The time is a free slot code found, and
@@ -136,6 +144,14 @@ export const TOOLS = {
     tier: "Draft" as Tier,
     fields: INVOICE_FIELDS,
     // a draft the owner finalizes in Stripe, to an existing customer: it may earn trust (28 of 30 unedited)
+    promotable: true,
+  },
+  [QBO_CATEGORIZE]: {
+    agents: "granted",
+    grant: "quickbooks_categorize_expense",
+    tier: "Draft" as Tier,
+    fields: CATEGORIZE_FIELDS,
+    // a category on the business's own books, put back by moving it again: it may earn trust (28 of 30 unedited)
     promotable: true,
   },
   [CALENDAR_HOLD]: {
@@ -255,6 +271,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (tool === HUBSPOT_MOVE) return dealIdOk(target) ? refuseMove(args) : "The target is not a HubSpot deal id.";
   if (tool === META_PAUSE) return adIdOk(target) ? refusePause(args) : "The target is not a Meta ad id.";
   if (tool === INVOICE_DRAFT) return CUSTOMER_ID.test(target) ? refuseInvoice(args) : "The target is not a Stripe customer id.";
+  if (tool === QBO_CATEGORIZE) return expenseTarget(target) ? refuseCategorize(args) : "The target is not a QuickBooks expense line.";
   if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
   if (tool === SHOPIFY_STOCK) return stockTarget(target) ? refuseStock(args) : "The target is not a Shopify inventory item at a location.";
   if (tool === SHOPIFY_COPY) return productTarget(target) ? refuseCopy(args) : "The target is not a Shopify product id.";
