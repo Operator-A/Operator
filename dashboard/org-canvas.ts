@@ -93,7 +93,7 @@ export interface Line { a: string; b: string; type: "report" | "handoff"; shape:
 export interface Layout { boxes: Record<string, Box>; lines: Line[]; height: number; cols: number }
 
 export const PAD = 16;
-const GAP = 12, CH = 52, FH = 26, INDENT = 16, COL_MIN = 128, COL_MAX = 260;
+const GAP = 12, CH = 52, FH = 34, INDENT = 16, COL_MIN = 128, COL_MAX = 260;
 /** A department with more seats than this starts folded down to its head. */
 export const FOLD_AT = 5;
 export const foldBox = (seat: string) => `fold:${seat}`;
@@ -214,15 +214,25 @@ export function layoutCanvas(d: CanvasData, W: number, focus: string | null, ope
     box(YOU, "you", W / 2, 44, Math.min(168, W - 2 * PAD), CH);
     if (d.company) { box(d.company.id, "seat", W / 2, 122, Math.min(190, W - 2 * PAD), CH); line(d.company.id, YOU, "report", "tree"); }
     let y = d.company ? 196 : 118;
-    for (let r = 0; r * cols < d.depts.length; r++) {
-      const row = d.depts.slice(r * cols, (r + 1) * cols), x0 = (W - row.length * colW - (row.length - 1) * GAP) / 2;
-      let maxH = 0;
+    // a big department someone has unfolded takes two columns, so its seats stay readable;
+    // departments keep their order and wrap to the next row when a row is full
+    const slots = (dp: CanvasDept) => (cols > 1 && dp.seats.length > FOLD_AT && dp.seats.some((s) => open.has(s.id)) ? 2 : 1);
+    const rowsOf: CanvasDept[][] = [];
+    for (const dp of d.depts) {
+      const last = rowsOf[rowsOf.length - 1];
+      if (last && last.reduce((n, x) => n + slots(x), 0) + slots(dp) <= cols) last.push(dp);
+      else rowsOf.push([dp]);
+    }
+    for (const row of rowsOf) {
+      const ws = row.map((dp) => slots(dp) * colW + (slots(dp) - 1) * GAP);
+      let x = (W - ws.reduce((n, w) => n + w, 0) - (row.length - 1) * GAP) / 2, maxH = 0;
       row.forEach((dp, i) => {
-        const head = dp.seats[0], rows = head ? branch(dp, head, open) : [];
-        const h = 40 + rows.reduce((n, x) => n + rowH(x), 0) + 4, cx = x0 + i * (colW + GAP) + colW / 2, id = deptBox(dp.id);
+        const head = dp.seats[0], rows = head ? branch(dp, head, open) : [], dw = ws[i];
+        const h = 40 + rows.reduce((n, x) => n + rowH(x), 0) + 4, cx = x + dw / 2, id = deptBox(dp.id);
+        x += dw + GAP;
         maxH = Math.max(maxH, h);
-        box(id, "dept", cx, y + h / 2, colW, h);
-        column(rows, cx, y + 40, colW - 20, id, head?.depth ?? 0);
+        box(id, "dept", cx, y + h / 2, dw, h);
+        column(rows, cx, y + 40, dw - 20, id, head?.depth ?? 0);
         if (head) line(head.id, top, "report", "tree");
         hideRest(dp, id);
       });

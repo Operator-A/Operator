@@ -169,6 +169,12 @@ assert.equal(teamSize(depts[0], "s1"), 6); assert.equal(teamSize(depts[0], "s2")
 const one = layoutCanvas(full, 886, null, new Set(["s1"]));
 assert.deepEqual(depts[0].seats.filter((s) => one.boxes[s.id].show).map((s) => s.id), ["s1", "s2", "s5", "s6"]);
 assert.ok(one.height > loads.height, "the canvas grows when a team opens");
+// an unfolded big department takes two columns, so its seats stay readable; a small one keeps one
+const cellW = (L: ReturnType<typeof layoutCanvas>, id: string) => L.boxes[deptBox(id)].w;
+assert.equal(cellW(one, "sales"), 2 * cellW(one, "money") + 12, "opened sales is two columns wide");
+assert.equal(cellW(loads, "sales"), cellW(loads, "money"), "folded sales is one column, like the rest");
+assert.ok(one.boxes["s2"].w > loads.boxes["s1"].w, "its seats get the room");
+assert.ok(one.boxes[deptBox("sales")].x < one.boxes[deptBox("money")].x, "departments keep their order");
 // the folded sales head still takes Morgan's hand-off, and Reese's to Rico (folded) draws no line
 assert.deepEqual(loads.lines.filter((l) => l.type === "handoff").map((l) => `${l.a}>${l.b}`), ["m1>s1"]);
 

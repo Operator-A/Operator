@@ -57,8 +57,10 @@ The owner, 2026-11-22, with a phone screenshot of a 12-seat Marketing department
 - What is open lives in the page and resets on reload. The same choice holds on the whole company and inside an opened department.
 - A seat that is folded away draws no card and no report line. A hand-off to or from it lands on the nearest seat above it that shows, so a chain into a folded team still points at that team.
 - Seats grow out of the seat above them when its row opens, and fold back into it.
+- A big department someone has unfolded takes two columns in the whole-company chart, so its seats stay readable. The departments keep their order and wrap to the next row when a row is full; folding it again gives the column back.
+- The fold row is one line of small text in a taller button (added 2026-11-22 after the owner found it cramped). Hovering a card fades the others only a little (70%) and their lines to about a third, instead of greying them out.
 
-**Tests.** `npm run check:org-canvas` lays every sample out as the page loads, with every team open and with every team folded, and checks that a seat shows only when every seat above it is open, that each seat with a team has its row right under it, and that hand-off lines land on the nearest seat that shows.
+**Tests.** `npm run check:org-canvas` lays every sample out as the page loads, with every team open and with every team folded, and checks that a seat shows only when every seat above it is open, that each seat with a team has its row right under it, that hand-off lines land on the nearest seat that shows, and that an unfolded big department is exactly two columns wide while a folded one is one.
 
 ## Slice 1c: a department list on a phone
 
