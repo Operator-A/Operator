@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deptBox, layoutCanvas, moveLines, seatName, type Box, type CanvasData, type CanvasDept, type CanvasRun, type CanvasSeat, type Line } from "../org-canvas";
+import { PAD, SPINE, defaultOpen, deptBox, layoutCanvas, moveLines, seatName, teamSize, type Box, type CanvasData, type CanvasDept, type CanvasRun, type CanvasSeat, type Line } from "../org-canvas";
 import { GoalTile } from "./goals";
 import { Icon } from "./Icon";
 import { DeptLimits } from "./orgBits";
@@ -24,6 +24,8 @@ type Curve = [number, number][];
 const seed = (id: string, salt: number) => { let h = salt; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 9973; return h / 9973; };
 
 function curve(l: Line, A: Node, B: Node, opened: boolean): Curve {
+  // the phone's spine: out of the card's left side, up the gutter, across into the box above
+  if (l.shape === "spine") { const x = PAD + SPINE / 2; return [[A.px - A.hw, A.py], [x, A.py], [x, B.py], [B.px - B.hw, B.py]]; }
   if (l.shape === "elbow") { const sx = B.px - B.hw + 8; return [[A.px - A.hw, A.py], [sx, A.py], [sx, A.py], [sx, B.py + B.hh]]; }
   if (l.shape === "tree" && A.py - A.hh > B.py + B.hh + 6) {
     const p0: [number, number] = [A.px, A.py - A.hh], p3: [number, number] = [B.px, B.py + B.hh], gap = p0[1] - p3[1], lift = opened ? gap / 2 : Math.min(40, gap * .6);
@@ -36,6 +38,13 @@ function curve(l: Line, A: Node, B: Node, opened: boolean): Curve {
   const c = [(p0[0] + p3[0]) / 2 - uy * b, (p0[1] + p3[1]) / 2 + ux * b];
   return [p0, [p0[0] + (c[0] - p0[0]) * .67, p0[1] + (c[1] - p0[1]) * .67], [p3[0] + (c[0] - p3[0]) * .67, p3[1] + (c[1] - p3[1]) * .67], p3];
 }
+/** A point part way along the spine's three straight runs, by length. */
+function along(g: Curve, u: number): [number, number] {
+  const seg = [0, 1, 2].map((i) => Math.hypot(g[i + 1][0] - g[i][0], g[i + 1][1] - g[i][1])), total = seg[0] + seg[1] + seg[2] || 1;
+  let d = u * total;
+  for (let i = 0; i < 3; i++) { if (d <= seg[i] || i === 2) { const t = seg[i] ? Math.min(1, d / seg[i]) : 0; return [g[i][0] + (g[i + 1][0] - g[i][0]) * t, g[i][1] + (g[i + 1][1] - g[i][1]) * t]; } d -= seg[i]; }
+  return g[3];
+}
 const at = (g: Curve, u: number): [number, number] => { const v = 1 - u, a = v * v * v, b = 3 * v * v * u, c = 3 * v * u * u, d = u * u * u; return [a * g[0][0] + b * g[1][0] + c * g[2][0] + d * g[3][0], a * g[0][1] + b * g[1][1] + c * g[2][1] + d * g[3][1]]; };
 
 export function OrgCanvas({ d }: { d: CanvasData }) {
@@ -47,9 +56,12 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
   const [focus, setFocus] = useState<string | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [hot, setHot] = useState<string | null>(null);
+  // whose teams show: a big department starts as its head, and each fold row opens one level down
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => defaultOpen(d));
+  const fold = (seat: string) => setOpen((o) => { const n = new Set(o); if (!n.delete(seat)) n.add(seat); return n; });
 
   const opened = focus ? d.depts.find((x) => x.id === focus) ?? null : null;
-  const lay = useMemo(() => (W ? layoutCanvas(d, W, opened?.id ?? null) : null), [d, W, opened]);
+  const lay = useMemo(() => (W ? layoutCanvas(d, W, opened?.id ?? null, open) : null), [d, W, opened, open]);
   const seats = useMemo(() => new Map<string, { seat: CanvasSeat; dept: CanvasDept | null }>([...(d.company ? [[d.company.id, { seat: d.company, dept: null }] as const] : []), ...d.depts.flatMap((dp) => dp.seats.map((s) => [s.id, { seat: s, dept: dp }] as const))]), [d]);
   const picked = sel && opened?.seats.some((s) => s.id === sel) ? sel : null;
 
@@ -86,7 +98,7 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
     for (const el of wrap.current?.querySelectorAll<HTMLElement>("[data-box]") ?? []) els.current[el.dataset.box as string] = el;
     for (const id of Object.keys(e.nodes)) if (!lay.boxes[id]) delete e.nodes[id];
     for (const b of Object.values(lay.boxes)) {
-      const n = (e.nodes[b.id] ??= { x: b.x, y: b.y, tx: b.x, ty: b.y, px: b.x, py: b.y, hw: b.w / 2, hh: b.h / 2, ox: 0, oy: 0, rides: null, show: false, amp: 0, p1: seed(b.id, 7) * 6.3, p2: seed(b.id, 13) * 6.3, f1: .25 + seed(b.id, 3) * .2, f2: .4 + seed(b.id, 5) * .25, placed: false });
+      const n = (e.nodes[b.id] ??= { x: b.x, y: b.y, tx: b.x, ty: b.y, px: b.x, py: b.y, hw: b.w / 2, hh: b.h / 2, ox: 0, oy: 0, rides: null, show: false, amp: 0, p1: seed(b.id, 7) * 6.3, p2: seed(b.id, 13) * 6.3, f1: .25 + seed(b.id, 3) * .2, f2: .4 + seed(b.id, 5) * .25, placed: true });
       n.show = b.show; n.rides = b.rides;
       if (!b.show) continue;
       n.hw = b.w / 2; n.hh = b.h / 2; n.amp = b.kind === "dept" ? (b.focus ? 0 : b.port ? 3 : 4) : b.rides ? 1.2 : 2;
@@ -135,13 +147,16 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
           ctx.globalAlpha = e.lit ? (e.hs.has(l.a) || e.hs.has(l.b) ? .95 : .12) : l.type === "report" ? .55 : .75;
           ctx.strokeStyle = ctx.fillStyle = col[l.type === "report" ? "--lc-report" : "--lc-handoff"] || "#6272EE"; ctx.lineWidth = 1.7; ctx.lineCap = "round";
           ctx.setLineDash(l.type === "handoff" ? [7, 7] : []); ctx.lineDashOffset = calm ? 0 : -t * 16;
-          ctx.beginPath(); ctx.moveTo(g[0][0], g[0][1]); ctx.bezierCurveTo(g[1][0], g[1][1], g[2][0], g[2][1], g[3][0], g[3][1]); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(g[0][0], g[0][1]);
+          if (l.shape === "spine") { ctx.arcTo(g[1][0], g[1][1], g[2][0], g[2][1], 10); ctx.arcTo(g[2][0], g[2][1], g[3][0], g[3][1], 10); ctx.lineTo(g[3][0], g[3][1]); }
+          else ctx.bezierCurveTo(g[1][0], g[1][1], g[2][0], g[2][1], g[3][0], g[3][1]);
+          ctx.stroke();
           if (l.type === "handoff") { ctx.setLineDash([]); ctx.beginPath(); ctx.arc(g[3][0], g[3][1], 3, 0, 6.3); ctx.fill(); }
         }
         ctx.setLineDash([]); ctx.globalAlpha = 1;
         for (const p of e.parts) {
           const g = curves.get(p.line); if (!g) continue;
-          const [x, y] = at(g, p.u < .5 ? 2 * p.u * p.u : 1 - 2 * (1 - p.u) * (1 - p.u)), color = col[p.color] || "#6272EE";
+          const [x, y] = (p.line.shape === "spine" ? along : at)(g, p.u < .5 ? 2 * p.u * p.u : 1 - 2 * (1 - p.u) * (1 - p.u)), color = col[p.color] || "#6272EE";
           ctx.shadowColor = color; ctx.shadowBlur = 14; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 4.5, 0, 6.3); ctx.fill(); ctx.shadowBlur = 0;
         }
       }
@@ -150,13 +165,15 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
         e.parts = e.parts.filter((p) => p.u < 1);
         if (now > e.next) {
           e.next = now + 1700 + seed(String(e.runI), 11) * 1500;
-          // the next of today's runs whose agent is on screen leaves its card and travels up its report line
+          // the next of today's runs whose agent is on screen leaves its card and travels up its report
+          // line; an agent folded away (or inside a phone's department card) sends it from its department
           for (let i = 0; i < e.runs.length; i++) {
             const r = e.runs[(e.runI + i) % e.runs.length], n = e.nodes[r.seat];
-            if (!n?.show) continue;
+            const from = n?.show ? r.seat : n?.rides && e.nodes[n.rides]?.show ? n.rides : null;
+            if (!from) continue;
             e.runI = (e.runI + i + 1) % e.runs.length;
-            const l = e.lines.find((x) => x.a === r.seat && x.type === "report");
-            ping(r.seat, `var(${RUN_COLOR[r.status]})`);
+            const l = e.lines.find((x) => x.a === from && x.type === "report");
+            ping(from, `var(${RUN_COLOR[r.status]})`);
             if (l && e.nodes[l.b]?.show) e.parts.push({ line: l, u: 0, color: RUN_COLOR[r.status] });
             break;
           }
@@ -170,6 +187,7 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
 
   const click = (b: Box) => {
     if (b.kind === "dept") return go(b.id.slice(5));
+    if (b.kind === "fold") return b.of ? fold(b.of) : undefined;
     const at = seats.get(b.id);
     if (b.kind === "you" || !at?.dept) { if (opened) go(null); return; }
     if (!opened) return go(at.dept.id);
@@ -198,8 +216,18 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
               if (b.kind === "dept") {
                 const i = d.depts.findIndex((x) => deptBox(x.id) === b.id), dp = d.depts[i];
                 return (
-                  <button key={b.id} {...common} className={cls(b, `lc-dept${b.focus ? " focus" : ""}${b.port ? " port" : ""}`)} style={{ "--hue": HUES[i % HUES.length] } as React.CSSProperties} aria-label={`Open ${dp.name}`}>
-                    <span className="lc-in"><span className="lc-cell" style={size(b)}><span className="lc-lbl"><b>{dp.name}</b></span></span></span>
+                  <button key={b.id} {...common} className={cls(b, `lc-dept${b.focus ? " focus" : ""}${b.port ? " port" : ""}${b.list ? " list" : ""}`)} style={{ "--hue": HUES[i % HUES.length] } as React.CSSProperties} aria-label={`Open ${dp.name}`}>
+                    <span className="lc-in"><span className="lc-cell" style={size(b)}><span className="lc-lbl"><b>{dp.name}</b>{b.list && <small>{dp.seats.length} seat{dp.seats.length === 1 ? "" : "s"}</small>}</span>{b.list && <DeptCard dp={dp} runs={d.runs} />}</span></span>
+                  </button>
+                );
+              }
+              if (b.kind === "fold") {
+                const at = b.of ? seats.get(b.of) : null;
+                if (!at?.dept) return null;
+                const n = teamSize(at.dept, at.seat.id), shown = open.has(at.seat.id) || (opened && at.seat.id === opened.seats[0]?.id);
+                return (
+                  <button key={b.id} {...common} className={cls(b, `lc-fold${shown ? " shown" : ""}`)} aria-expanded={!!shown} aria-label={`${shown ? "Hide" : "Show"} the ${n} seat${n === 1 ? "" : "s"} under ${seatName(at.seat)}`}>
+                    <span className="lc-in" style={size(b)}><Icon name={shown ? "chevron-up" : "chevron-down"} size={13} /><span>{shown ? "Hide" : "Show"} {n} seat{n === 1 ? "" : "s"}</span></span>
                   </button>
                 );
               }
@@ -226,6 +254,28 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
         <Panel d={d} opened={opened} picked={picked ? seats.get(picked)?.seat ?? null : null} pick={setSel} />
       </div>
     </div>
+  );
+}
+
+/** A department as a card in the phone's list: its head, what happened last today, a dot per seat and the budget. */
+function DeptCard({ dp, runs }: { dp: CanvasDept; runs: CanvasRun[] }) {
+  const head = dp.seats[0], ids = new Set(dp.seats.map((s) => s.id)), last = runs.find((r) => ids.has(r.seat));
+  const now = last ? `${last.who}: ${last.text}` : head?.agent?.summary ? `${head.agent.name}: ${head.agent.summary}` : "No runs yet today.";
+  const pct = dp.budget ? Math.min(100, (dp.spent / dp.budget) * 100) : null;
+  const money = `$${dp.spent.toFixed(2)}${dp.budget != null ? ` of $${dp.budget.toFixed(2)}` : ""}`;
+  return (
+    <span className="lc-sum">
+      {head && (
+        <span className={`lc-card lc-mini ${head.agent ? head.agent.state : head.holder}`}>
+          <span className="lc-in"><i className="lc-sd" aria-hidden="true" /><span className="lc-meta"><b>{seatName(head)}</b><span className="lc-role">{head.title}{head.agent ? ` · ${head.agent.label}` : ""}</span></span></span>
+        </span>
+      )}
+      <span className="lc-now"><b>Now</b> {now}</span>
+      <span className="lc-foot">
+        <span className="lc-dots" aria-hidden="true">{dp.seats.map((s) => <i key={s.id} className={s.agent ? s.agent.state : s.holder} />)}</span>
+        <span className="lc-spend">{pct != null && <span className="lc-bar"><span style={{ width: `${pct}%` }} className={pct >= 100 ? "out" : pct >= 80 ? "near" : ""} /></span>}{money}</span>
+      </span>
+    </span>
   );
 }
 
