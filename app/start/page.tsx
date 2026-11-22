@@ -23,6 +23,7 @@ import { ga4PickProperty, mcpSaveKey } from "@/dashboard/connectionActions";
 import { claudeState } from "@/dashboard/claude";
 import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
 import { extensions } from "@/core/extensions";
+import { revealWhy } from "@/core/brain-tools";
 import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
 import { sendSetup, setupTimeZone, setupGo, setupAddFact, setupAnswerTool, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupOtherTool, setupPlanClear, setupSkipTool, setupSnapshot, setupStartEmpty, setupToDesk } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
@@ -71,6 +72,8 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const cat = cardCategory(tapped, state.asked.at(-1) ?? null, connected, state.skipped, state.plans);
   const parts = partsShown(connected, state.skipped, state.plans, state.asked);
   const stage = shownStage(state), at = STAGES.indexOf(stage);
+  // the shared brain's "why" under each department (cloud edition): counts over the floor only, never stops the page
+  const why = stage === "company" ? await revealWhy(chart.depts).catch(() => ({})) : {};
   const talked = (history ?? []).length > 0;
   // the company step goes forward only by Start this company; the wrap-up has no Back (the departments are installed)
   const back = stage === "first" ? null : prevStage(stage), next = stage === "company" || stage === "first" ? null : nextStage(stage);
@@ -141,7 +144,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
               <span className="wg-lead">{state.designs.length ? "Avery designed these from what you told her. Each says why. Nothing goes out without your OK." : "Avery hasn’t sketched your company yet. Go back and tell her more about your business, or add departments below."}</span>
             </div>
             {owner ? (
-              <CompanyChart owner={biz.ownerName || "You"} company={chart.company} depts={chart.depts} initial={initialPick(chart.depts)} install={setupInstall} back={setupGo.bind(null, "business")}
+              <CompanyChart owner={biz.ownerName || "You"} company={chart.company} depts={chart.depts} why={why} initial={initialPick(chart.depts)} install={setupInstall} back={setupGo.bind(null, "business")}
                 empty={<ActionButton className="btn ghost sm" action={setupStartEmpty} follow>Start empty instead</ActionButton>} />
             ) : <span className="sub" style={{ textAlign: "center" }}>An owner of this business picks the departments.</span>}
             {extensions.edition === "cloud" && (

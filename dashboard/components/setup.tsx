@@ -270,8 +270,10 @@ export function UnlistedTool({ ask }: { ask: (name: string) => Promise<ActionRes
  * in sequence. The founder can leave a department out or add one; Start this company installs exactly
  * what's on the chart. Statuses and month totals are worked out in code (core/company-rules.ts).
  */
-export function CompanyChart({ owner, company, depts, initial, install, back, empty }: {
+export function CompanyChart({ owner, company, depts, initial, install, back, empty, why = {} }: {
   owner: string; company: CompanyAgent[]; depts: CompanyDept[]; initial: string[];
+  /** The shared brain's line per department (core/brain-tools.ts revealWhy), in code's words; cloud edition only. */
+  why?: Record<string, string>;
   install: (ids: string[]) => Promise<ActionResult & { href?: string }>; back: () => Promise<ActionResult>; empty?: React.ReactNode;
 }) {
   const router = useRouter();
@@ -311,6 +313,7 @@ export function CompanyChart({ owner, company, depts, initial, install, back, em
               </span>
               {d.reason && <span className="soft-box" style={{ fontSize: 13, lineHeight: 1.45 }}>You said: {saidLine(d.reason)}</span>}
               {d.kind === "bespoke" && <span className="muted" style={{ fontSize: 12 }}>Designed for you by Avery</span>}
+              {why[d.id] && <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{why[d.id]}</span>}
               {d.agents.map((a) => (
                 <span key={a.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                   <b style={{ fontSize: 15.5 }}>{a.name}</b>

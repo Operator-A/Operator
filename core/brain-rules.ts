@@ -208,6 +208,8 @@ export interface SimilarAsk {
   topic: BrainTopic; kind: BusinessKind | null; revenue: RevenueBand;
   /** Slice 4b: an agent's ask, for one gateway action type it holds (core/gateway/policy.ts TOOLS); the topic is then "approvals". */
   action?: string | null;
+  /** The company reveal: up to REVEAL_COUNTS counts instead of SIMILAR_COUNTS, so each department can find its own. */
+  many?: boolean;
 }
 /** A count, said in code from the live count, and a lesson from OPERATOR's playbook, as written by staff. */
 export interface SimilarCount { statement: string; cohort: string; pattern: string; orgs: number; hits: number }
@@ -249,4 +251,39 @@ export function workedNote(s: Similar | null): string | null {
   if (!s) return null;
   const lines = [...s.counts.map((c) => c.statement), ...s.playbook.map((l) => `OPERATOR's playbook: ${l.title}.`)].slice(0, WORKED_LINES);
   return lines.length ? `What has worked: ${lines.join(" ")}` : null;
+}
+
+// ---- the company reveal (card 233's left-over): one "why" line per department, in code's words ----
+
+/** How many counts the reveal asks for, so every department can find its own. */
+export const REVEAL_COUNTS = 30;
+
+/** The tool a tool pattern names, from the lists in code: "tool:list:klaviyo" is Klaviyo. Null otherwise. */
+export function patternToolName(pattern: string): string | null {
+  const [kind, part, slug] = pattern.split(":");
+  if (kind !== "tool" || !part || !slug) return null;
+  return TOOL_CATEGORIES.find((c) => c.id === part)?.tools.find((t) => toolSlug(t.name) === slug)?.name ?? null;
+}
+
+/**
+ * The reveal's "why" line per department: a starting kit's own count first (dept:<id>), else a count for
+ * a tool whose name is in the department's tool labels or the tools it waits on. Each line at most once.
+ */
+export function whyFor(depts: readonly { id: string; words: readonly string[] }[], counts: readonly SimilarCount[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const used = new Set<string>();
+  for (const d of depts) {
+    const own = counts.find((c) => c.pattern === `dept:${d.id}` && !used.has(c.statement));
+    if (own) { out[d.id] = own.statement; used.add(own.statement); }
+  }
+  for (const d of depts) {
+    if (out[d.id]) continue;
+    const words = d.words.map((w) => w.toLowerCase());
+    const hit = counts.find((c) => {
+      const name = patternToolName(c.pattern);
+      return !!name && !used.has(c.statement) && words.some((w) => new RegExp(`(^|[^a-z0-9])${name.toLowerCase().replace(/[^a-z0-9 ]/g, "\\$&")}([^a-z0-9]|$)`).test(w));
+    });
+    if (hit) { out[d.id] = hit.statement; used.add(hit.statement); }
+  }
+  return out;
 }
