@@ -60,12 +60,14 @@ The owner, 2026-11-22, with a phone screenshot of a 12-seat Marketing department
 
 **Tests.** `npm run check:org-canvas` lays every sample out as the page loads, with every team open and with every team folded, and checks that a seat shows only when every seat above it is open, that each seat with a team has its row right under it, and that hand-off lines land on the nearest seat that shows.
 
-## Slice 1c: one column on a phone
+## Slice 1c: a department list on a phone
 
-The owner asked, 2026-11-22, for ways to make Crew more phone friendly. Recommended and built: one column.
+The owner asked, 2026-11-22, for ways to make Crew more phone friendly, and picked from four mockups (https://claude.ai/artifact/4kJyTATSdfYzpmF6RM1EdK): the department list, with the department cards from the swipe option, and each department flowing open the way the canvas does.
 
-- Below 560px wide (`PHONE`) departments stack one per row, full width, folded as in slice 1b. Names stop being cut off at two across.
-- Each head's line runs out of its card's left side, up a gutter on the left edge (`SPINE`) and across into the company seat, so no report line crosses a card.
-- Opening a department on a phone is unchanged.
+- Below 560px wide (`PHONE`) the whole company is a list: you, the company seat, then a card per department, full width and one card tall (`LIST_H`) however many seats it has.
+- A card shows the department's name and seat count, its head as a small card (state dot, name, seat, state in words), "Now" with the latest run from today in that department (or the head's last run), a dot per seat (working, on shift, off, budget reached, open) and this month's AI spend against its budget.
+- Each card's line runs up a gutter on the left edge (`SPINE`) to the company seat. A hand-off between two departments runs card to card down the right edge. A run from today pings its department's card and travels up the spine.
+- Tapping a card opens the department in place with the same motion as desktop: the card grows into the department's cell, its insides fade, and its seats come out of it. Big departments fold as in slice 1b. Whole company (the back button or the chip) flows it back into the list.
+- Desktop is unchanged.
 
-**Tests.** `npm run check:org-canvas` checks that on a phone every department runs from the spine to the right edge, that each head's line is a spine line, and that only a phone has one.
+**Tests.** `npm run check:org-canvas` checks that on a phone every department is one full-width card right of the spine, in order, that every seat waits inside its card, that each card reports up the spine, that hand-offs between departments run card to card, and that an opened department is a chart again.

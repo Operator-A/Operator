@@ -84,6 +84,8 @@ export interface Box {
   rides: string | null;
   /** A fold row: the seat whose team it shows or hides. */
   of: string | null;
+  /** A department drawn as a card in the phone's list: its head, what is happening now, its seats and budget. */
+  list: boolean;
 }
 /** elbow: a seat to the seat above it in a column. tree: up to a box above. spine: up the left edge of a phone to a box above. side: two cards in one column. free: anywhere. */
 export type LineShape = "elbow" | "tree" | "spine" | "side" | "free";
@@ -96,9 +98,11 @@ const GAP = 12, CH = 44, FH = 26, INDENT = 16, COL_MIN = 128, COL_MAX = 260;
 export const FOLD_AT = 5;
 export const foldBox = (seat: string) => `fold:${seat}`;
 
-/** Below this width (a phone) departments stack one per row, full width. */
+/** How tall a department's card is in the phone's list. */
+export const LIST_H = 156;
+/** Below this width (a phone) the whole company is a list of department cards, one per row. */
 export const PHONE = 560;
-/** The left gutter on a phone, where every head's line runs up to the company seat. */
+/** The left gutter on a phone, where every department's line runs up to the company seat. */
 export const SPINE = 14;
 
 /** Departments across at a width: one on a phone, up to five. */
@@ -141,7 +145,7 @@ function branch(dp: CanvasDept, s: CanvasSeat, open: ReadonlySet<string>, withSe
  */
 export function layoutCanvas(d: CanvasData, W: number, focus: string | null, open: ReadonlySet<string> = defaultOpen(d)): Layout {
   const boxes: Record<string, Box> = {}, lines: Line[] = [];
-  const box = (id: string, kind: Box["kind"], x: number, y: number, w: number, h: number, more: Partial<Box> = {}) => (boxes[id] = { id, kind, x, y, w, h, show: true, big: false, focus: false, port: false, rides: null, of: null, ...more });
+  const box = (id: string, kind: Box["kind"], x: number, y: number, w: number, h: number, more: Partial<Box> = {}) => (boxes[id] = { id, kind, x, y, w, h, show: true, big: false, focus: false, port: false, rides: null, of: null, list: false, ...more });
   const line = (a: string, b: string, type: Line["type"], shape: LineShape) => lines.push({ a, b, type, shape, bend: lines.length % 2 ? 1 : -1 });
   const deptOfSeat: Record<string, string> = {};
   for (const dp of d.depts) for (const s of dp.seats) deptOfSeat[s.id] = dp.id;
@@ -177,13 +181,41 @@ export function layoutCanvas(d: CanvasData, W: number, focus: string | null, ope
   };
   let bottom: number;
 
+  if (!opened && narrow) {
+    // a phone: you, the company seat, then a card per department down the page. Each card's seats
+    // wait inside it, unseen, so opening a department flows them out of its card.
+    const colW = W - 2 * PAD - SPINE, cx = PAD + SPINE + colW / 2;
+    box(YOU, "you", W / 2, 44, Math.min(168, W - 2 * PAD), CH);
+    if (d.company) { box(d.company.id, "seat", W / 2, 122, Math.min(190, W - 2 * PAD), CH); line(d.company.id, YOU, "report", "tree"); }
+    let y = d.company ? 196 : 118;
+    for (const dp of d.depts) {
+      const id = deptBox(dp.id);
+      box(id, "dept", cx, y + LIST_H / 2, colW, LIST_H, { list: true });
+      for (const s of dp.seats) {
+        box(s.id, "seat", cx, y + 62, colW - 24, CH, { show: false, rides: id });
+        if (kidsOf(dp, s.id).length) box(foldBox(s.id), "fold", cx, y + 62, colW - 24, FH, { show: false, rides: id, of: s.id });
+      }
+      line(id, top, "report", "spine");
+      y += LIST_H + 14;
+    }
+    // hand-offs between departments run down the right edge, card to card
+    const endOf = (seat: string) => (deptOfSeat[seat] ? deptBox(deptOfSeat[seat]) : boxes[seat]?.show ? seat : null);
+    const seen = new Set<string>();
+    for (const h of d.handoffs) {
+      const a = endOf(h.from), b = endOf(h.to);
+      if (!a || !b || a === b || seen.has(`${a}>${b}`)) continue;
+      seen.add(`${a}>${b}`); line(a, b, "handoff", a.startsWith("dept:") && b.startsWith("dept:") ? "side" : "free");
+    }
+    return { boxes, lines, height: Math.round((d.depts.length ? y - 14 : y) + 18), cols: 1 };
+  }
+
   if (!opened) {
-    const cols = colsFor(W, d.depts.length), left = narrow ? SPINE : 0, colW = narrow ? W - 2 * PAD - left : Math.min(COL_MAX, (W - 2 * PAD - (cols - 1) * GAP) / cols);
+    const cols = colsFor(W, d.depts.length), colW = Math.min(COL_MAX, (W - 2 * PAD - (cols - 1) * GAP) / cols);
     box(YOU, "you", W / 2, 44, Math.min(168, W - 2 * PAD), CH);
     if (d.company) { box(d.company.id, "seat", W / 2, 122, Math.min(190, W - 2 * PAD), CH); line(d.company.id, YOU, "report", "tree"); }
     let y = d.company ? 196 : 118;
     for (let r = 0; r * cols < d.depts.length; r++) {
-      const row = d.depts.slice(r * cols, (r + 1) * cols), x0 = narrow ? PAD + left : (W - row.length * colW - (row.length - 1) * GAP) / 2;
+      const row = d.depts.slice(r * cols, (r + 1) * cols), x0 = (W - row.length * colW - (row.length - 1) * GAP) / 2;
       let maxH = 0;
       row.forEach((dp, i) => {
         const head = dp.seats[0], rows = head ? branch(dp, head, open) : [];
@@ -191,12 +223,12 @@ export function layoutCanvas(d: CanvasData, W: number, focus: string | null, ope
         maxH = Math.max(maxH, h);
         box(id, "dept", cx, y + h / 2, colW, h);
         column(rows, cx, y + 40, colW - 20, id, head?.depth ?? 0);
-        if (head) line(head.id, top, "report", narrow ? "spine" : "tree");
+        if (head) line(head.id, top, "report", "tree");
         hideRest(dp, id);
       });
-      y += maxH + (narrow ? 20 : 44);
+      y += maxH + 44;
     }
-    bottom = (d.depts.length ? y - (narrow ? 20 : 44) : y) + 18;
+    bottom = (d.depts.length ? y - 44 : y) + 18;
     const seen = new Set<string>();
     for (const h of d.handoffs) {
       const a = shownUp(h.from), b = shownUp(h.to);

@@ -583,6 +583,21 @@ button.org-seat { cursor: pointer; }
 .lc-card.open .lc-sd { background: none; width: auto; height: auto; margin-top: 0; }
 .lc-card.open .lc-sd::before { content: "+"; font-style: normal; font-weight: 700; color: var(--mut); }
 .lc-card.you .lc-in { background: var(--ink); color: var(--ws); border-color: transparent; } .lc-card.you .lc-role { color: inherit; opacity: .7; }
+/* a department as a card in the phone's list; when it opens, the card's insides fade and the cell grows */
+.lc-lbl small { flex: none; font-size: 11px; font-weight: 500; color: var(--mut); }
+.lc-sum { position: absolute; left: 10px; right: 10px; top: 36px; bottom: 10px; display: flex; flex-direction: column; gap: 8px; text-align: left; transition: opacity .35s; }
+.lc-dept:not(.list) .lc-sum { opacity: 0; }
+.lc-mini { position: static; display: block; } .lc-mini .lc-in { transform: none; width: 100%; height: 44px; }
+.lc-now { font-size: 12px; line-height: 1.4; color: var(--ink2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lc-now b { color: var(--ink); font-weight: 700; }
+.lc-foot { margin-top: auto; display: flex; align-items: center; gap: 10px; }
+.lc-dots { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.lc-dots i { width: 8px; height: 8px; border-radius: 99px; background: var(--mut); }
+.lc-dots i.on { background: var(--mint); } .lc-dots i.run { background: var(--acc); } .lc-dots i.over, .lc-dots i.missing { background: var(--red); } .lc-dots i.owner { background: var(--ink); } .lc-dots i.off { opacity: .45; }
+.lc-dots i.open { background: none; border: 1.3px dashed var(--mut); }
+.lc-spend { flex: none; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mut); }
+.lc-bar { width: 44px; height: 5px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 10%, transparent); overflow: hidden; }
+.lc-bar span { display: block; height: 100%; border-radius: 99px; background: var(--mint); } .lc-bar span.near { background: var(--yel); } .lc-bar span.out { background: var(--red); }
 .lc-fold .lc-in { width: var(--cw, 120px); height: var(--ch, 26px); align-items: center; gap: 6px; padding: 0 10px; border-radius: 10px; font-size: 11.5px; font-weight: 600; color: var(--ink2); background: color-mix(in srgb, var(--lc-strong) 55%, transparent); border: 1px solid var(--lc-bd); }
 .lc-fold:hover .lc-in { color: var(--ink); background: var(--lc-strong); }
 .lc-fold.shown .lc-in { background: none; border-color: transparent; color: var(--mut); }

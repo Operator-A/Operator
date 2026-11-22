@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import type { Chain } from "../core/flow-rules";
-import { FOLD_AT, PAD, SPINE, YOU, colsFor, defaultOpen, deptBox, foldBox, handoffsOf, layoutCanvas, teamSize, moveLines, seatName, type Box, type CanvasData, type CanvasDept, type CanvasSeat } from "../dashboard/org-canvas";
+import { FOLD_AT, LIST_H, PAD, PHONE, SPINE, YOU, colsFor, defaultOpen, deptBox, foldBox, handoffsOf, layoutCanvas, teamSize, moveLines, seatName, type Box, type CanvasData, type CanvasDept, type CanvasSeat } from "../dashboard/org-canvas";
 
 const read = (p: string) => readFileSync(p, "utf8");
 
@@ -105,8 +105,16 @@ for (const [name, d] of cases) {
       const parent = new Map(d.depts.flatMap((x) => x.seats.map((s) => [s.id, s.parent] as const)));
       const heads = new Set(d.depts.map((x) => x.seats[0]?.id));
       const unfolded = (id: string): boolean => { const p = parent.get(id); return !p || ((open.has(p) || (focus != null && heads.has(p))) && unfolded(p)); };
+      // a phone's whole company is a list: every seat waits inside its department's card
+      const list = !focus && W < PHONE;
+      if (list) for (const x of d.depts) {
+        const cell = L.boxes[deptBox(x.id)];
+        assert.ok(cell.list && cell.show, `${at}: ${x.id} is a card in the list`);
+        assert.deepEqual(L.lines.filter((l) => l.a === cell.id && l.type === "report").map((l) => `${l.b}:${l.shape}`), [`${top}:spine`], `${at}: ${x.id}'s card reports up the spine`);
+        for (const s of x.seats) assert.ok(!L.boxes[s.id].show && !L.boxes[foldBox(s.id)]?.show && L.boxes[s.id].rides === cell.id, `${at}: ${s.id} waits inside the ${x.id} card`);
+      }
       for (const x of d.depts) {
-        if (focus && x.id !== focus) continue;
+        if ((focus && x.id !== focus) || list) continue;
         for (const s of x.seats) {
           assert.equal(L.boxes[s.id].show, unfolded(s.id), `${at}: ${s.id} shows only when the seats above it are open`);
           const kids = x.seats.some((k) => k.parent === s.id), f = L.boxes[foldBox(s.id)];
@@ -131,7 +139,8 @@ for (const [name, d] of cases) {
         assert.equal(L.cols, colsFor(W, d.depts.length));
         assert.ok(all.every((b) => !b.big && !b.focus && !b.port), `${at}: the whole company draws every box small`);
         assert.ok(all.filter((b) => b.kind === "dept" || b.kind === "you").every((b) => b.show), `${at}: every department shows`);
-        if (fold === "all open") assert.equal(L.lines.filter((l) => l.type === "handoff").length, d.handoffs.length, `${at}: every hand-off is drawn`);
+        assert.equal(all.some((b) => b.list), list && d.depts.length > 0, `${at}: only a phone's whole company is a list`);
+        if (fold === "all open" && !list) assert.equal(L.lines.filter((l) => l.type === "handoff").length, d.handoffs.length, `${at}: every hand-off is drawn`);
       } else {
         const mine = d.depts.find((x) => x.id === focus)!;
         assert.ok(L.boxes[deptBox(focus)].focus, `${at}: the opened department is marked`);
@@ -163,15 +172,21 @@ assert.ok(one.height > loads.height, "the canvas grows when a team opens");
 // the folded sales head still takes Morgan's hand-off, and Reese's to Rico (folded) draws no line
 assert.deepEqual(loads.lines.filter((l) => l.type === "handoff").map((l) => `${l.a}>${l.b}`), ["m1>s1"]);
 
-// a phone stacks departments full width, right of the gutter where each head's line runs up
+// a phone lists the departments as full-width cards right of the gutter where their lines run up,
+// and hand-offs between departments run card to card down the right edge
 const phone = layoutCanvas(full, 390, null);
-for (const x of depts) {
+depts.forEach((x, i) => {
   const cell = phone.boxes[deptBox(x.id)];
   assert.equal(cell.x - cell.w / 2, PAD + SPINE, `${x.id} starts right of the spine`);
   assert.equal(cell.x + cell.w / 2, 390 - PAD, `${x.id} runs to the right edge`);
-  assert.deepEqual(phone.lines.filter((l) => l.a === x.seats[0].id && l.type === "report").map((l) => l.shape), ["spine"], `${x.id}'s head line runs up the spine`);
-}
+  assert.equal(cell.h, LIST_H, `${x.id} is one card tall, however many seats it has`);
+  if (i) assert.ok(cell.y > phone.boxes[deptBox(depts[i - 1].id)].y, "cards keep the department order");
+});
+assert.deepEqual(phone.lines.filter((l) => l.type === "handoff").map((l) => `${l.a}>${l.b}:${l.shape}`), ["dept:money>dept:sales:side"], "Morgan to Reese draws money to sales; Reese to Rico stays inside sales");
 assert.ok(!layoutCanvas(full, 886, null).lines.some((l) => l.shape === "spine"), "only a phone has the spine");
+// opening a department on a phone shows its chart, and its seats come out of the card
+const phoneOpen = layoutCanvas(full, 390, "sales");
+assert.ok(!phoneOpen.boxes[deptBox("sales")].list && phoneOpen.boxes["s1"].show, "the opened department is a chart, not a card");
 
 // columns: one on a phone, never more than five or than there are departments
 assert.equal(colsFor(326, 5), 1, "a phone stacks departments one per row");

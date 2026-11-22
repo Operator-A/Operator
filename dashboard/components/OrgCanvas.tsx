@@ -98,7 +98,7 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
     for (const el of wrap.current?.querySelectorAll<HTMLElement>("[data-box]") ?? []) els.current[el.dataset.box as string] = el;
     for (const id of Object.keys(e.nodes)) if (!lay.boxes[id]) delete e.nodes[id];
     for (const b of Object.values(lay.boxes)) {
-      const n = (e.nodes[b.id] ??= { x: b.x, y: b.y, tx: b.x, ty: b.y, px: b.x, py: b.y, hw: b.w / 2, hh: b.h / 2, ox: 0, oy: 0, rides: null, show: false, amp: 0, p1: seed(b.id, 7) * 6.3, p2: seed(b.id, 13) * 6.3, f1: .25 + seed(b.id, 3) * .2, f2: .4 + seed(b.id, 5) * .25, placed: false });
+      const n = (e.nodes[b.id] ??= { x: b.x, y: b.y, tx: b.x, ty: b.y, px: b.x, py: b.y, hw: b.w / 2, hh: b.h / 2, ox: 0, oy: 0, rides: null, show: false, amp: 0, p1: seed(b.id, 7) * 6.3, p2: seed(b.id, 13) * 6.3, f1: .25 + seed(b.id, 3) * .2, f2: .4 + seed(b.id, 5) * .25, placed: true });
       n.show = b.show; n.rides = b.rides;
       if (!b.show) continue;
       n.hw = b.w / 2; n.hh = b.h / 2; n.amp = b.kind === "dept" ? (b.focus ? 0 : b.port ? 3 : 4) : b.rides ? 1.2 : 2;
@@ -165,13 +165,15 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
         e.parts = e.parts.filter((p) => p.u < 1);
         if (now > e.next) {
           e.next = now + 1700 + seed(String(e.runI), 11) * 1500;
-          // the next of today's runs whose agent is on screen leaves its card and travels up its report line
+          // the next of today's runs whose agent is on screen leaves its card and travels up its report
+          // line; an agent folded away (or inside a phone's department card) sends it from its department
           for (let i = 0; i < e.runs.length; i++) {
             const r = e.runs[(e.runI + i) % e.runs.length], n = e.nodes[r.seat];
-            if (!n?.show) continue;
+            const from = n?.show ? r.seat : n?.rides && e.nodes[n.rides]?.show ? n.rides : null;
+            if (!from) continue;
             e.runI = (e.runI + i + 1) % e.runs.length;
-            const l = e.lines.find((x) => x.a === r.seat && x.type === "report");
-            ping(r.seat, `var(${RUN_COLOR[r.status]})`);
+            const l = e.lines.find((x) => x.a === from && x.type === "report");
+            ping(from, `var(${RUN_COLOR[r.status]})`);
             if (l && e.nodes[l.b]?.show) e.parts.push({ line: l, u: 0, color: RUN_COLOR[r.status] });
             break;
           }
@@ -214,8 +216,8 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
               if (b.kind === "dept") {
                 const i = d.depts.findIndex((x) => deptBox(x.id) === b.id), dp = d.depts[i];
                 return (
-                  <button key={b.id} {...common} className={cls(b, `lc-dept${b.focus ? " focus" : ""}${b.port ? " port" : ""}`)} style={{ "--hue": HUES[i % HUES.length] } as React.CSSProperties} aria-label={`Open ${dp.name}`}>
-                    <span className="lc-in"><span className="lc-cell" style={size(b)}><span className="lc-lbl"><b>{dp.name}</b></span></span></span>
+                  <button key={b.id} {...common} className={cls(b, `lc-dept${b.focus ? " focus" : ""}${b.port ? " port" : ""}${b.list ? " list" : ""}`)} style={{ "--hue": HUES[i % HUES.length] } as React.CSSProperties} aria-label={`Open ${dp.name}`}>
+                    <span className="lc-in"><span className="lc-cell" style={size(b)}><span className="lc-lbl"><b>{dp.name}</b>{b.list && <small>{dp.seats.length} seat{dp.seats.length === 1 ? "" : "s"}</small>}</span>{b.list && <DeptCard dp={dp} runs={d.runs} />}</span></span>
                   </button>
                 );
               }
@@ -252,6 +254,28 @@ export function OrgCanvas({ d }: { d: CanvasData }) {
         <Panel d={d} opened={opened} picked={picked ? seats.get(picked)?.seat ?? null : null} pick={setSel} />
       </div>
     </div>
+  );
+}
+
+/** A department as a card in the phone's list: its head, what happened last today, a dot per seat and the budget. */
+function DeptCard({ dp, runs }: { dp: CanvasDept; runs: CanvasRun[] }) {
+  const head = dp.seats[0], ids = new Set(dp.seats.map((s) => s.id)), last = runs.find((r) => ids.has(r.seat));
+  const now = last ? `${last.who}: ${last.text}` : head?.agent?.summary ? `${head.agent.name}: ${head.agent.summary}` : "No runs yet today.";
+  const pct = dp.budget ? Math.min(100, (dp.spent / dp.budget) * 100) : null;
+  const money = `$${dp.spent.toFixed(2)}${dp.budget != null ? ` of $${dp.budget.toFixed(2)}` : ""}`;
+  return (
+    <span className="lc-sum">
+      {head && (
+        <span className={`lc-card lc-mini ${head.agent ? head.agent.state : head.holder}`}>
+          <span className="lc-in"><i className="lc-sd" aria-hidden="true" /><span className="lc-meta"><b>{seatName(head)}</b><span className="lc-role">{head.title}{head.agent ? ` · ${head.agent.label}` : ""}</span></span></span>
+        </span>
+      )}
+      <span className="lc-now"><b>Now</b> {now}</span>
+      <span className="lc-foot">
+        <span className="lc-dots" aria-hidden="true">{dp.seats.map((s) => <i key={s.id} className={s.agent ? s.agent.state : s.holder} />)}</span>
+        <span className="lc-spend">{pct != null && <span className="lc-bar"><span style={{ width: `${pct}%` }} className={pct >= 100 ? "out" : pct >= 80 ? "near" : ""} /></span>}{money}</span>
+      </span>
+    </span>
   );
 }
 
