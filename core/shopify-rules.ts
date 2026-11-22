@@ -191,6 +191,29 @@ const PRODUCT_COPY = gql`
   }
 `;
 
+// Open, unshipped orders with their fulfillment orders, for marking an order shipped: order number, date,
+// status, and each fulfillment order's state, location name and items left. 50 a page. No names or addresses.
+const ORDERS_TO_SHIP = gql`
+  query AgentOrdersToShip($after: String) {
+    orders(first: 50, after: $after, sortKey: CREATED_AT, reverse: true, query: "status:open fulfillment_status:unshipped") {
+      nodes {
+        id name createdAt cancelledAt closed displayFulfillmentStatus
+        fulfillmentOrders(first: 10) {
+          nodes {
+            id status requestStatus
+            supportedActions { action }
+            fulfillmentHolds { id }
+            deliveryMethod { methodType }
+            assignedLocation { name location { id } }
+            lineItems(first: 50) { nodes { remainingQuantity } }
+          }
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
 /** Core's Shopify tools: what every business on Shopify can read. */
 export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
   {
@@ -261,6 +284,17 @@ export const CORE_SHOPIFY: readonly ShopifyQuery[] = [
       const cur = afterArg(a);
       if (cur === undefined) return { problem: "after must be a cursor from the last page" };
       return { variables: { after: cur, keys: ctx.productFields.length ? [...ctx.productFields] : [NO_FIELDS_KEY] } };
+    },
+  },
+  {
+    tool: "shopify_orders_to_ship",
+    description: "Open, unshipped orders, newest first, 50 a page, with their Shopify ids: order number, date, and each fulfillment order's state, location and items left. No names or addresses.",
+    inputSchema: { type: "object", properties: { after } },
+    doc: ORDERS_TO_SHIP,
+    variables: (a) => {
+      const cur = afterArg(a);
+      if (cur === undefined) return { problem: "after must be a cursor from the last page" };
+      return { variables: { after: cur } };
     },
   },
   {

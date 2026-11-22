@@ -5,7 +5,7 @@ import "server-only";
 import { db } from "@/core/db";
 import { agentNames } from "@/core/org";
 import { loadCaps } from "@/core/gateway";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, SQUARE_INVOICE, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, type ActionDef } from "@/core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, SQUARE_INVOICE, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, type ActionDef } from "@/core/gateway/policy";
 import { listTrust, standingOf, TRUST_MISSING } from "@/core/trust";
 import { loadSpec } from "@/core/agent-spec";
 import { LEVEL_WORDS, offerWords, standingWords, type Level } from "@/core/trust-rules";
@@ -18,6 +18,7 @@ export const WHAT: Record<string, string> = {
   [SHOPIFY_TAGS]: "Shopify order and customer tags",
   [SHOPIFY_STOCK]: "Shopify stock counts",
   [SHOPIFY_COPY]: "Shopify product copy",
+  [SHOPIFY_SHIP]: "Shopify shipped",
   [CALENDAR_HOLD]: "calendar holds",
   [MAILCHIMP_DRAFT]: "Mailchimp campaign drafts",
   [WOO_NOTE]: "order notes",

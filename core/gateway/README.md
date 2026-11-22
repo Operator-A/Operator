@@ -199,6 +199,21 @@ store, like a post; the facts checks run on every write).
   and sends the one fixed `productUpdate`. The action stores `undo_json` = the old copy, valid only while
   the store still shows the copy it set.
 
+## `shopify.mark_shipped` (docs/shopify-actions.md)
+
+Every remaining item on one Shopify order marked shipped, with a carrier and tracking number. Any agent
+an approver grants "Mark an order shipped" on the Tools step. Draft only and never promoted (decided
+2026-11-22): Shopify emails the customer its own shipping confirmation, which can't be unsent.
+
+- The target is an order gid, a pick from an Orders to ship result, which also carries the order's open
+  fulfillment orders. The proposal holds exactly `fulfillment_orders`, `carrier` (from `CARRIERS`) and
+  `tracking` in that carrier's shape (`refuseShip` in `core/shopify-actions.ts`).
+- Applying needs Shopify connected with `write_merchant_managed_fulfillment_orders`, through
+  `callWriteTool("shopify", "shopify_mark_shipped")`; at most `policies.max_shopify_writes_per_run` (25)
+  per apply. The gateway refuses a tracking number used on another order's ship card in the last 60
+  days; the server re-checks the scope and the live order (`planShip`: refused if it changed or can no
+  longer be marked here) and sends the one fixed `fulfillmentCreate` with an idempotency key. No undo.
+
 ## Caps, vendors and suppressed addresses
 
 The fences the payment and email action types will have to pass. Neither action type exists yet.

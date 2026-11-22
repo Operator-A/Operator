@@ -19,7 +19,7 @@ import type { CampaignArgs } from "@/core/klaviyo-draft-rules";
 import { invoiceCents, type InvoiceArgs } from "@/core/stripe-rules";
 import { QBO_CATEGORIZE_TOOL, UNCATEGORIZED, type CategorizeArgs } from "@/core/quickbooks-rules";
 import { SQUARE_DRAFT_TOOL, splitTarget } from "@/core/square-rules";
-import { productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
+import { productTarget, refuseCopy, refuseShip, refuseStock, refuseTags, SHIP_REPEAT_DAYS, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { afterDecision, demote, levelOf, refreshOffer } from "@/core/trust";
 import { executeAfter, isRejectKind, type RejectKind } from "@/core/trust-rules";
 import { refuseHold } from "@/core/calendar-rules";
@@ -28,9 +28,9 @@ import { orderIdOk, refuseNote } from "@/core/woo-rules";
 import { dealIdOk, refuseMove } from "@/core/hubspot-rules";
 import { adIdOk, refusePause, RESULT_LABEL, type MetaResult } from "@/core/meta-rules";
 import { metaTargets } from "@/core/meta-targets";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, SQUARE_INVOICE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, CAP_KEYS, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, INVOICE_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, SQUARE_INVOICE, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, MAX_RECEIPT_BYTES, RECEIPT_TYPES, effectiveCap, planIsEmpty, planWrite, receiptPathOk, refuseDraftTo, refuseProposal, type AnnotateArgs, type CapKey, type DraftArgs, type ToolName } from "./policy";
 
-export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, SQUARE_INVOICE } from "./policy";
+export { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, DRAFT_EMAIL, INVOICE_DRAFT, SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, QBO_CATEGORIZE, SQUARE_INVOICE } from "./policy";
 
 export interface Proposal {
   agentId: string;
@@ -445,7 +445,7 @@ export async function applyApproved(ids?: string[]) {
   await db().from("agent_actions").update({ status: "failed", reason: "Interrupted while applying. Retry checks again first." })
     .eq("status", "executing").lt("claimed_at", new Date(Date.now() - 10 * 6e4).toISOString());
   await refuseUngranted(ids);
-  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyShopifyStock(ids), applyShopifyCopy(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids), applyMetaPauses(ids), applyCategorize(ids), applySquareInvoices(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
+  const done = (await Promise.all([applyMercury(ids), applyDrafts(ids), applyCampaigns(ids), applyHolds(ids), applyShopifyTags(ids), applyShopifyStock(ids), applyShopifyCopy(ids), applyShopifyShip(ids), applyInvoices(ids), applyMailchimp(ids), applyWooNotes(ids), applyHubSpotMoves(ids), applyMetaPauses(ids), applyCategorize(ids), applySquareInvoices(ids)])).filter((r): r is { ok: boolean; text: string } => !!r);
   if (!done.length) return { ok: true, text: "Nothing approved is waiting." };
   return { ok: done.every((r) => r.ok), text: done.map((r) => r.text).join(" ") };
 }
@@ -744,6 +744,64 @@ async function applyCopyChange(a: ActionRow, runId: string) {
       // what to put back: the old copy, and only while the store still shows the copy this action set
       undo_json: { set_copy: out?.before ?? null, only_if_print: typeof out?.set === "string" ? out.set : null },
       result_json: { record: label },
+    });
+    return "applied" as const;
+  } catch (e) {
+    await done({ status: "failed", reason: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+    return "failed" as const;
+  }
+}
+
+async function applyShopifyShip(ids?: string[]) {
+  const rows = await approvedOf(SHOPIFY_SHIP, ids);
+  if (!rows.length) return null;
+  if (!(await ready("shopify"))) return { ok: true, text: "Approved, not in Shopify yet: Shopify isn't connected (Connections, Shopify)." };
+  const cap = await numPolicy("max_shopify_writes_per_run", 25);
+  const byAgent = new Map<string, ActionRow[]>();
+  for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r]);
+  const texts: string[] = [];
+  let ok = true;
+  for (const [agentId, list] of byAgent) {
+    const res = await withRun(agentId, "approval", async (runId) => {
+      const n = { applied: 0, refused: 0, failed: 0 };
+      for (const a of list.slice(0, cap)) { const r = await applyShipChange(a, runId); if (r !== "skipped") n[r]++; }
+      const left = Math.max(0, list.length - cap);
+      return { status: "ok", summary: `Gateway marked ${n.applied} approved Shopify order${n.applied === 1 ? "" : "s"} shipped${n.refused ? `, refused ${n.refused} on a fresh check` : ""}${n.failed ? `, ${n.failed} failed` : ""}${left ? `, ${left} left for the next apply (cap ${cap})` : ""}. Shopify emailed each customer its shipping confirmation.` };
+    });
+    if (res.status === "skipped") ok = false;
+    texts.push(res.status === "skipped" ? `${agentId}: not applied (${res.summary}) Approved ship changes are kept.` : res.summary);
+  }
+  return { ok, text: texts.join(" ") };
+}
+
+/** Whether this tracking number was already used on another order's ship change in the last SHIP_REPEAT_DAYS days. */
+async function trackingUsedElsewhere(a: ActionRow, tracking: string): Promise<boolean> {
+  const since = new Date(Date.now() - SHIP_REPEAT_DAYS * 86_400_000).toISOString();
+  const { data, error } = await db().from("agent_actions").select("id, target").eq("tool", SHOPIFY_SHIP).in("status", ["applied", "executing"]).eq("args_json->>tracking", tracking).gte("created_at", since).neq("id", a.id).limit(5);
+  if (error) throw new Error(error.message);
+  return (data ?? []).some((r) => (r as { target: string }).target !== a.target);
+}
+
+async function applyShipChange(a: ActionRow, runId: string) {
+  const { data: claimed } = await db().from("agent_actions").update({ status: "executing", exec_run_id: runId, claimed_at: new Date().toISOString() }).eq("id", a.id).eq("status", "approved").select("id").maybeSingle();
+  if (!claimed) return "skipped" as const;
+  const done = (patch: Record<string, unknown>) => db().from("agent_actions").update({ executed_at: new Date().toISOString(), ...patch }).eq("id", a.id);
+  try {
+    const args = a.args_json as unknown as { fulfillment_orders: string[]; carrier: string; tracking: string };
+    // the fields again, at execution time; the server re-checks the app's scopes and the live order
+    const no = shopifyTarget(a.target)?.kind === "Order" ? refuseShip(args as unknown as Record<string, unknown>) : "The target is not a Shopify order id.";
+    if (no) { await done({ status: "refused", reason: no }); return "refused" as const; }
+    // a number already on another order is almost always a copy-paste slip
+    if (await trackingUsedElsewhere(a, args.tracking)) { await done({ status: "refused", reason: `Tracking number ${args.tracking} was already used on another order in the last ${SHIP_REPEAT_DAYS} days. Nothing was written.` }); return "refused" as const; }
+    const out = (await callWriteTool("shopify", "shopify_mark_shipped", { target: a.target, fulfillment_orders: args.fulfillment_orders, carrier: args.carrier, tracking: args.tracking, key: a.id })) as { refused?: unknown; fulfillment?: unknown; label?: unknown };
+    const label = typeof out?.label === "string" ? out.label : null;
+    if (typeof out?.refused === "string") { await done({ status: "refused", reason: out.refused, result_json: { record: label } }); return "refused" as const; }
+    await done({
+      status: "applied",
+      diff_json: { before: { shipped: false }, after: { shipped: true, carrier: args.carrier, tracking: args.tracking } },
+      // no undo from OPERATOR: the customer already has Shopify's shipping email
+      undo_json: null,
+      result_json: { record: label, fulfillment: typeof out?.fulfillment === "string" ? out.fulfillment : null, customer_emailed: true },
     });
     return "applied" as const;
   } catch (e) {

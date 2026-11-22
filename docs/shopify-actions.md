@@ -106,16 +106,50 @@ handle can be sent.
   write, so they hold after promotion too (decided 2026-11-22).
 - Not in this slice: the product title, images, variants, tags, status, handle and prices.
 
+### `shopify.mark_shipped` (slice 5)
+Marks every remaining item on one order shipped, with one carrier and tracking number. Write tool
+`shopify_mark_shipped`, mutation `fulfillmentCreate` (`SHIP_CREATE`) with `notifyCustomer: true` and
+`trackingInfo { company number }` written in the document itself, so no tracking link, message or
+line-item subset can be sent. Shopify builds the tracking link from the carrier and emails the
+customer its own shipping confirmation (decided 2026-11-22). That is the only customer email any store
+action causes, and it is Shopify's template, not text a model wrote.
+
+- **Target**: an order gid, always a pick from an Orders to ship result (`shopify_orders_to_ship`),
+  never typed by the model. The pick also carries the order's open fulfillment order ids, which is
+  what the change is staged against.
+- **Args**: exactly `fulfillment_orders` (1 to 10 FulfillmentOrder gids, from the pick), `carrier` (one of
+  `CARRIERS`: USPS, UPS, FedEx, DHL Express, Canada Post, Royal Mail, Australia Post) and `tracking`
+  (spaces and dashes dropped, upper case, and it must fit that carrier's number shape) (`refuseShip`).
+- **What can be marked here** (`shippable`): an open order that isn't archived, with items left, every
+  open fulfillment order shipped by the business itself (`CREATE_FULFILLMENT`, not sent to a fulfillment
+  app), by shipping (not pickup or local delivery), not on hold, all from one location, and not partly
+  shipped already. Any other order shows in Orders to ship with the reason and no pick: the owner does
+  it in Shopify.
+- **Scope**: `write_merchant_managed_fulfillment_orders` (and its read scope for Orders to ship). It
+  can't touch orders a fulfillment app handles.
+- **Apply**: reads the live order (`SHIP_OF`). If it can't be marked here now, or its open fulfillment
+  orders aren't exactly the card's, it is refused and nothing is written (`planShip`). A tracking number
+  already used on another order's applied ship card in the last 60 days is refused
+  (`SHIP_REPEAT_DAYS`); numbers typed by hand in Shopify aren't seen by this check. The write carries an
+  idempotency key (the action's id). Records `diff_json` and `result_json` with
+  `customer_emailed: true`. No undo: an email can't be taken back, so `undo_json` is null.
+- **Card**: the order, how many items, the carrier and tracking number, and a line saying Shopify will
+  email the customer.
+- **Draft only, never promoted** (decided 2026-11-22): it emails a customer, and a wrong tracking
+  number can't be unsent. Granted only by an approver on the Tools step ("Mark an order shipped").
+- Not in this slice: shipping part of an order, more than one location, a custom carrier or link,
+  editing or cancelling a fulfillment, and orders a fulfillment app handles.
+
 ## Not built (each its own slice, with a spec first)
 
-Product titles, discount codes (needs a cap from the owner),
-marking an order shipped with tracking, refunds (moves money: needs per-refund and monthly caps from
+Product titles, discount codes (needs a cap from the owner), refunds (moves money: needs per-refund and monthly caps from
 the owner). Price changes, gift cards, cancelling orders and any delete stay out.
 
 ## Setting it up in Shopify
 
-The write scopes are `write_orders` and `write_customers` (tags), `write_inventory` (stock) and
-`write_products` (product copy). Add only the ones for the actions you'll grant.
+The write scopes are `write_orders` and `write_customers` (tags), `write_inventory` (stock),
+`write_products` (product copy) and `write_merchant_managed_fulfillment_orders` (mark shipped; add
+`read_merchant_managed_fulfillment_orders` too). Add only the ones for the actions you'll grant.
 
 **A Dev Dashboard app** (new custom apps are made there; the key is a client secret):
 
@@ -126,7 +160,7 @@ The write scopes are `write_orders` and `write_customers` (tags), `write_invento
 4. Approve the new scopes for the store: back on the app's **Overview**, **Installs** box, **Test
    app**, pick the store, and approve the updated permissions.
 5. Check in Shopify admin: **Settings**, **Apps**, the app. **Edit** shows **Granted** on Orders and
-   Customers (tags), or Products (stock and product copy). Nothing to paste again: the client secret stays the same, and
+   Customers (tags), Products (stock and product copy), or Fulfillment orders (mark shipped). Nothing to paste again: the client secret stays the same, and
    OPERATOR picks up the new scopes within an hour.
 
 **A legacy custom app** (made in Shopify admin before Dev Dashboard; the key is `shpat_…`):

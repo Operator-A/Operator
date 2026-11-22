@@ -14,7 +14,7 @@ They hold for every business on OPERATOR. "The owner" is the business's owner; "
 the owner gave the approver role (`core/roles.ts`). A cap's start value is where every
 org begins and the most it can be set to (`CAPS` in `core/gateway/policy.ts`).
 
-The tool gateway (`core/gateway`) has fourteen action types so far, all starting at Draft: receipt, category
+The tool gateway (`core/gateway`) has fifteen action types so far, all starting at Draft: receipt, category
 and memo on an existing Mercury transaction (Bookkeeper and CFO), a Gmail draft to a lead
 on the leads list (the prospecting lead finder; the owner sends it from Gmail), a draft email campaign
 to one of the business's own Klaviyo lists (the Campaign writer; the owner sends it from Klaviyo), a draft
@@ -22,7 +22,9 @@ campaign to one of the business's own Mailchimp audiences (any agent an approver
 sends it from Mailchimp), a
 private hold with no guests on the business's Google Calendar (any agent an approver gives it to; it emails
 no one), tags added to a Shopify order or customer (any agent an approver grants it to), a stock count
-set on one Shopify item at one location (any agent an approver grants it to; Draft only), a new
+set on one Shopify item at one location (any agent an approver grants it to; Draft only), an order the
+business ships itself marked shipped in Shopify with a carrier and tracking number (any agent an approver
+grants it to; Draft only, never promoted; Shopify emails the customer its own shipping confirmation), a new
 description or SEO text on one Shopify product (any agent an approver grants it to), a draft
 invoice to one of the business's existing Stripe customers (any agent an approver gives it to; the owner
 finalizes and sends it from Stripe), a private note on an order in the business's WooCommerce store (any
@@ -34,7 +36,8 @@ Uncategorized Expense into one of the business's own expense accounts (any agent
 an amount, and nothing is created or deleted), and a draft invoice to one of the business's existing Square
 customers at one of its active locations (any agent an approver gives it to; the owner publishes and sends it
 from Square). No
-send, payment or publish action type is built, so no agent can send, pay or publish.
+action type sends a message a model wrote, pays or publishes a post; the only customer email any action
+causes is Shopify's own shipping confirmation.
 
 
 - Sending, buying and posting are allowed only as gateway action types, and every new

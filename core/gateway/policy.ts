@@ -7,7 +7,7 @@ import { CAMPAIGN_FIELDS, listIdOk, refuseCampaign } from "@/core/klaviyo-draft-
 import { CUSTOMER_ID, INVOICE_FIELDS, refuseInvoice } from "@/core/stripe-rules";
 import { CATEGORIZE_FIELDS, QBO_CATEGORIZE, expenseTarget, refuseCategorize } from "@/core/quickbooks-rules";
 import { SQUARE_INVOICE, SQUARE_INVOICE_FIELDS, SQUARE_INVOICE_GRANT, refuseSquareInvoice, squareTarget } from "@/core/square-rules";
-import { SHOPIFY_COPY, SHOPIFY_COPY_GRANT, SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
+import { SHOPIFY_COPY, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP, SHOPIFY_SHIP_GRANT, refuseShip, SHOPIFY_STOCK, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS, SHOPIFY_TAGS_GRANT, productTarget, refuseCopy, refuseStock, refuseTags, shopifyTarget, stockTarget } from "@/core/shopify-actions";
 import { HOLD_FIELDS, isoMs, refuseHold } from "@/core/calendar-rules";
 import { audienceIdOk, refuseMailchimpCampaign } from "@/core/mailchimp-rules";
 import { NOTE_FIELDS, orderIdOk, refuseNote } from "@/core/woo-rules";
@@ -32,7 +32,7 @@ export const DRAFT_EMAIL = "gmail.create_draft";
  * Tags added to one Shopify order or customer (docs/shopify-actions.md). Adds only; undo removes
  * exactly the tags it added. The target is a Shopify id from a Recent orders result.
  */
-export { SHOPIFY_COPY, SHOPIFY_STOCK, SHOPIFY_TAGS };
+export { SHOPIFY_COPY, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS };
 export const CAMPAIGN_DRAFT = "klaviyo.campaign_draft";
 /**
  * A draft invoice in the business's Stripe, to one of its own Stripe customers (card 240). Stripe holds
@@ -208,6 +208,16 @@ export const TOOLS = {
     // number and claim word is checked against the product's Shopify data on every write (decided 2026-11-22)
     promotable: true,
   },
+  [SHOPIFY_SHIP]: {
+    // any agent an approver grants "Mark an order shipped" on the Tools step; never a proposal
+    agents: "granted",
+    grant: SHOPIFY_SHIP_GRANT,
+    tier: "Draft" as Tier,
+    fields: ["fulfillment_orders", "carrier", "tracking"],
+    // the tracking number comes from the agent reading an email or a label, and Shopify emails it to the
+    // customer: Draft for good until numbers come from a connected shipping tool in code (decided 2026-11-22)
+    promotable: false,
+  },
 } as const satisfies Record<string, ActionDef>;
 export type ToolName = keyof typeof TOOLS;
 
@@ -292,6 +302,7 @@ export function refuseProposal(agentId: string, tool: string, target: string, ar
   if (tool === QBO_CATEGORIZE) return expenseTarget(target) ? refuseCategorize(args) : "The target is not a QuickBooks expense line.";
   if (tool === SHOPIFY_TAGS) return shopifyTarget(target) ? refuseTags(args) : "The target is not a Shopify order or customer id.";
   if (tool === SHOPIFY_STOCK) return stockTarget(target) ? refuseStock(args) : "The target is not a Shopify inventory item at a location.";
+  if (tool === SHOPIFY_SHIP) return shopifyTarget(target)?.kind === "Order" ? refuseShip(args) : "The target is not a Shopify order id.";
   if (tool === SHOPIFY_COPY) return productTarget(target) ? refuseCopy(args) : "The target is not a Shopify product id.";
   if (tool === CALENDAR_HOLD) return target === `${args.start}/${args.end}` && isoMs(args.start) !== null ? refuseHold(args, now) : "The target is not the hold's own start and end.";
   if (!UUID.test(target)) return "The target is not a Mercury transaction id.";
