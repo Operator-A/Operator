@@ -33,6 +33,7 @@ async function check() {
     ga4: await localReady("ga4"),
     stripe: await localReady("stripe"),
     quickbooks: await localReady("quickbooks"),
+    square: await localReady("square"),
     calendar: await localReady("calendar"),
     calendar_holds: await localReady("calendar_holds"),
     mailchimp: await localReady("mailchimp"),

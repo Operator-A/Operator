@@ -249,7 +249,8 @@ assert.deepEqual(routeUnlisted("Shopify"), { kind: "tile", id: "shopify", name: 
 assert.deepEqual(routeUnlisted("gmail"), { kind: "tile", id: "gmail", name: "Gmail" });
 assert.equal((routeUnlisted("Notion") as { kind: string }).kind, "builtIn");
 assert.deepEqual(routeUnlisted("Post Hog"), { kind: "known", name: "PostHog", href: "/connections?s=new&known=posthog" });
-assert.deepEqual(routeUnlisted("Square"), { kind: "ask", name: "Square" });
+assert.deepEqual(routeUnlisted("Square"), { kind: "tile", id: "square", name: "Square" });
+assert.deepEqual(routeUnlisted("Toast"), { kind: "ask", name: "Toast" });
 assert.deepEqual(routeUnlisted("Google Analytics"), { kind: "tile", id: "analytics", name: "Google Analytics" });
 assert.match((routeUnlisted("https://evil.example") as { problem: string }).problem, /no link/);
 assert.match((routeUnlisted("  ") as { problem: string }).problem, /Name the service/);

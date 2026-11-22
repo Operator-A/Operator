@@ -6,7 +6,7 @@ import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import type { FactTopic } from "@/core/setup-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe" | "mailchimp" | "woo" | "hubspot" | "meta" | "quickbooks";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe" | "mailchimp" | "woo" | "hubspot" | "meta" | "quickbooks" | "square";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -138,6 +138,15 @@ export const TOOL_TILES: readonly ToolTile[] = [
       "Back here, check that the company name shown is your business.",
     ],
   },
+  {
+    id: "square", name: "Square", gives: "Sales, unpaid invoices, and invoice drafts", icon: "store", mcp: "square",
+    steps: [
+      "Tap Connect Square below. Square’s own sign-in page opens.",
+      "Sign in as the owner of the business’s Square account.",
+      "Square lists what OPERATOR asks for. Tap Allow.",
+      "Back here, check that the business name shown is yours.",
+    ],
+  },
 ];
 
 export const TILE_BY_ID = Object.fromEntries(TOOL_TILES.map((t) => [t.id, t])) as Record<ToolTileId, ToolTile>;
@@ -167,6 +176,12 @@ export const SCOPE_WORDS: Record<string, string> = {
   "a Stripe restricted key with Read on Balance, Balance transaction sources, Subscriptions, Invoices and Customers, and None on everything else (a key that can change anything is refused)": "see your balance, payments, subscriptions, open invoices and customers. A key that can change anything is refused",
   "a Stripe restricted key with Write on Invoices and Invoice items, Read on Customers, and None on everything else, used only to make a draft invoice": "make a draft invoice you approved. It can’t finalize, send, charge or refund",
   "com.intuit.quickbooks.accounting": "see your profit and loss, expenses and accounts, and move an expense out of Uncategorized Expense after you approve. Intuit’s one accounting permission can do more, so our server holds it to exactly that: it never changes an amount and never creates or deletes anything",
+  MERCHANT_PROFILE_READ: "see your business’s name and locations",
+  PAYMENTS_READ: "see your payments, refunds and Square’s fees",
+  CUSTOMERS_READ: "see your customers, so an invoice can name one",
+  INVOICES_READ: "see your invoices and what is still owed",
+  INVOICES_WRITE: "make a draft invoice you approved. Square’s permission can also publish and cancel invoices; our server has no code to do either, so you publish from Square",
+  ORDERS_WRITE: "make the order a Square invoice sits on, only for a draft you approved. Our server never changes or cancels an order",
   "the app’s read scopes": "read orders, products and stock",
   write_orders: "add tags to an order, only after you approve",
   write_customers: "add tags to a customer, only after you approve",
@@ -183,7 +198,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp", WOO_CONNECTED: "woo", WOO_NOTES_CONNECTED: "woo", HUBSPOT_CONNECTED: "hubspot", HUBSPOT_DEALS_CONNECTED: "hubspot", META_CONNECTED: "meta", META_PAUSES_CONNECTED: "meta", STRIPE_CONNECTED: "stripe", QUICKBOOKS_CONNECTED: "quickbooks",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp", WOO_CONNECTED: "woo", WOO_NOTES_CONNECTED: "woo", HUBSPOT_CONNECTED: "hubspot", HUBSPOT_DEALS_CONNECTED: "hubspot", META_CONNECTED: "meta", META_PAUSES_CONNECTED: "meta", STRIPE_CONNECTED: "stripe", QUICKBOOKS_CONNECTED: "quickbooks", SQUARE_CONNECTED: "square",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -243,7 +258,7 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
   part({ id: "store", covers: "an online store or shop software where customers order", area: "Where you sell", core: true, topic: "channels", learns: "orders, products and stock", question: "Where do you sell?", value: "Your agents read orders, products and stock, and tell you what sold in plain words.", ready: "Your agents can see your orders, products and stock.",
     tools: [{ name: "Shopify", tile: "shopify" }, { name: "WooCommerce", tile: "woo" }, { name: "Square Online" }, { name: "Wix" }, { name: "Squarespace" }, { name: "Etsy" }] }),
   part({ id: "payments", covers: "how customers pay: the register or card reader at the counter, payment links and invoices", area: "Payments", core: true, topic: "sells", learns: "what you’re paid, refunds and unpaid invoices", question: "How do people pay you?", value: "Know what came in, what’s owed and what got refunded, without opening another dashboard.", ready: "Your payments are in reach.",
-    tools: [{ name: "Stripe", tile: "stripe" }, { name: "Square" }, { name: "Clover" }, { name: "PayPal" }] }),
+    tools: [{ name: "Stripe", tile: "stripe" }, { name: "Square", tile: "square" }, { name: "Clover" }, { name: "PayPal" }] }),
   part({ id: "money", covers: "the business bank account", area: "Bank", core: true, topic: "other", learns: "balances and every charge", question: "Where does the money live?", value: "Your bookkeeper categorizes every charge and matches the receipts.", ready: "Your books can start from your real transactions.",
     tools: [{ name: "Mercury", tile: "mercury" }, { name: "Chase" }, { name: "Bank of America" }, { name: "Wells Fargo" }] }),
   part({ id: "books", covers: "the bookkeeping software", area: "Books", core: true, topic: "other", learns: "profit and loss, bills and what’s owed to you", question: "What do you keep your books in?", value: "Monthly numbers come from your own books, not a guess.", ready: "Your books are in reach.",

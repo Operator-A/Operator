@@ -5,7 +5,7 @@
 import type { Days } from "@/core/flow-rules";
 
 export type Tier = "Report" | "Draft" | "Act";
-export type IntegrationId = "shopify" | "mercury" | "notion" | "email" | "gmail" | "gmail_read" | "claude" | "web" | "supabase" | "github" | "klaviyo" | "mercury_write" | "mercury_files" | "klaviyo_drafts" | "vault" | "ga4" | "calendar" | "calendar_holds" | "stripe" | "stripe_drafts" | "mailchimp" | "mailchimp_drafts" | "woo" | "woo_notes" | "hubspot" | "hubspot_deals" | "meta" | "meta_pauses" | "quickbooks";
+export type IntegrationId = "shopify" | "mercury" | "notion" | "email" | "gmail" | "gmail_read" | "claude" | "web" | "supabase" | "github" | "klaviyo" | "mercury_write" | "mercury_files" | "klaviyo_drafts" | "vault" | "ga4" | "calendar" | "calendar_holds" | "stripe" | "stripe_drafts" | "mailchimp" | "mailchimp_drafts" | "woo" | "woo_notes" | "hubspot" | "hubspot_deals" | "meta" | "meta_pauses" | "quickbooks" | "square";
 
 export interface Schedule {
   kind: "manual" | Days;
