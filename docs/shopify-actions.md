@@ -70,16 +70,52 @@ mutation `inventorySetQuantities` (name `available`) with `@idempotent`, keyed b
 - Not in this slice: on hand, committed and incoming counts, moving stock between locations,
   turning tracking on or off, new locations.
 
+### `shopify.update_copy` (slice 3)
+
+Sets a new description and/or SEO title and description on one product. Write tool
+`shopify_update_copy`, mutation `productUpdate` naming only the product id, `descriptionHtml` and
+`seo { title description }` in the document itself (`COPY_SET`), so no title, price, status, tags or
+handle can be sent.
+
+- **Target**: a product gid, always a pick from a Product copy result (`shopify_product_copy`), never
+  typed by the model. The pick also carries the fingerprint of the copy as it stood (`before`, from
+  `copyPrint` over the description HTML and SEO text), the copy itself for the card, and the facts the
+  product's own data allows.
+- **Args**: `before`, plus at least one of `description` (plain text, up to 4,000 characters; a blank
+  line starts a paragraph, lines starting with "- " make bullets), `seo_title` (up to 70) and
+  `seo_description` (up to 320). No HTML, entities, links or control characters (`refuseCopy`). Code
+  builds the HTML (`copyHtml`): `<p>`, `<br>`, `<ul><li>`, everything escaped.
+- **Facts only from Shopify** (`refuseCopyFacts`): every number in the new text, and every claim word in
+  `CLAIM_WORDS` (certified, organic, fair trade, B Corp, kosher, halal, vegan, gluten-free, non-GMO, USDA,
+  award-winning), must already be in the product's Shopify data: title, description, type, vendor, tags,
+  SEO text and the fact fields chosen on Settings › What agents may say about your products. Checked
+  when the card is staged (against the pick) and again on the server right before the write (against
+  the live product). Origins and other plain-language claims are for the approver to check on the card.
+- **Scope**: `write_products`. Shopify has nothing narrower and it also covers prices and deleting
+  products; our server sends only `COPY_SET`, so the server is the limit, and Connections says so.
+- **Apply**: reads the live product (`COPY_OF`). If its fingerprint isn't `before` any more, the action
+  is refused with "Product copy changed since this was staged" (`planCopy`); if the text states a fact
+  the live data doesn't, it is refused with the words that broke it. A field left out is sent back as it
+  stands. Records `diff_json` (description HTML and SEO text before and after) and `undo_json` =
+  `{ set_copy: <before>, only_if_print: <fingerprint of what it set> }`: an undo may put the old copy
+  back only while the store still shows what this action set (`mayUndoCopy`). At most
+  `policies.max_shopify_writes_per_run` (25) per apply, shared with tags and stock.
+- **Card**: the product, then each changed field's words before (struck through) and after, then the
+  agent's one-line why.
+- Starts at Draft, **promotable** (28 of the last 30 unedited), like posts: the facts checks run on every
+  write, so they hold after promotion too (decided 2026-11-22).
+- Not in this slice: the product title, images, variants, tags, status, handle and prices.
+
 ## Not built (each its own slice, with a spec first)
 
-Product description and SEO text, discount codes (needs a cap from the owner),
+Product titles, discount codes (needs a cap from the owner),
 marking an order shipped with tracking, refunds (moves money: needs per-refund and monthly caps from
 the owner). Price changes, gift cards, cancelling orders and any delete stay out.
 
 ## Setting it up in Shopify
 
-The write scopes are `write_orders` and `write_customers` (tags) and `write_inventory` (stock). Add
-only the ones for the actions you'll grant.
+The write scopes are `write_orders` and `write_customers` (tags), `write_inventory` (stock) and
+`write_products` (product copy). Add only the ones for the actions you'll grant.
 
 **A Dev Dashboard app** (new custom apps are made there; the key is a client secret):
 
@@ -90,7 +126,7 @@ only the ones for the actions you'll grant.
 4. Approve the new scopes for the store: back on the app's **Overview**, **Installs** box, **Test
    app**, pick the store, and approve the updated permissions.
 5. Check in Shopify admin: **Settings**, **Apps**, the app. **Edit** shows **Granted** on Orders and
-   Customers (tags) or Products (stock). Nothing to paste again: the client secret stays the same, and
+   Customers (tags), or Products (stock and product copy). Nothing to paste again: the client secret stays the same, and
    OPERATOR picks up the new scopes within an hour.
 
 **A legacy custom app** (made in Shopify admin before Dev Dashboard; the key is `shpat_…`):

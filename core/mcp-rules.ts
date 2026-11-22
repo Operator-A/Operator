@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import { SHOPIFY_TOOLS } from "@/core/shopify-queries";
 import { STRIPE_DRAFT_TOOL, STRIPE_READ_TOOLS } from "@/core/stripe-rules";
-import { SHOPIFY_STOCK, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES } from "@/core/shopify-actions";
+import { SHOPIFY_COPY, SHOPIFY_COPY_TOOL, SHOPIFY_STOCK, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES } from "@/core/shopify-actions";
 
 /**
  * A server's profile (docs/mcp-everywhere.md, slice 3). It ships with the app and only a pull
@@ -151,8 +151,8 @@ export const MCP_SERVERS = {
     readTools: SHOPIFY_TOOLS,
     reportTools: [],
     scopes: ["the app’s read scopes", ...SHOPIFY_WRITE_SCOPES],
-    writeTools: [{ tool: SHOPIFY_TAGS_TOOL, actionType: SHOPIFY_TAGS }, { tool: SHOPIFY_STOCK_TOOL, actionType: SHOPIFY_STOCK }],
-    signInHint: "Paste your OPERATOR app’s Admin API access token (shpat_…), or its client secret if it’s a Dev Dashboard app. Give it read scopes, plus write_orders and write_customers if agents may tag orders and customers, and write_inventory if they may set stock (always after you approve). Any other write scope is refused.",
+    writeTools: [{ tool: SHOPIFY_TAGS_TOOL, actionType: SHOPIFY_TAGS }, { tool: SHOPIFY_STOCK_TOOL, actionType: SHOPIFY_STOCK }, { tool: SHOPIFY_COPY_TOOL, actionType: SHOPIFY_COPY }],
+    signInHint: "Paste your OPERATOR app’s Admin API access token (shpat_…), or its client secret if it’s a Dev Dashboard app. Give it read scopes, plus write_orders and write_customers if agents may tag orders and customers, write_inventory if they may set stock (always after you approve), and write_products if they may rewrite product descriptions and SEO text. Shopify’s write_products also covers prices and deletes; OPERATOR’s server never sends either. Any other write scope is refused.",
   },
   gmail_read: {
     id: "gmail_read",

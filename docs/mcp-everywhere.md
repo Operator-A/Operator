@@ -206,7 +206,7 @@ store, so Shopify runs on our own server in the app, like Notion and Gmail:
   named query, and `scripts/validate-graphql.mjs` still checks every document against Shopify's
   schema. Order reads carry no customer names, emails or addresses.
 - **`integrations/shopify-server.ts`** serves `shopify_green_lots`, `shopify_stock_coffees`,
-  `shopify_shop_settings`, `shopify_recent_orders`, `shopify_stock_levels`, `shopify_board_orders` and
+  `shopify_shop_settings`, `shopify_recent_orders`, `shopify_stock_levels`, `shopify_product_copy`, `shopify_board_orders` and
   `shopify_orders_between`. **`integrations/shopify-api.ts`** is the only file that posts to
   Shopify (`check:mcp` checks that). Lint and `check:mcp` make sure only the server imports it, and
   only `integrations/mcp.ts` imports the server. The facades in `integrations/shopify/*` call

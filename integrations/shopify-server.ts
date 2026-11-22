@@ -9,7 +9,9 @@ import { MCP_PROTOCOL, MCP_SERVERS } from "@/core/mcp-rules";
 import { settings } from "@/core/settings";
 import { DEFAULT_TZ } from "@/core/time";
 import { SHOPIFY_QUERIES, shopifyKeyKind, shopifyVariables, scopesBeyond } from "@/core/shopify-queries";
-import { SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_ADD, TAGS_OF, planStock, planTags, refuseStock, refuseTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "@/core/shopify-actions";
+import { COPY_OF, COPY_SET, SHOPIFY_COPY_TOOL, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES, STOCK_OF, STOCK_SET, TAGS_ADD, TAGS_OF, copyHtml, copyPrint, copyText, factsOf, planCopy, planStock, planTags, printOf, productTarget, refuseCopy, refuseCopyFacts, refuseStock, refuseTags, scopeFor, shopifyTarget, stockKeyOk, stockTarget } from "@/core/shopify-actions";
+import { NO_FIELDS_KEY } from "@/core/shopify-rules";
+import type { CopyProduct } from "@/core/shopify-actions";
 import { shopifyMutate, shopifyQuery, whoIs } from "./shopify-api";
 
 const READS = MCP_SERVERS.shopify.readTools as readonly string[];
@@ -23,6 +25,10 @@ const WRITE_ABOUT: Record<string, { description: string; inputSchema: unknown }>
   [SHOPIFY_STOCK_TOOL]: {
     description: "Sets the available count of one inventory item at one location, only while the store still shows the count it was staged against. Only the gateway calls it, after an approver approves.",
     inputSchema: { type: "object", required: ["target", "from", "available", "reason", "key"], properties: { target: { type: "string" }, from: { type: "integer" }, available: { type: "integer" }, reason: { type: "string" }, key: { type: "string" } } },
+  },
+  [SHOPIFY_COPY_TOOL]: {
+    description: "Sets a new description and/or SEO title and description on one product, only while its copy is still what the card was written against and only with facts in its Shopify data. Only the gateway calls it, after an approver approves or the trust ladder allows it.",
+    inputSchema: { type: "object", required: ["target", "before"], properties: { target: { type: "string" }, before: { type: "string" }, description: { type: "string" }, seo_title: { type: "string" }, seo_description: { type: "string" } } },
   },
 };
 
@@ -106,6 +112,44 @@ async function setStock(key: string, raw: unknown): Promise<Record<string, unkno
   return { before: from, after: available, label, adjustment: out.inventorySetQuantities.inventoryAdjustmentGroup?.id ?? null };
 }
 
+type CopySet = { productUpdate: { product: { id: string } | null; userErrors: { field?: string[]; message: string }[] } };
+
+/**
+ * Sets a product's description and/or SEO text: the inputs checked again, the app's live scopes, the live
+ * product (its copy must still be what the card was written against, and every number and claim word in
+ * the new text must be in its Shopify data now), then productUpdate with only the description HTML (built
+ * here from plain text) and the SEO text. A field left out is sent back as it stands.
+ */
+async function setCopy(key: string, raw: unknown): Promise<Record<string, unknown>> {
+  const a = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const target = typeof a.target === "string" && productTarget(a.target) ? a.target : null;
+  if (!target) throw new Error("the target isn't a Shopify product id");
+  const args: Record<string, unknown> = { before: a.before };
+  for (const f of ["description", "seo_title", "seo_description"] as const) if (a[f] !== undefined) args[f] = a[f];
+  const no = refuseCopy(args);
+  if (no) throw new Error(no);
+  const { scopes } = await whoIs(key);
+  if (!scopes.includes("write_products")) throw new Error(addScope("write_products"));
+  const fields = (await settings()).productFields;
+  const live = (await shopifyQuery<{ product: CopyProduct | null }>(key, COPY_OF, { id: target, keys: fields.length ? [...fields] : [NO_FIELDS_KEY] })).product;
+  const label = live?.title ?? "product";
+  const plan = planCopy(args.before as string, live && live.id === target ? printOf(live) : null);
+  if ("refuse" in plan) return { refused: plan.refuse, label };
+  const p = live as CopyProduct;
+  const facts = refuseCopyFacts(copyText(args), factsOf(p));
+  if (facts) return { refused: facts, label };
+  const before = { description_html: p.descriptionHtml ?? "", seo_title: p.seo?.title ?? "", seo_description: p.seo?.description ?? "" };
+  const after = {
+    description_html: typeof args.description === "string" ? copyHtml(args.description) : before.description_html,
+    seo_title: typeof args.seo_title === "string" ? args.seo_title.trim() : before.seo_title,
+    seo_description: typeof args.seo_description === "string" ? args.seo_description.trim() : before.seo_description,
+  };
+  const out = await shopifyMutate<CopySet>(key, COPY_SET, { id: target, html: after.description_html, seoTitle: after.seo_title, seoDescription: after.seo_description });
+  const errs = out.productUpdate.userErrors ?? [];
+  if (errs.length) throw new Error(`Shopify refused the copy: ${errs.map((e) => e.message).join("; ").slice(0, 200)}`);
+  return { before, after, set: copyPrint(after.description_html, after.seo_title, after.seo_description), label };
+}
+
 /** A JSON-RPC handler for one call, with the key the vault opened. */
 export function shopifyServer(key: string) {
   const reply = (id: unknown, result: unknown) => ({ jsonrpc: "2.0", id, result });
@@ -125,7 +169,7 @@ export function shopifyServer(key: string) {
       case "tools/call": {
         const name = typeof req.params?.name === "string" ? req.params.name : "";
         // integrations/mcp.ts lets only callWriteTool (the gateway) reach a write tool
-        const write = name === SHOPIFY_TAGS_TOOL ? addTags : name === SHOPIFY_STOCK_TOOL ? setStock : null;
+        const write = name === SHOPIFY_TAGS_TOOL ? addTags : name === SHOPIFY_STOCK_TOOL ? setStock : name === SHOPIFY_COPY_TOOL ? setCopy : null;
         if (write && WRITES.includes(name)) {
           try {
             return reply(id, { structuredContent: await write(key, req.params?.arguments), content: [{ type: "text", text: "ok" }] });
