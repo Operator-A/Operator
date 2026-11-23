@@ -118,3 +118,28 @@ refused token pauses, the caps are checked before every fire). `check:operator-m
 
 Apply the migration, then merge. Nothing changes for existing agents (they all run in OPERATOR). The first
 linked agent needs its routine made on claude.ai, as above.
+
+## Slice 3: more events
+
+Two more events on the sources slice 1 already checks, so nothing new about signatures or the vault:
+
+- **Shopify: refund** (`refunds/create`). Kept: the refund and order ids, the amount refunded (summed in code,
+  in cents, from the refund's successful refund transactions), how many items came back, and the refund's
+  note as untrusted text. The owner adds a second Shopify webhook (Refund create) to the same address.
+- **Stripe: invoice payment failed** (`invoice.payment_failed`). Kept: the invoice, its number and customer
+  ids, the amount still due and how many tries Stripe has made. The owner adds the event to the same Stripe
+  destination.
+
+Both can start a chain like the slice 1 events, with an optional minimum ("Refund at least", "Amount due
+at least"), under the same caps. The agent sheet's trigger picker now points to Crew > Schedule for live
+event starts instead of saying Soon.
+
+Not in this slice, and why:
+
+- **Klaviyo signup.** A flow's webhook action can carry a secret header, but it isn't signed, offers no
+  documented profile id or per-send id to tell Klaviyo's retries apart (it retries up to 17 times in a day),
+  and the profile's own fields are the only data. Klaviyo's system webhooks are signed
+  (`Klaviyo-Signature`) and have a subscribed-to-email topic, but need its Advanced KDP add-on. Which way to
+  go is the owner's call.
+- **New Gmail.** Google's push goes through Pub/Sub in OPERATOR's own Google Cloud project, which needs a
+  topic, a push subscription and a weekly watch renewal set up there first.
