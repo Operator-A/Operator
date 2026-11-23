@@ -98,6 +98,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
           </aside>
           <main className="main">{children}</main>
           <AveryChat name={frontName} send={sendToAvery} missing={history ? null : CHAT_MISSING} draft={draft ? <DraftCard v={draft} owner={atLeast(me.role, "owner")} /> : null}
+            draftSummary={draft ? { name: draft.draft.name, gaps: draft.gaps } : null}
             initial={(history ?? []).map((h) => ({ id: h.id, role: h.role, text: h.text, runId: h.run_id, notes: h.notes }))} />
           <LiveRefresher runs={recent} />
         </div>
