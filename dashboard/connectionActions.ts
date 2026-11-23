@@ -6,8 +6,9 @@ import { audit } from "@/core/audit";
 import { planBlock } from "@/core/extensions";
 import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
-import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, pauseCustom, removeCustomServer, resealAll, saveCustomKey, setCustomNumber, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
+import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, removeModelKey, saveModelKey, pauseCustom, removeCustomServer, resealAll, saveCustomKey, setCustomNumber, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
 import { isCustomId } from "@/core/custom-mcp-rules";
+import { PROVIDER_BY_ID, isModelProvider } from "@/core/model-key-rules";
 import { knownByAddress } from "@/core/connector-rules";
 import { askFor, closeRequest } from "@/core/connector-requests";
 import { removeExport, switchExports, uploadExport } from "@/core/exports";
@@ -62,6 +63,28 @@ export async function claudeRemoveKey(): Promise<ActionResult> {
     await removeClaudeKey();
     await audit(me, "disconnect", "anthropic_key");
     return done("Claude key forgotten here. Delete it in the Claude Console too if it shouldn’t work anywhere.");
+  } catch (e) { return fail(e); }
+}
+
+/** A business's own key for another model provider (Connections > Other models): locked in the vault after the provider accepts it. */
+export async function modelSaveKey(provider: string, key: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!isModelProvider(provider)) return { ok: false, text: "That provider isn’t on the list." };
+  if (typeof key !== "string" || key.length > 300) return { ok: false, text: "That isn’t a key." };
+  try {
+    await saveModelKey(provider, key);
+    await audit(me, "save_key", PROVIDER_BY_ID[provider].vaultId);
+    return done(`${PROVIDER_BY_ID[provider].name} key locked in the vault.`);
+  } catch (e) { return fail(e); }
+}
+
+export async function modelRemoveKey(provider: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!isModelProvider(provider)) return { ok: false, text: "That provider isn’t on the list." };
+  try {
+    await removeModelKey(provider);
+    await audit(me, "disconnect", PROVIDER_BY_ID[provider].vaultId);
+    return done(`${PROVIDER_BY_ID[provider].name} key forgotten here. Delete it at ${PROVIDER_BY_ID[provider].name} too if it shouldn’t work anywhere.`);
   } catch (e) { return fail(e); }
 }
 
