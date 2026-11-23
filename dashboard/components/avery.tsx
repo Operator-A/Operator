@@ -6,7 +6,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import type { ChatAnswer } from "@/core/avery-chat";
-import { WIDTH, clampWidth, closeEffect, defaultWidth, parseReply, storedWidth, type Inline } from "@/dashboard/chat-ui";
+import { WIDTH, clampWidth, closeEffect, defaultWidth, storedWidth } from "@/dashboard/chat-ui";
+import { Reply } from "./chatReply";
 import { Icon } from "./Icon";
 
 export interface ChatMsg { id: string; role: "owner" | "avery"; text: string; runId: string | null; notes: string[] }
@@ -20,22 +21,6 @@ const readStored = () => { try { return localStorage.getItem(KEY); } catch { ret
 const onResize = (cb: () => void) => { window.addEventListener("resize", cb); return () => window.removeEventListener("resize", cb); };
 const readWidth = () => { let raw: string | null = null; try { raw = localStorage.getItem(WKEY); } catch { /* fine without it */ } return storedWidth(raw, window.innerWidth); };
 const serverWidth = () => WIDTH.def;
-
-/** Her reply with its light formatting (dashboard/chat-ui.ts): React elements only, never HTML, never links. */
-function Line({ parts }: { parts: Inline[] }) {
-  return <>{parts.map((p, i) => p.kind === "b" ? <b key={i}>{p.text}</b> : p.kind === "i" ? <em key={i}>{p.text}</em> : p.kind === "code" ? <code key={i}>{p.text}</code> : <span key={i}>{p.text}</span>)}</>;
-}
-function Reply({ text }: { text: string }) {
-  return (
-    <div className="avery-md">
-      {parseReply(text).map((b, i) =>
-        b.kind === "h" ? <b key={i} className="avery-md-h"><Line parts={b.text} /></b>
-        : b.kind === "p" ? <p key={i}>{b.lines.map((l, j) => <span key={j}>{j > 0 && <br />}<Line parts={l} /></span>)}</p>
-        : b.kind === "ul" ? <ul key={i}>{b.items.map((it, j) => <li key={j}><Line parts={it} /></li>)}</ul>
-        : <ol key={i} start={b.start}>{b.items.map((it, j) => <li key={j}><Line parts={it} /></li>)}</ol>)}
-    </div>
-  );
-}
 
 export function AveryChat({ name, initial, missing, send, draft, draftSummary }: {
   name: string; initial: ChatMsg[]; missing: string | null; send: (text: string) => Promise<ChatAnswer>;

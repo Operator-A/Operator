@@ -270,3 +270,10 @@ export function groupByDepartment<T extends { agentId?: string }>(list: T[], dep
   if (rest.length) out.push({ name: "Everything else", items: rest });
   return out;
 }
+
+/** Agents seated in a department, its head first, then down the chart in seat order. */
+export function deptAgentIds(org: Org, deptId: string): string[] {
+  const head = headOf(org, deptId);
+  if (!head) return [];
+  return [head, ...below(org, head.id)].filter((s) => s.holder === "agent" && s.agentId).map((s) => s.agentId as string);
+}

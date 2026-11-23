@@ -41,11 +41,16 @@ export async function chatHistory(limit = 30): Promise<ChatRow[] | null> {
   return ((data ?? []) as ChatRow[]).map((r) => ({ ...r, notes: Array.isArray(r.notes) ? r.notes : [] })).reverse();
 }
 
-/** What the owner asked, for the replay of the chat run that answered it. Null when it isn't kept. */
+/** What the owner asked, for the replay of the chat run that answered it: Avery's chat or a department head's. Null when it isn't kept. */
 export async function askedIn(runId: string): Promise<string | null> {
   const { data: reply } = await db().from("avery_chat").select("created_at").eq("run_id", runId).eq("role", "avery").maybeSingle();
-  if (!reply) return null;
-  const { data } = await db().from("avery_chat").select("text").eq("role", "owner").lt("created_at", reply.created_at).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (reply) {
+    const { data } = await db().from("avery_chat").select("text").eq("role", "owner").lt("created_at", reply.created_at).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    return (data?.text as string | undefined) ?? null;
+  }
+  const { data: head } = await db().from("dept_chat").select("created_at, department_id").eq("run_id", runId).eq("role", "head").maybeSingle();
+  if (!head) return null;
+  const { data } = await db().from("dept_chat").select("text").eq("department_id", head.department_id).eq("role", "owner").lt("created_at", head.created_at).order("created_at", { ascending: false }).limit(1).maybeSingle();
   return (data?.text as string | undefined) ?? null;
 }
 
@@ -76,8 +81,11 @@ Besides answering you can do only three things:
 
 You never run, start, stop or change an agent, and you never send, buy or post. If they ask for that, tell them where in the Control Room they can do it. Code saves rules and proposals only after you finish and adds a line under your reply saying what it saved, so don't say you saved anything yourself.`;
 
-/** The crew now: who sits where, on duty or not, how each agent's last run went, this week's plans and the proposals waiting. */
-function crewNowTool(org: Org): ToolDef {
+/**
+ * The crew now: who sits where, on duty or not, how each agent's last run went, this week's plans and the
+ * proposals waiting. With `deptId` (a head's chat, core/head-chat.ts) it shows only that department.
+ */
+export function crewNowTool(org: Org, deptId?: string): ToolDef {
   return {
     id: "crew_now", label: "The crew now", detail: "Every department with its seats (who holds each, on duty or not, the last run), this week's plan and review per department, agents not in a department, and the proposals waiting for a decision",
     kind: "read", group: "agents", params: [], trusted: false, needs: [], costUsd: 0,
@@ -101,12 +109,12 @@ function crewNowTool(org: Org): ToolDef {
         const items = (Array.isArray(p.items) ? p.items : []) as { title: string; who: string; kind: string; doneAt?: string }[];
         return { words: p.summary, lines: items.map((i) => ({ job: i.title, who: i.who, ...(i.kind === "owner" ? { done: !!i.doneAt } : {}) })), review: p.review };
       };
-      const departments = org.departments.map((d) => ({
+      const departments = org.departments.filter((d) => !deptId || d.id === deptId).map((d) => ({
         department: d.name,
         seats: org.seats.filter((s) => s.departmentId === d.id).map((s) => ({ seat: s.title, head: s.parentId == null, holder: s.holder === "agent" ? who(s.agentId) : s.holder === "owner" ? "a person" : "open" })),
         planThisWeek: planOf(d.id),
       }));
-      const loose = ids.filter((id) => !seatOf(org, id)).map((id) => who(id));
+      const loose = deptId ? [] : ids.filter((id) => !seatOf(org, id)).map((id) => who(id));
       const waiting = (props.data ?? []).map((p) => ({ title: p.title, kind: p.kind, from: p.from_agent ? names[p.from_agent] ?? p.from_agent : "a person" }));
       return {
         data: { departments, notInADepartment: loose, proposalsWaiting: props.error ? "the proposals table isn't there" : waiting },
@@ -117,7 +125,7 @@ function crewNowTool(org: Org): ToolDef {
 }
 
 /** Save a rule: the person's words for an agent, a department or everyone. Checked against their message in code. */
-function saveRuleTool(message: string, reach: ChatReach, companyId: string): ToolDef {
+export function saveRuleTool(message: string, reach: ChatReach, companyId: string): ToolDef {
   return {
     id: "save_rule", label: "Save a rule", detail: "Saves a rule the person just dictated, in their own words, for an agent, a department or everyone. Saved after you finish; code says what it saved",
     kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
@@ -152,8 +160,11 @@ function saveRuleTool(message: string, reach: ChatReach, companyId: string): Too
   };
 }
 
-/** File a proposal: the same checks as a head's Propose to the owner, plus which department it is for. */
-function fileProposalTool(reach: ChatReach): ToolDef {
+/**
+ * File a proposal: the same checks as a head's Propose to the owner, plus which department it is for.
+ * `ownDept` (a head's chat): a proposal that names no department is for the head's own.
+ */
+export function fileProposalTool(reach: ChatReach, ownDept?: string): ToolDef {
   const base = TOOLS.propose;
   return {
     id: "file_proposal", label: "File a proposal", detail: "Files a proposal for an owner to decide on Proposals: hire an agent, give an agent a read tool, build a new tool, retire an agent or close a seat, or set, change or drop a department's goal. Nothing happens until an owner says yes",
@@ -175,7 +186,7 @@ function fileProposalTool(reach: ChatReach): ToolDef {
       for (const r of o.rows) {
         const d = deptNamed(r.department as string | undefined, reach.departments);
         try {
-          await fileProposal(r, { agentId: ctx.agentId, runId: ctx.runId ?? null, source: "agent", deptId: "id" in d ? d.id : null });
+          await fileProposal(r, { agentId: ctx.agentId, runId: ctx.runId ?? null, source: "agent", deptId: ("id" in d ? d.id : null) ?? ownDept ?? null });
           notes.push(`Filed for you to decide: ${r.title}. It waits on Proposals.`);
         } catch (e) { notes.push(`Not filed (${r.title}): ${e instanceof Error ? e.message : e}`); }
       }

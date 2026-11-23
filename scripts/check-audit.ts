@@ -72,6 +72,7 @@ const NOT_AUDITED: Record<string, string> = {
   planJobDone: "a to-do ticked",
   proposalCreate: "only a suggestion; accepting it is audited",
   sendToAvery: "a chat message, kept in the chat",
+  sendToHead: "a chat message to a department head, kept in the department chat",
   sendSetup: "a setup message, kept in the chat; withRun logs the run",
   setupOtherTool: "a request for a connector and a note of the tool the business uses, no access",
 };

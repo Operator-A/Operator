@@ -21,8 +21,8 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 
 ## Slice 1: the page
 
-- **Route.** `app/(room)/dept/[id]/page.tsx`. The tab is in the address (`?tab=goals`, `?tab=approvals`;
-  anything else opens Agents), read by `deptTab` in `dashboard/dept-rules.ts`. It asks only for the pieces
+- **Route.** `app/(room)/dept/[id]/page.tsx`. The tab is in the address (`?tab=agents`, `?tab=goals`,
+  `?tab=approvals`; anything else opens Chat since slice 2), read by `deptTab` in `dashboard/dept-rules.ts`. It asks only for the pieces
   it shows (`getRoster`, `getCounts`, `getTz`, `getOrgSwitch`; check:speed), and reads goals or approvals
   only on their tab.
 - **Agents tab.** Every agent seated in the department, its head first, then down the chart
@@ -47,3 +47,24 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 
 Tests: `npm run check:dept` (tabs, who works here, the counts adding up, and that the menu, page,
 Everyone and Approvals page share the counts and the one card).
+
+## Slice 2: chat with the head
+
+- **Chat tab.** The first tab and the default (`/dept/[id]`). It shows the department's conversation with
+  its head (`dashboard/components/headChat.tsx`), light, on the page; Avery's dark panel stays the company
+  chat. A department led by a person, or with an open head seat, says so instead.
+- **One run per message.** `talkToHead` (`core/head-chat.ts`) runs the head's active spec through
+  `withRun(head, "chat")`, so each message is logged in `agent_runs`, respects `agents.enabled` and the
+  head's daily budget, and links to its replay. The server action `sendToHead` checks the member's role
+  (approver), that real runs are on, and the message, like Avery's chat.
+- **What the head can do.** Answer from its read tools, Goal progress, and The crew now limited to its
+  department; Save a rule in the owner's own words (checked in code) for its department or one of its
+  agents, never everyone or another department (`deptReach` in `core/head-chat-rules.ts`); and File a
+  proposal for its department, which waits on Proposals. It never runs, sends, buys, posts or changes an
+  agent, and never reaches the gateway. Code adds the lines under a reply saying what it saved.
+- **Kept.** Table `dept_chat` (migration `20270104090000_dept_chat.sql`): `org_id`, `department_id`,
+  `role` (owner or head), `text`, `run_id`, `notes`; in `TENANT_TABLES` with an `org_rows` policy. A run's
+  replay shows what was asked (`askedIn` reads both chats).
+
+Tests: `npm run check:dept` (Chat is the default tab; a head's rules and proposals stay inside its
+department; the directive; the run, role and tenancy wiring).

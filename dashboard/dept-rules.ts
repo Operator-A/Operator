@@ -1,14 +1,16 @@
 // Department pages (docs/department-pages.md): which tab is open, what needs the owner in each
 // department, and who works there. Pure: no database, no network, so `npm run check:dept` can test it.
-import { below, headOf, type Org } from "@/core/org-rules";
+import { deptAgentIds, headOf, type Org } from "@/core/org-rules";
 
-/** The tabs a department page has so far. Chat joins in slice 2. */
-export const DEPT_TABS = ["agents", "goals", "approvals"] as const;
+/** The tabs a department page has. Chat comes first and opens by default (slice 2). */
+export const DEPT_TABS = ["chat", "agents", "goals", "approvals"] as const;
 export type DeptTab = (typeof DEPT_TABS)[number];
-export const TAB_LABEL: Record<DeptTab, string> = { agents: "Agents", goals: "Goals", approvals: "Approvals" };
+export const TAB_LABEL: Record<DeptTab, string> = { chat: "Chat", agents: "Agents", goals: "Goals", approvals: "Approvals" };
 
-/** The tab in the address, or Agents. */
-export const deptTab = (raw: unknown): DeptTab => (DEPT_TABS as readonly string[]).includes(String(raw)) ? (raw as DeptTab) : "agents";
+/** The tab in the address, or Chat. */
+export const deptTab = (raw: unknown): DeptTab => (DEPT_TABS as readonly string[]).includes(String(raw)) ? (raw as DeptTab) : "chat";
+/** The tab's address: Chat is the page itself. */
+export const tabHref = (deptId: string, t: DeptTab) => (t === "chat" ? `/dept/${deptId}` : `/dept/${deptId}?tab=${t}`);
 
 /**
  * The red count on each department: approvals waiting on the owner, by the department stamped on
@@ -27,15 +29,12 @@ export function needsByDept(deptIds: readonly string[], approvalDepts: readonly 
   return { byDept, none, gone };
 }
 
-/** Agents seated in a department, its head first, then down the chart in seat order. */
-export function deptAgentIds(org: Org, deptId: string): string[] {
-  const head = headOf(org, deptId);
-  if (!head) return [];
-  return [head, ...below(org, head.id)].filter((s) => s.holder === "agent" && s.agentId).map((s) => s.agentId as string);
-}
+/** Agents seated in a department, its head first, then down the chart (core/org-rules.ts). */
+export { deptAgentIds };
 
 /** The head's agent id, or null when the head seat is open or held by the owner. */
 export function headAgentId(org: Org, deptId: string): string | null {
   const h = headOf(org, deptId);
   return h?.holder === "agent" ? h.agentId : null;
 }
+

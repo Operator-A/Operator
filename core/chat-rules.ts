@@ -39,13 +39,14 @@ export function inOwnWords(words: string, message: string): boolean {
 const EVERYONE = /^(everyone|everybody|every agent|all agents|the crew|the whole crew|all)$/i;
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-export interface ChatReach { agents: { id: string; name: string }[]; departments: { id: string; name: string }[] }
+/** Who a chat may save rules for. `crew: false` (a department head's chat) refuses "everyone". */
+export interface ChatReach { agents: { id: string; name: string }[]; departments: { id: string; name: string }[]; crew?: boolean }
 export type RuleWho = { scope: "agent"; agentId: string; name: string } | { scope: "department"; deptId: string; name: string } | { scope: "crew" };
 
 /** Who a dictated rule is for: an agent by name, a department by name ("Sales" or "all of Sales"), or everyone. */
 export function resolveRuleWho(who: string, reach: ChatReach): RuleWho | { problem: string } {
   const w = who.trim().replace(/^all of\s+/i, "").replace(/^(the )?(.+?)( department| team)?$/i, "$2");
-  if (EVERYONE.test(who.trim()) || EVERYONE.test(w)) return { scope: "crew" };
+  if (EVERYONE.test(who.trim()) || EVERYONE.test(w)) return reach.crew === false ? { problem: "a department’s head saves rules only for its own department and agents; ask Avery for a rule for everyone" } : { scope: "crew" };
   const a = reach.agents.find((x) => same(x.name, w) || same(x.id, w));
   if (a) return { scope: "agent", agentId: a.id, name: a.name };
   const d = reach.departments.find((x) => same(x.name, w) || same(x.id, w));
