@@ -1,4 +1,5 @@
 import "server-only";
+import { hireHref } from "@/dashboard/dept-rules";
 // The org chart as Crew draws it (docs/org-chart.md): each seat with who sits there, that agent's
 // state and last run, and the agents that aren't on the chart yet. Plain data for
 // components/OrgChart.tsx.
@@ -113,17 +114,17 @@ const clip = (t: string, n = 160) => (t.length > n ? `${t.slice(0, n - 1).trimEn
  * that are on, and today's runs. Everything on the canvas is drawn from this and nothing else.
  */
 export function canvasData(f: Floor, v: OrgView, chains: readonly Chain[]): CanvasData {
-  const flat = (s: SeatView, parent: string | null, depth: number): CanvasSeat[] => [{
+  const flat = (s: SeatView, parent: string | null, depth: number, dept: string | null): CanvasSeat[] => [{
     id: s.id, title: s.title, sub: s.sub, holder: s.holder, parent, depth,
     agent: s.agent ? {
       id: s.agent.id, name: s.agent.name, role: s.agent.role, href: s.agent.href, state: CANVAS_STATE[s.agent.state], label: s.agent.look.label, last: s.agent.last,
       summary: s.agent.summary ? clip(s.agent.summary) : null, lastRunHref: s.agent.lastRunId ? `/runs/${s.agent.lastRunId}` : null, job: s.agent.job, writes: s.agent.writes,
     } : null,
-    href: s.holder === "open" ? (s.proposals.length ? `/proposals/${s.proposals[0].id}` : `/build/new?seat=${s.id}`) : null,
+    href: s.holder === "open" ? (s.proposals.length ? `/proposals/${s.proposals[0].id}` : dept ? hireHref(dept, s) : null) : null,
     proposal: s.proposals[0]?.text ?? null,
-  }, ...s.kids.flatMap((k) => flat(k, s.id, depth + 1))];
-  const depts = v.departments.map((d) => ({ id: d.id, name: d.name, seats: flat(d.head, null, 0), spent: d.spent, budget: d.budget }));
-  const company = v.company ? flat({ ...v.company, kids: [] }, null, 0)[0] : null;
+  }, ...s.kids.flatMap((k) => flat(k, s.id, depth + 1, dept))];
+  const depts = v.departments.map((d) => ({ id: d.id, name: d.name, seats: flat(d.head, null, 0, d.id), spent: d.spent, budget: d.budget }));
+  const company = v.company ? flat({ ...v.company, kids: [] }, null, 0, null)[0] : null;
   const seatOfAgent: Record<string, string> = {}, nameOf: Record<string, string> = {};
   for (const s of [...(company ? [company] : []), ...depts.flatMap((d) => d.seats)]) if (s.agent) { seatOfAgent[s.agent.id] = s.id; nameOf[s.agent.id] = s.agent.name; }
   const today = md(f.now, f.tz);

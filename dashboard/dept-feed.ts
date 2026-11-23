@@ -9,7 +9,7 @@ export type CheckState = "done" | "failed" | "now";
 export interface CheckLine { label: string; state: CheckState }
 export type RunStatus = "running" | "ok" | "failed" | "skipped";
 
-/** Runs that post into a department's chat: not the chat replies themselves, tries, or approved changes being written. */
+/** Runs that post into a department's chat: not the chat replies themselves, tries (except a new agent's first, slice 5), or approved changes being written. */
 export const FEED_SKIPS = ["chat", "preview", "approval"] as const;
 export const inFeed = (trigger: string) => !(FEED_SKIPS as readonly string[]).includes(trigger);
 
@@ -34,7 +34,7 @@ export function checklist(steps: readonly StepRow[], label: (tool: string) => st
 
 /** What the run card is called, from how it started. */
 export function runTitle(trigger: string): string {
-  return trigger === "manual" ? "Run now" : trigger === "chain" || trigger === "schedule" ? "Scheduled run" : trigger === "event" ? "Started by an event" : "Run";
+  return trigger === "manual" ? "Run now" : trigger === "preview" ? "First try" : trigger === "chain" || trigger === "schedule" ? "Scheduled run" : trigger === "event" ? "Started by an event" : "Run";
 }
 
 /** The status pill on a run card. */

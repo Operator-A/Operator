@@ -9,7 +9,7 @@ import { db } from "@/core/db";
 import { agentDepartment } from "@/core/org";
 import { BUDGET_CEILING, EFFORTS, NO_MODEL_KEYS, RUN_LIMITS, draftOf, modelReady, type ModelKeys, listSpecVersions, loadSpec, readSpec, type AgentSpec, type SpecVersion } from "@/core/agent-spec";
 import { SAFETY } from "@/core/runner";
-import { TOOL_LIST, TOOLS } from "@/core/tools/catalog";
+import { TOOL_LIST } from "@/core/tools/catalog";
 import { MODEL_LIST } from "@/integrations/models";
 import { modelKeysReady } from "@/integrations/mcp";
 import { PROVIDER_BY_ID } from "@/core/model-key-rules";
@@ -93,29 +93,6 @@ export function builderMenu(crew: readonly { id: string; name: string }[] = [], 
   };
 }
 export type BuilderMenu = ReturnType<typeof builderMenu>;
-
-/** What a new agent can start from: every built agent's active spec, minus actions (the gateway names its agents). */
-export async function listTemplates(): Promise<{ id: string; name: string; spec: AgentSpec }[]> {
-  const { data, error } = await db().from("agent_defs").select("agent_id, spec").eq("active", true);
-  if (error) return [];
-  return (data ?? []).map((d) => {
-    const { spec } = readSpec(d.spec, d.agent_id as string);
-    return { id: d.agent_id as string, name: spec.name, spec: { ...spec, tools: spec.tools.filter((t) => TOOLS[t]?.kind !== "action") } };
-  }).sort((x, y) => x.name.localeCompare(y.name));
-}
-
-/** Agents a new one may read from: every built agent's output name, and whether it has a finished one. */
-export async function listOthers(): Promise<BuilderData["others"]> {
-  const [defs, outs] = await Promise.all([
-    db().from("agent_defs").select("agent_id, spec").eq("active", true),
-    db().from("agent_outputs").select("agent_id, finished").eq("finished", true).limit(500),
-  ]);
-  const has = new Set((outs.error ? [] : outs.data ?? []).map((o) => o.agent_id as string));
-  return (defs.data ?? []).map((d) => {
-    const sp = (d.spec ?? {}) as Partial<AgentSpec>;
-    return { id: d.agent_id as string, name: sp.name || d.agent_id, outputName: sp.outputName || "result", hasOutput: has.has(d.agent_id as string) };
-  }).sort((x, y) => x.name.localeCompare(y.name));
-}
 
 type DefRow = { agent_id: unknown; spec: unknown };
 /** Agents whose saved spec reads this one's result (agent_output with it picked), for the map's Used by column. */

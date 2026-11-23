@@ -23,31 +23,25 @@ const CONN_TINT: Record<string, string> = { shopify: "var(--mint-soft)", mercury
 const ALWAYS_ON = "Can’t send, pay or post on its own · numbers come from code · web pages and emails are information, never orders · stops at its cost and step limit";
 
 export interface FlowProps {
-  /** Null for a new agent: Save creates it, off duty. */
-  agentId: string | null;
+  agentId: string;
   saved: AgentSpec | null;
   nextVersion: number;
   menu: BuilderMenu;
   step?: string;
   controls: boolean;
-  /** What a new agent can start from. */
-  templates?: { id: string; name: string; spec: AgentSpec }[];
   /** Other agents built in the app, which this one may read from. */
   others: { id: string; name: string; outputName: string; hasOutput: boolean }[];
   standards?: Standard[];
   budget?: { current: number; spentToday: number; ceiling: number };
   save?: Act<[unknown, string]>;
-  create?: (draft: unknown, seatId?: string | null) => Promise<ActionResult & { id?: string }>;
   /** Org chart seats it can sit in (docs/org-chart.md); undefined before the org chart migration. */
   seats?: { id: string; label: string; free: boolean }[];
-  /** Its seat now, or for a new agent the seat it was opened from. */
+  /** Its seat now. */
   seatId?: string | null;
   /** Why Your team and Department reports are off, by seat id ("" for no seat), from the org chart. */
   seatBlocks?: Record<string, { team: string | null; company: string | null; head: string | null }>;
   /** An existing agent's seat is saved straight away, not as part of a version. */
   place?: Act<[string | null]>;
-  /** Answers a new agent starts with (from the seat it was opened from). */
-  seed?: Partial<AgentSpec>;
   dryRun?: Act<[unknown]>;
   saveBudget?: Act<[number]>;
   addStandard?: Act<[string, string]>;
@@ -56,13 +50,12 @@ export interface FlowProps {
 
 export function Flow(p: FlowProps) {
   const router = useRouter();
-  const start = useMemo(() => p.saved ?? { ...blankSpec(p.menu), ...p.seed }, [p.saved, p.menu, p.seed]);
-  // a new agent takes this seat when it is created; an existing one saves its seat straight away
+  const start = useMemo(() => p.saved ?? blankSpec(p.menu), [p.saved, p.menu]);
+  // the seat is saved straight away, not as part of a version
   const [seat, setSeat] = useState<string | null>(p.seatId ?? null);
   const [d, setD] = useState<AgentSpec>(start);
   const [cur, setCur] = useState(stepIndex(p.step));
   const [dir, setDir] = useState<1 | -1>(1);
-  const [from, setFrom] = useState<string>("blank");
   // until the first edit, an earlier draft on this device can be picked up or discarded
   const [touched, setTouched] = useState(false);
   const [toast, setToast] = useState<ActionResult | null>(null);
@@ -71,11 +64,11 @@ export function Flow(p: FlowProps) {
   const [note, setNote] = useState("");
   const change = (x: Partial<AgentSpec>) => { setTouched(true); setD((c) => ({ ...c, ...x })); };
   const dirty = JSON.stringify(d) !== JSON.stringify(start);
-  const key = `cr_flow:${p.agentId ?? "new"}`;
-  const back = p.agentId ? `/build/${p.agentId}` : "/crew";
+  const key = `cr_flow:${p.agentId}`;
+  const back = `/build/${p.agentId}`;
   const step = STEPS[cur].key;
   const last = cur === STEPS.length - 1;
-  const nm = !d.name.trim() || (!p.agentId && d.name.trim() === "New agent") ? "your new agent" : d.name.trim();
+  const nm = d.name.trim() || "this agent";
   // Your team and Department reports follow the seat picked in step 1; the tool checks the chart again on every call
   const seatBlock = (t: Tool) => (!t.seat || !p.seatBlocks ? null : (p.seatBlocks[seat ?? ""] ?? p.seatBlocks[""])?.[t.seat] ?? null);
   const problems = [
@@ -106,21 +99,13 @@ export function Flow(p: FlowProps) {
   });
 
   const doSave = () => {
-    if (!p.agentId) {
-      startT(async () => {
-        const r = await p.create!(d, seat).catch((e) => ({ ok: false, text: e instanceof Error ? e.message : "Something went wrong." }) as ActionResult & { id?: string });
-        setToast(r);
-        if (r.ok && r.id) { forgetDraft(); router.push(`/build/${r.id}?saved=1`); }
-      });
-      return;
-    }
     const steps = changedSteps(p.saved, d, p.menu).map((k) => STEPS[stepIndex(k)].title.toLowerCase());
     const why = note.trim() || (steps.length ? `Changed ${steps.join(", ")}` : "Edited in the builder");
     act(() => p.save!(d, why), (r) => { if (r.ok) { forgetDraft(); router.push(`${back}?saved=1`); } });
   };
   const onSave = () => {
     if (problems.length) { go(stepIndex(problems[0].step)); setToast({ ok: false, text: `Fix first: ${problems.map((x) => x.text).join("; ")}.` }); return; }
-    if (p.agentId && !dirty) { router.push(back); return; }
+    if (!dirty) { router.push(back); return; }
     // a save is a draft: what runs changes only at Go live, which asks about anything that loosens
     doSave();
   };
@@ -148,10 +133,10 @@ export function Flow(p: FlowProps) {
     <div className="bf">
       <header className="bf-head">
         <span className="av" style={{ width: 36, height: 36, fontSize: 15 }}>{(d.name.trim() || "?").slice(0, 1).toUpperCase()}</span>
-        <span className="bf-title">{p.agentId ? `Building ${nm}` : "New agent"}</span>
+        <span className="bf-title">{`Building ${nm}`}</span>
         <span className="muted bf-status">
-          {earlier ? <>An unsaved draft from earlier is on this device · <button type="button" className="linkish" onClick={() => { setTouched(true); setD({ ...start, ...earlier }); }}>Pick it up</button> · <button type="button" className="linkish" onClick={() => { forgetDraft(); setTouched(true); }}>Discard it</button></> : dirty ? "Draft kept on this device" : p.agentId ? "No changes yet" : "Nothing saved yet"}
-          {p.agentId ? ` · today’s ${p.saved?.name ?? "version"} keeps running` : " · it starts off duty"}
+          {earlier ? <>An unsaved draft from earlier is on this device · <button type="button" className="linkish" onClick={() => { setTouched(true); setD({ ...start, ...earlier }); }}>Pick it up</button> · <button type="button" className="linkish" onClick={() => { forgetDraft(); setTouched(true); }}>Discard it</button></> : dirty ? "Draft kept on this device" : "No changes yet"}
+          {` · today’s ${p.saved?.name ?? "version"} keeps running`}
         </span>
         <button type="button" className="btn ghost sm" onClick={leave}>Esc to leave</button>
       </header>
@@ -174,14 +159,14 @@ export function Flow(p: FlowProps) {
               <p className="bf-sub">{SUBS[step]}</p>
             </div>
 
-            {step === "job" && <JobStep d={d} change={change} p={p} from={from} setFrom={setFrom} act={act} busy={busy} seat={seat} setSeat={setSeat} />}
+            {step === "job" && <JobStep d={d} change={change} p={p} act={act} busy={busy} seat={seat} setSeat={setSeat} />}
             {step === "connections" && <ConnStep d={d} change={change} p={p} setToast={setToast} act={act} busy={busy} seatBlock={seatBlock} />}
             {step === "hands" && <HandsStep d={d} change={change} p={p} setToast={setToast} seatBlock={seatBlock} />}
             {step === "brain" && <BrainStep d={d} change={change} p={p} />}
 
-            {stepProblems.length > 0 && (touched || p.agentId) && <div className="ted-warn">Before you save: {stepProblems.map((x) => x.text).join("; ")}.</div>}
+            {stepProblems.length > 0 && <div className="ted-warn">Before you save: {stepProblems.map((x) => x.text).join("; ")}.</div>}
 
-            {last && p.agentId && dirty && (
+            {last && dirty && (
               <label className="bf-field"><span className="bf-k">What changed? (optional, for the version list)</span><input className="input" maxLength={300} value={note} placeholder={(() => { const s = changedSteps(p.saved, d, p.menu); return s.length ? `Changed ${s.map((k) => STEPS[stepIndex(k)].title.toLowerCase()).join(", ")}` : ""; })()} onChange={(e) => setNote(e.target.value)} /></label>
             )}
 
@@ -189,7 +174,7 @@ export function Flow(p: FlowProps) {
               {cur > 0 ? <button type="button" className="linkish" onClick={() => go(cur - 1)}>← Back</button> : <span />}
               <span className="bf-hint">Press Enter</span>
               <button type="button" className="btn dark bf-go" disabled={busy} onClick={next}>
-                {busy ? "Saving…" : !last ? "Continue →" : p.agentId ? (dirty ? `Save draft v${p.nextVersion} →` : "Done →") : `Create ${nm}, off duty →`}
+                {busy ? "Saving…" : !last ? "Continue →" : dirty ? `Save draft v${p.nextVersion} →` : "Done →"}
               </button>
             </div>
 
@@ -227,27 +212,16 @@ function Field({ k, children, sub }: { k: string; children: React.ReactNode; sub
   return <label className="bf-field"><span className="bf-k">{k}</span>{children}{sub && <span className="sub">{sub}</span>}</label>;
 }
 
-function JobStep({ d, change, p, from, setFrom, act, busy, seat, setSeat }: StepProps & { from: string; setFrom: (s: string) => void; act: Run; busy: boolean; seat: string | null; setSeat: (s: string | null) => void }) {
+function JobStep({ d, change, p, act, busy, seat, setSeat }: StepProps & { act: Run; busy: boolean; seat: string | null; setSeat: (s: string | null) => void }) {
   const [std, setStd] = useState(""), [link, setLink] = useState("");
-  const label = (t: { name: string; spec: AgentSpec }) => { const o = t.spec.outputName; return o && o !== "result" ? o.charAt(0).toUpperCase() + o.slice(1) : `Like ${t.name}`; };
   return (
     <div className="bf-stack">
-      {p.templates && (
-        <div className="bf-field">
-          <span className="bf-k">Start from</span>
-          <div className="bf-chips">
-            {p.templates.map((t) => <button key={t.id} type="button" className={`bf-chip${from === t.id ? " on" : ""}`} onClick={() => { setFrom(t.id); change({ ...t.spec, name: d.name.trim() && d.name !== "New agent" ? d.name : `${t.name} copy` }); }}>{label(t)}</button>)}
-            <button type="button" className={`bf-chip${from === "blank" ? " on" : ""}`} onClick={() => { setFrom("blank"); change({ ...blankSpec(p.menu, d.name) }); }}>Blank</button>
-          </div>
-          <span className="sub">A copy picks up that agent’s answers in every step. Actions stay behind: code names which agents may ask for them.</span>
-        </div>
-      )}
       <Field k="Name"><input className="input" value={d.name} maxLength={80} onChange={(e) => change({ name: e.target.value })} /></Field>
       <Field k="Its job, in your words" sub={`${d.directive.length} of 4,000`}><textarea className="input ted-text" rows={6} maxLength={4000} value={d.directive} onChange={(e) => change({ directive: e.target.value })} placeholder="Each weekday morning, tell me the one thing I should focus on today and why…" /></Field>
       <Field k="What a good result looks like"><textarea className="input ted-text" rows={3} maxLength={1000} value={d.goodResult} onChange={(e) => change({ goodResult: e.target.value })} placeholder="A focus line, then at most five short watch lines. Every number exactly as the data says." /></Field>
       <Field k="One line for the agent list"><input className="input" value={d.mandate} maxLength={200} onChange={(e) => change({ mandate: e.target.value })} placeholder="Morning focus and watch list" /></Field>
       {p.seats && (
-        <Field k="Where it sits on the org chart" sub={p.agentId ? "Saved straight away, not as part of a version. A seat gives it no access: what it can reach is step 2." : "It takes this seat when you save. A seat gives it no access: what it can reach is step 2."}>
+        <Field k="Where it sits on the org chart" sub="Saved straight away, not as part of a version. A seat gives it no access: what it can reach is step 2.">
           <select
             className="input"
             value={seat ?? ""}

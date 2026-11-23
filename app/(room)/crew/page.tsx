@@ -1,3 +1,4 @@
+import { hireHref } from "@/dashboard/dept-rules";
 import Link from "next/link";
 import { Suspense } from "react";
 import { SkelPane } from "@/dashboard/components/skeletons";
@@ -45,7 +46,7 @@ export default async function Crew({ searchParams }: { searchParams: Promise<{ v
           <h1 className="h1">Crew</h1>
           <span className="sub">{SUBS[view]}</span>
         </div>
-        <Link href="/build/new" className="btn dark"><Icon name="user-plus" size={15} />New agent</Link>
+        {f.chart?.departments[0] && <Link href={hireHref(f.chart.departments[0].id)} className="btn dark"><Icon name="user-plus" size={15} />New agent</Link>}
       </div>
       <nav className="seg" aria-label="Crew view">
         {(Object.keys(VIEWS) as (keyof typeof VIEWS)[]).map((k) => <IntentLink key={k} href={VIEWS[k][0]} className={view === k ? "on" : ""} aria-current={view === k ? "page" : undefined}>{VIEWS[k][1]}</IntentLink>)}

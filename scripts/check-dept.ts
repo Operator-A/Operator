@@ -2,11 +2,13 @@
 // who works in a department, on a small chart. No database, no network. Run: npm run check:dept
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { DEPT_TABS, agentHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
+import { DEPT_TABS, agentHref, hireHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
 import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from "../core/flow-rules";
 import { deptReach, headDirective } from "../core/head-chat-rules";
 import { resolveRuleWho, deptNamed } from "../core/chat-rules";
 import type { Org } from "../core/org-rules";
+import { allowedGrants, hireCostLine, hireRuns, hireStage, hireWhenWords, newAgent, tryInFeed } from "../dashboard/hire-rules";
+import { hireWhen, planProposal, toolInfoOf } from "../core/proposal-rules";
 import { checklist, dayLabel, goalNumber, inFeed, mergeFeed, resultText, runFoot, runState, runTitle, type FeedRun } from "../dashboard/dept-feed";
 
 const org: Org = {
@@ -169,5 +171,51 @@ assert.ok(/redirect\(agentHref\(roster\.chart, id\)\)/.test(read("app/(room)/age
 const build = read("app/(room)/build/[id]/page.tsx");
 assert.ok(/redirect\(agentHref\(org, id\)\)/.test(build) && !/TryLive|goLive|tryBuilt/.test(build), "the builder page keeps only the step editor; the rest is in the sheet");
 assert.ok(/<AgentSheetFor id=\{sp\.agent\}/.test(page) && /<AgentSheetFor id=\{sp\.agent\}/.test(everyone), "the department page and Everyone open the sheet");
+
+// hiring in the chat (slice 5): the head suggests, code counts, only the owner's taps grant, a new agent starts off duty
+const tools = toolInfoOf({
+  stripe_invoices: { id: "stripe_invoices", kind: "read", label: "Stripe invoices" },
+  stripe_draft_invoice: { id: "stripe_draft_invoice", kind: "action", label: "Draft invoice in Stripe", agents: "granted" },
+  mercury_send: { id: "mercury_send", kind: "action", label: "Send money", agents: ["cfo"] },
+});
+const hire = { kind: "hire", why: "Five invoices are more than 14 days late.", name: "Ivy", seat: "Collections", job: "Finds late invoices and tells you who owes what.", each_run: "Read open invoices, find the ones over 14 days, list them.", good_result: "A short list with amounts.", tools: "stripe_invoices" };
+const planned = planProposal({ ...hire, days: "weekdays", time: "08:00", can: "stripe_draft_invoice" }, tools);
+assert.ok("plan" in planned && planned.plan.kind === "hire" && planned.plan.days === "weekdays" && planned.plan.time === "08:00" && planned.plan.can?.[0] === "stripe_draft_invoice", "a hire carries when it runs and the actions it suggests");
+assert.ok("plan" in planned && planned.plan.kind === "hire" && !planned.plan.tools.includes("stripe_draft_invoice"), "a suggested action is never one of its tools until someone turns it on");
+assert.ok("problem" in planProposal({ ...hire, can: "mercury_send" }, tools), "a hire can't suggest an action code gives only to named agents");
+assert.ok("problem" in planProposal({ ...hire, can: "stripe_invoices" }, tools), "a read tool goes in tools, not can");
+assert.ok("problem" in planProposal({ ...hire, tools: "stripe_invoices, stripe_draft_invoice" }, tools), "a hire's tools still can't hold an action");
+const noWhen = planProposal(hire, tools);
+assert.ok("plan" in noWhen && noWhen.plan.kind === "hire" && noWhen.plan.days === null && noWhen.plan.can?.length === 0, "no days means only when asked, nothing suggested");
+assert.deepEqual(hireWhen("mon, wed, fri", "07:30"), { days: "on:135", time: "07:30" });
+assert.deepEqual(hireWhen("every day", "06:00"), { days: "daily", time: "06:00" });
+assert.deepEqual(hireWhen("only when asked", ""), { days: null, time: null });
+assert.ok("problem" in hireWhen("weekdays", "8am") && "problem" in hireWhen("someday", "08:00"));
+assert.deepEqual(allowedGrants(["stripe_draft_invoice", "mercury_send", "stripe_draft_invoice"], ["stripe_draft_invoice"], (id) => tools[id]?.granted === true), ["stripe_draft_invoice"], "a Hire tap grants only what was suggested and an approver may give");
+assert.deepEqual(allowedGrants(["mercury_send"], ["mercury_send"], (id) => tools[id]?.granted === true), [], "even a suggested action code doesn't let approvers give stays off");
+assert.equal(hireRuns("weekdays"), 22); assert.equal(hireRuns(null), 0);
+assert.equal(hireWhenWords("weekdays", "08:00"), "Weekdays at 08:00");
+assert.equal(hireWhenWords(null, null), "Only when you ask");
+const month = (perRun: number | null, n: number) => ({ perRun, atMostPerRun: 0.1, runsPerMonth: n, month: perRun == null ? 0 : perRun * n, atMost: 0.1 * n, basis: "estimate" as const, runs: 0, billing: "own_key" as const });
+assert.deepEqual(hireCostLine(month(0.08, 22), { name: "Finance", budget: 30 }), { big: "$1.76", small: "a month · about $0.08 a run, 22 runs. Inside Finance’s $30." }, "the cost on the card is worked out in code");
+assert.equal(hireCostLine(month(0.08, 0), null).big, "$0.08");
+assert.equal(hireCostLine(month(null, 22), null).big, "Cost unknown");
+assert.equal(hireStage(null), "hired"); assert.equal(hireStage({ clean: false, status: "running" }), "trying");
+assert.equal(hireStage({ clean: true, status: "ok" }), "clean"); assert.equal(hireStage({ clean: false, status: "ok" }), "failed");
+assert.ok(newAgent({ enabled: false, approvedRoutine: false, hasSpec: true }) && !newAgent({ enabled: true, approvedRoutine: false, hasSpec: true }) && !newAgent({ enabled: false, approvedRoutine: true, hasSpec: true }), "a card stays only until the agent has been put on duty");
+assert.ok(tryInFeed("preview", "ivy", new Set(["ivy"])) && !tryInFeed("preview", "quinn", new Set(["ivy"])) && !inFeed("preview"), "only a new agent's first try posts in the chat");
+assert.equal(runTitle("preview"), "First try");
+assert.equal(hireHref("finance", { title: "Collections", sub: "late invoices" }), `/dept/finance?say=${encodeURIComponent("Hire an agent for the Collections seat: late invoices.")}`);
+
+const proposalsSrc = read("core/proposals.ts"), pActs = read("dashboard/proposalActions.ts"), hireCard = read("dashboard/components/hireCard.tsx");
+assert.ok(/createBuiltAgent\(d\.spec/.test(proposalsSrc) && /enabled: false/.test(read("core/agent-spec.ts")), "a hire is created off duty");
+assert.ok(/export function hireDraft[\s\S]*?p\.can \?\? \[\]\)\.includes\(g\) && TOOLS\[g\]\?\.kind === "action" && TOOLS\[g\]\?\.agents === "granted"/.test(proposalsSrc), "the server keeps only grants the hire suggested and an approver may give");
+assert.ok(/export async function hireInChat[\s\S]*?asRole\("owner"\)[\s\S]*?acceptProposal\(id, \{ grants: asked \}\)/.test(pActs), "Hire is the owner's tap and goes through the proposal's own path");
+assert.ok(!/tryBuilt|runExplore|withRun/.test(pActs.replace(/^\s*(\/\/|\*|\/\*\*).*$/gm, "")), "hiring itself runs no model; the first try is the existing tryBuilt");
+assert.ok(/acts\.goLive\([\s\S]*?acts\.duty\(/.test(hireCard) && /stage === "clean" && <button/.test(hireCard), "Put on duty is offered only after a clean try, through Go live then on duty");
+assert.ok(!/db\(\)|agent_defs|activateSpecVersion/.test(hireCard + read("dashboard/components/headChat.tsx")), "the card never writes the database itself");
+for (const f of ["app/(room)/crew/page.tsx", "app/(room)/dept/[id]/page.tsx", "app/(room)/proposals/[id]/page.tsx", "dashboard/org.ts"]) assert.ok(!/build\/new/.test(read(f)), `${f} has no link to the old new-agent screens`);
+assert.ok(!/agentId: string \| null|p\.create|templates/.test(read("dashboard/components/Flow.tsx")), "the step editor only edits an existing agent");
+assert.ok(/ask at most two short questions/.test(headDirective({ name: "Morgan", title: "CFO", dept: "Finance", business: "Shop", agents: [] })), "the head asks at most two questions before it files a hire");
 
 console.log("check:dept ok");

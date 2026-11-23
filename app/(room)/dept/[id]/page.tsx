@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { realRun } from "@/dashboard/actions";
+import { goLive, realRun, setEnabled, tryBuilt } from "@/dashboard/actions";
+import { hireInChat } from "@/dashboard/proposalActions";
+import { deptHires } from "@/dashboard/hireCards";
 import { getApprovals, getCounts, getOrgSwitch, getReactRules, getRoster, getTz, type ApprovalItem, type ApprovalsView, type ReactRules } from "@/dashboard/data";
-import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, headAgentId, needsByDept, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
+import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, headAgentId, hireHref, needsByDept, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
 import { goalNumber } from "@/dashboard/dept-feed";
 import { deptRuns } from "@/dashboard/deptFeed";
 import { HEAD_CHAT_MISSING, headHistory } from "@/core/head-chat";
@@ -32,7 +34,7 @@ const NO_ORG = "The org chart tables aren’t up to date: apply the org chart mi
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 
-export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string }> }) {
+export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string }> }) {
   // the pieces this page shows, in one round (card 304): the crew and its runs, what waits on you, the time zone, the org switch
   const [{ id }, sp, roster, counts, tz, org] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch()]);
   const chart = roster.chart;
@@ -69,7 +71,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
           count: t === "agents" ? ids.length : t === "goals" ? goalCount : t === "approvals" ? waiting : undefined, red: t === "approvals",
         }))} />
         <div className="dp-pane" key={tab}>
-          <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} goals={goals} />
+          <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} goals={goals} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} />
         </div>
       </div>
       {sp.agent && <AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} />}
@@ -79,7 +81,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
 
 type Roster = Awaited<ReturnType<typeof getRoster>>;
 type Counts = Awaited<ReturnType<typeof getCounts>>;
-type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; goals?: Record<string, GoalView[]> | null };
+type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; goals?: Record<string, GoalView[]> | null; say?: string };
 
 async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
   if (tab === "goals") return <Goals {...p} />;
@@ -95,11 +97,12 @@ async function rulesFor(items: ApprovalItem[]): Promise<Record<string, ReactRule
 }
 
 /** The chat: the conversation with the head and every run of the department, with its drafts as approval cards. */
-async function Chat({ id, name, title, roster, tz }: P) {
+async function Chat({ id, name, title, roster, tz, say }: P) {
   const chart = roster.chart!;
   const headId = headAgentId(chart, id), head = headId ? roster.byId[headId] : null;
   const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
-  const [history, runs, view] = await Promise.all([head ? headHistory(id, 40).catch(() => null) : Promise.resolve([]), deptRuns(ids, roster.byId), getApprovals().catch(() => null)]);
+  const hires = await deptHires(id, roster).catch(() => ({ cards: [], fresh: new Set<string>() }));
+  const [history, runs, view] = await Promise.all([head ? headHistory(id, 40).catch(() => null) : Promise.resolve([]), deptRuns(ids, roster.byId, undefined, 25, hires.fresh), getApprovals().catch(() => null)]);
   const open = new Set(runs.flatMap((r) => r.drafts));
   const items = view ? [...view.pending, ...view.withLead].filter((i) => open.has(i.id)) : [];
   const rules = await rulesFor(items);
@@ -109,7 +112,8 @@ async function Chat({ id, name, title, roster, tz }: P) {
   return (
     <HeadChat deptId={id} dept={name} head={head?.name ?? null} title={title} tz={tz} talk={talk} runs={runs} cards={cards} send={sendToHead}
       missing={head ? (history ? null : HEAD_CHAT_MISSING) : seat?.holder === "owner" ? `You lead ${name}, so there’s no head agent to talk to here. Ask Avery about this department instead.` : `${name} has no head yet. Fill its head seat on the Agents tab to talk to one.`}
-      starters={[`How is ${name} doing?`, "What needs me here?", "Who is behind?"]} />
+      starters={[`How is ${name} doing?`, "What needs me here?", "Who is behind?"]}
+      hires={hires.cards} hireActs={{ hire: hireInChat, tryIt: tryBuilt, goLive, duty: setEnabled }} controls={controlsOn()} say={say} />
   );
 }
 
@@ -149,7 +153,7 @@ function Agents({ id, name, roster, counts, tz, orgOn }: P) {
           })}
         </div>
         {open.map((x) => (
-          <Link key={x.id} href={`/build/new?seat=${x.id}`} className="dp-newline">{PLUS}<span><b>{x.title} is open.</b> Build an agent for it{x.sub ? `: ${x.sub}` : ""}.</span></Link>
+          <Link key={x.id} href={hireHref(id, x)} className="dp-newline">{PLUS}<span><b>{x.title} is open.</b> Ask {headName} to hire for it{x.sub ? `: ${x.sub}` : ""}.</span></Link>
         ))}
         {!ids.length && !open.length && <span className="dp-note">No agents in {name} yet. Ask {headName} in the chat to hire one.</span>}
       </div>

@@ -18,7 +18,7 @@ const hire = { kind: "hire", why, name: "Tate", seat: "Follow-ups", job: "Keeps 
 // a hire: words tidied, tools without repeats, quick brain unless asked
 const h = plan(hire);
 assert.equal(h.why, why);
-assert.deepEqual(h.plan, { kind: "hire", name: "Tate", seat: "Follow-ups", job: hire.job, eachRun: hire.each_run, goodResult: hire.good_result, tools: ["wholesale_leads_recent", "goal_progress"], brain: "quick" });
+assert.deepEqual(h.plan, { kind: "hire", name: "Tate", seat: "Follow-ups", job: hire.job, eachRun: hire.each_run, goodResult: hire.good_result, tools: ["wholesale_leads_recent", "goal_progress"], brain: "quick", days: null, time: null, can: [] });
 assert.equal(plan({ ...hire, brain: "thinking" }).plan.kind === "hire" && (plan({ ...hire, brain: "thinking" }).plan as Extract<ProposalPlan, { kind: "hire" }>).brain, "thinking");
 assert.equal(proposalTitle(h.plan), "Hire Tate for Follow-ups");
 
