@@ -26,13 +26,13 @@ import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { modelDef } from "@/integrations/models";
 import { modelKeysReady } from "@/integrations/mcp";
-import { dryRunTools, runExplore, type PlaybookStep } from "@/core/runner";
+import { dryRunTools } from "@/core/runner";
 import { TOOLS } from "@/core/tools/catalog";
 import { customMenu } from "@/core/tools/custom";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { lastTry } from "./builder";
-import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
-import { loadMemory } from "@/core/memory";
+import { activePlaybook, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
+import { startTry as startTryRun, tryOnce, tryTarget } from "@/core/agent-try";
 import { loadOrg, seatPath, setHolder } from "@/core/org";
 import { getFloor, getRoster, asRole } from "./data";
 import { currentPick, needsOf } from "./firstJob";
@@ -739,52 +739,15 @@ export async function tryBuilt(agentId: string, fresh = false): Promise<ActionRe
   } catch (e) { revalidatePath("/", "layout"); return fail(e); }
 }
 
-/** The version a try runs: the draft, else the live one. A string says why there is none. */
-async function tryTarget(agentId: string) {
-  await builtAgent(agentId);
-  const versions = await listSpecVersions(agentId);
-  const target = draftOf(versions) ?? versions.find((v) => v.active);
-  if (!target) return "That agent has no saved version.";
-  if (target.problems.length) return `v${target.version} asks for something code doesn’t offer: ${target.problems.join("; ")}.`;
-  return target;
-}
-
-/**
- * One try (trigger preview): sends nothing, queues nothing, saves no output for other agents; afterwards
- * code drafts or updates the routine. `started` is called once the run is logged.
- */
-async function tryOnce(agentId: string, target: Exclude<Awaited<ReturnType<typeof tryTarget>>, string>, fresh: boolean, started: () => void = () => {}) {
-    let block = "";
-    try { block = (await loadMemory(agentId)).block; } catch { /* a try without memory is fine */ }
-    let playbook: { version: number; steps: PlaybookStep[] } | undefined;
-    if (!fresh) { try { const a = activePlaybook(await listPlaybooks(agentId)); if (a) playbook = { version: a.version, steps: a.steps }; } catch { /* no playbook table yet: explore */ } }
-    let got: Awaited<ReturnType<typeof runExplore>> | null = null;
-    let rid: string | null = null;
-    const res = await withRun(agentId, "preview", async (runId) => {
-      rid = runId; started();
-      const r = await runExplore(target.spec, { agentId, runId, memoryBlock: block, playbook, trying: true });
-      got = r;
-      return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd, metrics: { ...r.metrics, spec_version: target.version } };
-    });
-    let note = "";
-    if (got) { try { note = ` ${await afterRun(agentId, rid, got)}`; } catch (e) { note = ` (Routine not updated: ${e instanceof Error ? e.message : String(e)})`; } }
-    return { res, note, rid: rid as string | null, version: target.version };
-}
-
 /** A first try (card 194) in the background, like startRun: it answers once the run is logged. */
 async function startTry(agentId: string, name: string): Promise<ActionResult> {
   const t = await tryTarget(agentId);
   if (typeof t === "string") return { ok: false, text: t };
-  let markStarted: () => void = () => {};
-  const started = new Promise<null>((resolve) => { markStarted = () => resolve(null); });
-  const org = await orgId();
-  const run = withOrg(org, () => tryOnce(agentId, t, true, markStarted))
-    .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} first try failed`, err); return { err }; });
-  after(run);
-  const first = await Promise.race([started, run]);
-  if (first === null) return { ok: true, text: `${name} is on a first try: it reads, sends nothing, and drafts the routine you approve.` };
-  if ("err" in first) return fail(first.err);
-  return { ok: first.res.res.status === "ok", text: `${name}: ${first.res.res.summary}${first.res.note}` };
+  try {
+    const first = await startTryRun(agentId, t, true);
+    if (first.started) return { ok: true, text: `${name} is on a first try: it reads, sends nothing, and drafts the routine you approve.` };
+    return { ok: first.done.res.status === "ok", text: `${name}: ${first.done.res.summary}${first.done.note}` };
+  } catch (e) { return fail(e); }
 }
 
 /**

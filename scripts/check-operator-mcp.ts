@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import {
   CONSENT_NEVER, LIMITS, MCP_PATH, OP_TOOLS, PROTOCOL_VERSIONS, answerText, authServerMetadata, bearerOf, challenge, checkArgs, clientIdOf, clientOf, dispatch,
   hashSecret, hashesMatch, isResponse, newToken, nextWindow, originOf, pickProtocol, pkceOk, readAuthorize, readRegistration, readRpc, redirectAllowed, redirectOk,
-  resourceMetadata, toolsFor, tokenParts, TOOL_BY_NAME, MAX_DRAFT_TOOLS, draftTools, staleRead, toolList, type RpcRequest,
+  resourceMetadata, toolsFor, tokenParts, TOOL_BY_NAME, MAX_DRAFT_TOOLS, MOVE_PROMPT, CONSENT_OWNER_LINES, draftTools, staleRead, toolList, type RpcRequest,
 } from "../core/operator-mcp-rules";
 import { TENANT_TABLES } from "../core/tenancy";
 
@@ -17,8 +17,11 @@ const ORG = "0e1a7c4e-0002-4000-8000-000000000002", GRANT = "0e1a7c4e-00aa-4000-
 
 const run = async () => {
   // ---- the tool list: reads for every member, draft writes for owners only
-  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains"], DRAFTS = ["create_agent", "update_agent", "propose"];
-  assert.deepEqual(OP_TOOLS.map((t) => t.name), [...READS, ...DRAFTS]);
+  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains", "get_run"], DRAFTS = ["create_agent", "update_agent", "propose"], TRIES = ["try_agent"];
+  assert.deepEqual(OP_TOOLS.map((t) => t.name), [...READS, ...DRAFTS, ...TRIES]);
+  assert.ok(OP_TOOLS.filter((t) => TRIES.includes(t.name)).every((t) => t.kind === "try" && t.min === "owner"), "a try is for owners only");
+  assert.deepEqual(TOOL_BY_NAME.try_agent.inputSchema.required, ["agent", "based_on_version"], "a try names the version it was read at");
+  assert.match(TOOL_BY_NAME.try_agent.description, /sends nothing/);
   assert.ok(OP_TOOLS.filter((t) => READS.includes(t.name)).every((t) => t.kind === "read" && t.min === "viewer"), "read tools, any member");
   assert.ok(OP_TOOLS.filter((t) => DRAFTS.includes(t.name)).every((t) => t.kind === "draft" && t.min === "owner"), "draft tools, owners only");
   assert.deepEqual(toolsFor("viewer").map((t) => t.name), READS);
@@ -46,6 +49,12 @@ const run = async () => {
   assert.equal(dir.args.directive, "1. read\n2. sum", "a directive keeps its line breaks");
   assert.match((checkArgs(update, { agent: "pat" }) as { problem: string }).problem, /needs based_on_version/, "a change names the version it was based on");
   assert.match((checkArgs(prop, { kind: "promote", why: "because it is good" }) as { problem: string }).problem, /kind must be one of/);
+
+  // ---- the move guide: every step is a tool on this server, and it stops before duty and actions
+  for (const t of ["get_company", "list_tools", "list_brains", "create_agent", "try_agent", "get_run"]) assert.ok(MOVE_PROMPT.includes(t), `the move guide uses ${t}`);
+  assert.match(MOVE_PROMPT, /wait for my OK/);
+  assert.match(MOVE_PROMPT, /Stop there\. I put it on duty, give it actions and set its schedule in OPERATOR\./);
+  assert.ok(CONSENT_OWNER_LINES.some((l) => /Try an agent once: it sends nothing/.test(l)), "the consent page says what a try is");
 
   // ---- what a draft from Claude may put on an agent: reads and calculations; everything else carries over
   const kinds: Record<string, string> = { r1: "read", r2: "read", c1: "calculate", rep: "report", act: "action", "srv__t": "custom" };
@@ -187,6 +196,15 @@ const run = async () => {
   assert.match(store, /fileProposal\(input, \{ agentId: null, source: "claude", deptId \}\)/, "a proposal is filed as from Claude");
   assert.match(store, /const looser = specLooser\(base\.spec, got\.spec\);/, "a change never lets a run reach or spend more");
   assert.match(store, /const stale = staleRead\(Number\(args\.based_on_version\), newest\.version\);/, "a change made since the read is refused");
+  const tryFn = store.slice(store.indexOf("async function tryAgent"), store.indexOf("/** Runs a tool for a caller"));
+  assert.match(tryFn, /^async function tryAgent[\s\S]*if \(!controlsOn\(\)\) return no\(/, "a try is refused when real runs are switched off");
+  assert.match(tryFn, /const stale = staleRead\(Number\(args\.based_on_version\), newest\);/, "a try runs the version Claude read");
+  assert.match(tryFn, /await startTry\(id, target, args\.fresh === "yes"\)/, "a try is the builder's own try");
+  const tries = read("core/agent-try.ts");
+  assert.match(tries, /withRun\(agentId, "preview",/, "a try goes through withRun as a preview");
+  assert.match(tries, /trying: true/, "the runner knows it is a try: nothing is sent or queued");
+  assert.ok(!/callWriteTool|@\/core\/gateway|activateSpecVersion|enabled: true/.test(tries), "a try never acts, goes live or puts an agent on duty");
+  assert.match(read("app/api/mcp/route.ts"), /export const maxDuration = 300;/, "a try has time to finish after its answer");
   assert.match(read("core/agent-spec.ts"), /insert\(\{ id, name: spec\.name, model: spec\.model, enabled: false,/, "createBuiltAgent makes agents off duty");
   const writes = [...store.matchAll(/from\("(\w+)"\)\.(insert|update|upsert|delete)\(/g)].map((m) => m[1]);
   assert.ok(writes.length >= 4 && writes.every((t) => t === "mcp_grants"), `the server writes only its own grants (saw ${writes.join(", ")})`);
@@ -209,6 +227,6 @@ const run = async () => {
   assert.match(read("dashboard/mcpActions.ts"), /const r = readAuthorize\(q, clientSecret\(\), await selfOrigin\(\)\);/, "Allow checks the request again");
   assert.match(read("CLAUDE.md"), /OPERATOR's own MCP server/, "the hard rules name the server");
 
-  console.log(`check:operator-mcp ok (${READS.length} read tools, ${DRAFTS.length} draft tools)`);
+  console.log(`check:operator-mcp ok (${READS.length} read tools, ${DRAFTS.length} draft tools, ${TRIES.length} try tool)`);
 };
 run().catch((e) => { console.error(e); process.exit(1); });
