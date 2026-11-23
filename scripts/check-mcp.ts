@@ -1015,8 +1015,16 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
   const walkTs = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? (f === "node_modules" || f.startsWith(".") ? [] : walkTs(p)) : /\.(ts|tsx)$/.test(f) ? [p] : []; });
   for (const dir of ["app", "core", "dashboard", "integrations", "templates", "ee"]) for (const f of walkTs(dir)) {
     if (f === "integrations/mcp.ts" || f === "integrations/llm.ts") continue;
-    assert.ok(!/\bmodelKey\(/.test(readFileSync(f, "utf8")), `${f} must not open a provider key`);
+    assert.ok(!/\bmodelKey\(|\bpauseModelKey\(/.test(readFileSync(f, "utf8")), `${f} must not open or pause a provider key`);
   }
+  // agent turns go only to the provider's own https host, in a shape core/llm-wire.ts speaks
+  for (const p of R.MODEL_PROVIDERS) {
+    assert.equal(new URL(p.turns.url).protocol, "https:");
+    assert.equal(new URL(p.turns.url).host, new URL(p.check.url).host, `${p.id}: turns go to the same host the key was checked with`);
+  }
+  assert.equal(P.openai.turns.wire, "responses", "OpenAI function tools need the Responses API");
+  assert.equal(P.google.turns.wire, "chat");
+  assert.ok(R.keyRefused(401) && R.keyRefused(403) && !R.keyRefused(429) && !R.keyRefused(500));
   const acts = readFileSync("dashboard/connectionActions.ts", "utf8");
   for (const fn of ["modelSaveKey", "modelRemoveKey"]) {
     const body = acts.slice(acts.indexOf(`export async function ${fn}`));

@@ -113,10 +113,10 @@ stored id that falls off the list is ignored like any other invalid setup value.
   cache writes, cache reads, web searches). The transcript keeps the Claude Messages shape, which
   holds everything other providers return, so a client for another provider translates at its own
   edge and `core/runner.ts` doesn't change.
-- Only Claude is connected today, on the business's own key or OPERATOR credits (Connections >
-  Claude API). The Claude client keeps prompt caching, effort, the server-side refusal fallback and
-  Anthropic's web tools. The builder and `specModelOk` (`core/agent-spec.ts`) offer only models
-  whose provider is connected.
+- Claude runs on the business's own key or OPERATOR credits (Connections > Claude API). The Claude
+  client keeps prompt caching, effort, the server-side refusal fallback and Anthropic's web tools.
+  The builder and `specModelOk` (`core/agent-spec.ts`) still offer only Claude until the builder's
+  model picker lands (slice 4).
 - Other providers (decided 2026-11-23): first each business's own key per provider, sealed in the
   vault and called directly; later OPERATOR credits through Vercel AI Gateway. Gateway keys are set
   per Vercel team, not per request, so a business's own key can't go through it.
@@ -126,6 +126,17 @@ stored id that falls off the list is ignored like any other invalid setup value.
   (`openai_key`, `xai_key`, `google_ai_key`), and never shown again. `modelKey()` opens one, and only
   `integrations/llm.ts` may call it (`check:mcp`). A provider key carries no scopes, so the runner and
   the gateway stay the limit, as on Claude.
+- Other providers' turns (slice 3): `providerClient` in `integrations/llm.ts` opens the business's key
+  for one request and sends the turn to that provider only (`turns` in `core/model-key-rules.ts`):
+  OpenAI and xAI on the Responses API (function tools on current OpenAI models work only there),
+  Google on its OpenAI-compatible chat completions. `core/llm-wire.ts` translates both ways, pure and
+  tested: thinking blocks, cache markers and server tools are dropped, tool calls and results are
+  paired by id, and nothing is stored at the provider (`store: false`). Requests never follow a
+  redirect, errors never carry the key, and a 401 or 403 pauses the key until the owner pastes a new
+  one. The runner never offers Claude's web search or fetch to these models. Their cached input has
+  its own price (`cacheIn`), and writing the cache costs nothing extra. Models listed 2026-11-23, at
+  each provider's own page: GPT-6.2 Sol, Grok 4.7, Grok 4.3, Gemini 3.1 Pro (preview) and Gemini 3.1
+  Flash-Lite. Models whose price couldn't be read on the provider's page that day are left off.
 - The run summary names the model that wrote the result, and the run replay splits cost by the
   model whose price matches the logged cost.
 - Changing a price or adding a model is a pull request; read the provider's price page that day.

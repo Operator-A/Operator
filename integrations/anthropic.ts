@@ -62,7 +62,9 @@ export function costUsd(model: string, tokensIn: number, tokensOut: number, sear
   const m = modelDef(model);
   if (!m) throw new Error(`No price for ${model} in integrations/models.ts`);
   const write = Math.max(0, cache.write ?? 0), read = Math.max(0, cache.read ?? 0), plain = Math.max(0, tokensIn - write - read);
-  return Number(((plain + write * CACHE_WRITE + read * CACHE_READ) * m.in + tokensOut * m.out + searches * WEB_SEARCH_USD).toFixed(4));
+  // a provider with its own cached price charges nothing extra to write the cache
+  const inUsd = m.cacheIn != null ? (plain + write) * m.in + read * m.cacheIn : (plain + write * CACHE_WRITE + read * CACHE_READ) * m.in;
+  return Number((inUsd + tokensOut * m.out + searches * WEB_SEARCH_USD).toFixed(4));
 }
 
 /** The cache part of a response's usage, for costUsd. */

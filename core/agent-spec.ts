@@ -43,7 +43,7 @@ export interface AgentSpec {
 export const MAX_DIRECTIVE = 4000;
 
 /** A model on the list whose provider is connected. Only Claude is, until provider keys land (docs/agent-setup.md). */
-export const specModelOk = (id: string) => modelDef(id)?.provider === "Anthropic";
+export const specModelOk = (id: string) => modelDef(id)?.provider === "anthropic";
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const NOTION_ID = /^[0-9a-f]{32}$/;
