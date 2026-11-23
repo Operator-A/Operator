@@ -98,7 +98,7 @@ export function plainLinks(src: string): number[] {
 assert.deepEqual(plainLinks(`<IntentLink href="/">\n<Link href="/x">`), [2]);
 const NAV: [string, RegExp][] = [
   ["dashboard/components/client.tsx", /export function (SideLink|RailLink)\b[\s\S]*?\n\}/g],
-  ["dashboard/components/ui.tsx", /export function AgentTabs\b[\s\S]*?\n\}/g],
+  ["dashboard/components/deptTabs.tsx", /export function DeptTabs\b[\s\S]*?\n\}/g],
   ["dashboard/components/settingsNav.tsx", /export function SettingsNav\b[\s\S]*?\n\}/g],
   ["app/(room)/crew/page.tsx", /<nav className="seg" aria-label="Crew view">[\s\S]*?<\/nav>/g],
 ];

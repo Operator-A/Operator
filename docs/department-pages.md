@@ -98,3 +98,42 @@ department; the directive; the run, role and tenancy wiring).
 Tests: `npm run check:dept` (the checklist comes only from logged steps, folded and marked; what posts;
 titles, pills, foot line, result text, goal numbers and day dividers in the business's time zone; the
 feed's order; the live route, the runner and the one approval path).
+
+## Slice 4: the agent sheet
+
+- **One sheet for one agent.** Tapping an agent on a department's Agents tab or on Everyone opens its sheet
+  (a drawer on the right on a computer, a bottom sheet on a phone). The sheet is in the address
+  (`/dept/[id]?tab=agents&agent=…`, or `/everyone?agent=…` for an agent with no department), so Back and a
+  shared link work. `agentHref` in `dashboard/dept-rules.ts` picks the address. The header has the on duty
+  toggle, the model, the next run and Run now.
+- **Runs.** The agent's last 60 days of runs, newest first, from the same reader as the department chat
+  (`deptRuns`): title, time, status, result, the checklist from `run_steps`, steps, how long, cost and a link
+  to how it thought.
+- **Edit.** The job in the owner's words, the model, when it runs, what it reads, what it can do, the daily
+  AI budget, whom it reports to, lessons waiting for Keep or Discard, what it remembers, and earlier versions
+  with Go back. `agentSheet` in `dashboard/agentSheet.ts` reads all of it in one round; the sheet binds the
+  same server actions the old agent and builder pages used (`setEnabled`, `realRun`, `setAgentTime`,
+  `setBuiltBudget`, `saveSpec`, `tryBuilt`, `goLive`, `goBack`, the memory and lesson actions), so every role
+  check, cap and refusal stays where it was.
+- **A change takes effect after a clean try.** Saving a changed job, model, reads or can do makes a new
+  draft version (`saveSpec`, owner only). The sheet then shows the draft with Try it and Go live; Go live is
+  disabled until the latest try ran clean, and `goLive` checks that again on the server. A changed time or
+  budget saves straight away, as before.
+- **Any days.** A schedule can run on any set of days, not only every day, weekdays or Mondays
+  (`Days` in `core/flow-rules.ts` now has `on:` day sets, digits 0 for Sunday to 6). Counts for cost
+  (`dayRuns`) and words (`dayWords`) cover sets.
+- **Triggers.** "+ Add a trigger" offers the schedule; "after another agent finishes" and "when you approve a
+  draft" link to Crew > Schedule, where those chains are set today; triggers from a connected tool come in
+  slice 6.
+- **Can do = an approver's grant.** The Can do toggles grant an action an approver may give (`agents:
+  "granted"`), exactly as the builder's Tools step does; a proposal still can't grant one. CLAUDE.md names
+  the sheet beside the Tools step.
+- **The step editor stays for fine detail.** What a good result looks like, run limits, pages and other
+  agents it reads stay in the step-by-step editor (`/build/[id]?edit=1`, linked from the sheet) until hiring
+  moves into the chat (slice 5).
+- **Deletes.** The agent page (`/agents/[id]` now redirects to the sheet), the builder's version page
+  (`/build/[id]` without `?edit` redirects too), its try route and `TryLive`, and the `AgentTabs` strip.
+
+Tests: `npm run check:dept` (sheet addresses; day sets, words and counts; one schedule chain when a time
+moves; the sheet binds only the existing actions and never writes the database itself; save is owner only
+and makes a version; Go live needs a clean try, in code and on the button; the old pages redirect).

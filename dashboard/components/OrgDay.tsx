@@ -8,7 +8,7 @@ import { dow, hm, md } from "@/dashboard/format";
 import { zoneLabel } from "@/core/time";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "@/dashboard/actions";
-import { DAY_RUNS, DAY_WORDS, DAYS, type AgentTime, type Days } from "@/core/flow-rules";
+import { dayRuns, dayWords, DAYS, type AgentTime, type Days } from "@/core/flow-rules";
 import type { DayRow, OrgDay as Day } from "@/dashboard/orgDay";
 import { Modal, Toast, type Confirm } from "./client";
 import { Icon } from "./Icon";
@@ -150,7 +150,7 @@ export function OrgDay({ day, controls, orgOn, setTime, setOn }: { day: Day; con
         onSave={(t, needsConfirm) => {
           if (!needsConfirm) return run(() => setTime(edit.id, t, false));
           setConfirm({
-            c: { title: `Let ${edit.name} run ${DAY_WORDS[t.days]} at ${t12(t.time)}?`, body: `${edit.name} runs on this schedule while the org is on and ${edit.name} is on duty, inside its daily budget.`, lines: [{ k: "A run", v: perRunWords(edit.perRun) }, { k: "A month", v: edit.perRun == null ? "Unknown until it has run" : money(edit.perRun * DAY_RUNS[t.days]) }], confirmLabel: "Save schedule" },
+            c: { title: `Let ${edit.name} run ${dayWords(t.days)} at ${t12(t.time)}?`, body: `${edit.name} runs on this schedule while the org is on and ${edit.name} is on duty, inside its daily budget.`, lines: [{ k: "A run", v: perRunWords(edit.perRun) }, { k: "A month", v: edit.perRun == null ? "Unknown until it has run" : money(edit.perRun * dayRuns(t.days)) }], confirmLabel: "Save schedule" },
             go: () => setTime(edit.id, t, true),
           });
         }}
@@ -193,7 +193,7 @@ function Editor({ r, tz, controls, orgOn, busy, onClose, onSave, onHand, onDuty 
           <legend style={{ fontSize: 13.5, fontWeight: 600, paddingBottom: 8 }}>When {r.name} runs</legend>
           <div className="seg" role="radiogroup" aria-label="Days">
             {DAYS.map((d) => (
-              <button key={d} type="button" role="radio" aria-checked={days === d} onClick={() => setDays(d)} style={days === d ? { background: "var(--card)", color: "var(--ink)", boxShadow: "0 1px 4px rgba(17,17,26,.12)" } : undefined}>{{ daily: "Every day", weekdays: "Weekdays", mondays: "Mondays" }[d]}</button>
+              <button key={d} type="button" role="radio" aria-checked={days === d} onClick={() => setDays(d)} style={days === d ? { background: "var(--card)", color: "var(--ink)", boxShadow: "0 1px 4px rgba(17,17,26,.12)" } : undefined}>{({ daily: "Every day", weekdays: "Weekdays", mondays: "Mondays" } as Record<string, string>)[d]}</button>
             ))}
           </div>
           <label className="row" style={{ justifyContent: "space-between", gap: 12, fontSize: 13.5 }}>

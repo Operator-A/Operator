@@ -2,7 +2,7 @@
 // from her sketch (core/design-rules.ts), the department templates, the connected tools
 // and what each agent costs (core/cost-rules.ts). The model never writes the chart, a job, a tool or a
 // number: it only named template ids, which code checked. Pure, so check:setup can test it.
-import { DAY_RUNS, type Chain } from "@/core/flow-rules";
+import { dayRuns, type Chain } from "@/core/flow-rules";
 import type { Template } from "@/core/template-rules";
 import { totalCost, type MonthCost } from "@/core/cost-rules";
 import type { Fit, Leaning } from "@/core/setup-rules";
@@ -70,7 +70,7 @@ export function runsFor(id: string, chains: readonly unknown[], manualOnly: bool
     const c = raw as Chain;
     if (c.start?.type !== "schedule") continue;
     const step = c.steps.find((s) => s.agent === id);
-    if (step) return DAY_RUNS[step.days ?? c.start.days] ?? 0;
+    if (step) return dayRuns(step.days ?? c.start.days);
   }
   return 0;
 }
