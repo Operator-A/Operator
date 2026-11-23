@@ -5,7 +5,7 @@ import { changeInChat, hireInChat, proposalDecline } from "@/dashboard/proposalA
 import { deptHires } from "@/dashboard/hireCards";
 import { deptChanges } from "@/dashboard/changeCards";
 import { getApprovals, getCounts, getOrgSwitch, getReactRules, getRoster, getTz, type ApprovalItem, type ApprovalsView, type ReactRules } from "@/dashboard/data";
-import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, goalHref, headAgentId, hireHref, needsByDept, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
+import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, goalHref, headAgentId, hireHref, needsByDept, settingsHref, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
 import { goalNumber } from "@/dashboard/dept-feed";
 import { deptRuns } from "@/dashboard/deptFeed";
 import { HEAD_CHAT_MISSING, headHistory } from "@/core/head-chat";
@@ -25,6 +25,9 @@ import { MODEL_LIST } from "@/integrations/models";
 import { ActionButton } from "@/dashboard/components/client";
 import { ApprovalCard } from "@/dashboard/components/approvalBits";
 import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
+import { DeptSettingsFor } from "@/dashboard/components/deptSettingsFor";
+
+const GEAR = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" /></svg>;
 
 // A department's page (docs/department-pages.md), built to the approved mockup: a short header, glass tabs
 // floating over the content (Chat, the default; Agents; Goals; Approvals), and the chat as a glass room where
@@ -35,7 +38,7 @@ const NO_ORG = "The org chart tables aren’t up to date: apply the org chart mi
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 
-export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; edit?: string }> }) {
+export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; edit?: string; settings?: string }> }) {
   // the pieces this page shows, in one round (card 304): the crew and its runs, what waits on you, the time zone, the org switch
   const [{ id }, sp, roster, counts, tz, org] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch()]);
   const chart = roster.chart;
@@ -57,13 +60,14 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
 
   return (
     <div className={`dp${tab === "chat" ? " chat" : ""}`} style={{ "--hue": deptHue(index) } as React.CSSProperties}>
-      <div className="dp-ttl" aria-hidden="true"><b>{dept.name}</b><span className={waiting ? "warn" : undefined}>{head ? `${head.name}, ${title}` : led}{waiting ? ` · ${needs}` : ""}</span></div>
+      <Link href={settingsHref(id, tab)} scroll={false} className="dp-ttl" aria-label={`${dept.name} settings`}><b>{dept.name}</b><span className={waiting ? "warn" : undefined}>{head ? `${head.name}, ${title}` : led}{waiting ? ` · ${needs}` : ""}</span></Link>
       <div className="dp-head">
         <div className="dp-icon"><i /></div>
         <div><h1>{dept.name}</h1><div className="dp-led">{led} · {s(ids.length, "agent")}</div></div>
         <div className="dp-stat">
           <span className="dp-pill">AI spend {usd(spent)}{dept.monthlyBudgetUsd != null ? ` of ${usd(dept.monthlyBudgetUsd)}` : ""} this month</span>
           {waiting > 0 && <Link href={tabHref(id, "approvals")} className="dp-pill warn">{needs}</Link>}
+          <Link href={settingsHref(id, tab)} scroll={false} className="dp-gear" aria-label={`${dept.name} settings`} title="Department settings">{GEAR}</Link>
         </div>
       </div>
       <div className="dp-stage">
@@ -75,6 +79,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
           <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} goals={goals} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} />
         </div>
       </div>
+      {sp.settings != null && !sp.agent && <DeptSettingsFor chart={chart} id={id} closeHref={tabHref(id, tab)} names={Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]))} />}
       {sp.agent && <AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} />}
     </div>
   );

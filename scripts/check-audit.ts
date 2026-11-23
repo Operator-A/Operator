@@ -55,7 +55,6 @@ const NOT_AUDITED: Record<string, string> = {
   keepLessonLine: "memory keeps its own timeline with the actor",
   discardLessonLine: "memory keeps its own timeline with the actor",
   orgAddDeptRule: "memory keeps its own timeline with the actor",
-  orgEditDeptRule: "memory keeps its own timeline with the actor",
   orgForgetDeptRule: "memory keeps its own timeline with the actor",
   orgAddDepartment: "labels on the chart",
   orgRenameDepartment: "labels on the chart",

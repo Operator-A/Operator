@@ -8,7 +8,7 @@ import { revalidatePath } from "next/cache";
 import { withActor } from "@/core/actor";
 import { db } from "@/core/db";
 import { loadCaps } from "@/core/gateway";
-import { addDepartmentRule, editMemory, forgetMemory } from "@/core/memory";
+import { addDepartmentRule, forgetMemory } from "@/core/memory";
 import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks } from "@/core/org";
 import type { ActionResult } from "./actions";
 import { getRoster, asRole } from "./data";
@@ -144,11 +144,6 @@ async function deptRule(ruleId: string) {
   if (!UUID.test(ruleId)) throw new Error("Unknown rule.");
   const { data } = await db().from("agent_memory").select("grp").eq("id", ruleId).maybeSingle();
   if (data?.grp !== "department") throw new Error("That isn’t a department rule.");
-}
-
-export async function orgEditDeptRule(ruleId: string, text: string): Promise<ActionResult> {
-  const { me, no } = await asRole("owner"); if (no) return no;
-  try { await deptRule(String(ruleId)); await withActor(me.email, () => editMemory(ruleId, String(text ?? ""))); return done("Rule saved."); } catch (e) { return fail(e); }
 }
 
 export async function orgForgetDeptRule(ruleId: string): Promise<ActionResult> {
