@@ -32,6 +32,8 @@ const AUDITED = [
   "proposalAccept", "proposalDecline",
   // a new department: the owner files it from Avery's draft, or throws the draft away
   "proposeDepartment", "discardDepartmentDraft",
+  // OPERATOR's own MCP server: an app (Claude) connected or disconnected
+  "allowApp", "disconnectApp",
 ];
 
 // not audited: they change nothing an agent may do, spend or reach, or keep their own history
@@ -74,7 +76,7 @@ const NOT_AUDITED: Record<string, string> = {
   setupOtherTool: "a request for a connector and a note of the tool the business uses, no access",
 };
 
-const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupActions.ts", "dashboard/setupCheckActions.ts"];
+const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupActions.ts", "dashboard/setupCheckActions.ts", "dashboard/mcpActions.ts"];
 const seen = new Set<string>();
 for (const f of files) {
   const src = readFileSync(f, "utf8");

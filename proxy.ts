@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, validSessionToken } from "@/dashboard/session";
 
 // Guards the Control Room pages. /api/* keeps its own bearer check and is not touched here.
+// /.well-known/ is open: it says where Claude signs in (docs/operator-mcp.md), and holds nothing private.
 // /signup is open: it is not found unless the cloud edition fills the slot (core/extensions.ts).
 export function proxy(req: NextRequest) {
   if (validSessionToken(req.cookies.get(SESSION_COOKIE)?.value)) return NextResponse.next();
@@ -11,5 +12,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/|login|signup|auth/|_next/static|_next/image|favicon.ico|icon.svg).*)"],
+  matcher: ["/((?!api/|\\.well-known/|login|signup|auth/|_next/static|_next/image|favicon.ico|icon.svg).*)"],
 };

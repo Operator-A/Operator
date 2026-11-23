@@ -114,6 +114,16 @@ shipping and refund confirmations.
   business's own Notion only through report tools on our own servers, after a run, never by a model.
   Every other write is a profile's write tool, called only by `core/gateway` through
   `callWriteTool` after an approver approves (lint enforces it); it becomes a gateway action type.
+- OPERATOR's own MCP server (`/api/mcp`, `core/operator-mcp.ts`, `docs/operator-mcp.md`) is how a member's
+  Claude (or another app they connect) reaches OPERATOR. OPERATOR is the source of truth: nothing is synced,
+  and the app reads OPERATOR again on every call. Every tool is named in `core/operator-mcp-rules.ts`; a tool
+  not named there does nothing. A connection is one member in one business, signed in with OPERATOR's own
+  OAuth (PKCE, only token hashes stored, Settings > Connected apps to disconnect); every call runs in that
+  business through `withOrg` and reads the member and their role again. Tools that change anything only
+  make drafts or proposals through the builder's and proposals' own code (an agent made there starts off
+  duty with no actions). No tool approves or rejects a card, puts an agent on duty, turns the org on,
+  grants an action or a custom tool, or changes a cap, budget, schedule, vendor, connection or member.
+  What a tool returns is scrubbed (`scrubSecrets`) and agent-written text in it is labelled as such.
 - One credential store: every sign-in and service key lives in the token vault (`core/vault.ts`),
   sealed with its org's own random data key and bound to that org; the data key is kept only
   wrapped by `MCP_SECRET_KEY` (never derived from another secret), connected on Connections.
