@@ -32,7 +32,7 @@ import { lastTry } from "./builder";
 import { activePlaybook, afterRun, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
 import { loadMemory } from "@/core/memory";
 import { loadOrg, seatPath, setHolder } from "@/core/org";
-import { getFloor, asRole } from "./data";
+import { getFloor, getRoster, asRole } from "./data";
 import { currentPick, needsOf } from "./firstJob";
 import { markFirstJob, setupState } from "@/core/setup";
 import { SETUP_AGENT } from "@/core/setup-rules";
@@ -48,9 +48,9 @@ export interface ActionResult { ok: boolean; text: string }
 
 const CONTROLS_OFF = "Real runs are switched off on this OPERATOR. Whoever runs it can turn them on.";
 /** An agent with a live version, as the Control Room shows it (docs/agent-roster.md); null otherwise. */
-const crewAgent = async (id: string) => { const a = (await getFloor()).byId[id]; return a ?? null; };
+const crewAgent = async (id: string) => { const a = (await getRoster()).byId[id]; return a ?? null; };
 /** An agent's name, or its id when it isn't on the roster. */
-const nameOf = async (id: string) => (await getFloor()).byId[id]?.name ?? id;
+const nameOf = async (id: string) => (await getRoster()).byId[id]?.name ?? id;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
 
 /** Reads real data, writes nothing, calls no model, logs nothing. */

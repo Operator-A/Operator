@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { SignOutButton } from "@/dashboard/components/signOut";
-import { getFloor, requireSession } from "@/dashboard/data";
+import { getOrgSwitch, requireSession } from "@/dashboard/data";
 import { dbLock } from "@/core/db";
 import { ROLE_LABELS, ROLE_WORDS } from "@/core/roles";
 import { controlsOn } from "@/dashboard/session";
@@ -22,7 +22,7 @@ const line = (k: React.ReactNode, v: React.ReactNode, first?: boolean) => (
 );
 
 export default async function General() {
-  const [f, me, own, jar] = await Promise.all([getFloor(), requireSession(), settings().catch(() => NO_SETTINGS), cookies()]);
+  const [orgSwitch, me, own, jar] = await Promise.all([getOrgSwitch(), requireSession(), settings().catch(() => NO_SETTINGS), cookies()]);
   const theme = jar.get("cr_theme")?.value === "dark" ? "dark" : "light";
   const lock = dbLock();
   return (
@@ -35,7 +35,7 @@ export default async function General() {
       </div>
       <span className="set-group">How it runs</span>
       <div className="card set-card">
-        {line(<>The org<span className="muted set-hint">Turn every agent on or off at once on Crew &gt; Schedule.</span></>, <Link href="/crew?view=schedule" className="btn ghost sm">{f.org.on ? "On" : "Off"} · Open</Link>, true)}
+        {line(<>The org<span className="muted set-hint">Turn every agent on or off at once on Crew &gt; Schedule.</span></>, <Link href="/crew?view=schedule" className="btn ghost sm">{orgSwitch.on ? "On" : "Off"} · Open</Link>, true)}
         {line(<>Controls<span className="muted set-hint">Real runs, putting agents back on the crew and raising budgets. Whoever runs this OPERATOR turns them on.</span></>, onOff(controlsOn()))}
         {line(<>Database lock<span className="muted set-hint">{lock.on ? "The database itself only lets this business’s rows through, on top of the app’s own checks." : lock.problem ?? "Off: the app’s own checks keep each business to its rows. Turn on with SUPABASE_SIGNING_KEY and SUPABASE_PUBLISHABLE_KEY in Vercel (docs/tenancy.md, slice 2b)."}</span></>, onOff(lock.on))}
       </div>

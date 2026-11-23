@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getFloor, type Run } from "@/dashboard/data";
+import { getRoster, getTz, type Run } from "@/dashboard/data";
 import { m4 } from "@/dashboard/format";
 import { RunTable } from "@/dashboard/components/RunTable";
 
@@ -8,7 +8,8 @@ type Q = { agent?: string; status?: string; trigger?: string; q?: string };
 // Runs (builder flow slice 5): the run log; each row opens its replay at /runs/<id>.
 export default async function Runs({ searchParams }: { searchParams: Promise<Q> }) {
   const sp = await searchParams;
-  const f = await getFloor();
+  const [roster, tz] = await Promise.all([getRoster(), getTz()]); // the crew and its runs only (card 304)
+  const f = { ...roster, tz };
   const agent = f.crew.some((a) => a.id === sp.agent) ? sp.agent! : "all";
   const status = ["ok", "failed", "skipped", "running"].includes(sp.status ?? "") ? sp.status! : "all";
   const trigger = ["cron", "manual", "approval", "chain"].includes(sp.trigger ?? "") ? sp.trigger! : "all";

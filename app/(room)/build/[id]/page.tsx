@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { addStandard, dryRunBuilt, forgetMemoryLine, goBack, goLive, saveSpec, setBuiltBudget, tryBuilt } from "@/dashboard/actions";
 import { builderMenu, customMenuFor, getBuilder } from "@/dashboard/builder";
-import { getFloor, requireSession } from "@/dashboard/data";
+import { getCrewFloor, requireSession } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
 import { when } from "@/dashboard/format";
 import { specLooser } from "@/core/agent-spec";
@@ -24,7 +24,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   if (!/^[a-z0-9_]{1,60}$/.test(id)) notFound();
   // one round (card 302, docs/speed.md); the login check goes with the reads and redirects before anything is drawn
-  const [, b, f, custom] = await Promise.all([requireSession(), getBuilder(id), getFloor(), customMenuFor()]);
+  const [, b, f, custom] = await Promise.all([requireSession(), getBuilder(id), getCrewFloor(), customMenuFor()]);
   if (!b) notFound();
   const menu = builderMenu(f.crew, f.health, custom);
   const org = f.chart;

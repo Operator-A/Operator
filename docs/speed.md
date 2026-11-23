@@ -58,3 +58,13 @@ first, each page reads only what it shows).
    Connections (lists, account name, properties, setup check) and the Claude card. The Desk starts its goal reads
    without awaiting them: `DeskLine` and `DeskGoals` both wait on the same promise. In a test app on Next 16.3.6
    with a 1.2 s slow part, the title showed after 0.86 s instead of 1.88 s.
+
+## Each page reads only what it shows (card 304)
+
+8. **The floor is pieces** (checked). `getFloor` is five cached pieces sent in one round: `getRoster` (agents, live
+   setups, chains, org chart, the last 60 days of runs), `getCounts` (what waits on the owner), `getHealth` (which
+   tools are set up), `getTz` and `getOrgSwitch`. Each runs once per request however many places ask for it. Only
+   the frame, the Desk, an agent, a run's replay, Crew and the first-job action take the whole floor, because they
+   show all of it. Settings asks only for the org switch, People only for the time zone, Runs and Approvals for the
+   crew, Connections and the builder for `getCrewFloor` (crew, tools, time zone). On a client click the frame
+   (app/(room)/layout.tsx) is not rendered again, so a click costs only the page's own pieces.

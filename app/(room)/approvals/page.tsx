@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { acceptPromotion, applyWaiting, approve, approveAll, cancelAction, declinePromotion, queueQuinn, reject, retryAction, trustToDraft } from "@/dashboard/actions";
 import { trustView, type TrustView } from "@/dashboard/trust";
-import { getApprovals, getFloor, getReactRules, type ApprovalItem, type ApprovalsView, type ReactRules } from "@/dashboard/data";
+import { getApprovals, getCounts, getReactRules, getRoster, getTz, type ApprovalItem, type ApprovalsView, type ReactRules } from "@/dashboard/data";
 import { m2, md, when } from "@/dashboard/format";
 import { controlsOn } from "@/dashboard/session";
 import { ActionButton } from "@/dashboard/components/client";
@@ -250,7 +250,8 @@ function DeptTag({ i, view }: { i: ApprovalItem; view: ApprovalsView }) {
 }
 
 export default async function Approvals({ searchParams }: { searchParams: Promise<{ dept?: string }> }) {
-  const [sp, f, all, trust] = await Promise.all([searchParams, getFloor(), getApprovals(), trustView().catch((e): TrustView => ({ offers: [], scheduled: [], lines: [], undoMinutes: 30, problem: e instanceof Error ? e.message : String(e) }))]);
+  const [sp, roster, tz, { proposalsPending }, all, trust] = await Promise.all([searchParams, getRoster(), getTz(), getCounts(), getApprovals(), trustView().catch((e): TrustView => ({ offers: [], scheduled: [], lines: [], undoMinutes: 30, problem: e instanceof Error ? e.message : String(e) }))]);
+  const f = { ...roster, tz, proposalsPending }; // the crew, the time zone and the proposal count only (card 304)
   // the department filter: one department, the ones off the chart ("none"), or everything
   const dept = all?.departments.some((d) => d.id === sp.dept) || sp.dept === "none" ? sp.dept : undefined;
   const inDept = (i: ApprovalItem) => !dept || (dept === "none" ? !i.department_id : i.department_id === dept);

@@ -92,17 +92,30 @@ const toolOfCard = (a: unknown): string => {
   return typeof row?.tool === "string" ? row.tool : "";
 };
 
-export interface Floor {
+/** The crew piece of the floor (card 304): getRoster. */
+export interface Roster {
   ok: boolean;
   problem?: string;
   /** When this request read the floor; pages use it instead of calling Date.now() while rendering. */
   now: number;
-  /** The business's time zone (card 187), for every time on screen; client components get it from here. */
-  tz: string;
   agents: Record<string, AgentRow>;
   runs: Run[];
   spentToday: Record<string, number>;
-  health: Record<IntegrationId, boolean>;
+  /** Tool ids in each agent's active saved setup (agent_defs), by agent id; empty before the runner migration. */
+  grants: Record<string, string[]>;
+  /** The live (active) saved-setup version of each agent, by agent id. */
+  liveVersion: Record<string, number>;
+  /** The org chart (core/org.ts loadOrg), read once here so pages and the frame don't read it again (card 302); null before the org chart migration. */
+  chart: Org | null;
+  /** Every agent with a live version, oldest first (dashboard/roster.ts). */
+  crew: CrewMember[];
+  byId: Record<string, CrewMember>;
+  /** The agents a chain may pick, for Crew > Schedule and the chain actions. */
+  palette: Crew;
+}
+
+/** What waits on the owner (card 304): getCounts. */
+export interface Counts {
   /** Charges waiting on a receipt photo (Quinn); null when expense_docs isn't there yet. */
   photosWaiting: number | null;
   /** Approvals waiting on the owner; null when the approvals table isn't there yet. */
@@ -116,17 +129,13 @@ export interface Floor {
   jobsForYou: { planId: string; head: string | null; title: string; href: string }[];
   /** Proposed lessons waiting for the owner's Keep, per agent; empty until the memory tables exist. */
   lessonsWaiting: Record<string, number>;
-  /** Tool ids in each agent's active saved setup (agent_defs), by agent id; empty before the runner migration. */
-  grants: Record<string, string[]>;
-  /** The live (active) saved-setup version of each agent, by agent id. */
-  liveVersion: Record<string, number>;
-  /** The org chart (core/org.ts loadOrg), read once here so pages and the frame don't read it again (card 302); null before the org chart migration. */
-  chart: Org | null;
-  /** Every agent with a live version, oldest first (dashboard/roster.ts). */
-  crew: CrewMember[];
-  byId: Record<string, CrewMember>;
-  /** The agents a chain may pick, for Crew > Schedule and the chain actions. */
-  palette: Crew;
+}
+
+/** The whole floor: every piece (getFloor). */
+export interface Floor extends Roster, Counts {
+  /** The business's time zone (card 187), for every time on screen; client components get it from here. */
+  tz: string;
+  health: Record<IntegrationId, boolean>;
   /** The org switch (docs/org-schedule.md): off means nothing starts on its own. */
   org: OrgState;
 }
@@ -212,41 +221,47 @@ export const getHealth = cache(async (): Promise<Record<IntegrationId, boolean>>
   return h;
 });
 
-/** Agents, the last 60 days of runs (newest first, at most 1000) and today's spend. */
-export const getFloor = cache(async (): Promise<Floor> => {
-  await cookies(); // per request only, so the floor is never read at build time (no database)
-  const h = health();
+/** The business's time zone, after the sign-in check, read once per request (card 304). */
+export const getTz = cache(async (): Promise<string> => {
+  await cookies(); // per request only: never read at build time
+  if (!health().supabase) { await requireSession(); return DEFAULT_TZ; }
+  const [, tz] = await Promise.all([requireSession(), orgTz()]);
+  return tz;
+});
+
+/** The org switch (docs/org-schedule.md), after the sign-in check, read once per request (card 304). */
+export const getOrgSwitch = cache(async (): Promise<OrgState> => {
+  await cookies();
+  if (!health().supabase) { await requireSession(); return { on: false, at: null, by: null, known: false }; }
+  const [, o] = await Promise.all([requireSession(), orgState()]);
+  return o;
+});
+
+/**
+ * The crew (card 304): agents, their live saved setups, the schedule's chains, the org chart, and the
+ * last 60 days of runs (newest first, at most 1000), which say what a run costs and what is live.
+ * One round, after the sign-in check like every piece.
+ */
+export const getRoster = cache(async (): Promise<Roster> => {
+  await cookies();
   const now = Date.now();
-  const empty = (tz: string): Floor => ({ ok: false, now, tz, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, org: { on: false, at: null, by: null, known: false }, chart: null });
-  if (!h.supabase) { await requireSession(); return { ...empty(DEFAULT_TZ), problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." }; }
+  const empty: Roster = { ok: false, now, agents: {}, runs: [], spentToday: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, chart: null };
+  if (!health().supabase) { await requireSession(); return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." }; }
   const since = new Date(now - 60 * 864e5).toISOString();
-  // one round (card 302, docs/speed.md): the sign-in check and the time zone go out with every other read.
-  // The org comes from the signed session cookie, so the reads need not wait for the check; if the check
-  // fails it redirects before anything is drawn, and what was read is thrown away.
-  const [, tz, a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, set, orgSwitch] = await Promise.all([
+  // one round (card 302): the org comes from the signed session cookie, so the reads need not wait for the check;
+  // if the check fails it redirects before anything is drawn, and what was read is thrown away
+  const [, a, r, defs, flowRow, org] = await Promise.all([
     requireSession(),
-    orgTz(),
-    // role, icon, hue, manual_only and created_at come with the roster migration; the older shape until then
     // in_org comes with the org switch migration, role, icon, hue, manual_only and created_at with the roster one; older shapes until then
     db().from("agents").select("id, name, model, enabled, daily_budget_usd, role, icon, hue, manual_only, in_org, created_at")
       .then((x) => (x.error ? db().from("agents").select("id, name, model, enabled, daily_budget_usd, role, icon, hue, manual_only, created_at") : x))
       .then((x) => (x.error ? db().from("agents").select("id, name, model, enabled, daily_budget_usd") : x)),
     db().from("agent_runs").select(RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
-    db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
-    // drafts still with their lead (slice 4) aren't waiting on the owner yet; the older shape until that migration is applied
-    db().from("approvals").select("id, agent_actions(tool)", { count: "exact" }).eq("status", "pending").or("review_status.is.null,review_status.neq.waiting").limit(500)
-      .then((x) => (x.error ? db().from("approvals").select("id, agent_actions(tool)", { count: "exact" }).eq("status", "pending").limit(500) : x)),
-    db().from("proposals").select("kind", { count: "exact" }).eq("state", "pending").limit(500),
-    openJobsThisWeek().catch(() => []),
-    proposedLessons(),
     db().from("agent_defs").select("agent_id, version, spec").eq("active", true),
     db().from("crew_flow").select("flow").eq("active", true).maybeSingle(),
     loadOrg().catch(() => null),
-    getHealth(),
-    orgState(),
   ]);
-  Object.assign(h, set);
-  if (a.error || r.error) return { ...empty(tz), problem: `Supabase: ${(a.error ?? r.error)?.message}` };
+  if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];
   const agents = Object.fromEntries(rows.map((x) => [x.id, { id: x.id, name: x.name, model: x.model, enabled: x.enabled, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
   const all = (r.data ?? []).map(toRun);
@@ -271,9 +286,44 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const tools = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, { label: t.label, kind: t.kind }]));
   const seatTitle = (id: string) => org?.seats.find((x) => x.holder === "agent" && x.agentId === id)?.title ?? null;
   const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, cost: runCostOf(costSpecs[x.id], realCost(runs, x.id)), seatTitle: seatTitle(x.id), chains })));
-  return { ok: true, now, tz, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0,
+  return { ok: true, now, agents, runs, spentToday, grants, liveVersion, ...roster, palette, chart: org };
+});
+
+/** What waits on the owner (card 304): the counts behind the Desk's list and the Approvals badge. One round. */
+export const getCounts = cache(async (): Promise<Counts> => {
+  await cookies();
+  const none: Counts = { photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], jobsForYou: [], lessonsWaiting: {} };
+  if (!health().supabase) { await requireSession(); return none; }
+  const [, ph, ap, pp, jobsForYou, lessonsWaiting] = await Promise.all([
+    requireSession(),
+    db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
+    // drafts still with their lead (slice 4) aren't waiting on the owner yet; the older shape until that migration is applied
+    db().from("approvals").select("id, agent_actions(tool)", { count: "exact" }).eq("status", "pending").or("review_status.is.null,review_status.neq.waiting").limit(500)
+      .then((x) => (x.error ? db().from("approvals").select("id, agent_actions(tool)", { count: "exact" }).eq("status", "pending").limit(500) : x)),
+    db().from("proposals").select("kind", { count: "exact" }).eq("state", "pending").limit(500),
+    openJobsThisWeek().catch(() => []),
+    proposedLessons(),
+  ]);
+  return { photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0,
     approvalTools: ap.error ? [] : (ap.data ?? []).map((x) => toolOfCard(x.agent_actions)), proposalKinds: pp.error ? [] : (pp.data ?? []).map((x) => String(x.kind)),
-    jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette, org: orgSwitch, chart: org };
+    jobsForYou, lessonsWaiting };
+});
+
+/** The crew with what is set up and the time zone (card 304): for pages that show agents and tools but nothing waiting on the owner. */
+export type CrewFloor = Roster & { health: Record<IntegrationId, boolean>; tz: string };
+export const getCrewFloor = cache(async (): Promise<CrewFloor> => {
+  const [roster, h, tz] = await Promise.all([getRoster(), getHealth(), getTz()]);
+  return { ...roster, health: h, tz };
+});
+
+/**
+ * Everything at once, for the pages that show all of it (the frame, the Desk, an agent, a run's replay, Crew):
+ * the pieces above in one round, each read once per request. A page that shows less asks for its pieces by
+ * name instead (card 304, check:speed rule 9).
+ */
+export const getFloor = cache(async (): Promise<Floor> => {
+  const [roster, counts, h, tz, org] = await Promise.all([getRoster(), getCounts(), getHealth(), getTz(), getOrgSwitch()]);
+  return { ...roster, ...counts, health: h, tz, org };
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -463,7 +513,7 @@ export async function getMemory(agentId: string): Promise<{ tab: MemoryTab | nul
   if (!health().supabase) return { tab: null, problem: "Supabase isn’t set up." };
   try {
     // every agent with a live version loads its memory (docs/agent-roster.md)
-    const loads = !!(await getFloor()).byId[agentId];
+    const loads = !!(await getRoster()).byId[agentId];
     const [view, load] = await Promise.all([memoryView(agentId), loads ? loadMemory(agentId) : Promise.resolve(null)]);
     // an agent that doesn't load memory yet still shows whether its linked pages can be read
     const pages = load?.pages ?? await readPages(view.rows.filter((r) => r.agent_id === agentId && r.state === "kept"), DEFAULT_BUDGET);
@@ -518,7 +568,7 @@ export async function getChainRuns(runId: string): Promise<{ chainId: string; ke
   const { data } = await db().from("agent_runs").select("id, agent_id, chain_step, status, started_at, ended_at, cost_usd, summary, error").eq("chain_id", me.chain_id).order("chain_step").order("started_at");
   let name = me.chain_key as string, steps: string[] = [];
   try {
-    const flow = await loadFlow((await getFloor()).palette);
+    const flow = await loadFlow((await getRoster()).palette);
     const c = flow.flow.chains.find((x) => x.key === me.chain_key);
     if (c) { name = c.name; steps = c.steps.map((s) => s.agent); }
   } catch { /* the flow can't be read: show the runs alone */ }

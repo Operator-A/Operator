@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getFloor } from "@/dashboard/data";
+import { getCrewFloor } from "@/dashboard/data";
 import { CONNECTIONS, isSetUp, toolsOf } from "@/dashboard/connections";
 import { listCustomServers, mcpStatus } from "@/integrations/mcp";
 import { KNOWN_SERVERS, knownByAddress, knownServer, serviceKey } from "@/core/connector-rules";
@@ -23,7 +23,7 @@ import { when } from "@/dashboard/format";
 const pill = (bg: string, fg: string) => ({ background: bg, color: fg });
 
 export default async function FindATool({ searchParams }: { searchParams: Promise<{ for?: string; agent?: string }> }) {
-  const f = await getFloor(); // checks the login
+  const f = await getCrewFloor(); // checks the login; only the crew, tools and time zone (card 304)
   const sp = await searchParams;
   const [proposal, customs, requests, exports] = await Promise.all([
     sp.for ? getProposal(sp.for).catch(() => null) : Promise.resolve(null),

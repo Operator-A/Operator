@@ -11,7 +11,7 @@ import { loadCaps } from "@/core/gateway";
 import { addDepartmentRule, editMemory, forgetMemory } from "@/core/memory";
 import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks, unseat } from "@/core/org";
 import type { ActionResult } from "./actions";
-import { getFloor, asRole } from "./data";
+import { getRoster, asRole } from "./data";
 import { controlsOn } from "./session";
 import { saveBusiness } from "@/core/business";
 import { saveSettingsFields } from "@/core/settings";
@@ -74,7 +74,7 @@ export async function orgSetHolder(seatId: string, who: string): Promise<ActionR
     if (!(await knownAgent(id))) return { ok: false, text: "Unknown agent." };
     await setHolder(seatId, "agent", id);
     await audit(me, "set_seat_holder", seatId, { who });
-    return done(`${(await getFloor()).byId[id]?.name ?? "The agent"} sits there now. Its old seat, if it had one, is open.`);
+    return done(`${(await getRoster()).byId[id]?.name ?? "The agent"} sits there now. Its old seat, if it had one, is open.`);
   } catch (e) { return fail(e); }
 }
 
