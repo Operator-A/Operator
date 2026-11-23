@@ -288,6 +288,14 @@ async function main() {
   assert.match(JSON.stringify(lastUser), /Call finish now/);
   assert.equal(rc12.finished, false);
   assert.match(rc12.summary, /web limit/);
+  // the cost check prices what the last turn sent at the cache-read rate once caching is working: a run whose
+  // context is large but cached isn't stopped early by a worst case that charges the whole context at full price
+  const cached = readSpec({ name: "c", directive: "x", model: "claude-sonnet-5-5", tools: ["mercury_balances"], limits: { maxSteps: 8, maxCostUsd: 0.3 } }).spec;
+  const big = (content: Block[], stop = "tool_use") => ({ ...reply(content, stop), usage: { input_tokens: 500, cache_read_input_tokens: 120000, cache_creation_input_tokens: 2000, output_tokens: 200 } });
+  const rCache = await runExplore(cached, { agentId: "scratch", client: fake((t) => t < 6
+    ? big([{ type: "tool_use", id: `b${t}`, name: "mercury_balances", input: {} }])
+    : big([{ type: "tool_use", id: "bf", name: "finish", input: { result: "Done." } }])) });
+  assert.equal(rCache.finished, true, rCache.summary);
   // a run that doesn't finish delivers none of its rows
   delivered.length = 0;
   await runExplore(rowan, { agentId: "wholesale_hunter", tools: lTools, deliver: true, client: fake(() => reply([{ type: "tool_use", id: `l${n}`, name: "report_leads", input: leadIn }])) });

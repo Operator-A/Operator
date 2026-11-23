@@ -40,7 +40,8 @@ from the tools the spec grants, code runs them, hard limits stop it.
   (`SAFETY`) goes first, then the directive, then memory. Only granted tools are offered and only
   granted tools run. Each result goes back inside `<tool_data trusted="yes|no">`, cut to 12,000
   characters. Before every model call the runner works out the worst that turn could cost and stops
-  if it would pass the cost limit; after the step limit the model gets one turn to finish. A run that
+  if it would pass the cost limit (once the prompt cache is working, what the last turn sent is priced at
+  the cache-read rate and only what was added since at the cache-write rate); after the step limit the model gets one turn to finish. A run that
   hits a limit ends `ok` with a summary saying where it stopped and `metrics.finished = 0` (the cost
   is still recorded against the budget). Every model turn and tool call is saved in `run_steps`.
 - **Scratch agent**: migration `20261113120000_agent_builder_runner.sql` adds `agent_defs`,

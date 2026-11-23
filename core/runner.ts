@@ -252,7 +252,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   const actions: StagedAction[] = [];
   const held: Record<string, Record<string, string | number>[]> = {};
   const reports: { tool: string; ok: boolean; note: string }[] = [];
-  let tokensIn = 0, tokensOut = 0, spent = 0, toolCalls = 0, customCalls = 0, lastIn = 3000;
+  let tokensIn = 0, tokensOut = 0, spent = 0, toolCalls = 0, customCalls = 0, lastIn = 3000, lastOut = 0, lastAdded = 3000, lastCached = false;
   // the most one model turn may write (card 200): the call and the cost check before it use the same number
   const maxOut = Math.min(MAX_OUT, Math.max(1000, Math.round(opts.maxOut ?? MAX_OUT)));
   let cited: unknown = null;
@@ -397,7 +397,10 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
     let capStop = false;
     for (let turn = 0; turn < spec.limits.maxSteps + 4; turn++) {
       // hard stop on cost: the worst this next turn could cost, before it is sent
-      const worst = costUsd(spec.model, lastIn + 3000, maxOut);
+      // after a cached turn, everything the last turn sent is read back from the cache at a tenth of the price;
+      // only what was added since (its reply and tool results, counted at the cache-write rate) is new
+      const added = lastOut + lastAdded + 1000;
+      const worst = lastCached ? costUsd(spec.model, lastIn + added, maxOut, 0, { read: lastIn, write: added }) : costUsd(spec.model, lastIn + 3000, maxOut);
       if (spent + worst > spec.limits.maxCostUsd) { stopped = `the $${spec.limits.maxCostUsd.toFixed(2)} cost limit`; break; }
       const t0 = Date.now();
       const { res, tin, tout, c } = await span("model_call", { "operator.agent": opts.agentId, "operator.run": opts.runId, "operator.model": spec.model }, async (set) => {
@@ -417,7 +420,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
         set({ "operator.model": billed, "operator.tokens_in": tin, "operator.tokens_out": tout, "operator.cost_usd": c, "operator.status": res.stop_reason ?? "unknown" });
         return { res, tin, tout, c };
       });
-      tokensIn += tin; tokensOut += tout; spent += c; lastIn = tin;
+      tokensIn += tin; tokensOut += tout; spent += c; lastIn = tin; lastOut = tout; lastCached = (res.usage.cache_read_input_tokens ?? 0) + (res.usage.cache_creation_input_tokens ?? 0) > 0;
       const text = res.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n").trim();
       step({ kind: "model", output: text || undefined, ok: true, tokensIn: tin, tokensOut: tout, costUsd: c, ms: Date.now() - t0 });
       // web search and fetch ran on Claude's side inside that turn: one step each for Replay, counted against the per-run cap
@@ -467,6 +470,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
         results.push({ type: "tool_result", tool_use_id: call.id, content: r.content, ...(r.ok ? {} : { is_error: true }) });
       }
       capped.forEach((id) => capNoted.add(id));
+      lastAdded = Math.ceil(JSON.stringify(results).length / 3.5);
       messages.push({ role: "user", content: capNotes.length ? [...results, { type: "text" as const, text: capNotes.join("\n") }] : results });
     }
     if (result == null && !stopped) stopped = "the turn limit";

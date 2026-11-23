@@ -60,7 +60,7 @@ assert.ok(!/https?:|Shopify|Klaviyo|Mercury/.test(SETUP_HANDOFF) && SETUP_HANDOF
   assert.ok(SETUP_MAX_OUT >= 4000 && SETUP_MAX_OUT < 8000, "room for thinking and a long design call, below the runner's 8000");
   const runner = read("core/runner.ts"), setup = read("core/setup.ts");
   assert.match(runner, /cache_control: \{ type: "ephemeral" \}/);
-  assert.match(runner, /const worst = costUsd\(spec\.model, lastIn \+ 3000, maxOut\)/, "the cost check uses the same output limit as the call");
+  assert.match(runner, /const worst = lastCached \? costUsd\(spec\.model, lastIn \+ added, maxOut, 0, \{ read: lastIn, write: added \}\) : costUsd\(spec\.model, lastIn \+ 3000, maxOut\)/, "the cost check uses the same output limit as the call");
   assert.match(runner, /max_tokens: maxOut,/);
   assert.match(runner, /costUsd\(billed, tin, tout, searches, cacheTokens\(res\.usage\)\)/);
   assert.match(setup, /maxOut: SETUP_MAX_OUT/);
