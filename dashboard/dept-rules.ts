@@ -38,3 +38,7 @@ export function headAgentId(org: Org, deptId: string): string | null {
   return h?.holder === "agent" ? h.agentId : null;
 }
 
+
+/** Each department's colour, by its place on the chart (the Crew canvas uses the same list). */
+export const DEPT_HUES = ["#AEB8FF", "#FFC9B8", "#BFEFDD", "#F5D98A", "#F6B8C9"] as const;
+export const deptHue = (index: number) => DEPT_HUES[((index % DEPT_HUES.length) + DEPT_HUES.length) % DEPT_HUES.length];

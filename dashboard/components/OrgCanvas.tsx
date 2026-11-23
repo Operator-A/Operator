@@ -4,6 +4,7 @@
 // travels up its line as a pulse. Opening a department clears the rest away and shows what its
 // agents last did. Read only: it calls no action, and every box and line comes from
 // dashboard/org-canvas.ts.
+import { DEPT_HUES } from "@/dashboard/dept-rules";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -11,7 +12,7 @@ import { PAD, SPINE, defaultOpen, deptBox, layoutCanvas, moveLines, seatName, te
 import { Icon } from "./Icon";
 import { DeptLimits } from "./orgBits";
 
-const HUES = ["#AEB8FF", "#FFC9B8", "#BFEFDD", "#F5D98A", "#F6B8C9"];
+const HUES = DEPT_HUES;
 const RUN_COLOR = { ok: "--lc-report", failed: "--lc-fail", running: "--lc-handoff" } as const;
 
 interface Node { x: number; y: number; tx: number; ty: number; px: number; py: number; hw: number; hh: number; ox: number; oy: number; rides: string | null; show: boolean; amp: number; p1: number; p2: number; f1: number; f2: number; placed: boolean }

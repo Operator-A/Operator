@@ -1,6 +1,7 @@
 // An approval card's parts (docs/department-pages.md, slice 1): what each kind of change shows, the
 // lead's note, the department tag, and the whole card. The Approvals page and a department's Approvals
 // tab draw the same card, so approving in either place is the same tap.
+import Link from "next/link";
 import { approve, reject } from "@/dashboard/actions";
 import type { ApprovalItem, ApprovalsView, ReactRules } from "@/dashboard/data";
 import type { CrewMember } from "@/dashboard/crew";
@@ -249,10 +250,46 @@ export function DeptTag({ i, view }: { i: ApprovalItem; view: ApprovalsView }) {
 
 const NO_RULES: ReactRules = { deptName: null, agent: [], department: [], crew: [] };
 
-/** One card waiting on an approver: who made it, what it changes, Approve and Reject. */
-export function ApprovalCard({ i, view, byId, tz, rules }: { i: ApprovalItem; view: ApprovalsView | null; byId: Record<string, CrewMember>; tz: string; rules: Record<string, ReactRules> }) {
+/**
+ * One card waiting on an approver: who made it, what it changes, Approve and Reject. The department page
+ * draws it in the approved mockup's look: `chat` under the run that staged it, `tab` on its Approvals tab.
+ * Every look binds the same approve and reject actions, so approving anywhere is one path.
+ */
+export function ApprovalCard({ i, view, byId, tz, rules, look = "page", chatHref }: { i: ApprovalItem; view: ApprovalsView | null; byId: Record<string, CrewMember>; tz: string; rules: Record<string, ReactRules>; look?: "page" | "chat" | "tab"; chatHref?: string }) {
   const a = byId[i.agent_id];
   const name = a?.name ?? view?.names[i.agent_id] ?? i.agent_id;
+  const buttons = (
+    <div className="dp-btns">
+      <ActionButton className="dp-btn go" action={approve.bind(null, i.id)}>Approve</ActionButton>
+      <RejectButton reject={reject.bind(null, i.id)} agentName={name} rules={rules[i.agent_id] ?? NO_RULES} label="Not this" className="dp-btn" />
+    </div>
+  );
+  const notes = (
+    <>
+      {view && <LeadBits i={i} view={view} tz={tz} />}
+      {i.brain_note && <span className="dp-note">{i.brain_note}</span>}
+    </>
+  );
+  if (look === "chat") return (
+    <div className="dp-glass dp-card">
+      <span className="dp-card-k amber">● Waiting for your OK</span>
+      <h4>{i.title}</h4>
+      <div className="dp-draft"><Change i={i} /></div>
+      {buttons}
+      {i.reasoning && <span className="dp-note">{i.reasoning}</span>}
+      {notes}
+    </div>
+  );
+  if (look === "tab") return (
+    <div className="dp-ap">
+      <div className="dp-ap-h"><b>{name}</b>{a?.role ? `${a.role} · ` : ""}{when(i.created_at, tz)}<span className="kind">{KIND_LABEL[i.tool] ?? "Mercury change"}</span></div>
+      <h4>{i.title}</h4>
+      <div className="dp-draft"><Change i={i} /></div>
+      {buttons}
+      <span className="dp-note">{i.reasoning}{chatHref && <>{i.reasoning ? " " : ""}<Link href={chatHref} style={{ fontWeight: 600, color: "var(--ink2)", textDecoration: "underline" }}>See it in the chat</Link></>}</span>
+      {notes}
+    </div>
+  );
   return (
     <div className="card" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22, padding: 22 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

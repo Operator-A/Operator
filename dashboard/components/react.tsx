@@ -115,7 +115,7 @@ export function ReactBar({ name, rules, save, current, compact, disabled, why }:
  * Reject on an approval card. Words are optional; when given they save as a rule in the owner's words,
  * straight away, for whoever he picks (the same picker as Not this on a run).
  */
-export function RejectButton({ reject, agentName, rules }: { reject: (reason: string, scope: Scope, keep: ReactKeep, replaces: string | null, kind: RejectKind) => Promise<ActionResult>; agentName: string; rules: ReactRulesView }) {
+export function RejectButton({ reject, agentName, rules, label = "Reject", className = "btn ghost" }: { reject: (reason: string, scope: Scope, keep: ReactKeep, replaces: string | null, kind: RejectKind) => Promise<ActionResult>; agentName: string; rules: ReactRulesView; label?: string; className?: string }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<RuleDraft>(blank);
   const [kind, setKind] = useState<RejectKind | null>(null);
@@ -129,7 +129,7 @@ export function RejectButton({ reject, agentName, rules }: { reject: (reason: st
   });
   return (
     <>
-      <button className="btn ghost" disabled={busy} onClick={() => setOpen(true)}>{busy ? "Working…" : "Reject"}</button>
+      <button className={className} disabled={busy} onClick={() => setOpen(true)}>{busy ? "Working…" : label}</button>
       {open && (
         <div className="modal-bg" onClick={busy ? undefined : () => setOpen(false)}>
           <div className="modal" role="dialog" aria-modal="true" aria-label="Reject" onClick={(e) => e.stopPropagation()}>

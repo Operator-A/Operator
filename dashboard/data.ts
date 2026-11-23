@@ -439,6 +439,8 @@ export interface ApprovalItem {
   preview: { date?: string; merchant?: string; amount_usd?: number; receipt_path?: string | null; category?: string | null; note?: string | null; charge?: string; to?: string; subject?: string; body?: string; list?: string; preview_text?: string; title?: string; slot?: string; minutes?: number; record?: string; tags?: string[]; from?: number; available?: number; change?: number; reason?: string; copy?: { field: string; before: string; after: string }[]; items?: number | null; carrier?: string; tracking?: string; notify?: boolean; percent?: number; uses?: number; whole?: boolean; refund_items?: string[] | null; amount?: string; refunded_before?: string; starts?: string; ends?: string; order?: string; deal?: string; stage?: string; ad?: string; result?: string; period?: string; why?: string; customer?: string; location?: string; currency?: string; lines?: { description: string; amount: number }[]; total?: string; days_until_due?: number; memo?: string | null };
   /** The gateway tool: a Mercury change or a Gmail draft. */
   tool: string;
+  /** The run that staged it, so a department's chat shows the card under that run (slice 3). */
+  run_id: string | null;
   /** A 10-minute signed link to the receipt file, so the owner can check it before approving. */
   receipt_url: string | null;
   action_status: string;
@@ -466,7 +468,7 @@ export interface ApprovalsView {
 }
 
 /** The approvals queue, approved changes waiting to be applied, recent decisions and the gateway log. Null until the tables exist. */
-const AP_COLS = "id, action_id, agent_id, title, reasoning, status, created_at, decided_at, preview, agent_actions(status, reason, tool)";
+const AP_COLS = "id, action_id, agent_id, title, reasoning, status, created_at, decided_at, preview, agent_actions(status, reason, tool, run_id)";
 const AP_REVIEW = "department_id, reviewer_agent_id, review_status, review_note, review_due";
 type ApRow = Pick<ApprovalItem, "id" | "action_id" | "agent_id" | "title" | "reasoning" | "status" | "created_at" | "decided_at"> & { preview: unknown; agent_actions: unknown } & Partial<Pick<ApprovalItem, "department_id" | "reviewer_agent_id" | "review_status" | "review_note" | "review_due" | "brain_note">>;
 
@@ -484,14 +486,14 @@ export async function getApprovals(): Promise<ApprovalsView | null> {
   if (ap.error || log.error) return null;
   const org = await loadOrg().catch(() => null);
   const items: ApprovalItem[] = await Promise.all(((ap.data ?? []) as unknown as ApRow[]).map(async (r) => {
-    const act = (Array.isArray(r.agent_actions) ? r.agent_actions[0] : r.agent_actions) as { status: string; reason: string | null; tool: string } | null;
+    const act = (Array.isArray(r.agent_actions) ? r.agent_actions[0] : r.agent_actions) as { status: string; reason: string | null; tool: string; run_id?: string | null } | null;
     const preview = (r.preview ?? {}) as ApprovalItem["preview"];
     let receipt_url: string | null = null;
     if (preview.receipt_path && r.status === "pending") {
       const { data } = await db().storage.from("receipts").createSignedUrl(preview.receipt_path, 600);
       receipt_url = data?.signedUrl ?? null;
     }
-    return { id: r.id, action_id: r.action_id, agent_id: r.agent_id, title: r.title, reasoning: r.reasoning, status: r.status, created_at: r.created_at, decided_at: r.decided_at, preview, receipt_url, action_status: act?.status ?? "?", action_reason: act?.reason ?? null, tool: act?.tool ?? "",
+    return { id: r.id, action_id: r.action_id, agent_id: r.agent_id, title: r.title, reasoning: r.reasoning, status: r.status, created_at: r.created_at, decided_at: r.decided_at, preview, receipt_url, action_status: act?.status ?? "?", action_reason: act?.reason ?? null, tool: act?.tool ?? "", run_id: act?.run_id ?? null,
       department_id: r.department_id ?? null, reviewer_agent_id: r.reviewer_agent_id ?? null, review_status: r.review_status ?? null, review_note: r.review_note ?? null, review_due: r.review_due ?? null, brain_note: r.brain_note ?? null };
   }));
   return {
