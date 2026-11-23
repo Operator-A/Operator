@@ -170,8 +170,10 @@ assert.ok(plan.wake.find((w) => w.id === SETUP_AGENT)?.firstRun, "Avery's mornin
   assert.match(sf, /const ids = \[\.\.\.\(isTry \? \[\] : \[tap\.agentId\]\)/, "a designed agent is never put on duty by the first job: it has no approved playbook (card 188)");
   assert.match(sf, /isTry \? await startTry\(tap\.agentId, who\.name\) : await startRun\(/);
   assert.match(sf, /markFirstJob\(tap\.agentId, isTry \? "try" : "playbook"\)/);
-  assert.match(acts, /async function tryOnce[\s\S]*withRun\(agentId, "preview"[\s\S]*afterRun\(agentId, rid, got\)/, "a try is a preview run through withRun, and its routine is drafted by code after it");
-  assert.match(acts, /async function startTry[\s\S]*tryOnce\(agentId, t, true, markStarted\)/, "the first try explores fresh, in the background");
+  const tries = readFileSync("core/agent-try.ts", "utf8");
+  assert.match(tries, /async function tryOnce[\s\S]*withRun\(agentId, "preview"[\s\S]*afterRun\(agentId, rid, got\)/, "a try is a preview run through withRun, and its routine is drafted by code after it");
+  assert.match(tries, /async function startTry[\s\S]*tryOnce\(agentId, target, fresh, markStarted\)/, "a try can start in the background");
+  assert.match(acts, /async function startTry[\s\S]*startTryRun\(agentId, t, true\)/, "the first try explores fresh, in the background");
   const card = readFileSync("dashboard/components/firstJob.tsx", "utf8");
   assert.match(card, /Start its first try/);
   assert.match(card, /href=\{`\/build\/\$\{v\.agentId\}`\}[^>]*>Review its routine/, "after the try, the founder reviews its routine on its page");

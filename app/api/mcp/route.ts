@@ -4,8 +4,10 @@ import { runTool, verifyAccess } from "@/core/operator-mcp";
 
 // OPERATOR's own MCP server (docs/operator-mcp.md): Streamable HTTP with JSON answers, one message per
 // POST. Every call carries a token from OPERATOR's sign-in; it names one member in one business, and the
-// member is read again on every call. Slice 1 offers read tools only.
+// member is read again on every call. A try keeps running after its answer (after()), so the route gets
+// the same time as the builder's pages.
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const origin = (req: Request) => originOf(req.url, req.headers.get("x-forwarded-host"), req.headers.get("x-forwarded-proto"));
 
