@@ -9,6 +9,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { atLeast, type Role } from "@/core/roles";
 import { scrubSecrets } from "@/core/mcp-rules";
+import { EVENT_CHOICES } from "@/core/draft-starts-rules";
 
 /** Where Claude reaches the server, and what the sign-in calls it. */
 export const MCP_PATH = "/api/mcp";
@@ -106,13 +107,20 @@ export const OP_TOOLS: readonly OpTool[] = [
       claude_tools: text(400, "runs_on claude: the Claude connectors it uses, comma separated (at most 8), like Google Drive, Slack. Shown in OPERATOR as labels; never granted there."),
     }, additionalProperties: false, required: ["name", "job", "directive", "good_result"] } },
   { name: "update_agent", title: "Change an agent", kind: "draft", min: "owner",
-    description: "Saves a change to an agent as a new draft version. What runs today doesn't change until a person tries the draft and goes live in OPERATOR; Go live lists every action the draft adds. Read the agent with get_agent first and pass the version you read; if it changed since, read it again. Only the fields you pass change. Actions change only through add_actions and drop_actions; reports and tools from servers the owner added carry over as they are.",
+    description: "Saves a change to an agent as a new draft version. What runs today doesn't change until a person tries the draft and goes live in OPERATOR; Go live lists every action the draft adds, and any change to when it runs. Read the agent with get_agent first and pass the version you read; if it changed since, read it again. Only the fields you pass change. Actions change only through add_actions and drop_actions; reports and tools from servers the owner added carry over as they are.",
     inputSchema: { type: "object", properties: {
       agent: AGENT_ARG,
       based_on_version: { type: "integer", minimum: 1, maximum: 100000, description: "The newest version get_agent showed (the draft's when there is one, else the live one)." },
       name: text(80, "A new name."), ...SPEC_PROPS,
       add_actions: text(400, `Action ids from list_tools to give it, comma separated (at most ${MAX_DRAFT_ACTIONS} in all): only ones marked any agent and connected. They wait in the draft until a person goes live in OPERATOR, and each send is still an approval card.`),
       drop_actions: text(400, "Action ids it has to take away, comma separated."),
+      days: text(40, "When it runs, with time: daily, weekdays, mondays, or day names like mon, wed, fri. Applies at Go live."),
+      time: text(5, "With days: the time it runs, 24-hour on a quarter hour, like 08:00, in the business's time zone."),
+      by_hand: { type: "string", enum: ["yes"], description: "yes: it runs only when someone presses Run now (no schedule, no event, not after another agent). Applies at Go live." },
+      start_on_event: { type: "string", enum: [...EVENT_CHOICES], description: "Also start it on this live event, in a chain of its own; none stops that. Applies at Go live; events are capped per hour and day in code." },
+      min_total: { type: "integer", minimum: 0, maximum: 1000000, description: "With start_on_event: only when the order, refund or invoice total is at least this much." },
+      run_after: text(80, "Run it after this agent finishes (its id or name), as the next step of that agent's own chain; none takes it out of chains it doesn't start. Applies at Go live."),
+      after_result: { type: "string", enum: ["ok", "any"], description: "With run_after: ok (default) only when that agent's run worked, any however it went." },
       note: text(300, "What changed and why, in a sentence."),
     }, additionalProperties: false, required: ["agent", "based_on_version"] } },
   { name: "propose", title: "Propose", kind: "draft", min: "owner",

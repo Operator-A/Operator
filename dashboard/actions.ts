@@ -23,7 +23,8 @@ import { approvalDecided, startStep } from "@/core/chain";
 import { orgId, withOrg } from "@/core/tenancy";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, dayWords, type AgentTime, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
-import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
+import { flowWithStarts, readStored, startsWords } from "@/core/draft-starts-rules";
+import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, versionStarts, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { modelDef } from "@/integrations/models";
 import { modelKeysReady, removeRoutine, routineState, saveRoutine } from "@/integrations/mcp";
 import { moveIntoOperator as moveAgentIntoOperator, runsOn } from "@/core/claude-agents";
@@ -712,8 +713,25 @@ export async function goLive(agentId: string, version: number, keep: number[] | 
     const t = await lastTry(agentId, version);
     if (!t) return { ok: false, text: `Try v${version} first. Go live unlocks after a try where every step worked.` };
     if (!t.clean) return { ok: false, text: `Go live is locked: the latest try of v${version} ${t.why}. Try it again.` };
+    // when it starts, if this version carries it (a draft from Claude, docs/operator-mcp.md slice 4): worked
+    // out from today's flow, checked like any flow save, and listed on the confirm with the actions
+    const starts = target.active ? null : readStored(await versionStarts(agentId, version));
+    let plan: { flow: Flow; changed: boolean; manual: boolean; was: number; lines: string[] } | null = null;
+    if (starts) {
+      const [crew, roster] = await Promise.all([loadCrew(), getRoster()]);
+      const fl = await loadFlow(crew);
+      const r = flowWithStarts(fl.flow, crew.manualOnly.has(agentId), agentId, target.spec.name, starts);
+      if ("refuse" in r) return { ok: false, text: `Go live is locked: ${r.refuse}. Save a new draft without that change, or change the schedule on Crew first.` };
+      const manualOnly = new Set(crew.manualOnly);
+      if (r.manual) manualOnly.add(agentId); else manualOnly.delete(agentId);
+      const problems = flowProblems(r.flow, { ids: crew.ids.includes(agentId) ? crew.ids : [...crew.ids, agentId], manualOnly });
+      if (problems.length) return { ok: false, text: `Go live is locked: ${problems.join(" ")}` };
+      const names = Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]));
+      plan = { flow: r.flow, changed: JSON.stringify(r.flow) !== JSON.stringify(fl.flow), manual: r.manual, was: fl.version, lines: startsWords(starts, names) };
+    }
     const looser = target.active ? [] : specLooser(now?.spec ?? null, target.spec);
-    if (looser.length && !confirmed) return { ok: false, text: `Confirm first${looser.length ? `: ${looser.join("; ")}` : ""}.` };
+    const asks = [...looser, ...(plan?.lines ?? [])];
+    if (asks.length && !confirmed) return { ok: false, text: `Confirm first: ${asks.join("; ")}.` };
     const all = await listPlaybooks(agentId);
     const pending = pendingPlaybook(all);
     let routine = "";
@@ -722,9 +740,19 @@ export async function goLive(agentId: string, version: number, keep: number[] | 
       routine = ` Routine v${v} approved.`;
     } else if (!activePlaybook(all)) return { ok: false, text: "No routine yet: try it fresh, so code can save the calls that worked." };
     if (!target.active) await activateSpecVersion(agentId, version);
+    let sched = "";
+    if (plan) {
+      // like setAgentTime: allow schedules first, then the flow; by hand: the flow first, then mark it by hand
+      try {
+        if (!plan.manual) { const { error } = await db().from("agents").update({ manual_only: false }).eq("id", agentId); if (error) throw new Error(error.message); }
+        if (plan.changed) await saveFlowVersion(plan.flow, `${target.spec.name}: from v${version}`.slice(0, 300), me.email, plan.was);
+        if (plan.manual) { const { error } = await db().from("agents").update({ manual_only: true }).eq("id", agentId); if (error) throw new Error(error.message); }
+        sched = ` ${plan.lines.join(". ")}.`;
+      } catch (e) { sched = ` Its schedule didn’t change: ${e instanceof Error ? e.message : String(e)}. Set it on Crew.`; }
+    }
     revalidatePath("/", "layout");
-    await audit(me, "go_live", agentId, { version, playbook: routine ? "approved" : "unchanged" });
-    return { ok: true, text: `v${version} is live.${routine} On or off duty hasn’t changed.` };
+    await audit(me, "go_live", agentId, { version, playbook: routine ? "approved" : "unchanged", ...(plan ? { starts: plan.lines } : {}) });
+    return { ok: true, text: `v${version} is live.${routine}${sched} On or off duty hasn’t changed.` };
   } catch (e) { return fail(e); }
 }
 

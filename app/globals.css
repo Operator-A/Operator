@@ -437,6 +437,9 @@ h1, h2, h3, p { margin: 0; }
 .ag .picker button:disabled { opacity: .55; cursor: default; }
 .ag-draft { border-radius: 14px; padding: 12px; background: var(--report-soft); display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.5; }
 .ag-draft b { font-size: 13.5px; }
+.ag-golive { display: flex; flex-direction: column; gap: 2px; }
+.ag-golive ul { margin: 0; padding-left: 18px; }
+.ag-golive .lbl { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--mut); }
 .ag-mem { display: flex; gap: 8px; align-items: center; font-size: 13px; line-height: 1.45; padding: 8px 10px; border-radius: 12px; background: var(--card); border: 1px solid var(--bd); }
 .ag-mem > span { flex: 1; min-width: 0; }
 .ag-mem small { font-size: 11px; color: var(--mut); font-weight: 600; }

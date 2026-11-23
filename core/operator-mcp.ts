@@ -14,7 +14,7 @@ import { withOrg } from "@/core/tenancy";
 import { memberById } from "@/core/members";
 import { atLeast, type Role } from "@/core/roles";
 import { agentNames, headOf, loadOrg, monthSpendByAgent, runStats, seatOf, setHolder, type Org } from "@/core/org";
-import { NO_MODEL_KEYS, createBuiltAgent, draftOf, listSpecVersions, modelReady, readSpec, saveSpecVersion, specLooser, specModelOk, type AgentSpec } from "@/core/agent-spec";
+import { NO_MODEL_KEYS, createBuiltAgent, draftOf, listSpecVersions, versionStarts, modelReady, readSpec, saveSpecVersion, specLooser, specModelOk, type AgentSpec } from "@/core/agent-spec";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { audit } from "@/core/audit";
 import { controlsOn } from "@/core/controls";
@@ -26,6 +26,9 @@ import { NEED_TILE, TILE_BY_ID } from "@/core/tools-step-rules";
 import { fileProposal, listProposals } from "@/core/proposals";
 import { finishRun, markLinked } from "@/core/claude-agents";
 import { promptLine, readClaudeTools, readFinish } from "@/core/routine-rules";
+import { loadCrew } from "@/agents/registry";
+import { flowProblems, loadFlow } from "@/core/flow";
+import { flowWithStarts, readStarts, readStored, startsToday, startsWords } from "@/core/draft-starts-rules";
 import { LIMITS, answerText, draftActions, draftTools, hashesMatch, newToken, nextWindow, staleRead, tokenParts, toolList, type OpTool, type ToolAnswer } from "@/core/operator-mcp-rules";
 
 // ---- Grants
@@ -252,16 +255,19 @@ async function getAgent(origin: string, args: Record<string, string | number>): 
   const f = await findAgent(String(args.agent));
   if ("problem" in f) return { text: f.problem, isError: true };
   const { row, names } = f;
-  const [versions, org] = await Promise.all([listSpecVersions(row.id), loadOrg().catch(() => null)]);
+  const [versions, org, crew] = await Promise.all([listSpecVersions(row.id), loadOrg().catch(() => null), loadCrew()]);
   const active = versions.find((v) => v.active) ?? null, draft = draftOf(versions);
   const where = deptOf(org, row.id);
+  const [flow, drafted] = await Promise.all([loadFlow(crew), draft ? versionStarts(row.id, draft.version) : null]);
+  const pending = readStored(drafted);
   const body = {
     id: row.id, name: names[row.id] ?? row.name, on_duty: row.enabled, daily_budget_usd: Number(row.daily_budget_usd),
     runs_on: row.runs_on === "claude" ? "claude" : "operator", ...(row.runs_on === "claude" ? { claude_tools: row.claude_tools ?? [] } : {}),
     department: where.department, seat: where.seat,
+    starts_today: startsToday(flow.flow, row.id, crew.manualOnly.has(row.id), names),
     live: active ? specView(active) : null,
-    draft: draft ? specView(draft) : null,
-    note: "Going live, duty, schedules and budgets are changed in OPERATOR. Actions (tools of kind action) change through update_agent's add_actions and drop_actions, in a draft. When you change this agent later, say which version you read.",
+    draft: draft ? { ...specView(draft), ...(pending ? { at_go_live: startsWords(pending, names) } : {}) } : null,
+    note: "Going live, duty and budgets are changed in OPERATOR. Actions (tools of kind action) and when it starts (days and time, by_hand, start_on_event, run_after) change through update_agent, in a draft that applies at Go live. A later draft from Claude keeps them; one saved in OPERATOR doesn't. When you change this agent later, say which version you read.",
   };
   return { text: answerText(body, `${origin}/agents/${encodeURIComponent(row.id)}`) };
 }
@@ -427,17 +433,45 @@ async function updateAgent(caller: Caller, origin: string, args: Args): Promise<
   // more than the version it came from. Those actions wait for Go live, which lists them (specLooser).
   const looser = specLooser(base.spec, { ...got.spec, tools: got.spec.tools.filter((x) => !a.added.includes(x)) });
   if (looser.length) return no(`Not saved: that ${looser.join("; ")}. Make that change in OPERATOR.`);
-  if (JSON.stringify(base.spec) === JSON.stringify(got.spec)) return no(`Nothing changed from v${base.version}.`);
-  const v = await saveSpecVersion(id, got.spec, String(args.note ?? "").trim() || "Changed from Claude", byOf(caller));
-  await audit(caller.member, "save_spec", id, { version: v, via: caller.client, ...(a.added.length ? { adds_actions: a.added } : {}), ...(a.dropped.length ? { drops_actions: a.dropped } : {}) });
+  // when it starts (slice 4 part 2): kept on this version only, checked against today's flow now, applied at Go live
+  const rows = await agentRows();
+  const name = f.names[id] ?? f.row.name;
+  const st = readStarts(args, id, (ref) => {
+    const low = ref.trim().toLowerCase();
+    const hit = rows.filter((r) => r.id === ref || (f.names[r.id] ?? r.name).toLowerCase() === low);
+    return hit.length === 1 ? hit[0].id : null;
+  });
+  if ("problem" in st) return no(`Not saved: ${st.problem}.`);
+  // a draft on top of a draft keeps the starts that draft asked for; parts named now replace theirs
+  const carried = !base.active ? readStored(await versionStarts(id, base.version)) : null;
+  const starts = carried || st.starts ? { ...(carried ?? {}), ...(st.starts ?? {}) } : null;
+  if (starts?.when === "by_hand" && ((starts.event && starts.event !== "none") || (starts.after && starts.after !== "none"))) return no("Not saved: an agent that runs only by hand can't also start on an event or after another agent.");
+  let startLines: string[] = [];
+  if (starts) {
+    if (f.row.runs_on === "claude") return no("Not saved: an agent that runs in Claude starts from its routine; set when it runs in OPERATOR.");
+    const crew = await loadCrew();
+    const flow = await loadFlow(crew);
+    const r = flowWithStarts(flow.flow, crew.manualOnly.has(id), id, name, starts);
+    if ("refuse" in r) return no(`Not saved: ${r.refuse}.`);
+    const manualOnly = new Set(crew.manualOnly);
+    if (r.manual) manualOnly.add(id); else manualOnly.delete(id);
+    const problems = flowProblems(r.flow, { ids: crew.ids.includes(id) ? crew.ids : [...crew.ids, id], manualOnly });
+    if (problems.length) return no(`Not saved: ${problems.join(" ")}`);
+    startLines = startsWords(starts, f.names);
+  }
+  if (!st.starts && JSON.stringify(base.spec) === JSON.stringify(got.spec)) return no(`Nothing changed from v${base.version}.`);
+  const v = await saveSpecVersion(id, got.spec, String(args.note ?? "").trim() || "Changed from Claude", byOf(caller), starts);
+  await audit(caller.member, "save_spec", id, { version: v, via: caller.client, ...(a.added.length ? { adds_actions: a.added } : {}), ...(a.dropped.length ? { drops_actions: a.dropped } : {}), ...(startLines.length ? { starts: startLines } : {}) });
   const label = (x: string) => TOOLS[x]?.label ?? x;
   const acts = [
     a.added.length ? ` It adds ${a.added.map(label).join(", ")}: Go live lists each one and asks to confirm, and every send starts as an approval card.` : "",
     a.dropped.length ? ` It takes away ${a.dropped.map(label).join(", ")}.` : "",
+    startLines.length ? ` At Go live: ${startLines.join("; ")}. Until then it keeps today's schedule.` : "",
   ].join("");
   return { text: answerText({
     agent: id, saved_as_draft: v, based_on: base.version,
     ...(a.added.length ? { adds_actions: a.added } : {}), ...(a.dropped.length ? { drops_actions: a.dropped } : {}),
+    ...(startLines.length ? { at_go_live: startLines } : {}),
     note: `Saved as draft v${v}. What runs today hasn't changed: a person tries the draft and goes live in OPERATOR.${acts}`,
   }, `${origin}/agents/${encodeURIComponent(id)}`) };
 }

@@ -14,7 +14,7 @@ the place people decide.
   through the builder's and proposals' own code, and carry the version they were based on.
 - Approving or rejecting cards, Go live, the org switch, granting custom tools, raising caps or budgets,
   vendors, Connections and People are never tools. A tool call written by a model is not a person's tap.
-- Actions (and, in slice 4's second part, when an agent starts) may be put into a **draft** by
+- Actions and when an agent starts may be put into a **draft** by
   `update_agent` (decided 2026-11-23). They change nothing until the owner's Go live, after a clean try, on a
   confirm that lists each one. See "Slice 4: actions and starts in a draft" below.
 
@@ -26,8 +26,8 @@ the place people decide.
    `propose` files a proposal from Claude. Owner only.
 3. **Try it and the move** (done, below): `try_agent` dry runs through `withRun`, and a guide for moving an agent that
    was set up in a Claude project into OPERATOR.
-4. **Actions and starts in a draft** (part 1 built, below): `update_agent` puts actions, and next when the
-   agent starts, into a draft that applies only at the owner's Go live.
+4. **Actions and starts in a draft** (built, below): `update_agent` puts actions and when the agent starts into a
+   draft that applies only at the owner's Go live.
 
 ## Slice 1: connect and read
 
@@ -214,15 +214,36 @@ Spec: "Spec: Claude changes agent actions, triggers and schedules" (Claude Doc).
 - Every action still starts at Draft on the trust ladder, so each send is an approval card.
 - Audit: `save_spec` records `adds_actions` and `drops_actions`.
 
-### Part 2: starts (next)
+### Part 2: when it starts (built)
 
-`days`/`time`, `by_hand`, `start_on_event` and `run_after` on `update_agent`, kept in a new
-`agent_defs.starts` column on the draft version and applied to the crew flow at Go live (`flowProblems`,
-`flowLooser` on the confirm).
+`update_agent` also takes `days` + `time`, `by_hand`, `start_on_event` (+ `min_total`) and `run_after`
+(+ `after_result`). `readStarts` checks them (core/draft-starts-rules.ts).
+
+- **Where it waits**: on that draft version, in `agent_defs.starts` (migration
+  `20270107090000_draft_starts.sql`). The crew flow and `agents.manual_only` don't change. A further draft
+  from Claude on top of it keeps those starts (parts named again replace them); a draft saved in OPERATOR
+  doesn't carry them.
+- **Checked at save**: `flowWithStarts` works out the flow from today's flow, then `flowProblems` checks it
+  (at most 3 agents a chain, no loops, a by-hand agent only in Run chain chains). An agent that runs in Claude
+  can't take starts.
+- **What each start does**: a schedule or by hand goes through `withAgentTime`, as the sheet does. An event
+  makes or replaces the agent's own event chain (`event-<agent>`; event caps unchanged); `none` drops it.
+  `run_after` takes the agent out of every chain it doesn't start, then adds it as the next step of a chain
+  that starts on its own and ends with the other agent (its schedule first), when that has room.
+- **Go live** (`dashboard/actions.ts`): reads the version's starts, works out the flow again from today's,
+  locks Go live if it no longer checks out, and adds each change in words (`startsWords`) to the confirm with
+  `specLooser`'s lines. On confirm it makes the version live, then saves the flow as a new flow version noted
+  "<name>: from v<n>" and sets `manual_only` the way `setAgentTime` does.
+- **Seen**: `get_agent` gives `starts_today` and the draft's `at_go_live`; the agent sheet lists "When it goes
+  live" under a draft.
 
 ### Tests
 
 `npm run check:operator-mcp`: `draftActions` (granted and connected only, no repeats, drop keeps the rest,
 both lists at once refused, at most 8), only `update_agent` takes the action arguments, the server never calls
 `activateSpecVersion`, `goLive`, `setAgentTime` or `setEnabled`, only the named actions skip `specLooser`, and
-Go live asks to confirm added actions.
+Go live asks to confirm added actions. Part 2 adds `readDays`, `readStarts` (every argument and its refusals),
+`flowWithStarts` for a schedule, by hand, an event and its removal, run after (own and shared chains, a full
+chain, nothing to follow) with `flowProblems` on each result and today's flow left untouched, `startsWords`,
+`startsToday`, `readStored`, and the source: the server never saves a flow or `manual_only`, starts are saved
+on the draft, and Go live reads them, locks on a bad flow and lists them on its confirm.

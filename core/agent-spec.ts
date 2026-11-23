@@ -184,14 +184,27 @@ export const draftOf = <V extends { version: number; active: boolean }>(versions
   return top && !top.active && (!active || top.version > active.version) ? top : null;
 };
 
-/** Saves a checked spec as the next version, a draft: what runs doesn't change until it goes live. Returns the new version number. */
-export async function saveSpecVersion(agentId: string, spec: AgentSpec, note: string, by: string): Promise<number> {
+/** The column a version's starts live in (supabase/migrations/20270107090000_draft_starts.sql). */
+export const STARTS_MISSING = "Saving when an agent starts needs the migration 20270107090000_draft_starts.sql applied.";
+
+/**
+ * Saves a checked spec as the next version, a draft: what runs doesn't change until it goes live. Returns
+ * the new version number. `starts` (core/draft-starts-rules.ts) is only ever passed by a draft from Claude.
+ */
+export async function saveSpecVersion(agentId: string, spec: AgentSpec, note: string, by: string, starts: object | null = null): Promise<number> {
   const { data: top, error } = await db().from("agent_defs").select("version").eq("agent_id", agentId).order("version", { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   const version = (top?.version ?? 0) + 1;
-  const ins = await db().from("agent_defs").insert({ agent_id: agentId, version, spec, note: note || null, created_by: by, active: false });
-  if (ins.error) throw new Error(ins.error.message);
+  const ins = await db().from("agent_defs").insert({ agent_id: agentId, version, spec, note: note || null, created_by: by, active: false, ...(starts ? { starts } : {}) });
+  if (ins.error) throw new Error(starts && /starts/.test(ins.error.message) ? STARTS_MISSING : ins.error.message);
   return version;
+}
+
+/** The starts a version carries, unchecked; null when it has none or the column isn't there yet. */
+export async function versionStarts(agentId: string, version: number): Promise<unknown> {
+  const { data, error } = await db().from("agent_defs").select("starts").eq("agent_id", agentId).eq("version", version).maybeSingle();
+  if (error) { if (/starts/.test(error.message)) return null; throw new Error(error.message); }
+  return (data as { starts?: unknown } | null)?.starts ?? null;
 }
 
 /** Makes a version the active one (Go live, or going back to an earlier one). */

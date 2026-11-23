@@ -12,7 +12,8 @@ import { deptRuns } from "@/dashboard/deptFeed";
 import type { FeedRun } from "@/dashboard/dept-feed";
 import { when } from "@/dashboard/format";
 import { nextRuns } from "@/dashboard/schedule";
-import { BUDGET_CEILING, RUN_LIMITS, type AgentSpec } from "@/core/agent-spec";
+import { BUDGET_CEILING, RUN_LIMITS, specLooser, versionStarts, type AgentSpec } from "@/core/agent-spec";
+import { readStored, startsWords } from "@/core/draft-starts-rules";
 import { runsOn } from "@/core/claude-agents";
 import { promptLine } from "@/core/routine-rules";
 import { routineState, type RoutineState } from "@/integrations/mcp";
@@ -27,6 +28,8 @@ export interface SheetData {
   /** The version being worked on, and whether it is a draft waiting on a try and Go live. */
   version: number; draft: boolean; live: number | null;
   tried: { clean: boolean; why: string | null; at: string; runId: string } | null;
+  /** What going live with the draft changes beyond its words: actions and limits it adds, and when it starts (a draft from Claude). */
+  atGoLive: string[];
   days: number[]; time: string; manual: boolean;
   reads: SheetChoice[]; can: SheetChoice[]; models: SheetChoice[];
   budget: number; ceiling: number; monthAtPace: number;
@@ -83,6 +86,11 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
   const can = tools.filter((t) => t.kind === "action" && (t.agents === "granted" || has.has(t.id)))
     .map((t) => ({ id: t.id, label: TOOLS[t.id]?.label ?? t.label, on: has.has(t.id), ready: t.connected && t.agents === "granted", why: !t.connected ? "Not connected" : t.agents !== "granted" ? "Set in code" : undefined }));
   const spent30 = (spend.data ?? []).reduce((n, r) => n + Number(r.cost_usd ?? 0), 0);
+  const drafted = b?.draft ? readStored(await versionStarts(id, b.draft.version).catch(() => null)) : null;
+  const atGoLive = b?.draft ? [
+    ...specLooser(b.active?.spec ?? null, b.draft.spec).map((l) => l.replace(/^./, (m) => m.toUpperCase())),
+    ...(drafted ? startsWords(drafted, Object.fromEntries(Object.values(roster.byId).map((x) => [x.id, x.name]))) : []),
+  ] : [];
   return {
     id, name: a.name, role: a.role, deptId: dept?.id ?? null, deptName: dept?.name ?? null,
     enabled: b?.enabled ?? !!roster.agents[id]?.enabled, next: next ? when(next, tz) : null,
@@ -90,6 +98,7 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
     runs: runs.reverse(),
     spec, version: working?.version ?? 0, draft: !!b?.draft, live: b?.active?.version ?? null,
     tried: b?.tried ? { clean: b.tried.clean, why: b.tried.why, at: b.tried.at, runId: b.tried.runId } : null,
+    atGoLive,
     days: s && s.kind !== "manual" ? daySet(s.kind) : [1, 2, 3, 4, 5], time: s && s.kind !== "manual" && s.time ? s.time : "09:00", manual: !s || s.kind === "manual" || !s.time,
     reads, can,
     models: menu.models.map((m) => ({ id: m.id, label: m.label, on: m.id === spec?.model, ready: m.ready, why: m.ready ? undefined : `Add a ${m.providerName} key on Connections` })),
