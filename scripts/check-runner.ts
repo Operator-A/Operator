@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { withOrg } from "../core/tenancy";
 import { TEST_ORG } from "./lib/test-org";
 import { actionOpenTo, checkInput } from "../core/tools/types";
-import { readSpec, specLooser } from "../core/agent-spec";
+import { NO_MODEL_KEYS, modelReady, readSpec, specLooser } from "../core/agent-spec";
+import { groupModels, modelNote, presets } from "../dashboard/flowSteps";
 import { draftSteps, sameSteps, stepChanges } from "../core/playbook";
 import { runExplore, traceNumbers, type Step } from "../core/runner";
 import { TOOLS } from "../core/tools/catalog";
@@ -34,6 +35,22 @@ async function main() {
   // specs: limits above the ceiling are refused, unknown tools and non-Claude models dropped
   const bad = readSpec({ directive: "x", model: "openai/gpt-6.1-sol", tools: ["klaviyo_lists", "send_money"], limits: { maxSteps: 99, maxCostUsd: 5 } });
   assert.equal(bad.spec.model, "claude-haiku-5-5");
+  // slice 4: any listed model is a valid spec; whether its provider has a key is checked on save and every turn
+  assert.equal(readSpec({ directive: "x", model: "grok-4.3" }).spec.model, "grok-4.3");
+  assert.ok(modelReady("claude-haiku-5-5", NO_MODEL_KEYS), "Claude needs no provider key");
+  assert.ok(!modelReady("grok-4.3", NO_MODEL_KEYS) && modelReady("grok-4.3", { ...NO_MODEL_KEYS, xai: true }));
+  assert.ok(!modelReady("gpt-6.2-sol", { ...NO_MODEL_KEYS, xai: true }), "one provider's key doesn't open another's models");
+  assert.ok(!modelReady("openai/gpt-x", { openai: true, xai: true, google: true }), "an unlisted model never runs");
+  // the picker: grouped by provider with Claude first; presets stay on Claude; the note names who bills and what's lost
+  const pm = MODEL_LIST.map((m) => ({ id: m.id, label: m.label, in: m.in, out: m.out, provider: m.provider, providerName: m.provider === "anthropic" ? "Claude" : m.provider, ready: m.provider === "anthropic", web: m.caps.includes("anthropic-web-search") }));
+  assert.equal(groupModels(pm)[0][0], "Claude");
+  assert.ok(presets(pm).every((x) => x.model.startsWith("claude-")), "Quick, Balanced and Deep stay on Claude");
+  assert.match(modelNote(pm, { model: "claude-sonnet-5-5", tools: [] }), /Claude key or OPERATOR credits/);
+  const gn = modelNote(pm, { model: "grok-4.3", tools: ["web_search"] });
+  assert.match(gn, /Billed by xai to your key/);
+  assert.match(gn, /no working xai key/);
+  assert.match(gn, /run only on Claude/);
+  assert.ok(!/only on Claude/.test(modelNote(pm.map((m) => ({ ...m, ready: true })), { model: "grok-4.3", tools: [] })));
   assert.deepEqual(bad.spec.tools, ["klaviyo_lists"]);
   assert.equal(bad.spec.limits.maxSteps, 12);
   assert.equal(bad.problems.length, 4);

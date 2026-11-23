@@ -23,7 +23,9 @@ import { approvalDecided, startStep } from "@/core/chain";
 import { orgId, withOrg } from "@/core/tenancy";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, DAY_WORDS, type AgentTime, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
-import { BUDGET_CEILING, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
+import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
+import { modelDef } from "@/integrations/models";
+import { modelKeysReady } from "@/integrations/mcp";
 import { dryRunTools, runExplore, type PlaybookStep } from "@/core/runner";
 import { TOOLS } from "@/core/tools/catalog";
 import { customMenu } from "@/core/tools/custom";
@@ -592,10 +594,17 @@ async function customGone(spec: AgentSpec): Promise<string[]> {
   return ids.filter((id) => !on.has(id)).map(() => "a tool from a server you added is no longer turned on (Connections)");
 }
 
+/** A model on another provider whose key isn't saved (or is paused) on Connections > Other models. */
+async function modelGone(spec: AgentSpec): Promise<string[]> {
+  if (modelDef(spec.model)?.provider === "anthropic") return [];
+  const keys = await modelKeysReady().catch(() => NO_MODEL_KEYS);
+  return modelReady(spec.model, keys) ? [] : [`${modelDef(spec.model)?.label ?? spec.model} needs its provider’s key on Connections > Other models`];
+}
+
 /** A draft from the builder, checked against code and, for tools from servers you added, against what is turned on. Problems refuse it; nothing is clamped. */
 async function checkedDraft(draft: unknown, agentId: string): Promise<{ spec: AgentSpec } | { error: string }> {
   const { spec, problems } = readSpec(draft, agentId);
-  const all = [...problems, ...(await customGone(spec))];
+  const all = [...problems, ...(await customGone(spec)), ...(await modelGone(spec))];
   return all.length ? { error: `This draft asks for something code doesn’t offer: ${all.join("; ")}.` } : { spec };
 }
 
@@ -609,7 +618,7 @@ export async function createBuilt(draft: unknown, seatId?: string | null): Promi
   const { me, no } = await asRole("owner"); if (no) return no;
   try {
     const { spec, problems: p0 } = readSpec(draft);
-    const problems = [...p0, ...(await customGone(spec))];
+    const problems = [...p0, ...(await customGone(spec)), ...(await modelGone(spec))];
     if (problems.length) return { ok: false, text: `Not created. This draft asks for something code doesn’t offer: ${problems.join("; ")}.` };
     // a granted action (card 250) is the owner's to give here; an action that names its agents isn't
     if (spec.tools.some((t) => TOOLS[t]?.kind === "action" && TOOLS[t]?.agents !== "granted")) return { ok: false, text: "Not created. A new agent can’t ask for that action: code names which agents may." };

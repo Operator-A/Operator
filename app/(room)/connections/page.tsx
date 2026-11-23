@@ -382,7 +382,7 @@ async function ModelKeysCard({ owner }: { owner: boolean }) {
   return (
     <div className="card" id="models" style={{ gap: 10 }}>
       <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="cpu" size={15} />Other models</span>
-      <span className="ink2" style={{ fontSize: 12.5 }}>Your own key for another AI provider, billed by that provider. Agents can be put on these models once picking a model per agent ships; until then every agent stays on Claude. Picking another model sends that agent’s facts and memory to the provider.</span>
+      <span className="ink2" style={{ fontSize: 12.5 }}>Your own key for another AI provider, billed by that provider. With a key saved, its models show in the builder’s Thinking step under Advanced. Picking another model sends that agent’s job, facts and memory to the provider, and web search stays Claude-only.</span>
       {MODEL_PROVIDERS.map((p, i) => {
         const st = states[i], on = !!st?.connected, paused = on && !!st?.paused;
         return (

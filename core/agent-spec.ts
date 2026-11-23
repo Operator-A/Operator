@@ -3,6 +3,7 @@ import "server-only";
 // directive, which Claude model thinks, the tools it may call and its hard limits. The spec only
 // picks from things in code (the tool list, the model list, the limits below), so a spec is
 // choices, never authority: it can make an agent smaller, never give it a new ability.
+import type { ModelProvider } from "@/core/model-key-rules";
 import { db } from "@/core/db";
 import { modelDef } from "@/integrations/models";
 import { TOOLS } from "@/core/tools/catalog";
@@ -42,8 +43,19 @@ export interface AgentSpec {
 
 export const MAX_DIRECTIVE = 4000;
 
-/** A model on the list whose provider is connected. Only Claude is, until provider keys land (docs/agent-setup.md). */
-export const specModelOk = (id: string) => modelDef(id)?.provider === "anthropic";
+/** A model on the list (docs/agent-setup.md, "Models across providers"). Whether its provider has a key is
+ *  checked where a draft is saved (modelReady) and again at every turn, since a key can be removed later. */
+export const specModelOk = (id: string) => !!modelDef(id);
+
+/** Which other providers have a key saved and not paused (Connections > Other models). */
+export type ModelKeys = Readonly<Record<ModelProvider, boolean>>;
+export const NO_MODEL_KEYS: ModelKeys = { openai: false, xai: false, google: false };
+
+/** Whether a listed model can run for this business: Claude always (its own key or credits), another provider once its key is saved. */
+export const modelReady = (id: string, keys: ModelKeys) => {
+  const m = modelDef(id);
+  return !!m && (m.provider === "anthropic" || keys[m.provider]);
+};
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const NOTION_ID = /^[0-9a-f]{32}$/;
@@ -61,7 +73,7 @@ export function readSpec(raw: unknown, agentId?: string): { spec: AgentSpec; pro
   const directive = str(r.directive, MAX_DIRECTIVE);
   if (!directive) problems.push("the directive is empty");
   let model = str(r.model, 80);
-  if (!specModelOk(model)) { problems.push(`${model || "no model"} is not a Claude model on the list`); model = "claude-haiku-5-5"; }
+  if (!specModelOk(model)) { problems.push(`${model || "no model"} is not a model on the list`); model = "claude-haiku-5-5"; }
   const effort = (EFFORTS as readonly string[]).includes(r.effort as string) ? (r.effort as Effort) : "low";
   const tools: string[] = [];
   for (const id of Array.isArray(r.tools) ? r.tools : []) {

@@ -11,7 +11,7 @@ import type { AgentSpec } from "@/core/agent-spec";
 import type { BuilderMenu, FlowConn, Standard } from "@/dashboard/builder";
 import {
   AFTER_STEPS, STEPS, TOTAL_STEPS, abilityOf, blankSpec, blockedFor, changedSteps, estimate, money, presetOf, presets,
-  problemsOf, stepFill, stepIndex, summarize, type StepKey, type Tool,
+  problemsOf, stepFill, stepIndex, summarize, groupModels, modelNote, type StepKey, type Tool,
 } from "@/dashboard/flowSteps";
 import type { ActionResult } from "../actions";
 import { BudgetForm, Modal, Toast, type Confirm } from "./client";
@@ -493,9 +493,13 @@ function BrainStep({ d, change, p }: StepProps) {
           <Field k="Tool calls per run" sub={`Up to ${L.maxSteps.max} (ceiling in code). After the last one it gets one turn to finish.`}>
             <input className="input" type="number" min={L.maxSteps.min} max={L.maxSteps.max} step={1} value={d.limits.maxSteps} onChange={(e) => change({ limits: { ...d.limits, maxSteps: Number(e.target.value) } })} />
           </Field>
-          <Field k="Model" sub="Claude models only, straight to the Claude API.">
+          <Field k="Model" sub={modelNote(p.menu.models, d)}>
             <select className="input" value={d.model} onChange={(e) => change({ model: e.target.value })}>
-              {p.menu.models.map((m) => <option key={m.id} value={m.id}>{m.label} · ${+(m.in * 1e6).toFixed(2)} in, ${+(m.out * 1e6).toFixed(2)} out per million</option>)}
+              {groupModels(p.menu.models).map(([name, ms]) => (
+                <optgroup key={name} label={ms[0].ready ? name : `${name}: add a key on Connections > Other models`}>
+                  {ms.map((m) => <option key={m.id} value={m.id} disabled={!m.ready && m.id !== d.model}>{m.label} · ${+(m.in * 1e6).toFixed(2)} in, ${+(m.out * 1e6).toFixed(2)} out per million</option>)}
+                </optgroup>
+              ))}
             </select>
           </Field>
           <div className="bf-field">

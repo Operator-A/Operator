@@ -20,7 +20,7 @@ import {
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
 import { orgId } from "@/core/tenancy";
-import { PROVIDER_BY_ID, checkAnswer, readModelKey, type ModelProvider } from "@/core/model-key-rules";
+import { MODEL_PROVIDERS, PROVIDER_BY_ID, checkAnswer, readModelKey, type ModelProvider } from "@/core/model-key-rules";
 import { looksLikeNotionKey } from "@/core/notion-blocks";
 import { checkNotionKey, notionServer } from "./notion-server";
 import { checkShopifyKey, shopifyServer } from "./shopify-server";
@@ -1294,4 +1294,10 @@ export async function modelKey(provider: ModelProvider): Promise<string | null> 
 /** Pauses a provider key the provider refused during a run, so it isn't tried again until the owner pastes a new one. Only integrations/llm.ts calls this. */
 export async function pauseModelKey(provider: ModelProvider, why: string, key: string): Promise<void> {
   await pause(PROVIDER_BY_ID[provider].vaultId, why, "refused", [key]);
+}
+
+/** Which provider keys are saved and not paused, read without opening any of them. */
+export async function modelKeysReady(): Promise<Record<ModelProvider, boolean>> {
+  const all = await mcpStatuses();
+  return Object.fromEntries(MODEL_PROVIDERS.map((p) => [p.id, !!all[p.vaultId]?.connected && !all[p.vaultId]?.paused])) as Record<ModelProvider, boolean>;
 }

@@ -36,7 +36,7 @@ export interface Preset { key: "quick" | "balanced" | "deep"; label: string; abo
 
 /** Quick, Balanced and Deep: the cheapest, middle and priciest Claude model on the list, with matching effort. */
 export function presets(models: Model[]): Preset[] {
-  const m = [...models].sort((a, b) => a.out - b.out);
+  const m = models.filter((x) => x.provider === "anthropic").sort((a, b) => a.out - b.out);
   if (!m.length) return [];
   return [
     { key: "quick", label: "Quick", about: "Fine for sorting and simple summaries.", model: m[0].id, effort: "low" },
@@ -122,4 +122,21 @@ export function stepFill(k: StepKey, d: AgentSpec, menu: BuilderMenu): number {
   if (k === "connections") return d.tools.some((id) => { const t = menu.tools.find((x) => x.id === id); return t && abilityOf(t) !== "hands"; }) ? 1 : 0.15;
   if (k === "hands") return d.tools.some((id) => menu.tools.find((x) => x.id === id)?.kind === "report") ? 1 : 0.6;
   return 1;
+}
+
+/** The picker's models by provider, Claude first, in list order. */
+export const groupModels = (ms: Model[]): [string, Model[]][] => {
+  const by = new Map<string, Model[]>();
+  for (const m of ms) by.set(m.providerName, [...(by.get(m.providerName) ?? []), m]);
+  return [...by.entries()];
+};
+
+/** What the picked model means for this agent, in a line under the picker. */
+export function modelNote(ms: Model[], d: Pick<AgentSpec, "model" | "tools">): string {
+  const m = ms.find((x) => x.id === d.model);
+  if (!m || m.provider === "anthropic") return "Claude runs on your Claude key or OPERATOR credits. Other providers run on your own key from Connections > Other models.";
+  const parts = [`Billed by ${m.providerName} to your key. This agent’s job, facts and memory go to ${m.providerName} each run.`];
+  if (!m.ready) parts.push(`There’s no working ${m.providerName} key on Connections > Other models, so it can’t be saved on this model.`);
+  if (!m.web && d.tools.some((t) => t === "web_search" || t === "web_fetch")) parts.push("Web search and reading web pages run only on Claude, so this agent won’t use them on this model.");
+  return parts.join(" ");
 }

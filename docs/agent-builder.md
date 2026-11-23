@@ -20,7 +20,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
 - Morgan stays model-free except one judgment step on burn rate. Burn rate and runway are worked
   out in code (`calc_burn_rate`); the judgment step only reads those numbers.
 - Earlier: the first playbook needs the owner's approval, later versions apply automatically with a diff,
-  and drop back to approval after a failed run or a rejected action. Claude models only. Avery,
+  and drop back to approval after a failed run or a rejected action. Claude by default; another provider's model once its key is saved (docs/agent-setup.md). Avery,
   Rowan, Quinn and Morgan are rebuilt on the runner.
 
 ## Slice 1: the tool list and the runner (built)
@@ -71,7 +71,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
   3. Standards: the agent's standing orders and the crew rules from the memory store. Adding or
      forgetting a standing order saves straight away (same store and rules as the Memory tab).
   4. Directive: directive, what a good result looks like, the locked safety block.
-  5. Thinking: Claude models only, effort.
+  5. Thinking: Claude presets, or any model whose provider has a key under Advanced; effort.
   6. Actions: none grantable yet (slice 5); says so.
   7. Guardrails: tool calls and cost per run (ceilings 30 and $2), daily budget (ceiling $50, saved
      straight away), the locked crew hard rules.

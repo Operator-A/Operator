@@ -1,16 +1,18 @@
 import "server-only";
 // Data for the agent builder (/build): the agents built in the app, and for one agent everything
 // its screens show: the active spec and its versions, the tool list the flow picks from (each tool
-// with its connection, docs/builder-flow.md), the Claude models, its standards from the memory
+// with its connection, docs/builder-flow.md), the models (Claude, and other providers once their key is saved), its standards from the memory
 // store, and its latest runs step by step.
 import { orgTz } from "@/core/tz";
 import { ownFilter } from "@/core/memory-rules";
 import { db } from "@/core/db";
 import { agentDepartment } from "@/core/org";
-import { BUDGET_CEILING, EFFORTS, RUN_LIMITS, draftOf, listSpecVersions, loadSpec, readSpec, type AgentSpec, type SpecVersion } from "@/core/agent-spec";
+import { BUDGET_CEILING, EFFORTS, NO_MODEL_KEYS, RUN_LIMITS, draftOf, modelReady, type ModelKeys, listSpecVersions, loadSpec, readSpec, type AgentSpec, type SpecVersion } from "@/core/agent-spec";
 import { SAFETY } from "@/core/runner";
 import { TOOL_LIST, TOOLS } from "@/core/tools/catalog";
 import { MODEL_LIST } from "@/integrations/models";
+import { modelKeysReady } from "@/integrations/mcp";
+import { PROVIDER_BY_ID } from "@/core/model-key-rules";
 import { env } from "@/core/env";
 import { when } from "@/dashboard/format";
 import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, stepLabel } from "@/core/playbook";
@@ -25,7 +27,8 @@ export interface BuildTool { id: string; label: string; detail: string; kind: st
 export interface FlowConn { id: ConnId | CustomConnId; name: string; sub: string; icon: string; builtIn: boolean; about: string; setUp: boolean; custom?: boolean }
 /** Servers the owner added and their turned-on tools, as the builder offers them (docs/custom-servers.md, slice 2). */
 export interface CustomMenu { tools: BuildTool[]; conns: FlowConn[] }
-export interface BuildModel { id: string; label: string; in: number; out: number }
+/** A model as the builder offers it: `ready` when it can run now (Claude always; another provider once its key is saved). */
+export interface BuildModel { id: string; label: string; in: number; out: number; provider: string; providerName: string; ready: boolean; web: boolean }
 export interface Standard { id: string; grp: "standing_order" | "crew" | "department"; text: string; notionPageId: string | null }
 export interface BuiltRow { id: string; name: string; mandate: string; enabled: boolean; budget: number; version: number | null; problems: number; lastRun: { at: string; status: string } | null }
 
@@ -73,12 +76,15 @@ export async function customMenuFor(): Promise<CustomMenu> {
 
 /** The pick-lists the builder offers, all from code, plus the tools turned on on servers the owner added (`custom`). */
 /** What the builder offers. `crew` names the agents (the Floor's roster) where a rule names one by id. */
-export function builderMenu(crew: readonly { id: string; name: string }[] = [], h: Record<IntegrationId, boolean> = health(), custom: CustomMenu = { tools: [], conns: [] }) {
+export function builderMenu(crew: readonly { id: string; name: string }[] = [], h: Record<IntegrationId, boolean> = health(), custom: CustomMenu = { tools: [], conns: [] }, keys: ModelKeys = NO_MODEL_KEYS) {
   const SETTING: Record<string, unknown> = { ...SETTINGS, OWNER_EMAIL: h.email, SHOPIFY_CONNECTED: h.shopify, KLAVIYO_CONNECTED: h.klaviyo, NOTION_CONNECTED: h.notion, MERCURY_CONNECTED: h.mercury, GMAIL_CONNECTED: h.gmail, ANALYTICS_CONNECTED: h.ga4, CALENDAR_CONNECTED: h.calendar, CALENDAR_HOLDS_CONNECTED: h.calendar_holds, STRIPE_CONNECTED: h.stripe, MAILCHIMP_CONNECTED: h.mailchimp, MAILCHIMP_DRAFTS_CONNECTED: h.mailchimp_drafts, WOO_CONNECTED: h.woo, WOO_NOTES_CONNECTED: h.woo_notes, HUBSPOT_CONNECTED: h.hubspot, HUBSPOT_DEALS_CONNECTED: h.hubspot_deals, META_CONNECTED: h.meta, META_PAUSES_CONNECTED: h.meta_pauses, QUICKBOOKS_CONNECTED: h.quickbooks, SQUARE_CONNECTED: h.square };
   return {
     tools: [...TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents === "granted" ? "granted" : t.agents ? [...t.agents] : null, seat: t.seat ?? null })), ...custom.tools],
     agentNames: Object.fromEntries(crew.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,
-    models: MODEL_LIST.filter((m) => m.provider === "anthropic").map((m): BuildModel => ({ id: m.id, label: m.label, in: m.in, out: m.out })),
+    models: MODEL_LIST.map((m): BuildModel => ({
+      id: m.id, label: m.label, in: m.in, out: m.out, provider: m.provider, providerName: m.provider === "anthropic" ? "Claude" : PROVIDER_BY_ID[m.provider].name,
+      ready: modelReady(m.id, keys), web: m.caps.includes("anthropic-web-search"),
+    })),
     efforts: [...EFFORTS],
     limits: RUN_LIMITS,
     budgetCeiling: BUDGET_CEILING,
@@ -238,3 +244,6 @@ export async function getBuilder(agentId: string): Promise<BuilderData | null> {
     lastOutput: mine ? { name: mine.name, summary: mine.summary, numbers: (Array.isArray(mine.numbers) ? mine.numbers : []) as { label: string; value: number; tool: string }[], at: when(mine.created_at, tz), finished: mine.finished } : null,
   };
 }
+
+/** Provider keys for the builder's model picker; none when the vault can't be read, so only Claude is offered. */
+export const builderModelKeys = (): Promise<ModelKeys> => modelKeysReady().catch(() => NO_MODEL_KEYS);
