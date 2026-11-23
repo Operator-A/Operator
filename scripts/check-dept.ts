@@ -6,6 +6,7 @@ import { DEPT_TABS, deptAgentIds, deptTab, headAgentId, needsByDept, tabHref } f
 import { deptReach, headDirective } from "../core/head-chat-rules";
 import { resolveRuleWho, deptNamed } from "../core/chat-rules";
 import type { Org } from "../core/org-rules";
+import { checklist, dayLabel, goalNumber, inFeed, mergeFeed, resultText, runFoot, runState, runTitle, type FeedRun } from "../dashboard/dept-feed";
 
 const org: Org = {
   departments: [
@@ -67,6 +68,48 @@ assert.match(dir, /never run, start, stop or change an agent, and you never send
 assert.match(dir, /copied from their message/);
 
 // wiring: the menu, the page and Everyone use these counts, and the page and the Approvals page draw one card
+// runs in the chat (slice 3): the checklist comes only from logged steps, labelled by code
+const label = (t: string) => ({ mercury_list: "Read Mercury transactions", gmail_search: "Searched Gmail" } as Record<string, string>)[t] ?? "Used a connected tool";
+const steps = [
+  { kind: "model", tool: null, ok: true },
+  { kind: "tool", tool: "mercury_list", ok: true },
+  { kind: "tool", tool: "mercury_list", ok: true },
+  { kind: "tool", tool: "mercury_list", ok: true },
+  { kind: "text", tool: null, ok: true },
+  { kind: "tool", tool: "gmail_search", ok: false },
+  { kind: "tool", tool: "made_up_tool", ok: true },
+];
+assert.deepEqual(checklist(steps, label, false), [
+  { label: "Read Mercury transactions · 3 times", state: "done" },
+  { label: "Searched Gmail", state: "failed" },
+  { label: "Used a connected tool", state: "done" },
+], "one line per tool, repeats folded, a failed call marked, unknown tools get a plain label, model text never shows");
+assert.deepEqual(checklist([], label, true), [{ label: "Starting", state: "now" }]);
+assert.equal(checklist(steps.slice(0, 2), label, true).at(-1)?.state, "now", "a run that is going ends with a line that is still working");
+assert.deepEqual(checklist([{ kind: "tool", tool: "mercury_list", ok: true }, { kind: "stop", tool: null, ok: false }], label, false).at(-1), { label: "Stopped before it finished", state: "failed" });
+assert.ok(!inFeed("chat") && !inFeed("preview") && !inFeed("approval"), "chat replies, tries and approved writes don't post as runs");
+assert.ok(inFeed("manual") && inFeed("schedule") && inFeed("chain") && inFeed("event"));
+assert.equal(runTitle("manual"), "Run now");
+assert.equal(runTitle("schedule"), "Scheduled run");
+assert.deepEqual(runState("running"), { word: "Working", look: "live" });
+assert.deepEqual(runState("failed"), { word: "Failed", look: "bad" });
+assert.equal(runFoot(4, "2026-11-23T13:00:00Z", "2026-11-23T13:00:38Z", 0.041), "4 steps · 38 seconds · $0.04");
+assert.equal(runFoot(1, "2026-11-23T13:00:00Z", "2026-11-23T13:03:10Z", 0), "1 step · 3 min · $0.00");
+assert.equal(runFoot(2, "2026-11-23T13:00:00Z", null, 0.01), "2 steps · $0.01");
+assert.equal(resultText("[runner, spec v2] Books are current.", null, "ok"), "Books are current.");
+assert.equal(resultText("half done", "Mercury refused the sign-in", "failed"), "Mercury refused the sign-in");
+assert.deepEqual(goalNumber("212 of 226 this month"), { big: "212", small: "of 226 this month" });
+assert.deepEqual(goalNumber("$21,480 revenue"), { big: "$21,480", small: "revenue" });
+assert.deepEqual(goalNumber("on track"), { big: "on track", small: "" });
+const now = Date.parse("2026-11-23T18:00:00Z");
+assert.equal(dayLabel("2026-11-23T15:00:00Z", "America/Chicago", now), "Today");
+assert.equal(dayLabel("2026-11-22T15:00:00Z", "America/Chicago", now), "Yesterday");
+assert.equal(dayLabel("2026-11-23T03:00:00Z", "America/Chicago", now), "Yesterday", "days are counted in the business's time zone");
+const run = (id: string, at: string, status: FeedRun["status"]): FeedRun => ({ id, agentId: "quinn", name: "Quinn", role: "Bookkeeper", at, endedAt: null, trigger: "manual", status, lines: [], steps: 0, costUsd: 0, result: "", drafts: [] });
+const feed = mergeFeed([{ id: "t1", role: "owner", text: "hi", notes: [], runId: null, at: "2026-11-23T14:00:00Z" }], [run("r1", "2026-11-23T13:00:00Z", "running"), run("r1", "2026-11-23T13:00:00Z", "ok"), run("r2", "2026-11-23T15:00:00Z", "ok")]);
+assert.deepEqual(feed.map((f) => f.id), ["r1", "t1", "r2"], "time order, oldest first");
+assert.equal(feed[0].kind === "run" && feed[0].status, "ok", "a run seen twice keeps its newest copy");
+
 const read = (p: string) => readFileSync(p, "utf8");
 const layout = read("app/(room)/layout.tsx"), page = read("app/(room)/dept/[id]/page.tsx"), approvals = read("app/(room)/approvals/page.tsx"), everyone = read("app/(room)/everyone/page.tsx");
 assert.ok(/needsByDept\(/.test(layout) && /href: `\/dept\/\$\{d\.id\}`/.test(layout), "the side menu lists each department with its red count");
@@ -83,5 +126,12 @@ assert.ok(!/callWriteTool|core\/gateway/.test(headChat), "the head's chat never 
 assert.ok(/export async function sendToHead[\s\S]*?asRole\("approver"\)[\s\S]*?controlsOn\(\)[\s\S]*?cleanMessage/.test(actions), "sendToHead checks the role, real runs and the message");
 assert.ok(/<HeadChat /.test(page) && /send=\{sendToHead\}/.test(page), "the Chat tab talks through sendToHead");
 assert.ok(/"dept_chat"/.test(read("core/tenancy.ts")), "dept_chat is a tenant table");
+
+const live = read("app/(room)/dept/[id]/live/route.ts"), feedSrv = read("dashboard/deptFeed.ts"), chat = read("dashboard/components/headChat.tsx");
+assert.ok(/look="chat"/.test(page) && /look="tab"/.test(page), "drafts in the chat and on the Approvals tab are the same ApprovalCard");
+assert.ok(/memberFromCookie/.test(live) && /getRoster/.test(live), "the live route checks who is signed in and that the department exists");
+assert.ok(/run_steps/.test(feedSrv) && /checklist\(/.test(feedSrv) && !/output|reply|messages/.test(feedSrv.match(/from\("run_steps"\)\.select\("([^"]+)"/)?.[1] ?? "x"), "the checklist reads only which tool ran and whether it worked");
+assert.ok(/if \(opts\.runId\) \{/.test(read("core/runner.ts")), "every logged run saves its steps as they happen, so a run you start shows live");
+assert.ok(/refresh-ok/.test(chat) && !/\bapprove\b(?! ?card)/i.test(chat.replace(/\/\/.*$/gm, "")) && !/approve\(/.test(chat), "the chat draws approval cards from the server and never approves itself");
 
 console.log("check:dept ok");

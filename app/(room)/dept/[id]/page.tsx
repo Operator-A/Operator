@@ -1,186 +1,211 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { realRun } from "@/dashboard/actions";
-import { getApprovals, getCounts, getOrgSwitch, getReactRules, getRoster, getTz, type ApprovalItem, type ReactRules } from "@/dashboard/data";
-import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptTab, headAgentId, needsByDept, tabHref, type DeptTab } from "@/dashboard/dept-rules";
+import { getApprovals, getCounts, getOrgSwitch, getReactRules, getRoster, getTz, type ApprovalItem, type ApprovalsView, type ReactRules } from "@/dashboard/data";
+import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, headAgentId, needsByDept, tabHref, type DeptTab } from "@/dashboard/dept-rules";
+import { goalNumber } from "@/dashboard/dept-feed";
+import { deptRuns } from "@/dashboard/deptFeed";
 import { HEAD_CHAT_MISSING, headHistory } from "@/core/head-chat";
 import { sendToHead } from "@/dashboard/chatActions";
 import { HeadChat } from "@/dashboard/components/headChat";
-import { goalsByDept } from "@/dashboard/goals";
+import { DeptTabs } from "@/dashboard/components/deptTabs";
+import { goalsByDept, type GoalView } from "@/dashboard/goals";
 import { GOALS_MISSING } from "@/core/goals";
-import { headOf, below } from "@/core/org";
+import { headOf, below, deptSpent, latestOutputs, monthSpendByAgent } from "@/core/org";
+import { usd } from "@/core/cost-rules";
+import { firstSentence } from "@/dashboard/desk";
 import { nextRuns, schedWords } from "@/dashboard/schedule";
 import { stateLook, stateOf } from "@/dashboard/status";
 import { when } from "@/dashboard/format";
 import { controlsOn } from "@/dashboard/session";
 import { MODEL_LIST } from "@/integrations/models";
 import { ActionButton } from "@/dashboard/components/client";
-import { IntentLink } from "@/dashboard/components/intentLink";
 import { ApprovalCard } from "@/dashboard/components/approvalBits";
-import { GoalTile } from "@/dashboard/components/goals";
-import { Avatar, Empty, Pill } from "@/dashboard/components/ui";
-import { Icon } from "@/dashboard/components/Icon";
 
-// A department's page (docs/department-pages.md): its head, then tabs for the chat with the head (the
-// default), the agents who work here, the goals it is held to, and every draft from it waiting on an approver.
-// Every count and number on it is worked out in code.
+// A department's page (docs/department-pages.md), built to the approved mockup: a short header, glass tabs
+// floating over the content (Chat, the default; Agents; Goals; Approvals), and the chat as a glass room where
+// the head answers and every run of the department posts its checklist, result and drafts. Every count and
+// number on it is worked out in code.
 
 const NO_ORG = "The org chart tables aren’t up to date: apply the org chart migrations.";
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 
 export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   // the pieces this page shows, in one round (card 304): the crew and its runs, what waits on you, the time zone, the org switch
   const [{ id }, sp, roster, counts, tz, org] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch()]);
   const chart = roster.chart;
   if (!chart) return <div className="card"><span className="sub">{NO_ORG}</span></div>;
-  const dept = chart.departments.find((d) => d.id === id);
-  if (!dept) notFound();
+  const index = chart.departments.findIndex((d) => d.id === id);
+  if (index < 0) notFound();
+  const dept = chart.departments[index];
   const tab = deptTab(sp.tab);
   const waiting = needsByDept(chart.departments.map((d) => d.id), counts.approvalOwners.map((o) => o.dept)).byDept[id] ?? 0;
   const headId = headAgentId(chart, id), head = headId ? roster.byId[headId] : null, headSeat = headOf(chart, id);
+  const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
+  const spend = await monthSpendByAgent(ids).catch(() => ({} as Record<string, number>));
+  const spent = deptSpent(chart, id, spend);
+  const goals = tab === "goals" ? await goalsByDept(chart) : undefined;
+  const goalCount = goals ? (goals[id] ?? []).length : undefined;
+  const title = headSeat?.title ?? "head";
+  const led = head ? `Led by ${head.name}, your ${title}` : headSeat?.holder === "owner" ? `You lead ${dept.name}` : "No head yet";
+  const needs = `${waiting} need${waiting === 1 ? "s" : ""} you`;
 
   return (
-    <>
-      <div className="dept-head">
-        {head ? <Avatar a={head} size={40} /> : <span className="dept-av"><Icon name="users" size={18} /></span>}
-        <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
-          <h1 className="h1" style={{ fontSize: 26 }}>{dept.name}</h1>
-          <span className="sub">{head ? `${head.name}, ${headSeat?.title ?? "head"}` : headSeat?.holder === "owner" ? `You lead ${dept.name}` : "No head yet"}</span>
+    <div className={`dp${tab === "chat" ? " chat" : ""}`} style={{ "--hue": deptHue(index) } as React.CSSProperties}>
+      <div className="dp-ttl" aria-hidden="true"><b>{dept.name}</b><span className={waiting ? "warn" : undefined}>{head ? `${head.name}, ${title}` : led}{waiting ? ` · ${needs}` : ""}</span></div>
+      <div className="dp-head">
+        <div className="dp-icon"><i /></div>
+        <div><h1>{dept.name}</h1><div className="dp-led">{led} · {s(ids.length, "agent")}</div></div>
+        <div className="dp-stat">
+          <span className="dp-pill">AI spend {usd(spent)}{dept.monthlyBudgetUsd != null ? ` of ${usd(dept.monthlyBudgetUsd)}` : ""} this month</span>
+          {waiting > 0 && <Link href={tabHref(id, "approvals")} className="dp-pill warn">{needs}</Link>}
         </div>
-        {waiting > 0 && <Link href={`/dept/${id}?tab=approvals`} className="pill" style={{ background: "var(--red-soft)", color: "var(--red-ink)" }}>{waiting} need{waiting === 1 ? "s" : ""} you</Link>}
       </div>
-      <nav className="seg dept-tabs" aria-label={`${dept.name} tabs`}>
-        {DEPT_TABS.map((t) => (
-          <IntentLink key={t} href={tabHref(id, t)} className={tab === t ? "on" : ""} aria-current={tab === t ? "page" : undefined}>
-            {TAB_LABEL[t]}{t === "approvals" && waiting > 0 && <span className="dept-n">{waiting}</span>}
-          </IntentLink>
-        ))}
-      </nav>
-      <Pane tab={tab} id={id} name={dept.name} roster={roster} counts={counts} tz={tz} orgOn={org.on} />
-    </>
+      <div className="dp-stage">
+        <DeptTabs label={`${dept.name} tabs`} open={tab} tabs={DEPT_TABS.map((t) => ({
+          key: t, label: TAB_LABEL[t], href: tabHref(id, t),
+          count: t === "agents" ? ids.length : t === "goals" ? goalCount : t === "approvals" ? waiting : undefined, red: t === "approvals",
+        }))} />
+        <div className="dp-pane" key={tab}>
+          <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} goals={goals} />
+        </div>
+      </div>
+    </div>
   );
 }
 
 type Roster = Awaited<ReturnType<typeof getRoster>>;
 type Counts = Awaited<ReturnType<typeof getCounts>>;
+type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; goals?: Record<string, GoalView[]> | null };
 
-async function Pane({ tab, id, name, roster, counts, tz, orgOn }: { tab: DeptTab; id: string; name: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean }) {
-  if (tab === "goals") return <Goals id={id} name={name} roster={roster} />;
-  if (tab === "approvals") return <Approvals id={id} name={name} roster={roster} tz={tz} />;
-  if (tab === "chat") return <Chat id={id} name={name} roster={roster} />;
-  return <Agents id={id} name={name} roster={roster} counts={counts} tz={tz} orgOn={orgOn} />;
+async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
+  if (tab === "goals") return <Goals {...p} />;
+  if (tab === "approvals") return <Approvals {...p} />;
+  if (tab === "chat") return <Chat {...p} />;
+  return <Agents {...p} />;
 }
 
-/** Talk to the head: each message is one logged run of the head inside its budget (core/head-chat.ts). */
-async function Chat({ id, name, roster }: { id: string; name: string; roster: Roster }) {
+/** The rules each card's Not this offers, read once per agent on the cards. */
+async function rulesFor(items: ApprovalItem[]): Promise<Record<string, ReactRules>> {
+  const agents = [...new Set(items.map((i) => i.agent_id))];
+  return Object.fromEntries(await Promise.all(agents.map(async (a) => [a, await getReactRules(a)] as const)));
+}
+
+/** The chat: the conversation with the head and every run of the department, with its drafts as approval cards. */
+async function Chat({ id, name, title, roster, tz }: P) {
   const chart = roster.chart!;
   const headId = headAgentId(chart, id), head = headId ? roster.byId[headId] : null;
-  if (!head) {
-    const seat = headOf(chart, id);
-    return <Empty title={seat?.holder === "owner" ? `You lead ${name}` : `${name} has no head yet`}>{seat?.holder === "owner" ? "There’s no head agent to talk to here. Ask Avery about this department instead." : "Fill its head seat on the Agents tab, then talk to the head here."}</Empty>;
-  }
-  const history = await headHistory(id, 40).catch(() => null);
-  const initial = (history ?? []).map((r) => ({ id: r.id, role: r.role, text: r.text, runId: r.run_id, notes: r.notes }));
-  return <HeadChat deptId={id} dept={name} head={head.name} initial={initial} missing={history ? null : HEAD_CHAT_MISSING} send={sendToHead}
-    starters={[`How is ${name} doing?`, "What needs me here?", "Who is behind?"]} />;
+  const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
+  const [history, runs, view] = await Promise.all([head ? headHistory(id, 40).catch(() => null) : Promise.resolve([]), deptRuns(ids, roster.byId), getApprovals().catch(() => null)]);
+  const open = new Set(runs.flatMap((r) => r.drafts));
+  const items = view ? [...view.pending, ...view.withLead].filter((i) => open.has(i.id)) : [];
+  const rules = await rulesFor(items);
+  const cards = Object.fromEntries(items.map((i) => [i.id, <ApprovalCard key={i.id} i={i} view={view} byId={roster.byId} tz={tz} rules={rules} look="chat" />]));
+  const talk = (history ?? []).map((r) => ({ id: r.id, role: r.role, text: r.text, notes: r.notes, runId: r.run_id, at: r.created_at }));
+  const seat = headOf(chart, id);
+  return (
+    <HeadChat deptId={id} dept={name} head={head?.name ?? null} title={title} tz={tz} talk={talk} runs={runs} cards={cards} send={sendToHead}
+      missing={head ? (history ? null : HEAD_CHAT_MISSING) : seat?.holder === "owner" ? `You lead ${name}, so there’s no head agent to talk to here. Ask Avery about this department instead.` : `${name} has no head yet. Fill its head seat on the Agents tab to talk to one.`}
+      starters={[`How is ${name} doing?`, "What needs me here?", "Who is behind?"]} />
+  );
 }
 
-/** Who works here: state, model, last run and its result, what needs you, and when it runs next. */
-function Agents({ id, name, roster, counts, tz, orgOn }: { id: string; name: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean }) {
+/** Who works here, as rows: state, the model it runs on, its last run and result, what needs you, its next run, Run now. */
+function Agents({ id, name, roster, counts, tz, orgOn }: P) {
   const chart = roster.chart!;
   const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
   const head = headOf(chart, id);
   const open = head ? [head, ...below(chart, head.id)].filter((x) => x.holder === "open") : [];
+  const headName = (head?.agentId && roster.byId[head.agentId]?.name) || "the head";
   const controls = controlsOn();
   return (
-    <div className="stack" style={{ gap: 12 }}>
-      {!ids.length && <Empty title={`No agents in ${name} yet.`}>Fill one of its open seats to start.</Empty>}
-      <div className="dept-grid">
-        {ids.map((aid) => {
-          const a = roster.byId[aid];
-          const st = stateOf(a, roster.agents[aid], roster.runs, roster.spentToday[aid] ?? 0);
-          const last = roster.runs.find((r) => r.agent_id === aid && r.status !== "skipped");
-          const model = MODEL_LIST.find((m) => m.id === (a.model ?? roster.agents[aid]?.model))?.label ?? null;
-          const need = counts.approvalOwners.filter((o) => o.agent === aid).length;
-          const next = nextRuns(a.schedule, roster.now, 1, tz)[0];
-          return (
-            <div key={aid} className="card dept-agent">
-              <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
-                <Avatar a={a} size={34} working={st === "running"} />
-                <div className="stack" style={{ gap: 3, flex: 1, minWidth: 0 }}>
-                  <Link href={`/agents/${aid}`} className="dept-name">{a.name}</Link>
-                  <span className="sub">{a.role}</span>
-                  {model && <span className="dept-model">Runs on {model}</span>}
+    <div className="dp-scroll">
+      <div className="dp-panel">
+        <div className="dp-panel-h"><h3>{name} agents</h3><span className="sp" /><span className="dp-note">Tap an agent to see its runs or edit it.</span></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {ids.map((aid) => {
+            const a = roster.byId[aid];
+            const st = stateOf(a, roster.agents[aid], roster.runs, roster.spentToday[aid] ?? 0);
+            const last = roster.runs.find((r) => r.agent_id === aid && r.status !== "skipped");
+            const model = MODEL_LIST.find((m) => m.id === (a.model ?? roster.agents[aid]?.model))?.label ?? null;
+            const need = counts.approvalOwners.filter((o) => o.agent === aid).length;
+            const next = nextRuns(a.schedule, roster.now, 1, tz)[0];
+            const dot = st === "running" ? "live" : st === "over" ? "bad" : st === "active" || st === "manual" ? "" : "off";
+            return (
+              <div key={aid} className="dp-agent">
+                <span className={`dp-dot ${dot}`} title={stateLook(st, orgOn).label} />
+                <div className="dp-nm"><Link href={`/agents/${aid}`}>{a.name}</Link><span>{a.role}{head?.agentId === aid ? ` · head of ${name}` : ""}</span>{model && <><br /><span className="dp-where">Runs on {model}</span></>}</div>
+                <div className="dp-last"><small>{last ? when(last.started_at, tz) : "Never run"}</small>{last ? firstSentence(last.summary ?? (last.status === "failed" ? last.error ?? "The run failed." : "Working now."), 200) : a.job}</div>
+                <div className="dp-act">
+                  {need > 0 && <Link href={tabHref(id, "approvals")} className="dp-need">{need} need{need === 1 ? "s" : ""} you</Link>}
+                  <span className="dp-note">{next ? `Next: ${when(next, tz)}` : schedWords(a.schedule) === "Manual only" ? "By hand" : schedWords(a.schedule)}</span>
+                  <ActionButton className="dp-btn" action={realRun.bind(null, aid)} disabled={!controls} title={!controls ? "Real runs are off on this OPERATOR" : undefined}>Run now</ActionButton>
                 </div>
-                <Pill look={stateLook(st, orgOn)} sm />
               </div>
-              <div className="stack" style={{ gap: 3 }}>
-                <span className="muted" style={{ fontSize: 12 }}>{last ? when(last.started_at, tz) : "Never run"}</span>
-                <span style={{ fontSize: 13.5, lineHeight: 1.5 }}>{last ? last.summary ?? (last.status === "failed" ? last.error ?? "The run failed." : "Working now.") : a.job}</span>
-              </div>
-              <div className="row wrap" style={{ gap: 8, alignItems: "center" }}>
-                {need > 0 && <Link href={`/dept/${id}?tab=approvals`} className="pill sm" style={{ background: "var(--yel-soft)", color: "var(--yel-ink)" }}>{s(need, "draft")} for you</Link>}
-                <span className="muted" style={{ fontSize: 12, flex: 1 }}>{next ? `Next: ${when(next, tz)}` : schedWords(a.schedule) === "Manual only" ? "Runs when you press Run now" : schedWords(a.schedule)}</span>
-                <ActionButton className="btn outline sm" action={realRun.bind(null, aid)} disabled={!controls} title={!controls ? "Real runs are off on this OPERATOR" : undefined}>Run now</ActionButton>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+        {open.map((x) => (
+          <Link key={x.id} href={`/build/new?seat=${x.id}`} className="dp-newline">{PLUS}<span><b>{x.title} is open.</b> Build an agent for it{x.sub ? `: ${x.sub}` : ""}.</span></Link>
+        ))}
+        {!ids.length && !open.length && <span className="dp-note">No agents in {name} yet. Ask {headName} in the chat to hire one.</span>}
       </div>
-      {open.length > 0 && (
-        <div className="card" style={{ gap: 8 }}>
-          <span className="card-t">Open seats</span>
-          {open.map((x) => (
-            <div key={x.id} className="row rule wrap" style={{ gap: 10, padding: "8px 0", fontSize: 13.5 }}>
-              <span style={{ flex: 1 }}>{x.title}{x.sub && <span className="muted"> · {x.sub}</span>}</span>
-              <Link href={`/build/new?seat=${x.id}`} className="btn ghost xs">Build an agent for it</Link>
-            </div>
-          ))}
+    </div>
+  );
+}
+
+/** The numbers the department is held to, measured in code, each with its head's latest line. */
+async function Goals({ id, name, roster, goals }: P) {
+  if (goals == null) return <div className="dp-scroll"><div className="dp-panel"><span className="dp-note">{GOALS_MISSING}</span></div></div>;
+  const mine = goals[id] ?? [];
+  const head = headOf(roster.chart!, id);
+  const headId = head?.holder === "agent" ? head.agentId : null;
+  const outs = headId ? await latestOutputs([headId]).catch(() => ({} as Awaited<ReturnType<typeof latestOutputs>>)) : {};
+  const word = headId && outs[headId] ? { who: roster.byId[headId]?.name ?? headId, text: firstSentence(outs[headId].summary) } : null;
+  return (
+    <div className="dp-scroll">
+      {mine.length > 0 && (
+        <div className="dp-goals">
+          {mine.map((g) => {
+            const n = goalNumber(g.line);
+            return (
+              <Link key={g.id} href={`/goals/${g.id}`} className="dp-goal">
+                <span className="k">Goal · {g.statusLabel}</span>
+                <h4>{g.title}</h4>
+                <div className="num">{n.big}{n.small && <> <small>{n.small}</small></>}</div>
+                {g.pct != null && <div className="dp-bar" role="img" aria-label={`${Math.round(g.pct)}% of the target`}><i style={{ width: `${Math.max(2, g.pct)}%` }} /></div>}
+                {word && <div className="by"><b>{word.who}:</b> {word.text}</div>}
+                <span className="src">{g.how ? `Measured in code: ${g.how}` : g.measure ? `Measured in code from ${g.measure}.` : "No measure yet: tracked in words."}</span>
+              </Link>
+            );
+          })}
         </div>
       )}
+      <Link href={`/goals/new?dept=${id}`} className="dp-newline">{PLUS}<span><b>{mine.length ? "Set another goal." : `${name} has no goals yet.`}</b> A goal is a number measured in code, like margin or orders a week.</span></Link>
     </div>
   );
 }
 
-/** The numbers the department is held to, measured in code. */
-async function Goals({ id, name, roster }: { id: string; name: string; roster: Roster }) {
-  const all = await goalsByDept(roster.chart);
-  if (all == null) return <div className="card"><span className="sub">{GOALS_MISSING}</span></div>;
-  const goals = all[id] ?? [];
-  return (
-    <div className="stack" style={{ gap: 12 }}>
-      {!goals.length && <Empty title={`${name} has no goals yet.`} action={{ href: `/goals/new?dept=${id}`, label: `Set a goal for ${name}` }}>A goal is a number measured in code, like margin or orders a week.</Empty>}
-      <div className="dept-grid">{goals.map((g) => <GoalTile key={g.id} g={g} />)}</div>
-    </div>
-  );
-}
-
-/** Every draft from this department waiting on an approver: the same card as the Approvals page, so it is the same tap. */
-async function Approvals({ id, name, roster, tz }: { id: string; name: string; roster: Roster; tz: string }) {
-  const view = await getApprovals();
-  if (!view) return <Empty title="The approvals tables aren’t there yet">Apply the gateway migration to your Supabase project.</Empty>;
+/** Every draft from this department waiting on an approver: the same card and the same tap as the chat and the Approvals page. */
+async function Approvals({ id, name, roster, tz }: P) {
+  const view: ApprovalsView | null = await getApprovals();
+  if (!view) return <div className="dp-scroll"><div className="dp-panel"><span className="dp-note">The approvals tables aren’t there yet. Apply the gateway migration to your Supabase project.</span></div></div>;
   const mine = (i: ApprovalItem) => i.department_id === id;
   const pending = view.pending.filter(mine), withLead = view.withLead.filter(mine);
-  const ruleIds = [...new Set([...pending, ...withLead].map((i) => i.agent_id))];
-  const rules: Record<string, ReactRules> = Object.fromEntries(await Promise.all(ruleIds.map(async (a) => [a, await getReactRules(a)] as const)));
-  const card = (i: ApprovalItem) => <ApprovalCard key={i.id} i={i} view={view} byId={roster.byId} tz={tz} rules={rules} />;
+  const rules = await rulesFor([...pending, ...withLead]);
+  const card = (i: ApprovalItem) => <ApprovalCard key={i.id} i={i} view={view} byId={roster.byId} tz={tz} rules={rules} look="tab" chatHref={tabHref(id, "chat")} />;
   return (
-    <div className="stack" style={{ gap: 12 }}>
-      <div className="row wrap" style={{ gap: 10 }}>
-        <span className="card-t" style={{ flex: 1 }}>Waiting on you ({pending.length})</span>
-        <Link href={`/approvals?dept=${id}`} className="sub">History and trust levels ›</Link>
-      </div>
-      {!pending.length && <Empty title="Nothing waiting on you.">Nothing from {name} right now.</Empty>}
-      {pending.map(card)}
-      {withLead.length > 0 && (
-        <>
-          <div className="stack" style={{ gap: 2 }}>
-            <span className="card-t">With the lead first ({withLead.length})</span>
-            <span className="sub">The lead adds a note or sends a draft back once; only your tap approves.</span>
-          </div>
+    <div className="dp-scroll">
+      <div className="dp-panel">
+        <div className="dp-panel-h"><h3>Waiting for your OK</h3><span className="sp" /><span className="dp-note">Everything {name}’s agents drafted, in one place. Approving here or in the chat is the same tap. <Link href={`/approvals?dept=${id}`} style={{ color: "var(--ink2)", textDecoration: "underline" }}>History and trust levels</Link></span></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {!pending.length && !withLead.length && <div className="dp-note" style={{ padding: "28px 16px", textAlign: "center", fontSize: 14 }}>Nothing from {name} is waiting for your OK.</div>}
+          {pending.map(card)}
+          {withLead.length > 0 && <span className="dp-note">With the lead first ({withLead.length}): the lead adds a note or sends a draft back once; only your tap approves.</span>}
           {withLead.map(card)}
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

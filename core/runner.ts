@@ -263,11 +263,12 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   const maxOut = Math.min(MAX_OUT, Math.max(1000, Math.round(opts.maxOut ?? MAX_OUT)));
   let cited: unknown = null;
   let result: string | null = null, stopped: string | null = null, wrapUp = false, nudged = false;
-  // a try saves its steps as they happen, in order; everything else saves them once at the end
+  // every logged run saves its steps as they happen, in order, so a try and a department's chat can show
+  // them live (docs/department-pages.md, slice 3); whatever is left is saved at the end
   let saved = 0, saving: Promise<unknown> = Promise.resolve();
   const step = (s: Omit<Step, "idx">) => {
     steps.push({ idx: steps.length, ...s });
-    if (opts.trying && opts.runId) { const runId = opts.runId; saving = saving.then(() => { const batch = steps.slice(saved); saved = steps.length; return saveSteps(runId, batch); }); }
+    if (opts.runId) { const runId = opts.runId; saving = saving.then(() => { const batch = steps.slice(saved); saved = steps.length; return saveSteps(runId, batch); }); }
   };
   let mode: RunMode = "explore", fellBack: string | null = null;
 

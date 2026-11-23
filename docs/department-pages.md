@@ -68,3 +68,33 @@ Everyone and Approvals page share the counts and the one card).
 
 Tests: `npm run check:dept` (Chat is the default tab; a head's rules and proposals stay inside its
 department; the directive; the run, role and tenancy wiring).
+
+## Slice 3: runs in the chat, and the page built to the mockup
+
+- **Runs post into the chat.** Every run of a department agent shows in its chat, in time order with the
+  conversation (`deptRuns` in `dashboard/deptFeed.ts`, pure parts in `dashboard/dept-feed.ts`). Chat
+  replies, tries and approved writes being carried out don't post (`inFeed`). A run shows its title from
+  how it started, a status pill, then a checklist, its result, its drafts and a foot line (steps, how long,
+  cost, a link to its replay).
+- **The checklist is code, not model text.** One line per tool the run used, in order, labelled by the
+  tool's own label (`TOOLS`), repeats folded into "· 3 times", a failed call marked failed, a stop marked
+  "Stopped before it finished". It reads only `run_steps.kind`, `tool` and `ok`.
+- **Live.** The runner now saves each step as it happens for every logged run (it did only for tries), and
+  the chat asks `GET /dept/[id]/live?since=` every 3 seconds while a run is going and every 20 seconds
+  otherwise. The route checks who is signed in and that the department exists, and reads through `db()`.
+  When a run that was going finishes, the page draws again on the server for its result and cards.
+- **Drafts are approval cards.** A draft a run made (`agent_actions.run_id`) shows under it as the same
+  `ApprovalCard` the Approvals page uses (`look="chat"`; the Approvals tab uses `look="tab"`), so approving
+  in the chat, on the tab and on the Approvals page is one action. There is no Edit button yet: no edit flow
+  for a draft exists.
+- **Built to the mockup.** The page, its tabs and its chat follow the approved desktop and phone mockups
+  exactly (glass tabs floating over the content with a sliding ink, the chat room with soft colour, run
+  cards, the phone's floating menu, title pill and bell). The side menu's Departments section follows the
+  mockup too; Desk, Approvals, Crew and the top bar stay as they are. Styles are the `dp-` rules in
+  `app/globals.css`, scoped to the page.
+- **Deletes.** The Desk had no department run list left to delete. The old department and head chat styles
+  are gone.
+
+Tests: `npm run check:dept` (the checklist comes only from logged steps, folded and marked; what posts;
+titles, pills, foot line, result text, goal numbers and day dividers in the business's time zone; the
+feed's order; the live route, the runner and the one approval path).

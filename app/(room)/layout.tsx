@@ -15,8 +15,9 @@ import { currentDraftView } from "@/dashboard/department";
 import { atLeast } from "@/core/roles";
 import { sendToAvery } from "@/dashboard/chatActions";
 import { CHAT_MISSING, chatHistory } from "@/core/avery-chat";
-import { agentNames, companySeat } from "@/core/org";
-import { headAgentId, needsByDept } from "@/dashboard/dept-rules";
+import { agentNames, companySeat, headOf } from "@/core/org";
+import { deptHue, headAgentId, needsByDept } from "@/dashboard/dept-rules";
+import { SideDept } from "@/dashboard/components/deptTabs";
 import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 
@@ -57,11 +58,13 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   ];
   // each department under its own name, with its head and a red count of what waits on you there (docs/department-pages.md)
   const deptNeeds = org ? needsByDept(org.departments.map((d) => d.id), floor.approvalOwners.map((o) => o.dept)).byDept : {};
-  const depts = (org?.departments ?? []).map((d) => {
-    const head = headAgentId(org!, d.id), n = deptNeeds[d.id] ?? 0;
-    return { href: `/dept/${d.id}`, match: `/dept/${d.id}`, icon: "message-circle", label: d.name, note: head ? floor.byId[head]?.name : undefined, noteColor: "var(--mut)", count: n ? String(n) : undefined, red: true };
+  const depts = (org?.departments ?? []).map((d, i) => {
+    const head = headAgentId(org!, d.id), seat = headOf(org!, d.id);
+    const who = head ? floor.byId[head]?.name : seat?.holder === "owner" ? "You" : null;
+    return { href: `/dept/${d.id}`, name: d.name, sub: who ? `${who} · ${seat?.title ?? "Head"}` : "No head yet", hue: deptHue(i), count: deptNeeds[d.id] ?? 0 };
   });
-  const deptGroup = depts.length > 0 && <div className="side-group"><span className="side-label">Departments</span>{depts.map((it) => <SideLink key={it.href} {...it} />)}</div>;
+  const deptList = depts.length > 0 && <><span className="side-h6">Departments</span>{depts.map((it) => <SideDept key={it.href} {...it} />)}</>;
+  const deptGroup = deptList && <div className="side-group">{deptList}</div>;
 
   return (
     <div className="page">
@@ -86,7 +89,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
               <div className="sheet-group">
                 {nav.map((it) => <SideLink key={it.label} {...it} />)}
               </div>
-              {depts.length > 0 && <div className="sheet-group"><span className="side-label">Departments</span>{depts.map((it) => <SideLink key={it.href} {...it} />)}</div>}
+              {deptList && <div className="sheet-group">{deptList}</div>}
               <div className="sheet-group">
                 <SideLink href="/status" match="/status" icon="circle-alert" label="Status" />
                 <SideLink href="/settings" match="/settings*" icon="settings" label="Settings" />
