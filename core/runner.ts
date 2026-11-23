@@ -31,6 +31,7 @@ import { localDate, dayTitle } from "@/core/time";
 import type { RunResult } from "@/core/runs";
 import { Anthropic, costUsd, isModel } from "@/integrations/anthropic";
 import { modelClient, type ModelClient } from "@/integrations/llm";
+import { modelDef } from "@/integrations/models";
 import { TOOLS } from "@/core/tools/catalog";
 import { callTool, hostFor } from "@/core/tools/call";
 import { actionOpenTo, actionWho, checkInput, inputSchema, paramsOf, type Pick, type PickRef, type Staged, type ToolCtx, type ToolDef } from "@/core/tools/types";
@@ -203,7 +204,7 @@ export interface ExploreOpts {
 /** One explore run. Throws only when the model can't be used at all; limits end the run with a summary that says so. */
 export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<RunResult & { steps: Step[]; finished: boolean; result: string | null; output: OutputNumber[]; mode: RunMode; fellBack: string | null; actions: StagedAction[]; reports: { tool: string; ok: boolean; note: string }[] }> {
   if (!isModel(spec.model)) throw new Error(`No price for ${spec.model}, so its cost can't be computed`);
-  // the provider's client, picked before anything runs: a model whose provider isn't connected stops here
+  // the provider's client, picked before anything runs; a provider with no key stops at its first turn
   const llm = opts.client ?? modelClient(spec.model);
   const ctx: ToolCtx = { agentId: opts.agentId, notionPages: spec.notionPages, outputSources: spec.readsFrom, reportPage: spec.reportPage, runId: opts.runId ?? null, granted: spec.tools };
   // tools from servers the owner added, built for this run after each server's tool check passes
@@ -215,7 +216,9 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   // every read and calculate call goes through MCP (core/tools/mcp-host.ts)
   const host = hostFor(hasCustom ? cat : opts.tools);
   const granted = spec.tools.map((id) => cat[id]).filter((t) => !!t);
-  const offered = granted.filter((t) => offeredTo(t, opts.agentId));
+  // web search and fetch run on Claude's side, so a model on another provider is never offered them
+  const searches = modelDef(spec.model)?.caps.includes("anthropic-web-search") ?? false;
+  const offered = granted.filter((t) => offeredTo(t, opts.agentId) && (!t.server || searches));
   const actionTools = offered.filter((t) => t.kind === "action");
   const collectTools = offered.filter((t) => t.kind === "report" && t.collect);
   const serverTools = offered.filter((t) => t.server);

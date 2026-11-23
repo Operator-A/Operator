@@ -1291,3 +1291,7 @@ export async function modelKey(provider: ModelProvider): Promise<string | null> 
   return s?.key ?? null;
 }
 
+/** Pauses a provider key the provider refused during a run, so it isn't tried again until the owner pastes a new one. Only integrations/llm.ts calls this. */
+export async function pauseModelKey(provider: ModelProvider, why: string, key: string): Promise<void> {
+  await pause(PROVIDER_BY_ID[provider].vaultId, why, "refused", [key]);
+}

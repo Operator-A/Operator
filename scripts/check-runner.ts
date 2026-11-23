@@ -8,7 +8,9 @@ import { readSpec, specLooser } from "../core/agent-spec";
 import { draftSteps, sameSteps, stepChanges } from "../core/playbook";
 import { runExplore, traceNumbers, type Step } from "../core/runner";
 import { TOOLS } from "../core/tools/catalog";
-import { claudeClient, modelClient } from "../integrations/llm";
+import { claudeClient, modelClient, providerClient, type ProviderDeps } from "../integrations/llm";
+import { fromChat, fromResponses, toChat, toResponses } from "../core/llm-wire";
+import { costUsd } from "../integrations/anthropic";
 import { MODEL_LIST } from "../integrations/models";
 import type { ToolDef } from "../core/tools/types";
 
@@ -59,6 +61,77 @@ async function main() {
   assert.deepEqual(turn.usage, { tokensIn: 1050, tokensOut: 20, cacheWrite: 50, cacheRead: 900, searches: 2 });
   assert.equal(turn.model, "claude-sonnet-5-5", "the model that served the turn, for billing");
   assert.equal(turn.stopReason, "end_turn");
+
+  // other providers (slice 3): the Claude-shaped transcript in their wire shapes and back (core/llm-wire.ts)
+  const wireTurn = {
+    model: "grok-4.3", maxOut: 800, effort: "low" as const,
+    system: [{ type: "text" as const, text: "rules" }, { type: "text" as const, text: "job" }],
+    tools: [{ name: "mercury_balances", description: "Balances.", input_schema: { type: "object", properties: {} } }, { type: "web_search_20260209", name: "web_search", max_uses: 3 }],
+    messages: [
+      { role: "user" as const, content: "go" },
+      { role: "assistant" as const, content: [{ type: "thinking", thinking: "hm", signature: "x" }, { type: "text", text: "Looking." }, { type: "tool_use", id: "c1", name: "mercury_balances", input: { days: 3 } }] },
+      { role: "user" as const, content: [{ type: "tool_result", tool_use_id: "c1", content: [{ type: "text", text: "$10" }] }, { type: "text", text: "Note: 2 steps left." }] },
+    ],
+  };
+  const chat = toChat(wireTurn);
+  assert.deepEqual(chat.messages, [
+    { role: "system", content: "rules\n\njob" }, { role: "user", content: "go" },
+    { role: "assistant", content: "Looking.", tool_calls: [{ id: "c1", type: "function", function: { name: "mercury_balances", arguments: "{\"days\":3}" } }] },
+    { role: "tool", tool_call_id: "c1", content: "$10" }, { role: "user", content: "Note: 2 steps left." },
+  ], "thinking dropped, tool calls and results paired by id");
+  assert.deepEqual(chat.tools?.map((x) => x.function.name), ["mercury_balances"], "server tools never reach another provider");
+  assert.equal(chat.max_tokens, 800);
+  assert.equal(chat.reasoning_effort, "low");
+  const rq = toResponses(wireTurn);
+  assert.equal(rq.instructions, "rules\n\njob");
+  assert.equal(rq.store, false, "nothing kept at the provider");
+  assert.deepEqual(rq.input.map((i) => ("type" in i ? i.type : i.role)), ["user", "assistant", "function_call", "function_call_output", "user"]);
+  assert.deepEqual(rq.tools, [{ type: "function", name: "mercury_balances", description: "Balances.", parameters: { type: "object", properties: {} } }]);
+  assert.deepEqual(rq.reasoning, { effort: "low" });
+  assert.equal(rq.max_output_tokens, 800);
+  const back = fromResponses({ model: "grok-4.3-2026", status: "completed", output: [
+    { type: "reasoning" }, { type: "message", content: [{ type: "output_text", text: "Checking." }] },
+    { type: "function_call", call_id: "c2", name: "mercury_balances", arguments: "{\"days\":7}" }, { type: "function_call", call_id: "c3", name: "finish", arguments: "not json" },
+  ], usage: { input_tokens: 1000, output_tokens: 50, input_tokens_details: { cached_tokens: 600 } } });
+  assert.deepEqual(back.content, [{ type: "text", text: "Checking." }, { type: "tool_use", id: "c2", name: "mercury_balances", input: { days: 7 } }, { type: "tool_use", id: "c3", name: "finish", input: {} }]);
+  assert.equal(back.stopReason, "tool_use");
+  assert.deepEqual(back.usage, { tokensIn: 1000, tokensOut: 50, cacheWrite: 0, cacheRead: 600, searches: 0 });
+  assert.equal(fromResponses({ status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, output: [] }).stopReason, "max_tokens");
+  assert.equal(fromResponses({ output: [{ type: "message", content: [{ type: "refusal", refusal: "no" }] }] }).stopReason, "refusal");
+  const cb = fromChat({ choices: [{ message: { content: "Done.", tool_calls: [{ id: "g1", type: "function", function: { name: "finish", arguments: "{\"result\":\"ok\"}" } }] }, finish_reason: "tool_calls" }], usage: { prompt_tokens: 500, completion_tokens: 9, prompt_tokens_details: { cached_tokens: 900 } } });
+  assert.deepEqual(cb.content[1], { type: "tool_use", id: "g1", name: "finish", input: { result: "ok" } });
+  assert.equal(cb.usage.cacheRead, 500, "a cached count over the prompt is capped at the prompt");
+  assert.equal(fromChat({ choices: [{ message: { content: "x" }, finish_reason: "length" }] }).stopReason, "max_tokens");
+  // cost: a provider with its own cached price bills reads at it and writes at the plain price
+  assert.equal(costUsd("grok-4.3", 1_000_000, 0, 0, { read: 600_000 }), Number((400_000 * 1.25e-6 + 600_000 * 0.2e-6).toFixed(4)));
+  assert.equal(costUsd("gpt-6.2-sol", 1_000_000, 100_000), 3);
+
+  // the provider client: the business's own key, opened per turn, sent only to the provider, never followed through a redirect
+  const KEY = "xai-" + "k".repeat(40);
+  const wireSent: { url: string; init: RequestInit }[] = [];
+  const paused: string[] = [];
+  const deps = (status: number, json: unknown, key: string | null = KEY): ProviderDeps => ({
+    key: async () => key,
+    pause: async (_p, why) => { paused.push(why); },
+    fetch: (async (url: string, init: RequestInit) => { wireSent.push({ url, init }); return new Response(status === 200 ? JSON.stringify(json) : `bad key ${KEY}`, { status }); }) as unknown as typeof fetch,
+  });
+  const okJson = { output: [{ type: "message", content: [{ type: "output_text", text: "hi" }] }], usage: { input_tokens: 10, output_tokens: 2 } };
+  const pt = await providerClient("xai", deps(200, okJson)).turn({ ...wireTurn, tools: wireTurn.tools as any, messages: wireTurn.messages as any, system: wireTurn.system });
+  assert.equal(wireSent[0].url, "https://api.x.ai/v1/responses");
+  assert.equal(wireSent[0].init.redirect, "error");
+  assert.equal((wireSent[0].init.headers as Record<string, string>).authorization, `Bearer ${KEY}`);
+  assert.equal(pt.model, "grok-4.3", "billed by the listed model, not the provider's snapshot name");
+  assert.equal(pt.stopReason, "end_turn");
+  await assert.rejects(providerClient("xai", deps(200, okJson, null)).turn(wireTurn as any), /No xAI \(Grok\) key/);
+  const refused = await providerClient("xai", deps(401, null)).turn(wireTurn as any).then(() => "", (e: Error) => e.message);
+  assert.match(refused, /refused the key \(401\), so it is paused/);
+  assert.ok(!refused.includes(KEY) && paused.length === 1 && !paused[0].includes(KEY), "a refused key is paused and never echoed");
+  const busy = await providerClient("xai", deps(500, null)).turn(wireTurn as any).then(() => "", (e: Error) => e.message);
+  assert.ok(busy.startsWith("xAI (Grok) answered 500") && !busy.includes(KEY) && paused.length === 1, "a provider error never echoes the key or pauses it");
+  wireSent.length = 0;
+  await providerClient("google", deps(200, { choices: [{ message: { content: "hi" }, finish_reason: "stop" }] })).turn({ ...(wireTurn as any), model: "gemini-3.1-flash-lite" });
+  assert.equal(wireSent[0].url, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+  assert.equal((wireSent[0].init.headers as Record<string, string>)["x-goog-api-key"], KEY);
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // finishes: a tool the agent doesn't have is refused, then finish ends the run
@@ -287,6 +360,17 @@ async function main() {
   }) });
   assert.equal(r12.finished, true);
   assert.equal(delivered.length, 1);
+  // the same agent on another provider: web search isn't offered (it runs on Claude's side) and the run finishes
+  const bodies: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const grokRun = await runExplore({ ...rowan, model: "grok-4.3" }, { agentId: "wholesale_hunter", tools: lTools, client: providerClient("xai", {
+    key: async () => KEY, pause: async () => {},
+    fetch: (async (_u: string, init: RequestInit) => { bodies.push(JSON.parse(String(init.body))); return new Response(JSON.stringify({ output: [{ type: "function_call", call_id: "f1", name: "finish", arguments: "{\"result\":\"none\"}" }], usage: { input_tokens: 3000, output_tokens: 40 } })); }) as unknown as typeof fetch,
+  }) });
+  assert.equal(grokRun.finished, true);
+  assert.match(grokRun.summary, /^none/);
+  assert.deepEqual(bodies[0].tools.map((x: { name: string }) => x.name), ["report_leads", "finish"]);
+  assert.ok(!JSON.stringify(bodies[0]).includes("web_search"));
+  assert.equal(grokRun.costUsd, costUsd("grok-4.3", 3000, 40));
   assert.equal((delivered[0] as { domain: string }).domain, "fleet.coffee");
   assert.equal(r12.steps.filter((s) => s.tool === "report_leads" && !s.ok).length, 1);
   assert.deepEqual(draftSteps(r12.steps), []);
