@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { IntentLink } from "@/dashboard/components/intentLink";
 import { previewChain, rollBackFlow, runChainNow, saveCrewFlow, setAgentTime, setEnabled, turnOffOrg, turnOrgBackOn } from "@/dashboard/actions";
 import { orgDay } from "@/dashboard/orgDay";
 import { OrgDay } from "@/dashboard/components/OrgDay";
@@ -48,7 +49,7 @@ export default async function Crew({ searchParams }: { searchParams: Promise<{ v
         <Link href="/build/new" className="btn dark"><Icon name="user-plus" size={15} />New agent</Link>
       </div>
       <nav className="seg" aria-label="Crew view">
-        {(Object.keys(VIEWS) as (keyof typeof VIEWS)[]).map((k) => <Link key={k} href={VIEWS[k][0]} className={view === k ? "on" : ""} aria-current={view === k ? "page" : undefined}>{VIEWS[k][1]}</Link>)}
+        {(Object.keys(VIEWS) as (keyof typeof VIEWS)[]).map((k) => <IntentLink key={k} href={VIEWS[k][0]} className={view === k ? "on" : ""} aria-current={view === k ? "page" : undefined}>{VIEWS[k][1]}</IntentLink>)}
       </nav>
       {view === "schedule" ? <Schedule f={f} /> : <Chart f={f} edit={view === "edit"} />}
     </>

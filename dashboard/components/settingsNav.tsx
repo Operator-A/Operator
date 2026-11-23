@@ -1,7 +1,7 @@
 "use client";
 // The Settings section menu (docs/settings.md): a column on a desktop, a row of chips on a phone.
 // Also moves an old link with a #billing style anchor to its section, once.
-import Link from "next/link";
+import { IntentLink } from "./intentLink";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { OLD_ANCHORS, sectionHref, type SectionLink } from "../settings-sections";
@@ -19,10 +19,10 @@ export function SettingsNav({ sections }: { sections: SectionLink[] }) {
         const href = sectionHref(s.slug);
         const on = path === href;
         return (
-          <Link key={s.slug} href={href} className={"set-link" + (on ? " on" : "")} aria-current={on ? "page" : undefined}>
+          <IntentLink key={s.slug} href={href} className={"set-link" + (on ? " on" : "")} aria-current={on ? "page" : undefined}>
             <span className="set-link-t">{s.label}</span>
             <span className="set-link-h">{s.hint}</span>
-          </Link>
+          </IntentLink>
         );
       })}
     </nav>

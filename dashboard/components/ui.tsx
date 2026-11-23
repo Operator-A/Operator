@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { IntentLink } from "./intentLink";
 import type { CrewMember } from "../crew";
 import { linkParts } from "../format";
 import type { Look } from "../status";
@@ -60,9 +61,9 @@ export function AgentTabs({ id, on, editable }: { id: string; on: AgentTab; edit
   return (
     <nav className="row wrap tabs" style={{ gap: 6 }} aria-label="Agent">
       {tabs.map(([k, l, href]) => (
-        <Link key={k} href={href} aria-current={on === k ? "page" : undefined} className="btn sm" style={{ height: 38, fontSize: 13.5, background: on === k ? "var(--ink)" : "var(--soft)", color: on === k ? "var(--ws)" : "var(--ink)" }}>
+        <IntentLink key={k} href={href} aria-current={on === k ? "page" : undefined} className="btn sm" style={{ height: 38, fontSize: 13.5, background: on === k ? "var(--ink)" : "var(--soft)", color: on === k ? "var(--ws)" : "var(--ink)" }}>
           {k === "edit" && <Icon name="pencil" size={14} />}{l}
-        </Link>
+        </IntentLink>
       ))}
     </nav>
   );

@@ -30,3 +30,22 @@ them fast. `npm run check:speed` enforces the rules marked (checked).
    its own, and setup uses it instead of the Desk's whole floor; the Control Room layout and the setup page
    start all their loads at once; the Mercury account name on the setup tools step (a call to Mercury) is
    kept 10 minutes per business.
+4. **Pages you just saw come back at once** (checked, card 301). Next 16 keeps a visited Control Room page in
+   the browser for 0 seconds by default, so every back-and-forth waited on the server again. `next.config.ts`
+   sets `experimental.staleTimes` to 30 s (check:speed keeps it between 1 and 60). A save still shows fresh data
+   at once: an action's `revalidatePath`, and the live-run refresher's `router.refresh()`, clear this cache.
+5. **Navigation loads on intent** (checked, card 301). The sidebar and phone menu (`SideLink`), crew chips
+   (`RailLink`), agent tabs (`AgentTabs`), Crew views and Settings sections use `IntentLink`
+   (dashboard/components/intentLink.tsx): it loads the whole page, data too, the moment the pointer enters,
+   a finger touches or the keyboard focuses the link, so the server starts before the click. Before that it
+   pre-loads only up to the loading frame, so pages nobody points at cost nothing.
+
+## What we measured (Nov 23, card 301)
+
+From the Supabase API logs of the owner's own clicks: navigation already used `Link` everywhere (router.push only
+after a save), so no page reloaded in full. Each click was a fresh server render: 20 to 27 queries in 4 to 6
+rounds one after another (sign-in check, time zone, the floor, the page's own loads, sometimes the vault), about
+0.4 s of database time warm and 1.5 s on a slow click. In a test app on the same Next.js version with a page that
+takes 400 ms on the server: a plain click took 798 ms; a click after hovering 49 ms; going back to a page just
+seen 68 ms with no server render. Cards 302-304 shorten the server render itself (one round of loads, page frame
+first, each page reads only what it shows).
