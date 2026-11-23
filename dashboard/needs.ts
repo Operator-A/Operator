@@ -47,7 +47,7 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
     if (r.status === "running" && age > 6 * 6e4 && age < 7 * 864e5) out.push({ pri: "Medium", title: `${a.name}’s run never finished`, sub: "It passed the 5 minute limit without writing a result.", href: `/runs/${r.id}`, agentId: a.id, run: true, source: { from: "run_stuck" } });
   }
   for (const a of f.crew) {
-    if (f.ok && stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0) === "over") out.push({ pri: "High", title: `${a.name} reached today’s budget`, sub: "Further runs today are skipped.", href: `/build/${a.id}?edit=1&step=brain`, agentId: a.id, source: { from: "budget" } });
+    if (f.ok && stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0) === "over") out.push({ pri: "High", title: `${a.name} reached today’s budget`, sub: "Further runs today are skipped.", href: `/agents/${a.id}?edit=1`, agentId: a.id, source: { from: "budget" } });
   }
   // approval cards, one line per kind; a card is never out of Needs you unless its action type earned trust (card 7)
   const cards: Partial<Record<Interrupt | "later", number>> = {};

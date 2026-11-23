@@ -7,7 +7,8 @@ import { ActionButton } from "@/dashboard/components/client";
 import { NotNowButton } from "@/dashboard/components/proposals";
 import { when } from "@/dashboard/format";
 import { getProposal, proposalChecks, toolLabel, type Proposal } from "@/core/proposals";
-import { BRAINS, HIRE_STEPS, KIND_WORDS } from "@/core/proposal-rules";
+import { BRAINS, HIRE_STEPS, KIND_WORDS, changeWhat, changesSpec } from "@/core/proposal-rules";
+import { changeRows } from "@/dashboard/change-rules";
 import { agentNames, agentsIn, deptSpent, loadOrg, monthSpendByAgent } from "@/core/org";
 import { billing, hireCost } from "@/dashboard/cost";
 import { draftView } from "@/dashboard/department";
@@ -33,17 +34,27 @@ function Lines({ rows }: { rows: [string, React.ReactNode][] }) {
   );
 }
 
+const GOAL_STATE_DOES = {
+  drop: { label: "Drop this goal", does: "Drops the goal. Its history stays." },
+  pause: { label: "Pause this goal", does: "Pauses the goal. It stays on the chart, greyed, and the head stops planning around it." },
+  resume: { label: "Turn it back on", does: "Turns the paused goal back on. Its head plans around it from the next run." },
+  done: { label: "Mark it done", does: "Marks the goal done. Its history stays." },
+} as const;
+
 function yesDoes(p: Proposal["payload"]): { label: string; does: string } {
   switch (p.kind) {
     case "hire": return { label: `Hire ${p.name}, off duty`, does: `Creates ${p.name} as v1, off duty, with only the read tools above, ${p.seatId ? `in the open ${p.seat} seat` : `in a new ${p.seat} seat`}. Nothing runs until you Try it and Go live.` };
     case "grant_tool": return { label: `Give ${p.agent} ${toolLabel(p.tool)}`, does: `Saves a draft version of ${p.agent} with ${toolLabel(p.tool)} added. What runs today doesn’t change until you Try it and Go live.` };
-    case "new_tool": return { label: "Find a tool for it", does: "Opens Find a tool, where you pick how: a connection you already have, a server you add by its address, or an ask for a built-in connector. Nothing is granted to anyone until you do it on the builder’s Tools step." };
+    case "new_tool": return { label: "Find a tool for it", does: "Opens Find a tool, where you pick how: a connection you already have, a server you add by its address, or an ask for a built-in connector. Nothing is granted to anyone until you do it in an agent’s sheet." };
     case "department": return { label: `Create ${p.draft.name}`, does: `Adds the ${p.draft.name} department with its head seat, creates ${[p.draft.head, ...p.draft.agents].filter(Boolean).map((x) => x!.name).join(" and ") || "no agents"} off duty with only the read tools shown, sets ${p.draft.goals.length} goal${p.draft.goals.length === 1 ? "" : "s"}, and logs a connection request for any source still missing. Nothing turns on.` };
     case "goal": return p.change === "new"
       ? { label: "Set this goal", does: "Adds the goal to its department, as if you set it on Goals. Code counts its measure; its head plans around it from the next run." }
-      : p.change === "drop"
-        ? { label: "Drop this goal", does: "Drops the goal, as if you did it on its goal page. Its history stays." }
-        : { label: "Change this goal", does: "Saves the change, as if you edited it on its goal page. A new measure starts its pace again from today." };
+      : p.change === "change"
+        ? { label: "Change this goal", does: "Saves the change. A new measure starts its pace again from today." }
+        : { label: GOAL_STATE_DOES[p.change].label, does: GOAL_STATE_DOES[p.change].does };
+    case "change_agent": return { label: `Change ${p.agent}`, does: changesSpec(p)
+      ? `Saves a draft version of ${p.agent} with ${changeWhat(p).filter((w) => w !== "when it runs" && w !== "daily budget").join(", ")} changed${p.when || p.budget != null ? `, and sets its ${[p.when ? "schedule" : "", p.budget != null ? "budget" : ""].filter(Boolean).join(" and ")} now` : ""}. The draft runs only after a clean try and Go live.`
+      : `Sets ${p.agent}’s ${[p.when ? "schedule" : "", p.budget != null ? "daily budget" : ""].filter(Boolean).join(" and ")}, through the same checks as its sheet.` };
     case "setup_finding": return { label: "Open it again", does: "Opens the finding again on Connections, with its click-by-click steps and any Fix it for me. Nothing in the tool changes, and any fix still waits on Approvals." };
     case "retire": return p.agentId
       ? { label: `Retire ${p.agent}`, does: `Takes ${p.agent} off duty and opens its seat. Its versions, runs and memory stay, and you can turn it back on.` }
@@ -84,10 +95,11 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
     : p.kind === "new_tool" ? [["What it reads", p.what]]
     : p.kind === "department" ? []
     : p.kind === "setup_finding" ? [["Tool", hasCheck(p.tile) ? CHECKS[p.tile].name : p.tile], ["Finding", p.title]]
+    : p.kind === "change_agent" ? changeRows(p, toolLabel).map((r) => [r.k, r.to] as [string, string])
     : p.kind === "goal" ? [
       ["Department", dept?.name ?? ""],
-      ["Change", p.change === "new" ? "A new goal" : p.change === "drop" ? `Drop “${p.goal}”` : `Change “${p.goal}”`],
-      ...(p.change === "drop" ? [] : [
+      ["Change", p.change === "new" ? "A new goal" : p.change === "change" ? `Change “${p.goal}”` : `${GOAL_STATE_DOES[p.change].label}: “${p.goal}”`],
+      ...(p.change !== "new" && p.change !== "change" ? [] : [
         ...(p.title ? [["Goal", p.title] as [string, string]] : []),
         ...(p.measure ? [["Measure", p.measure === "none" ? "None: words only" : p.measure] as [string, string]] : []),
         ...(p.target ? [["Target", p.target] as [string, string]] : []),
@@ -143,7 +155,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
               <span style={{ fontSize: 13.5, lineHeight: 1.55 }}>{pr.outcome ?? pr.state}</span>
               {pr.kind === "new_tool" && pr.state === "accepted" && <Link href={`/connections/find?for=${pr.id}`}>Find a tool for it ›</Link>}
               {pr.result_ref && pr.kind === "department" && <Link href="/crew">See it on the org chart ›</Link>}
-              {pr.result_ref && pr.kind !== "new_tool" && pr.kind !== "department" && <Link href={pr.kind === "retire" ? `/agents/${pr.result_ref}` : `/build/${pr.result_ref}`}>Open {names[pr.result_ref] ?? "the agent"} ›</Link>}
+              {pr.result_ref && pr.kind !== "new_tool" && pr.kind !== "department" && <Link href={`/agents/${pr.result_ref}`}>Open {names[pr.result_ref] ?? "the agent"} ›</Link>}
             </>
           )}
         </div>

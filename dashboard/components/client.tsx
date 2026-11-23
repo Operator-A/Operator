@@ -178,30 +178,6 @@ export function DryRun({ action, compact }: { action: Act; compact?: boolean }) 
   );
 }
 
-export function BudgetForm({ current, save, controls }: { current: number; save: (v: number) => Promise<ActionResult>; controls: boolean }) {
-  const [v, setV] = useState(String(current));
-  const n = parseFloat(v);
-  const raising = n > current;
-  const blocked = raising && !controls;
-  return (
-    <div className="stack" style={{ gap: 10 }}>
-      <div className="row">
-        <span style={{ fontSize: 18, fontWeight: 600 }}>$</span>
-        <input className="input" type="number" step="0.5" min="0" max="50" value={v} onChange={(e) => setV(e.target.value)} style={{ width: 120, background: "var(--card)", border: "1px solid var(--bd)", fontSize: 15, fontWeight: 600 }} aria-label="Daily budget in dollars" />
-        <span className="sub">a day, UTC</span>
-      </div>
-      <div>
-        <ActionButton className="btn dark sm" disabled={!(n >= 0) || n === current || blocked} action={() => save(n)}
-          title={blocked ? "Raising a budget needs real runs switched on for this OPERATOR" : undefined}
-          confirm={{ title: "Change the daily budget?", body: "Runs after the budget is reached are skipped for the rest of the UTC day.", lines: [{ k: "Now", v: `$${current.toFixed(2)} a day` }, { k: "New", v: `$${(n || 0).toFixed(2)} a day` }], confirmLabel: "Save budget" }}>
-          Save budget
-        </ActionButton>
-      </div>
-      {blocked && <span className="sub">Raising a budget waits until real runs are switched on for this OPERATOR. Lowering it always works.</span>}
-    </div>
-  );
-}
-
 export interface RecentRun { id: string; name: string; status: string; live: boolean }
 
 /**

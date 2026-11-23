@@ -14,7 +14,7 @@ import { TOOLS } from "@/core/tools/catalog";
 import { createGoal, editGoal, getGoal, GOALS_MISSING, listGoals, ownMeasureDefs, setGoalState, type Goal } from "@/core/goals";
 import { MAX_GOALS_PER_DEPT, planGoal, type GoalInput } from "@/core/goal-rules";
 
-import { hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, type ProposalPlan } from "@/core/proposal-rules";
+import { changeWhat, changesSpec, hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, type ProposalPlan } from "@/core/proposal-rules";
 import { CHECKS, RECHECK_DAYS, checkHref, hasCheck, type CheckTile } from "@/core/setup-check-rules";
 
 export type ProposalState = "pending" | "accepted" | "declined" | "built" | "failed";
@@ -56,7 +56,9 @@ async function goalCheck(p: Extract<ProposalPlan, { kind: "goal" }>, deptId: str
   if (p.change !== "new") {
     goal = goalId ? await getGoal(goalId) : open.find((g) => same(g.title, p.goal ?? "")) ?? null;
     if (!goal || goal.state === "dropped" || goal.department_id !== deptId) return { problem: `there is no goal called “${p.goal}” in that department` };
-    if (p.change === "drop") return { goal, input: null };
+    if (p.change === "pause" && goal.state !== "active") return { problem: `“${goal.title}” isn't running, so it can't be paused` };
+    if (p.change === "resume" && goal.state !== "paused") return { problem: `“${goal.title}” isn't paused` };
+    if (p.change !== "change") return { goal, input: null };
   } else {
     if (open.length >= MAX_GOALS_PER_DEPT) return { problem: `that department already has ${MAX_GOALS_PER_DEPT} goals; propose dropping one first` };
     if (open.some((g) => same(g.title, p.title ?? ""))) return { problem: `that department already has a goal called “${p.title}”` };
@@ -111,6 +113,13 @@ async function resolve(org: Org, plan: ProposalPlan, seat: Seat | null, deptId: 
     if (s.parentId == null) return { problem: "a department's head seat can't be closed this way" };
     return { r: { ...plan, seatId: s.id }, dept: s.departmentId };
   }
+  if (plan.kind === "change_agent") {
+    // slice 6: a head changes only a teammate in its own department, never itself; the owner and Claude name any
+    const id = agentNamed(plan.agent);
+    if (!id || !live.has(id)) return { problem: `${plan.agent} isn't an agent in your department` };
+    if (id === seat?.agentId) return { problem: "a head can't propose changes to itself; the owner changes a head in its sheet" };
+    return { r: { ...plan, agentId: id }, dept: seats.find((s) => s.agentId === id)?.departmentId ?? null };
+  }
   if (plan.kind === "goal") {
     // a head reaches only its own department; Avery (the company seat), the owner and Claude name one
     const dept = seat?.departmentId ?? deptId;
@@ -141,7 +150,9 @@ export async function fileProposal(input: Record<string, unknown>, from: { agent
   const mine = (open ?? []) as { id: string; title: string }[];
   // a hire filed again for the same name in the same department replaces the one waiting (Change something
   // on the hire card, docs/department-pages.md slice 5); anything else filed twice is refused
-  const again = got.plan.kind === "hire" ? await waitingHire(got.plan.name, res.dept) : null;
+  // slice 6: so does a change filed again for the same agent or goal (Change something on a change card)
+  const again = got.plan.kind === "hire" ? await waitingHire(got.plan.name, res.dept)
+    : got.plan.kind === "change_agent" || got.plan.kind === "goal" ? await waitingChange(res.r, res.dept) : null;
   if (!again && mine.some((p) => same(p.title, title))) throw new Error(`“${title}” is already waiting for the owner`);
   if (from.agentId) {
     const { count } = await db().from("proposals").select("id", { count: "exact", head: true }).eq("state", "pending").eq("from_agent", from.agentId);
@@ -151,7 +162,7 @@ export async function fileProposal(input: Record<string, unknown>, from: { agent
     kind: got.plan.kind, title, source: from.source, from_agent: from.agentId, department_id: res.dept, run_id: from.runId ?? null, payload: res.r, why: got.why,
   }).select("id").single();
   if (error) throw new Error(error.message);
-  if (again) await close(again, "declined", "Replaced by a newer draft of the same hire.").catch(() => undefined);
+  if (again) await close(again, "declined", `Replaced by a newer draft of the same ${got.plan.kind === "hire" ? "hire" : "change"}.`).catch(() => undefined);
   return data.id as string;
 }
 
@@ -203,6 +214,41 @@ async function waitingHire(name: string, deptId: string | null): Promise<string 
   return ((data ?? []) as { id: string; payload: { name?: string } }[]).find((r) => same(r.payload?.name ?? "", name))?.id ?? null;
 }
 
+/** A pending change card for the same agent, or the same goal (by id, or a new goal's title), in this department. */
+async function waitingChange(r: Resolved, deptId: string | null): Promise<string | null> {
+  if (!deptId || (r.kind !== "change_agent" && r.kind !== "goal")) return null;
+  const { data } = await db().from("proposals").select("id, payload").eq("state", "pending").eq("kind", r.kind).eq("department_id", deptId).limit(50);
+  return ((data ?? []) as { id: string; payload: Resolved }[]).find(({ payload: q }) =>
+    r.kind === "change_agent" ? q.kind === "change_agent" && q.agentId === r.agentId
+      : q.kind === "goal" && (r.goalId ? q.goalId === r.goalId : !q.goalId && same(q.title ?? "", r.title ?? "")))?.id ?? null;
+}
+
+/**
+ * The version a change card would save (slice 6): the agent's draft, else its live version, with the job,
+ * good result, reads and cost cap changed. Read tools only; checked by readSpec like any save. Null when the
+ * change touches only the schedule or budget.
+ */
+export async function changeDraft(p: Extract<Resolved, { kind: "change_agent" }>) {
+  if (!changesSpec(p)) return null;
+  for (const t of [...p.add, ...p.drop]) {
+    const k = TOOLS[t]?.kind;
+    if (k !== "read" && k !== "calculate") throw new Error(`${toolLabel(t)} can't be changed by a proposal: actions are granted only on the Can do toggles.`);
+  }
+  const versions = await listSpecVersions(p.agentId!);
+  const base = draftOf(versions) ?? versions.find((v) => v.active);
+  if (!base) throw new Error(`${p.agent} wasn't built in the app, so it can't be changed here.`);
+  const tools = [...base.spec.tools.filter((t) => !p.drop.includes(t)), ...p.add.filter((t) => !base.spec.tools.includes(t))];
+  const next = {
+    ...base.spec, tools,
+    ...(p.job ? { directive: p.job } : {}),
+    ...(p.goodResult ? { goodResult: p.goodResult } : {}),
+    ...(p.costCap != null ? { limits: { ...base.spec.limits, maxCostUsd: p.costCap } } : {}),
+  };
+  const { spec, problems } = readSpec(next, p.agentId!);
+  if (problems.length) throw new Error(`Not saved: ${problems.join("; ")}.`);
+  return { spec, base };
+}
+
 /** Is the hire's name free, and is its seat still where it was? Throws with what changed. */
 async function hireChecks(p: Extract<Resolved, { kind: "hire" }>, org: Org) {
   const { data } = await db().from("agents").select("id").ilike("name", p.name).limit(1);
@@ -220,9 +266,9 @@ export function hireDraft(p: Extract<Resolved, { kind: "hire" }>, grants: readon
   const base = hireSpec(p);
   const { spec, problems } = readSpec({ ...base, tools: [...base.tools, ...ok] });
   const actions = spec.tools.filter((t) => TOOLS[t]?.kind === "action" && !ok.includes(t));
-  // only the owner grants a tool from a server they added, on the builder's Tools step
+  // only the owner grants a tool from a server they added, in the agent's sheet
   const custom = spec.tools.filter((t) => !TOOLS[t]);
-  return { spec, problems: [...problems, ...actions.map((t) => `${toolLabel(t)} is an action, which a new agent can't have`), ...custom.map(() => "a tool from a server you added is granted only on the builder's Tools step")] };
+  return { spec, problems: [...problems, ...actions.map((t) => `${toolLabel(t)} is an action, which a new agent can't have`), ...custom.map(() => "a tool from a server you added is granted only in the agent's sheet")] };
 }
 
 /** Seats the hire: its open seat, or a new one under the proposer. Returns the seat's words. */
@@ -264,7 +310,21 @@ export async function acceptProposal(id: string, opts: { grants?: readonly strin
       if (problems.length) throw new Error(`Not saved: ${problems.join("; ")}.`);
       const v = await saveSpecVersion(p.agentId!, spec, `Adds ${t.label}, proposed${pr.from_agent ? ` by ${pr.from_agent}` : ""}`, "proposal");
       await close(id, "accepted", `Draft v${v} adds ${t.label}. It runs only after Try it and Go live.`, p.agentId!);
-      return { text: `Saved as draft v${v} with ${t.label}. Try it, then Go live; what runs today hasn’t changed.`, href: `/build/${p.agentId}` };
+      return { text: `Saved as draft v${v} with ${t.label}. Try it, then Go live; what runs today hasn’t changed.`, href: `/agents/${p.agentId}?edit=1` };
+    }
+    if (p.kind === "change_agent") {
+      // slice 6: the version part here, checked like any save; the schedule and budget are set by the action
+      // that called this (dashboard/proposalActions.ts), through the sheet's own actions and their checks
+      if (!p.agentId) throw new Error("That change names no agent.");
+      const d = await changeDraft(p);
+      const what = changeWhat(p).join(", ");
+      if (!d) {
+        await close(id, "accepted", `Approved: ${what}.`, p.agentId);
+        return { text: `Approved: ${what}.`, href: null, agentId: p.agentId };
+      }
+      const v = await saveSpecVersion(p.agentId, d.spec, `Changes ${what}, asked for in the chat${pr.from_agent ? ` (filed by ${pr.from_agent})` : ""}`, "proposal");
+      await close(id, "accepted", `Draft v${v} changes ${what}. It runs only after a clean try and Go live.`, p.agentId);
+      return { text: `Saved as draft v${v}. Try it once; it goes live only after a clean try. What runs today hasn’t changed.`, href: null, agentId: p.agentId };
     }
     if (p.kind === "department") {
       // card 156: the department, its people off duty, its goals and asks, through the app's own paths
@@ -284,10 +344,13 @@ export async function acceptProposal(id: string, opts: { grants?: readonly strin
         await close(id, "accepted", `Goal set: ${p.title}.`, gid);
         return { text: `Goal set: ${p.title}. Its head plans around it from the next run.`, href: `/goals/${gid}` };
       }
-      if (p.change === "drop") {
-        await setGoalState(c.goal!.id, "dropped");
-        await close(id, "accepted", `Dropped: ${c.goal!.title}.`, c.goal!.id);
-        return { text: `Dropped: ${c.goal!.title}.`, href: "/" };
+      if (p.change !== "change") {
+        // drop, and slice 6's pause, resume and done: the goal page's own state change
+        const to = ({ drop: "dropped", pause: "paused", resume: "active", done: "done" } as const)[p.change];
+        const said = ({ drop: "Dropped", pause: "Paused", resume: "Back on", done: "Marked done" } as const)[p.change];
+        await setGoalState(c.goal!.id, to);
+        await close(id, "accepted", `${said}: ${c.goal!.title}.`, c.goal!.id);
+        return { text: `${said}: ${c.goal!.title}.`, href: null };
       }
       await editGoal(c.goal!.id, c.input!);
       await close(id, "accepted", `Goal changed: ${c.goal!.title}.`, c.goal!.id);

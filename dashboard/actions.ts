@@ -11,7 +11,7 @@ import { after } from "next/server";
 import { jobOf, loadCrew } from "@/agents/registry";
 import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
-import { discardLesson, editMemory, forgetMemory, keepLesson, teach as teachMemory } from "@/core/memory";
+import { discardLesson, editMemory, forgetMemory, keepLesson } from "@/core/memory";
 import { saveReaction } from "@/core/reactions";
 import { applyApproved, cancelScheduled, decide, decideWithTrust, loadCaps, queueBookkeeperProposals, retry } from "@/core/gateway";
 import { acceptOffer, declineOffer, demote } from "@/core/trust";
@@ -27,7 +27,6 @@ import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, draftOf, listSpecVe
 import { modelDef } from "@/integrations/models";
 import { modelKeysReady, removeRoutine, routineState, saveRoutine } from "@/integrations/mcp";
 import { moveIntoOperator as moveAgentIntoOperator, runsOn } from "@/core/claude-agents";
-import { dryRunTools } from "@/core/runner";
 import { customMenu } from "@/core/tools/custom";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { lastTry } from "./builder";
@@ -662,32 +661,6 @@ export async function setBuiltBudget(agentId: string, value: number): Promise<Ac
     revalidatePath("/", "layout");
     await audit(me, "set_agent_budget", agentId, { usd: v });
     return { ok: true, text: `Budget saved: $${v.toFixed(2)} a day.` };
-  } catch (e) { return fail(e); }
-}
-
-/** Adds a standing order for a built agent: the same memory store as the Memory tab. */
-export async function addStandard(agentId: string, text: string, notionLink = ""): Promise<ActionResult> {
-  const { me, no } = await asRole("approver"); if (no) return no;
-  try {
-    await builtAgent(agentId);
-    const link = String(notionLink ?? "").slice(0, 500);
-    await withActor(me.email, () => teachMemory({ agentId, text: String(text ?? ""), keepAs: "standing_order", forget: "always", notionLink: link }));
-    revalidatePath("/", "layout");
-    return { ok: true, text: `Saved. It’s loaded on every run from the next one${link ? ", with the linked page read fresh each time" : ""}.` };
-  } catch (e) { return fail(e); }
-}
-
-/** Runs every tool the draft (or the saved spec) grants once with default inputs. No model, nothing written, not logged. */
-export async function dryRunBuilt(agentId: string, draft?: unknown): Promise<ActionResult> {
-  const { no } = await asRole("approver"); if (no) return no;
-  try {
-    const now = await builtAgent(agentId);
-    let spec = now?.spec;
-    if (draft !== undefined) { const g = await checkedDraft(draft, agentId); if ("error" in g) return { ok: false, text: g.error }; spec = g.spec; }
-    if (!spec) return { ok: false, text: "That agent has no saved spec." };
-    const rows = await dryRunTools(spec, agentId);
-    const bad = rows.filter((r) => !r.ok);
-    return { ok: !bad.length, text: rows.map((r) => `${r.ok ? "OK" : "FAILED"} ${r.label}: ${r.note}`).join(" · ") || "No tools ticked." };
   } catch (e) { return fail(e); }
 }
 

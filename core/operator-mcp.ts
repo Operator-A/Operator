@@ -311,7 +311,7 @@ async function listTools(origin: string): Promise<ToolAnswer> {
   const view = (t: (typeof all)[number]) => ({ id: t.id, label: t.label, kind: t.kind, group: t.group, what: t.detail, connected: connected(t.needs) });
   const body = {
     tools: all.filter((t) => t.kind !== "action").map(view),
-    actions: all.filter((t) => t.kind === "action").map((t) => ({ ...view(t), note: "Only an approver grants an action, on the agent's Tools step in OPERATOR. Every action starts as an approval card." })),
+    actions: all.filter((t) => t.kind === "action").map((t) => ({ ...view(t), note: "Only an approver grants an action, on the agent's Can do toggles in OPERATOR. Every action starts as an approval card." })),
   };
   return { text: answerText(body, `${origin}/connections`) };
 }

@@ -14,7 +14,7 @@ import type { CrewMember } from "@/dashboard/crew";
 // Everyone (docs/department-pages.md): the bell opens it. What waits on you first, then every
 // department's agents with their last run, so one screen answers "who is doing what".
 
-export default async function Everyone({ searchParams }: { searchParams: Promise<{ agent?: string }> }) {
+export default async function Everyone({ searchParams }: { searchParams: Promise<{ agent?: string; edit?: string }> }) {
   const [f, jar, sp] = await Promise.all([getFloor(), cookies(), searchParams]);
   const { now, later } = split(needs(f, f.now, parseSeen(jar.get(SEEN_COOKIE)?.value)));
   const org = f.chart;
@@ -79,7 +79,7 @@ export default async function Everyone({ searchParams }: { searchParams: Promise
           {offChart.filter((a) => a.id !== company?.id).map(row)}
         </div>
       )}
-      {sp.agent && <div className="dp-tok"><AgentSheetFor id={sp.agent} closeHref="/everyone" tz={f.tz} now={f.now} /></div>}
+      {sp.agent && <div className="dp-tok"><AgentSheetFor id={sp.agent} closeHref="/everyone" tz={f.tz} now={f.now} edit={sp.edit != null} /></div>}
     </>
   );
 }

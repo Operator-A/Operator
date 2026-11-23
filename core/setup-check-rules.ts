@@ -330,7 +330,7 @@ export function readFixRun(raw: unknown): FixRun | null {
 /**
  * The agents that may run a fix: each already holds the fix's action tool and every read it needs
  * (`grants` is each agent's live tools). Sorted, so the same one is picked each time. Granting is the
- * Tools step's job; nothing here adds a tool.
+ * agent sheet's job; nothing here adds a tool.
  */
 export function fixAgents(grants: Readonly<Record<string, readonly string[]>>, fix: FixType): string[] {
   const need = [FIXES[fix].tool, ...FIXES[fix].reads];

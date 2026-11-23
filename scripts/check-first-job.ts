@@ -176,7 +176,7 @@ assert.ok(plan.wake.find((w) => w.id === SETUP_AGENT)?.firstRun, "Avery's mornin
   assert.match(acts, /async function startTry[\s\S]*startTryRun\(agentId, t, true\)/, "the first try explores fresh, in the background");
   const card = readFileSync("dashboard/components/firstJob.tsx", "utf8");
   assert.match(card, /Start its first try/);
-  assert.match(card, /href=\{`\/build\/\$\{v\.agentId\}`\}[^>]*>Review its routine/, "after the try, the founder reviews its routine on its page");
+  assert.match(card, /href=\{`\/agents\/\$\{v\.agentId\}`\}[^>]*>Review its routine/, "after the try, the founder reviews its routine on its page");
   assert.match(readFileSync("dashboard/firstJob.ts", "utf8"), /\.eq\("trigger", "preview"\)/, "the Desk reads the try's run, which its floor leaves out");
 }
 

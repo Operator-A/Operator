@@ -312,7 +312,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
     custom ? mcpLog(custom.id, 10) : [],
   ]);
   const customStatuses = Object.fromEntries(statusPairs);
-  const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected ? { ok: true, text: custom ? "Connected. Its tools are listed below, all off." : `Connected. Give an agent its read tools in the builder${sel?.mcp === "klaviyo" ? ", and pick the list Email list size counts below" : ""}.` } : null;
+  const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected ? { ok: true, text: custom ? "Connected. Its tools are listed below, all off." : `Connected. Give an agent its read tools under Reads in its sheet${sel?.mcp === "klaviyo" ? ", and pick the list Email list size counts below" : ""}.` } : null;
   const outside = CONNECTIONS.filter((c) => !c.builtIn);
   const ok = outside.filter((c) => isSetUp(c, f.health)).length;
   const grid = (list: Connection[]) => <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>{list.map((c) => <Tile key={c.id} c={c} f={f} on={sel?.id === c.id} />)}</div>;
@@ -388,7 +388,7 @@ async function ModelKeysCard({ owner }: { owner: boolean }) {
   return (
     <div className="card" id="models" style={{ gap: 10 }}>
       <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="cpu" size={15} />Other models</span>
-      <span className="ink2" style={{ fontSize: 12.5 }}>Your own key for another AI provider, billed by that provider. With a key saved, its models show in the builder’s Thinking step under Advanced. Picking another model sends that agent’s job, facts and memory to the provider, and web search stays Claude-only.</span>
+      <span className="ink2" style={{ fontSize: 12.5 }}>Your own key for another AI provider, billed by that provider. With a key saved, its models show under Runs on in an agent’s sheet. Picking another model sends that agent’s job, facts and memory to the provider, and web search stays Claude-only.</span>
       {MODEL_PROVIDERS.map((p, i) => {
         const st = states[i], on = !!st?.connected, paused = on && !!st?.paused;
         return (

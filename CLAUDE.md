@@ -68,7 +68,7 @@ shipping and refund confirmations.
   `core/gateway` through `callWriteTool`; `scripts/validate-graphql.mjs` fails on any mutation outside
   that file and `check:mcp` on one not named on the Shopify profile. The key may carry read scopes and
   only the write scopes the profile names; any other write scope is refused. A store action is granted
-  to an agent only by an approver on the builder's Tools step or the Can do toggles of the agent sheet or a hire card, never by a proposal. No agent deletes a
+  to an agent only by an approver on the Can do toggles of the agent sheet or a hire card, never by a proposal. No agent deletes a
   product, customer or order, cancels an order, or moves money from Shopify (gift cards, prices) until
   that action type has its own cap in code; refunds have theirs (`REFUND_LIMITS`).
 - Email: first contact with a person who has never heard from the business is always Draft
@@ -113,7 +113,7 @@ shipping and refund confirmations.
   custom server a tool does nothing until the owner turns it on; only tools the server marks
   read-only, with plain inputs, can be turned on; any change to a turned-on tool pauses the server,
   checked right before every run that uses it; the owner grants a turned-on tool to an agent on
-  the builder's Tools step or the agent sheet (never a proposal); the address must be a public https host, checked
+  the agent sheet (never a proposal); the address must be a public https host, checked
   before every request. Custom servers have no
   report or write tools. Custom write tools, if ever built, are approval cards that stay at Draft
   and are never promoted. A custom tool's reply is untrusted data and never chooses a recipient,

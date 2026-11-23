@@ -27,9 +27,9 @@ const AUDITED = [
   // the setup check (card 281): a model run, and the founder skipping or reopening a finding
   "startSetupCheck", "skipFinding", "reopenFinding", "fixFinding",
   // the org chart: budgets, email caps, who holds a seat, drafts routing
-  "orgSetDeptBudget", "orgSetDeptEmails", "placeAgent", "orgSetHolder", "orgSetLeadChecks",
+  "orgSetDeptBudget", "orgSetDeptEmails", "orgSetHolder", "orgSetLeadChecks",
   // proposals change an agent's spec or routine
-  "proposalAccept", "hireInChat", "proposalDecline",
+  "proposalAccept", "hireInChat", "changeInChat", "proposalDecline",
   // a new department: the owner files it from Avery's draft, or throws the draft away
   "proposeDepartment", "discardDepartmentDraft",
   // OPERATOR's own MCP server: an app (Claude) connected or disconnected
@@ -47,7 +47,6 @@ const NOT_AUDITED: Record<string, string> = {
   setupPlanClear: "takes back a setup part's plan; connects nothing",
   setupToDesk: "leaves the setup wrap-up for the Desk; changes nothing else",
   previewChain: "dry runs only",
-  dryRunBuilt: "dry run only",
   applyWaiting: "applies approvals already audited",
   queueQuinn: "queues a run that withRun logs",
   react: "feedback on a run, kept as a reaction",
@@ -55,7 +54,6 @@ const NOT_AUDITED: Record<string, string> = {
   forgetMemoryLine: "memory keeps its own timeline with the actor",
   keepLessonLine: "memory keeps its own timeline with the actor",
   discardLessonLine: "memory keeps its own timeline with the actor",
-  addStandard: "memory keeps its own timeline with the actor",
   orgAddDeptRule: "memory keeps its own timeline with the actor",
   orgEditDeptRule: "memory keeps its own timeline with the actor",
   orgForgetDeptRule: "memory keeps its own timeline with the actor",
@@ -68,9 +66,6 @@ const NOT_AUDITED: Record<string, string> = {
   customCheck: "reads the server's tool list; a change pauses it on its own",
   connectorAsk: "a request for a connector, no access",
   connectorClose: "closes a request, no access",
-  goalCreate: "goals keep their own rows",
-  goalEdit: "goals keep their own rows",
-  goalSetState: "goals keep their own rows",
   planJobDone: "a to-do ticked",
   sendToAvery: "a chat message, kept in the chat",
   sendToHead: "a chat message to a department head, kept in the department chat",

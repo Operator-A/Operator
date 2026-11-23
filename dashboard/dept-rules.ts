@@ -12,14 +12,18 @@ export const deptTab = (raw: unknown): DeptTab => (DEPT_TABS as readonly string[
 /** The tab's address: Chat is the page itself. */
 export const tabHref = (deptId: string, t: DeptTab) => (t === "chat" ? `/dept/${deptId}` : `/dept/${deptId}?tab=${t}`);
 /** Where an agent opens now that its own pages are gone (slice 4): its department's Agents tab with its sheet, else Everyone. */
-export function agentHref(o: Org | null, agentId: string): string {
+export function agentHref(o: Org | null, agentId: string, edit = false): string {
   const dept = o ? seatOf(o, agentId)?.departmentId : null;
-  return dept && o!.departments.some((d) => d.id === dept) ? sheetHref(dept, "agents", agentId) : `/everyone?agent=${encodeURIComponent(agentId)}`;
+  const href = dept && o!.departments.some((d) => d.id === dept) ? sheetHref(dept, "agents", agentId) : `/everyone?agent=${encodeURIComponent(agentId)}`;
+  return edit ? `${href}&edit=1` : href;
 }
-/** A tab with an agent's sheet open over it (slice 4): the sheet is in the address, so back closes it. */
+/** The department's chat with a goal ask typed in (slice 6): "Set a goal: ", or a change to the goal named. */
+export const goalHref = (deptId: string, goal?: string | null) =>
+  `/dept/${encodeURIComponent(deptId)}?say=${encodeURIComponent(goal ? `Change the goal “${goal}”: ` : "Set a goal: ")}`;
 /** The department's chat with a hire typed in, ready to send: where every "hire an agent" link goes (slice 5). */
 export const hireHref = (deptId: string, seat?: { title: string; sub?: string | null } | null) =>
   `/dept/${deptId}?say=${encodeURIComponent(seat ? `Hire an agent for the ${seat.title} seat${seat.sub ? `: ${seat.sub}` : ""}.` : "I want to hire an agent to ")}`;
+/** A tab with an agent's sheet open over it (slice 4): the sheet is in the address, so back closes it. */
 export const sheetHref = (deptId: string, t: DeptTab, agentId: string) => `${tabHref(deptId, t)}${t === "chat" ? "?" : "&"}agent=${encodeURIComponent(agentId)}`;
 
 /**

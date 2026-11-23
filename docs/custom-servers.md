@@ -59,14 +59,14 @@ no policies; six new sign-in log events). Apply it before merging: Connections r
 
 ## Slice 2: grant custom read tools to agents
 
-A turned-on tool shows up in the builder's Tools step as a tile of its own, named after its
+A turned-on tool shows up in the agent sheet's reads (Edit tab) as one of its own, named after its
 server, next to the built-in connections. Ticking it grants it like any other read tool: the
 agent's next version is a draft until **Try it** and **Go live**.
 
 | Step | What happens | Where |
 |---|---|---|
-| Grant | A custom tool's id is its server's id, two underscores, and its name made safe (`c_ab12cd34__query_insights`). A spec may hold at most 20. Saving refuses one that isn't turned on now. Heads can't hand one out in a proposal: only the owner grants them, in the builder. | `customToolId`, `readSpec`, `customGone`, `hireDraft` |
-| Warning | The server's tile repeats the warning that someone else runs it. When the agent also reads money or email (any Mercury or Gmail tool), the tile says so: warn, don't block. | `ConnStep` in `Flow.tsx` |
+| Grant | A custom tool's id is its server's id, two underscores, and its name made safe (`c_ab12cd34__query_insights`). A spec may hold at most 20. Saving refuses one that isn't turned on now. Heads can't hand one out in a proposal: only the owner grants them, in the agent sheet. | `customToolId`, `readSpec`, `customGone`, `hireDraft` |
+| Warning | The server's tile repeats the warning that someone else runs it. When the agent also reads money or email (any Mercury or Gmail tool), the tile says so: warn, don't block. | The agent sheet (`dashboard/components/agentSheet.tsx`; was `ConnStep` in the step editor, deleted in department pages slice 6) |
 | Before a run | For each server the spec uses: still on Connections, connected, not paused, and the tool check passes now (a passing check isn't logged, so the log keeps what matters). A server that fails offers the run none of its tools, and the run's summary says which and why. Only tools still on and exactly as accepted are built. | `loadCustomTools`, `readyCustomServers`, `checkCustomServer(id, false, { quiet })` |
 | Inputs | Only inputs that aren't pinned and are plain values are offered (text at most 300 characters and no links, numbers, true/false, one of the server's choices), checked in code. Pins are laid over them, and the whole lot may weigh 2 KB. | `customParams`, `checkInput`, `customArgs` |
 | Call | Through the in-app MCP host like every read tool, then to the server with the token or key from the vault. The tool must still be on and unchanged at the moment of the call. 15 seconds a call; at most 20 custom calls a run. | `customDefs`, `callCustomTool`, `MAX_CUSTOM_CALLS` |
@@ -91,11 +91,11 @@ Only `core/tools/custom.ts` may import `callCustomTool` (lint). No migration.
 
 **Find a tool** (`/connections/find`) is where you go when an agent needs something no connection
 has. It is opened by a yes on a new-tool proposal (`?for=<proposal>`, which fills the proposal's
-words into the ask), by **Find a tool** under the builder's Tools step and under Try it
-(`?agent=<id>`, with a link back to that agent's Tools step), and from Connections. Three ways:
+words into the ask), by **Find a tool** from an agent's sheet
+(`?agent=<id>`, with a link back to that agent's sheet), and from Connections. Three ways:
 
 1. **Use a connection you have.** The built-in connections that are set up, with what they read,
-   and your servers that are connected with tools turned on. You still grant on the Tools step.
+   and your servers that are connected with tools turned on. You still grant in the agent sheet.
 2. **Add a server by its address.** A short list of servers we know of (`KNOWN_SERVERS` in
    `core/connector-rules.ts`), each marked **Not vetted**. **Add** opens Connections with the name
    and address filled in (`/connections?s=new&known=<key>`); the address is looked up in that list
@@ -120,7 +120,7 @@ Migration `20261201090000_connector_requests.sql` (table, RLS on with no policie
 ### Finding a tool (click by click)
 
 1. Open **Connections** and tap **Find a tool** in the line under the title (or tap **Find a tool**
-   under an agent's Tools step, or under its Try it result).
+   from an agent's sheet).
 2. If a connection you have covers it, tap it to see its tools, then grant it on the agent's
    **Tools** step.
 3. If a server on the list fits, tap **Docs** to read about it, then **Add**. On Connections, check
@@ -141,7 +141,7 @@ in the goal picker under **From your own tools**, and a goal on it is read the s
 |---|---|---|
 | Set up | The owner gives the field in the reply (up to three names joined by dots, like `numbers.lowest_days_of_cover`), a name, what it counts (a count, dollars, days or months) and the shape (a level to stay at or above, or a total to reach by a date). Owner only, Controls on. Every required input must be pinned first, because code calls the tool on its own. Stored on the tool's row (`tools_on.<tool>.number`); no new table. | `GoalNumberForm`, `customNumber`, `setCustomNumber`, `checkGoalNumber` |
 | Key | `n_` and 12 characters of a hash of the server, the tool and the field, so renaming the tool or the number keeps every goal on it. | `numberKey` |
-| Picker | Each number is a measure for this business only (`numberDefs`), passed to `measureOf`, `planGoal` and `progress` beside core's list. | `ownMeasures`, `ownMeasureDefs`, `GoalForm` |
+| Picker | Each number is a measure for this business only (`numberDefs`), passed to `measureOf`, `planGoal` and `progress` beside core's list. | `ownMeasures`, `ownMeasureDefs` (the goal form went in department pages slice 6: goals are set by asking the head) |
 | Reading | The server must be on Connections, connected, not paused and pass its tool check right then (the same check as before a run). The tool is called with its pins only, through `core/tools/custom.ts`, the only file that may call a custom tool. Code reads the field: only a plain finite number within ±1 billion counts. Anything else shows Couldn't read, with why. | `readOwnNumber`, `callCustomToolData`, `numberFrom` |
 | Changes | Any change to the tool pauses the server, so its goals show Couldn't read until the owner accepts the change; accepting keeps the goal number. Turning the tool off, or unpinning a needed input, ends it. | `acceptTools`, `setCustomTool` |
 

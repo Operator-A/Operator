@@ -15,7 +15,7 @@ import { statusMap } from "../core/mcp-rules";
 
 // actions that change nothing the page shows: they answer with text only
 const READ_ONLY = new Set([
-  "dashboard/actions.ts:dryRun", "dashboard/actions.ts:previewChain", "dashboard/actions.ts:dryRunBuilt",
+  "dashboard/actions.ts:dryRun", "dashboard/actions.ts:previewChain",
   "dashboard/connectionActions.ts:customScopes", "dashboard/authActions.ts:signIn",
   // the setup check card (card 281) keeps its own state: starting answers at once and the card polls the row
   "dashboard/setupCheckActions.ts:startSetupCheck", "dashboard/setupCheckActions.ts:setupCheckState", "dashboard/setupCheckActions.ts:fixFinding",

@@ -17,7 +17,7 @@ const money = new Set(["pay_vendor"]);
 assert.equal(interruptKind({ from: "approval", tool: "pay_vendor", promoted: true }, money), "money", "money asks every time, however much trust it earned");
 assert.equal(MONEY_TOOLS.size, 0, "no money tool is built yet");
 for (const id of MONEY_TOOLS) assert.equal(TOOLS[id]?.kind, "action");
-const want: Record<string, string | null> = { hire: "new_agent", department: "new_agent", goal: "goal", grant_tool: null, new_tool: null, retire: null };
+const want: Record<string, string | null> = { hire: "new_agent", department: "new_agent", goal: "goal", grant_tool: null, new_tool: null, retire: null, change_agent: null };
 for (const kind of [...PROPOSAL_KINDS, "department"]) {
   assert.ok(kind in want, `${kind} is decided here`);
   assert.equal(interruptKind({ from: "proposal", kind }), want[kind], `a ${kind} proposal`);
@@ -49,7 +49,7 @@ const tools = toolInfoOf(TOOLS);
 const why = "Wholesale is the bigger lever this quarter, per goal_progress.";
 const ok = (i: Record<string, unknown>) => { const r = planProposal({ kind: "goal", why, ...i }, tools); if ("problem" in r) assert.fail(r.problem); return r.plan as Extract<ProposalPlan, { kind: "goal" }>; };
 const no = (i: Record<string, unknown>, re: RegExp) => { const r = planProposal({ kind: "goal", why, ...i }, tools); assert.ok("problem" in r, JSON.stringify(i)); assert.match(r.problem, re); };
-assert.deepEqual(GOAL_CHANGES, ["new", "change", "drop"]);
+assert.deepEqual(GOAL_CHANGES, ["new", "change", "drop", "pause", "resume", "done"]);
 const n = ok({ change: "new", title: "Land 5 wholesale accounts", measure: "wholesale_won", target: "5", due_on: "2027-03-31" });
 assert.deepEqual(n, { kind: "goal", change: "new", goal: null, title: "Land 5 wholesale accounts", measure: "wholesale_won", target: "5", dueOn: "2027-03-31" });
 assert.equal(proposalTitle(n), "New goal: Land 5 wholesale accounts");
@@ -58,7 +58,7 @@ const d = ok({ change: "drop", goal: "Grow orders", title: "ignored", target: "9
 assert.deepEqual(d, { kind: "goal", change: "drop", goal: "Grow orders", title: null, measure: null, target: null, dueOn: null }, "a drop keeps nothing else");
 assert.equal(proposalTitle(d), "Drop goal: Grow orders");
 assert.equal(KIND_WORDS.goal, "Goal change");
-no({ change: "grow" }, /change must be new, change or drop/);
+no({ change: "grow" }, /change must be new, change, drop, pause, resume or done/);
 no({ change: "new" }, /needs a title/);
 no({ change: "drop" }, /name the goal to drop/);
 no({ change: "change", goal: "Grow orders" }, /say what changes/);
@@ -72,7 +72,7 @@ assert.match(store, /const dept = seat\?\.departmentId \?\? deptId;/, "a head re
 assert.match(store, /open\.length >= MAX_GOALS_PER_DEPT/, "the 3-goal limit is checked when filed");
 assert.match(store, /planGoal\(input, \(?await orgDate\(0\)\)?, await ownMeasureDefs\(\)\)/, "the measure and target pass the Goals page's checks");
 assert.match(store, /const c = await goalCheck\(p, dept, p\.goalId \?\? null\);\s*if \("problem" in c\) throw/, "checked again at the owner's yes");
-for (const f of ["createGoal(dept", "editGoal(c.goal!.id", "setGoalState(c.goal!.id, \"dropped\")"]) assert.ok(store.includes(f), `the yes goes through ${f}`);
+for (const f of ["createGoal(dept", "editGoal(c.goal!.id", "setGoalState(c.goal!.id, to)", "drop: \"dropped\", pause: \"paused\", resume: \"active\", done: \"done\""]) assert.ok(store.includes(f), `the yes goes through ${f}`);
 const propose = TOOLS.propose.params.find((p) => p.name === "kind");
 assert.ok(propose && propose.type === "enum" && propose.options.includes("goal"), "a head can propose a goal change");
 const migration = readFileSync("supabase/migrations/20261222090000_goal_proposals.sql", "utf8");

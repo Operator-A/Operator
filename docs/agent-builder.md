@@ -2,6 +2,8 @@
 
 > **Nov 13:** the builder screen's eight sections became the builder flow, one question per card (docs/builder-flow.md, slice 2). Slice 4 replaced Preview, the Deliver switch, Compare, Switch, the engine and playbook panels and `/lab` with Try it and Go live: a save is now a draft, and only Go live (after a try of that version where every step worked) makes it the version that runs. The spec, playbooks (called "its routine" on screen) and runner below are otherwise unchanged.
 
+> **Nov 23:** the step editor went too (department pages slice 6): an agent is edited in its sheet or changed by asking its head in the department's chat (docs/department-pages.md).
+
 Plan (approved by the owner 2026-11-13): https://claude.ai/artifact/VNbJQM4SMTWDbKH9CfjHMh.
 Mockup: https://claude.ai/artifact/FwFFc3nmJK7QuRvag7LAW2.
 Epic on the Build Board: "EPIC: Agent builder (build agents from scratch in the app)", slices Order 41-47.

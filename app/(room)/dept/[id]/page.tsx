@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { goLive, realRun, setEnabled, tryBuilt } from "@/dashboard/actions";
-import { hireInChat } from "@/dashboard/proposalActions";
+import { changeInChat, hireInChat, proposalDecline } from "@/dashboard/proposalActions";
 import { deptHires } from "@/dashboard/hireCards";
+import { deptChanges } from "@/dashboard/changeCards";
 import { getApprovals, getCounts, getOrgSwitch, getReactRules, getRoster, getTz, type ApprovalItem, type ApprovalsView, type ReactRules } from "@/dashboard/data";
-import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, headAgentId, hireHref, needsByDept, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
+import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, goalHref, headAgentId, hireHref, needsByDept, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
 import { goalNumber } from "@/dashboard/dept-feed";
 import { deptRuns } from "@/dashboard/deptFeed";
 import { HEAD_CHAT_MISSING, headHistory } from "@/core/head-chat";
@@ -34,7 +35,7 @@ const NO_ORG = "The org chart tables aren’t up to date: apply the org chart mi
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 
-export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string }> }) {
+export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; edit?: string }> }) {
   // the pieces this page shows, in one round (card 304): the crew and its runs, what waits on you, the time zone, the org switch
   const [{ id }, sp, roster, counts, tz, org] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch()]);
   const chart = roster.chart;
@@ -74,7 +75,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
           <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} goals={goals} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} />
         </div>
       </div>
-      {sp.agent && <AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} />}
+      {sp.agent && <AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} />}
     </div>
   );
 }
@@ -101,8 +102,13 @@ async function Chat({ id, name, title, roster, tz, say }: P) {
   const chart = roster.chart!;
   const headId = headAgentId(chart, id), head = headId ? roster.byId[headId] : null;
   const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
-  const hires = await deptHires(id, roster).catch(() => ({ cards: [], fresh: new Set<string>() }));
-  const [history, runs, view] = await Promise.all([head ? headHistory(id, 40).catch(() => null) : Promise.resolve([]), deptRuns(ids, roster.byId, undefined, 25, hires.fresh), getApprovals().catch(() => null)]);
+  const [hires, changes] = await Promise.all([
+    deptHires(id, roster).catch(() => ({ cards: [], fresh: new Set<string>() })),
+    deptChanges(id, roster).catch(() => ({ cards: [], trying: new Set<string>() })),
+  ]);
+  // tries post in the chat for a new agent's card and for a draft a change card saved
+  const posts = new Set([...hires.fresh, ...changes.trying]);
+  const [history, runs, view] = await Promise.all([head ? headHistory(id, 40).catch(() => null) : Promise.resolve([]), deptRuns(ids, roster.byId, undefined, 25, posts), getApprovals().catch(() => null)]);
   const open = new Set(runs.flatMap((r) => r.drafts));
   const items = view ? [...view.pending, ...view.withLead].filter((i) => open.has(i.id)) : [];
   const rules = await rulesFor(items);
@@ -113,7 +119,8 @@ async function Chat({ id, name, title, roster, tz, say }: P) {
     <HeadChat deptId={id} dept={name} head={head?.name ?? null} title={title} tz={tz} talk={talk} runs={runs} cards={cards} send={sendToHead}
       missing={head ? (history ? null : HEAD_CHAT_MISSING) : seat?.holder === "owner" ? `You lead ${name}, so there’s no head agent to talk to here. Ask Avery about this department instead.` : `${name} has no head yet. Fill its head seat on the Agents tab to talk to one.`}
       starters={[`How is ${name} doing?`, "What needs me here?", "Who is behind?"]}
-      hires={hires.cards} hireActs={{ hire: hireInChat, tryIt: tryBuilt, goLive, duty: setEnabled }} controls={controlsOn()} say={say} />
+      hires={hires.cards} hireActs={{ hire: hireInChat, tryIt: tryBuilt, goLive, duty: setEnabled }}
+      changes={changes.cards} changeActs={{ approve: changeInChat, decline: proposalDecline, goLive }} controls={controlsOn()} say={say} />
   );
 }
 
@@ -169,6 +176,7 @@ async function Goals({ id, name, roster, goals }: P) {
   const headId = head?.holder === "agent" ? head.agentId : null;
   const outs = headId ? await latestOutputs([headId]).catch(() => ({} as Awaited<ReturnType<typeof latestOutputs>>)) : {};
   const word = headId && outs[headId] ? { who: roster.byId[headId]?.name ?? headId, text: firstSentence(outs[headId].summary) } : null;
+  const who = (headId && roster.byId[headId]?.name) || "the head";
   return (
     <div className="dp-scroll">
       {mine.length > 0 && (
@@ -176,7 +184,7 @@ async function Goals({ id, name, roster, goals }: P) {
           {mine.map((g) => {
             const n = goalNumber(g.line);
             return (
-              <Link key={g.id} href={`/goals/${g.id}`} className="dp-goal">
+              <Link key={g.id} href={goalHref(id, g.title)} className="dp-goal">
                 <span className="k">Goal · {g.statusLabel}</span>
                 <h4>{g.title}</h4>
                 <div className="num">{n.big}{n.small && <> <small>{n.small}</small></>}</div>
@@ -188,7 +196,7 @@ async function Goals({ id, name, roster, goals }: P) {
           })}
         </div>
       )}
-      <Link href={`/goals/new?dept=${id}`} className="dp-newline">{PLUS}<span><b>{mine.length ? "Set another goal." : `${name} has no goals yet.`}</b> A goal is a number measured in code, like margin or orders a week.</span></Link>
+      <Link href={goalHref(id)} className="dp-newline">{PLUS}<span><b>{mine.length ? `Set or change a goal by telling ${head ?? "the head"}.` : `${name} has no goals yet. Set one by telling ${who}.`}</b> A new or changed goal comes back as a card for your OK, because goals steer what the agents do.</span></Link>
     </div>
   );
 }

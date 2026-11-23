@@ -299,7 +299,7 @@ business can't connect it. Ours runs in the app like Gmail's, with two Google si
 - **Agents** read them as `calendar_week` (untrusted) and `calendar_free_time` (trusted; each slot
   carries a pick), group `calendar`, needing `CALENDAR_CONNECTED`.
 - **The action** `calendar_hold` is the first granted action type (card 250): any agent an approver
-  gives it to on the builder's Tools step. It takes a slot pick, a length (15 minutes to 8 hours,
+  gives it to on the Can do toggles of the agent sheet. It takes a slot pick, a length (15 minutes to 8 hours,
   inside the slot), a title and a reason; the model never types a time. The gateway checks the fields
   (`refuseHold`: title, start and end only; no links or addresses; 5 minutes to 30 days out) when it
   is proposed and again before it is applied, and the server checks the time is still free on the
@@ -547,7 +547,7 @@ profile. Our own server runs in the app with two restricted keys.
   lacks the permission and 404 when it has it, so nothing is changed. The read key must be refused all of
   them; the drafts key must reach invoices and invoice items and nothing else.
 - **Who drafts:** no agent is named in code. The owner gives `stripe_invoice_draft` to an agent on the
-  builder's Tools step (granted actions, card 250), the gateway checks the agent's active spec at propose
+  agent sheet's Can do toggles (granted actions, card 250), the gateway checks the agent's active spec at propose
   and apply, and each draft is capped at 5 lines and $5,000 in code.
 - **Files:** `integrations/stripe-api.ts` is the only file that calls Stripe for a business, only
   `integrations/stripe-server.ts` imports it, and only `integrations/mcp.ts` imports the server (lint and
@@ -595,7 +595,7 @@ runs in the app, signed in on Intuit's own page.
   must be unchanged, or the action is marked partly applied. There is no create, delete or void call and
   nothing sends an amount; `check:quickbooks` fails on one.
 - **Who categorizes:** no agent is named in code. An approver gives `quickbooks_categorize_expense` to an
-  agent on the builder's Tools step (granted actions); the gateway checks the agent's active spec at
+  agent on the Can do toggles of the agent sheet (granted actions); the gateway checks the agent's active spec at
   propose and apply. At most `policies.max_qbo_categorize_per_run` (20) per apply.
 - **Files:** `integrations/quickbooks-api.ts` is the only file that calls QuickBooks for a business, only
   `integrations/quickbooks-server.ts` imports it, and only `integrations/mcp.ts` imports the server (lint
@@ -661,7 +661,7 @@ a profile. Our own server runs in the app, signed in on Square's own page.
   is no publish, cancel, delete, refund, payment or order update call; `check:square` fails on one. The
   owner publishes and sends from Square.
 - **Who drafts:** no agent is named in code. An approver gives `square_invoice_draft` on the builder's
-  Tools step (granted actions). At most `policies.max_invoice_drafts_per_run` (5) per apply.
+  Can do toggles of the agent sheet (granted actions). At most `policies.max_invoice_drafts_per_run` (5) per apply.
 - **Files:** `integrations/square-api.ts` is the only file that calls Square for a business, only
   `integrations/square-server.ts` imports it, and only `integrations/mcp.ts` imports the server (lint
   and `check:square`). `Square-Version` pinned; requests never follow redirects; a 401 pauses the sign-in.

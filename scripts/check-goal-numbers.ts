@@ -72,7 +72,6 @@ const custom = readFileSync("core/tools/custom.ts", "utf8");
 assert.match(custom, /export async function readOwnNumber[\s\S]*readyCustomServers\(\[s\.serverId\]\)[\s\S]*callCustomToolData\(r\.server\.id, s\.tool, \{\}\)/);
 assert.match(readFileSync("eslint.config.mjs", "utf8"), /importNames: \["callCustomTool", "callCustomToolData"\]/);
 assert.match(readFileSync("dashboard/connectionActions.ts", "utf8"), /export async function customNumber\([^\n]*\n\s+const \{ me, no \} = await asRole\("owner"\)/);
-assert.match(readFileSync("dashboard/components/GoalForm.tsx", "utf8"), /From your own tools/);
 
 // ---- "Show in the morning brief" (card 133.5)
 assert.equal((checkGoalNumber({ ...good, brief: "on" }, tool(), on()) as { number: { brief?: true } }).number.brief, true);

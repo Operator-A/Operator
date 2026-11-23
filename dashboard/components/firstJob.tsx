@@ -97,7 +97,7 @@ export function FirstJobCard({ v, owner, look = "card" }: { v: FirstJobView; own
       ) : null}
       <div className="row wrap" style={{ gap: 10 }}>
         {r && <Link href={`/runs/${r.id}`} className="btn outline sm">{going ? "Watch the run" : "See the run"}</Link>}
-        {!going && v.kind === "try" && <Link href={`/build/${v.agentId}`} className="btn dark sm">Review its routine</Link>}
+        {!going && v.kind === "try" && <Link href={`/agents/${v.agentId}`} className="btn dark sm">Review its routine</Link>}
         {!going && !!v.approvalsPending && <Link href="/approvals" className="btn dark sm">Review approvals</Link>}
       </div>
       <Waits waits={v.waits} />

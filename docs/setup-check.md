@@ -54,7 +54,7 @@ against the domains and the pages fetched. Steps are plain text (text params ref
   (`fixAgents`). It runs as that agent's manual run through `withRun` (its duty switch, budget and standing
   orders hold), held to just those tools and `FIX_LIMITS`, and may stage at most 5 changes. Each one is an
   ordinary approval card. The finding shows what it staged, counted in code.
-- With no such agent, nothing runs: the card links to an agent's Tools step to give it the action. A check
+- With no such agent, nothing runs: the card links to an agent's sheet, on its Edit tab, to give it the action. A check
   or fix never grants a tool.
 
 ## Meta Ads (card 283)

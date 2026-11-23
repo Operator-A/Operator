@@ -17,7 +17,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | 3 | Runs post into the chat: a checklist from `run_steps`, the result, drafts as approval cards | The department's run list on the Desk |
 | 4 | The agent sheet: Runs and Edit (model, schedule, reads, grants, budget, triggers inside OPERATOR) | `/agents/[id]` and `/build/[id]` |
 | 5 | Hire in the chat: a draft card with grant toggles and cost in code; Hire runs a first try | `/build/new` step screens |
-| 6 | Change agents and goals by asking (change cards); event triggers from connected tools | The Set a goal form |
+| 6 | Change agents and goals by asking (change cards); the agent sheet's More detail | The step editor (`/build/[id]?edit`) and the Set a goal form |
 
 ## Slice 1: the page
 
@@ -126,8 +126,8 @@ feed's order; the live route, the runner and the one approval path).
   draft" link to Crew > Schedule, where those chains are set today; triggers from a connected tool come in
   slice 6.
 - **Can do = an approver's grant.** The Can do toggles grant an action an approver may give (`agents:
-  "granted"`), exactly as the builder's Tools step does; a proposal still can't grant one. CLAUDE.md names
-  the sheet beside the Tools step.
+  "granted"`), exactly as the builder's Tools step did; a proposal still can't grant one. CLAUDE.md names
+  the sheet (since slice 6, the sheet and the hire card only).
 - **The step editor stays for fine detail.** What a good result looks like, run limits, pages and other
   agents it reads stay in the step-by-step editor (`/build/[id]?edit=1`, linked from the sheet) until hiring
   moves into the chat (slice 5).
@@ -166,3 +166,45 @@ and makes a version; Go live needs a clean try, in code and on the button; the o
 Tests: `npm run check:dept` (a hire's schedule and suggested actions; a suggestion never becomes a tool; only
 suggested, approver-grantable actions get through a Hire tap; the cost line; card stages; only a new agent's
 first try posts; no link to `/build/new`; the head asks at most two questions) and `npm run check:proposals`.
+
+## Slice 6: change agents and goals by asking
+
+- **The head files, the owner approves.** Asked to change one of its agents, the head files a `change_agent`
+  with File a proposal, giving only what changes: when it runs (`days`, `time`), its daily `budget` (up to
+  `CHANGE_MAX_BUDGET`), its job (`each_run`, the whole job in the owner's words), `good_result`, read tools to
+  add (`tools`) or take away (`drop`), and `cost_cap` a run (`CHANGE_COST_CAP`, $0.01 to $2). `planProposal`
+  refuses a model, an action (only a person grants or takes one away, on the sheet's Can do toggles), a link,
+  and a change with nothing in it. The server refuses an agent outside the head's department, and a head
+  changing itself. A goal change is a `goal` proposal: new, change, drop, and now pause, turn back on and
+  mark done.
+- **The change card.** A waiting change shows in the department's chat as a card in time order
+  (`deptChanges` in `dashboard/changeCards.ts`, pure parts in `dashboard/change-rules.ts`): each line is Now
+  → New, worked out in code from the agent's saved version or the goal row. Filed again for the same agent
+  or goal, it replaces the waiting card (Change something). A decided card stays in the chat for
+  `CHANGE_KEEP_DAYS`.
+- **Approve.** `changeInChat` (owner only, audited) goes through `acceptProposal`. A goal change goes through
+  the goal's own code (`createGoal`, `editGoal`, `setGoalState`). A new time or budget goes through the
+  sheet's own actions (`setAgentTime`, `setBuiltBudget`). A change to the job, good result, reads or cost cap
+  saves a draft version (`saveSpecVersion`); it never goes live by itself. The chat then runs a try with the
+  existing `tryBuilt` (it posts as "Try of vN"), and after a clean try the card offers Go live with vN, the
+  existing `goLive`, which checks again.
+- **More detail in the sheet.** The sheet's Edit tab gains a More detail section: what a good result looks
+  like, each run's cost and step limits (inside `RUN_LIMITS`), Notion pages it reads, other agents' results it
+  reads, and where it saves its result (report tools). Saving any of them saves a draft, like the rest of the
+  Edit tab.
+- **Goals.** Every Set a goal link (the Desk, the Goals tab, a goal page) opens the department's chat with the
+  ask typed in (`goalHref`). The goal page stays, read only: pace, the head's plan with Mark done on the
+  owner's jobs (Needs you links there), the review and the department's AI spend.
+- **Event triggers** came with live events (docs/live-events.md): an event chain is set on Crew > Schedule.
+- **Deletes.** The step editor (`/build/[id]?edit`, `Flow.tsx`, `flowSteps.ts`), `/goals/new` and
+  `GoalForm.tsx`, the goal form's actions (`goalCreate`, `goalEdit`, `goalSetState`), the builder's seat
+  picker (`seatChoices`, `seatToolChoices`, `placeAgent`), `addStandard`, `dryRunBuilt` and `dryRunTools`,
+  and `BudgetForm`. `/build/[id]` and `/agents/[id]` only redirect to the agent's sheet (`?edit` opens its
+  Edit tab). The rules that named "the builder's Tools step" now name the agent sheet's Can do toggles.
+
+Tests: `npm run check:proposals` (a change carries only what changes; no action, model or link; cost cap and
+budget inside code's limits; goal pause, turn back on and done carry no fields), `npm run check:dept` (Now →
+New lines, card stages, a replaced card leaves the chat, Approve is the owner's and goes through the
+proposal's own path, a change saves a draft and never goes live by itself, only the head's own department,
+the deleted files and links are gone, the sheet's More detail fields), `npm run check:interrupts` and
+`npm run check:audit`.

@@ -36,7 +36,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
     customMenuFor(), run.trigger === "chain" ? getChainRuns(run.id) : null, run.trigger === "chat" ? askedIn(run.id).catch(() => null) : null,
   ]);
   const leads = items ? items.length : null;
-  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.crew, f.health, custom), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps, f.tz) });
+  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.crew, f.health, custom), schedule: null, chain: null, usedBy: mf.usedBy, run: mapRunOf(run, steps, f.tz) });
   const look = RUN_LOOK[run.status];
 
   // Where the money went, split in code with the same prices the agents bill with.

@@ -204,7 +204,7 @@ async function saveFixRun(tile: CheckTile, index: number, run: FixRun): Promise<
 
 /**
  * Fix it for me: who would run it. An agent that already holds the fix's action and reads; otherwise
- * where to grant it (the builder's Tools step of an agent that holds one of the reads, else the Crew).
+ * where to grant it (the agent sheet's Can do toggles of an agent that holds one of the reads, else the Crew).
  */
 export async function claimFix(tile: CheckTile, index: number): Promise<{ agentId: string; name: string; fix: FixType; finding: Finding } | { problem: string; href?: string }> {
   const now = await setupCheck(tile);
@@ -218,7 +218,7 @@ export async function claimFix(tile: CheckTile, index: number): Promise<{ agentI
   const [agentId] = fixAgents(grants, fix);
   if (!agentId) {
     const near = Object.keys(grants).sort().find((a) => FIXES[fix].reads.some((t) => grants[a].includes(t)));
-    return { problem: `No agent can do this yet. Give one “${FIXES[fix].label}” on its Tools step, then tap Fix it for me again.`, href: near ? `/build/${near}?edit=1&step=connections` : "/crew" };
+    return { problem: `No agent can do this yet. Give one “${FIXES[fix].label}” on the Can do toggles in its sheet, then tap Fix it for me again.`, href: near ? `/agents/${near}?edit=1` : "/crew" };
   }
   await saveFixRun(tile, index, { status: "running", agent: names[agentId], run_id: null, staged: 0, note: "", at: new Date().toISOString() });
   return { agentId, name: names[agentId], fix, finding };

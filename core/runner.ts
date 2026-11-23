@@ -34,7 +34,7 @@ import { modelClient, type ModelClient } from "@/integrations/llm";
 import { modelDef } from "@/integrations/models";
 import { TOOLS } from "@/core/tools/catalog";
 import { callTool, hostFor } from "@/core/tools/call";
-import { actionOpenTo, actionWho, checkInput, inputSchema, paramsOf, type Pick, type PickRef, type Staged, type ToolCtx, type ToolDef } from "@/core/tools/types";
+import { actionOpenTo, checkInput, inputSchema, paramsOf, type Pick, type PickRef, type Staged, type ToolCtx, type ToolDef } from "@/core/tools/types";
 import { MAX_ROWS } from "@/core/tools/limits";
 import { loadCustomTools } from "@/core/tools/custom";
 import { MAX_CUSTOM_CALLS, isCustomToolId } from "@/core/custom-mcp-rules";
@@ -518,32 +518,4 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
     metrics: { ...numbers, finished: finished ? 1 : 0, tool_calls: used, playbook: mode === "playbook" ? 1 : 0, fell_back: mode === "fallback" ? 1 : 0, actions_staged: actions.length, actions_queued: count("queued"), reports_sent: reports.filter((r) => r.ok).length },
     steps, finished, result: finished ? result : null, output: traced.numbers, mode, fellBack, actions, reports,
   };
-}
-
-/** Free check of a spec: runs every granted tool once with its default inputs. No model, nothing written, not logged. */
-export async function dryRunTools(spec: AgentSpec, agentId: string): Promise<{ tool: string; label: string; ok: boolean; note: string; ms: number }[]> {
-  const ctx: ToolCtx = { agentId, notionPages: spec.notionPages, outputSources: spec.readsFrom, reportPage: spec.reportPage };
-  const customIds = spec.tools.filter(isCustomToolId);
-  const custom = customIds.length ? await loadCustomTools(customIds) : { tools: {}, notes: [] };
-  const cat: Readonly<Record<string, ToolDef>> = customIds.length ? { ...TOOLS, ...custom.tools } : TOOLS;
-  const host = hostFor(customIds.length ? cat : undefined);
-  return Promise.all(spec.tools.map(async (id) => {
-    const t = cat[id], t0 = Date.now();
-    if (!t && isCustomToolId(id)) return { tool: id, label: "A tool from a server you added", ok: false, note: `not offered: ${custom.notes.join("; ") || "turned off"}`, ms: 0 };
-    if (!t) return { tool: id, label: id, ok: false, note: "not on the tool list", ms: 0 };
-    if (t.kind === "report") return { tool: id, label: t.label, ok: true, note: t.collect ? "not tried here: the model hands it rows during a run, saved after a live run" : "not tried here: it is delivered after a live run", ms: 0 };
-    if (t.server) return { tool: id, label: t.label, ok: true, note: `not tried here: it runs on Claude's side during a run, at most ${t.server.maxUses} a run`, ms: 0 };
-    if (t.kind === "action") return { tool: id, label: t.label, ok: actionOpenTo(t, agentId), note: actionOpenTo(t, agentId) ? "not tried here: it only stages proposals during a run" : `the gateway lets only ${actionWho(t)} use it`, ms: 0 };
-    const params = paramsOf(t, ctx);
-    const first = Object.fromEntries(params.filter((p) => p.type === "enum").map((p) => [p.name, p.type === "enum" ? (p.default ?? p.options[0]) : undefined]));
-    const checked = checkInput(params, first);
-    if ("problem" in checked) return { tool: id, label: t.label, ok: t.group === "custom", note: t.group === "custom" ? `not tried here: the agent fills in ${checked.problem.replace(/ is required$/, "")} during a run` : checked.problem, ms: 0 };
-    try {
-      const out = await callTool(t.id, checked.input, ctx, host);
-      const nums = Object.entries(out.numbers ?? {}).slice(0, 4).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ");
-      return { tool: id, label: t.label, ok: true, note: nums || `${JSON.stringify(out.data ?? null).length} characters of data`, ms: Date.now() - t0 };
-    } catch (e) {
-      return { tool: id, label: t.label, ok: false, note: (e instanceof Error ? e.message : String(e)).slice(0, 200), ms: Date.now() - t0 };
-    }
-  }));
 }

@@ -5,8 +5,8 @@
 import { audit } from "@/core/audit";
 import { revalidatePath } from "next/cache";
 import { withActor } from "@/core/actor";
-import { acceptProposal, declineProposal, getProposal } from "@/core/proposals";
-import { setAgentTime, type ActionResult } from "./actions";
+import { acceptProposal, declineProposal, getProposal, type Proposal } from "@/core/proposals";
+import { setAgentTime, setBuiltBudget, type ActionResult } from "./actions";
 import { asRole } from "./data";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -16,7 +16,50 @@ const done = (text: string): ActionResult => { revalidatePath("/", "layout"); re
 export async function proposalAccept(id: string): Promise<ActionResult & { href?: string }> {
   const { me, no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(id))) return { ok: false, text: "Unknown proposal." };
-  try { const r = await acceptProposal(id); await audit(me, "accept_proposal", id); return { ...done(r.text), href: r.href ?? undefined }; } catch (e) { return fail(e); }
+  try {
+    const pr = await getProposal(id);
+    const r = await acceptProposal(id);
+    await audit(me, "accept_proposal", id);
+    return { ...done(`${r.text}${pr ? await applyChange(pr) : ""}`), href: r.href ?? undefined };
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * The schedule and budget part of an approved agent change (slice 6), after acceptProposal saved any version:
+ * through the sheet's own actions, so their checks (and the Controls rule for a raise) hold. Returns words to add.
+ */
+async function applyChange(pr: Proposal): Promise<string> {
+  const p = pr.payload;
+  if (p.kind !== "change_agent" || !p.agentId) return "";
+  const out: string[] = [];
+  if (p.when) {
+    const t = await setAgentTime(p.agentId, p.when.days && p.when.time ? { days: p.when.days, time: p.when.time } : null, true);
+    out.push(t.ok ? t.text : `Its schedule wasn’t set: ${t.text}`);
+  }
+  if (p.budget != null) {
+    const b = await setBuiltBudget(p.agentId, p.budget);
+    out.push(b.ok ? b.text : `Its budget wasn’t set: ${b.text}`);
+  }
+  return out.length ? ` ${out.join(" ")}` : "";
+}
+
+/**
+ * Approve on a change card in the department chat (docs/department-pages.md, slice 6), owner only. A goal
+ * change goes through the goal code; an agent change saves any new version (it runs only after a clean try
+ * and Go live, both separate taps) and sets the schedule and budget through the sheet's own actions. Nothing
+ * here runs a model.
+ */
+export async function changeInChat(id: string): Promise<ActionResult & { agentId?: string; draft?: boolean }> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!UUID.test(String(id))) return { ok: false, text: "Unknown change." };
+  const pr = await getProposal(id);
+  if (!pr || pr.state !== "pending" || (pr.kind !== "change_agent" && pr.kind !== "goal")) return { ok: false, text: "That change isn’t waiting any more." };
+  try {
+    const r = await acceptProposal(id);
+    await audit(me, "accept_proposal", id, { via: "dept_chat" });
+    const more = await applyChange(pr);
+    return { ...done(`${r.text}${more}`), agentId: r.agentId, draft: /^Saved as draft/.test(r.text) };
+  } catch (e) { return fail(e); }
 }
 
 /**

@@ -98,7 +98,7 @@ reaction). `proposeLesson` stays for a lead's or head's send-back.
 - **Today:** the stat chips (Spend today, Runs today, Pipeline, Connections) are gone; a **Goals**
   card with a tile per goal, across departments, takes their place, with **Set a goal**. Spend
   stays in Spend by agent, runs on Runs, connections on Connections.
-- **Set a goal** (`/goals/new`): department, the goal in his words, **How code measures it**
+- **Set a goal** (`/goals/new` until department pages slice 6, which replaced it with asking the department's head in its chat; the change comes back as a card, docs/department-pages.md): department, the goal in his words, **How code measures it**
   (picked from the list; the ones code can't count yet are listed separately and say what read is
   missing), a target and a date. The form says how each measure is counted.
 - **Goal page** (`/goals/[id]`): Crew › Sales › Goal, status, "Set by you Nov 15 · owned by Rico,
@@ -149,7 +149,7 @@ department removes its goals. Until it's applied, Crew and Today say so and Set 
 `core/goals.ts` (store, `goalProgress` for the tool), `core/money.ts` (moved out of the tool list so
 the tools and the measures share one copy), `integrations/shopify/orders.ts` `ordersBetween`,
 `dashboard/goals.ts`, `dashboard/goalActions.ts`, `dashboard/components/goals.tsx`,
-`dashboard/components/GoalForm.tsx`, `app/(room)/goals/`.
+`app/(room)/goals/` (the form went in department pages slice 6).
 
 **What it replaces.** Today's stat chips (and their CSS).
 
@@ -385,7 +385,7 @@ The skill lives in the owner's Claude account, so they delete it there.
 - Every part is checked in code (`core/department-rules.ts`): names, at most 6 tracks, 3 goals,
   5 sources and 2 narrow agents; a measure must be on the goal picker and a target needs one; a
   person's tools must be read or calculate tools on the tool list (never an action, a report, or a
-  tool on a server the founder added, which they grant on the builder's Tools step); no links or
+  tool on a server the founder added, which they grant on the Can do toggles of the agent sheet); no links or
   addresses anywhere, and a source is a service's name only.
 - Where a source stands is worked out in code from the tiles, the servers added and the known
   servers list, never by the model.
