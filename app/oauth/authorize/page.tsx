@@ -3,7 +3,7 @@ import { SignInCard } from "@/app/login/card";
 import { requireSession } from "@/dashboard/data";
 import { allowApp } from "@/dashboard/mcpActions";
 import { db } from "@/core/db";
-import { CONSENT_LINES, CONSENT_NEVER, originOf, readAuthorize, withQuery } from "@/core/operator-mcp-rules";
+import { CONSENT_LINES, CONSENT_NEVER, CONSENT_OWNER_LINES, originOf, readAuthorize, withQuery } from "@/core/operator-mcp-rules";
 import { clientSecret } from "@/core/operator-mcp";
 import { ROLE_LABELS } from "@/core/roles";
 
@@ -36,7 +36,7 @@ export default async function Authorize({ searchParams }: { searchParams: Promis
       </div>
       <div className="stack" style={{ gap: 6 }}>
         <span className="ink2" style={{ fontSize: 13.5 }}>{r.ask.client.name} will be able to:</span>
-        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.6 }}>{CONSENT_LINES.map((l) => <li key={l}>{l}</li>)}</ul>
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.6 }}>{[...CONSENT_LINES, ...(me.role === "owner" ? CONSENT_OWNER_LINES : [])].map((l) => <li key={l}>{l}</li>)}</ul>
         <span className="muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>{CONSENT_NEVER} What it reads is sent to {r.ask.client.name} under your own account there. You can disconnect it any time in Settings, Connected apps.</span>
       </div>
       <form action={allowApp} className="row" style={{ gap: 8 }}>

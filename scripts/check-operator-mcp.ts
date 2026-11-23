@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import {
   CONSENT_NEVER, LIMITS, MCP_PATH, OP_TOOLS, PROTOCOL_VERSIONS, answerText, authServerMetadata, bearerOf, challenge, checkArgs, clientIdOf, clientOf, dispatch,
   hashSecret, hashesMatch, isResponse, newToken, nextWindow, originOf, pickProtocol, pkceOk, readAuthorize, readRegistration, readRpc, redirectAllowed, redirectOk,
-  resourceMetadata, toolsFor, tokenParts, TOOL_BY_NAME, type RpcRequest,
+  resourceMetadata, toolsFor, tokenParts, TOOL_BY_NAME, MAX_DRAFT_TOOLS, draftTools, staleRead, toolList, type RpcRequest,
 } from "../core/operator-mcp-rules";
 import { TENANT_TABLES } from "../core/tenancy";
 
@@ -16,10 +16,14 @@ const ORIGIN = "https://op.example.com";
 const ORG = "0e1a7c4e-0002-4000-8000-000000000002", GRANT = "0e1a7c4e-00aa-4000-8000-0000000000aa";
 
 const run = async () => {
-  // ---- the tool list: slice 1 is reads only, every member is offered all of them
-  assert.deepEqual(OP_TOOLS.map((t) => t.name), ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains"]);
-  assert.ok(OP_TOOLS.every((t) => t.kind === "read" && t.min === "viewer"), "slice 1: read tools, any member");
-  assert.equal(toolsFor("viewer").length, OP_TOOLS.length);
+  // ---- the tool list: reads for every member, draft writes for owners only
+  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains"], DRAFTS = ["create_agent", "update_agent", "propose"];
+  assert.deepEqual(OP_TOOLS.map((t) => t.name), [...READS, ...DRAFTS]);
+  assert.ok(OP_TOOLS.filter((t) => READS.includes(t.name)).every((t) => t.kind === "read" && t.min === "viewer"), "read tools, any member");
+  assert.ok(OP_TOOLS.filter((t) => DRAFTS.includes(t.name)).every((t) => t.kind === "draft" && t.min === "owner"), "draft tools, owners only");
+  assert.deepEqual(toolsFor("viewer").map((t) => t.name), READS);
+  assert.deepEqual(toolsFor("approver").map((t) => t.name), READS, "an approver drafts in OPERATOR, not from an app");
+  assert.equal(toolsFor("owner").length, OP_TOOLS.length);
   for (const t of OP_TOOLS) assert.equal(t.inputSchema.additionalProperties, false, `${t.name} takes only the arguments it names`);
   const banned = /approve|reject|go_live|golive|enable|grant|cap|budget|delete|remove|connect|schedule|turn_on|run_now|send/;
   assert.ok(OP_TOOLS.every((t) => !banned.test(t.name)), "no tool approves, puts on duty, grants, changes caps or deletes");
@@ -34,6 +38,30 @@ const run = async () => {
   assert.match((checkArgs(runs, { limit: 50 }) as { problem: string }).problem, /from 1 to 20/);
   assert.deepEqual(checkArgs(runs, { limit: 3 }), { args: { limit: 3 } });
   assert.match((checkArgs(runs, ["x"]) as { problem: string }).problem, /must be an object/);
+  const create = TOOL_BY_NAME.create_agent, update = TOOL_BY_NAME.update_agent, prop = TOOL_BY_NAME.propose;
+  assert.match((checkArgs(create, { name: "Pat", job: "j", directive: "d", good_result: "g", tools: "x", effort: "max" }) as { problem: string }).problem, /effort must be one of low, medium, high/);
+  assert.match((checkArgs(create, { name: "Pat", job: "j", directive: "d", good_result: "g", tools: "x", enabled: true }) as { problem: string }).problem, /no argument "enabled"/, "create_agent can't put an agent on duty");
+  for (const k of ["enabled", "on_duty", "daily_budget_usd", "schedule", "limits", "maxCostUsd", "actions", "readsFrom", "reportPage"]) assert.ok(!(k in create.inputSchema.properties) && !(k in update.inputSchema.properties), `drafts never take ${k}`);
+  const dir = checkArgs(create, { name: "Pat", job: "j", directive: "1. read\n2. sum", good_result: "g", tools: "a, b" }) as { args: Record<string, string> };
+  assert.equal(dir.args.directive, "1. read\n2. sum", "a directive keeps its line breaks");
+  assert.match((checkArgs(update, { agent: "pat" }) as { problem: string }).problem, /needs based_on_version/, "a change names the version it was based on");
+  assert.match((checkArgs(prop, { kind: "promote", why: "because it is good" }) as { problem: string }).problem, /kind must be one of/);
+
+  // ---- what a draft from Claude may put on an agent: reads and calculations; everything else carries over
+  const kinds: Record<string, string> = { r1: "read", r2: "read", c1: "calculate", rep: "report", act: "action", "srv__t": "custom" };
+  const k = (id: string) => kinds[id];
+  assert.deepEqual(toolList(" r1, r2  r1,"), ["r1", "r2"]);
+  assert.deepEqual(draftTools(["r1", "c1"], [], k), { tools: ["r1", "c1"] });
+  assert.match((draftTools(["act"], [], k) as { problem: string }).problem, /only an approver grants actions/);
+  assert.match((draftTools(["rep"], [], k) as { problem: string }).problem, /report tool/);
+  assert.match((draftTools(["srv__t"], [], k) as { problem: string }).problem, /owner added/);
+  assert.match((draftTools(["nope"], [], k) as { problem: string }).problem, /isn't on the tool list/);
+  assert.match((draftTools(Array.from({ length: MAX_DRAFT_TOOLS + 1 }, (_, i) => `r${i}`), [], k) as { problem: string }).problem, /at most 8/);
+  assert.deepEqual(draftTools(["r2"], ["r1", "act", "rep", "srv__t"], k), { tools: ["r2", "act", "rep", "srv__t"] }, "dropping a read is fine; actions, reports and added-server tools stay as they were");
+  assert.deepEqual(draftTools([], ["r1", "act"], k), { tools: ["act"] });
+  assert.deepEqual(draftTools(null, ["r1", "act"], k), { tools: ["r1", "act"] }, "no tools argument leaves them as they are");
+  assert.equal(staleRead(3, 3), null);
+  assert.match(staleRead(2, 3)!, /changed since you read it \(you read v2, the newest is v3\)/);
 
   // ---- answers are scrubbed and cut
   const leaked = answerText({ note: "key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 here" }, `${ORIGIN}/crew`);
@@ -54,8 +82,13 @@ const run = async () => {
   assert.match(JSON.stringify(init!.result), /source of truth/);
   assert.equal(await dispatch(req("notifications/initialized", {}, "none"), "viewer", call), null, "a notification gets no answer");
   const list = await dispatch(req("tools/list"), "viewer", call);
-  assert.equal((list!.result as { tools: unknown[] }).tools.length, OP_TOOLS.length);
-  assert.ok((list!.result as { tools: { annotations: { readOnlyHint: boolean } }[] }).tools.every((t) => t.annotations.readOnlyHint));
+  assert.equal((list!.result as { tools: unknown[] }).tools.length, READS.length);
+  assert.ok((list!.result as { tools: { annotations: { readOnlyHint: boolean } }[] }).tools.every((t) => t.annotations.readOnlyHint), "a viewer is offered reads only");
+  const ownerList = (await dispatch(req("tools/list"), "owner", call))!.result as { tools: { name: string; annotations: { readOnlyHint: boolean; destructiveHint: boolean } }[] };
+  assert.ok(ownerList.tools.filter((t) => DRAFTS.includes(t.name)).every((t) => !t.annotations.readOnlyHint && !t.annotations.destructiveHint));
+  const refused = await dispatch(req("tools/call", { name: "create_agent", arguments: { name: "Pat", job: "j", directive: "d", good_result: "g", tools: "r1" } }), "approver", call);
+  assert.match(JSON.stringify(refused), /needs the owner role/);
+  assert.equal(calls.length, 0, "a draft tool never runs for a role below owner");
   const got = await dispatch(req("tools/call", { name: "get_agent", arguments: { agent: "cfo" } }), "viewer", call);
   assert.deepEqual(got!.result, { isError: false, content: [{ type: "text", text: "ok" }] });
   assert.deepEqual(calls, ['get_agent:{"agent":"cfo"}']);
@@ -146,9 +179,15 @@ const run = async () => {
   assert.equal(originOf("https://op.example.com/x", null, null), ORIGIN);
   assert.match(CONSENT_NEVER, /can't approve cards, put an agent on duty/);
 
-  // ---- the source: one business per call, reads only, the sign-in addresses reachable
+  // ---- the source: one business per call, drafts only through the builder's and proposals' code
   const store = read("core/operator-mcp.ts");
-  for (const w of ["saveSpecVersion", "createBuiltAgent", "activateSpecVersion", "fileProposal", "acceptProposal", "callWriteTool", "@/core/gateway", "withRun"]) assert.ok(!store.includes(w), `slice 1 reads only: core/operator-mcp.ts doesn't use ${w}`);
+  for (const w of ["activateSpecVersion", "acceptProposal", "declineProposal", "callWriteTool", "@/core/gateway", "withRun", "setEnabled", "enabled: true", "@/dashboard/"]) assert.ok(!store.includes(w), `core/operator-mcp.ts never uses ${w}: no going live, deciding, acting, duty or budgets`);
+  assert.match(store, /await createBuiltAgent\(got\.spec, byOf\(caller\), "Created from Claude"\)/, "a new agent is made by the builder's own code (off duty)");
+  assert.match(store, /await saveSpecVersion\(id, got\.spec,/, "a change is saved as a draft version");
+  assert.match(store, /fileProposal\(input, \{ agentId: null, source: "claude", deptId \}\)/, "a proposal is filed as from Claude");
+  assert.match(store, /const looser = specLooser\(base\.spec, got\.spec\);/, "a change never lets a run reach or spend more");
+  assert.match(store, /const stale = staleRead\(Number\(args\.based_on_version\), newest\.version\);/, "a change made since the read is refused");
+  assert.match(read("core/agent-spec.ts"), /insert\(\{ id, name: spec\.name, model: spec\.model, enabled: false,/, "createBuiltAgent makes agents off duty");
   const writes = [...store.matchAll(/from\("(\w+)"\)\.(insert|update|upsert|delete)\(/g)].map((m) => m[1]);
   assert.ok(writes.length >= 4 && writes.every((t) => t === "mcp_grants"), `the server writes only its own grants (saw ${writes.join(", ")})`);
   for (const t of OP_TOOLS) assert.match(store, new RegExp(`case "${t.name}":`), `runTool runs ${t.name}`);
@@ -170,6 +209,6 @@ const run = async () => {
   assert.match(read("dashboard/mcpActions.ts"), /const r = readAuthorize\(q, clientSecret\(\), await selfOrigin\(\)\);/, "Allow checks the request again");
   assert.match(read("CLAUDE.md"), /OPERATOR's own MCP server/, "the hard rules name the server");
 
-  console.log(`check:operator-mcp ok (${OP_TOOLS.length} read tools)`);
+  console.log(`check:operator-mcp ok (${READS.length} read tools, ${DRAFTS.length} draft tools)`);
 };
 run().catch((e) => { console.error(e); process.exit(1); });

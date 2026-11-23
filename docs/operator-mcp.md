@@ -1,7 +1,7 @@
 # OPERATOR's own MCP server: Claude as a front door
 
 Spec (approved Nov 23 2026): "Operator MCP for Claude: spec" (Claude Doc), Build Board card 310. This
-file covers slice 1 and grows with each slice.
+file covers slices 1 and 2 and grows with each slice.
 
 A member adds OPERATOR to Claude as a custom connector. Claude can then read the company (departments,
 agents, runs, what is waiting) and, from slice 2, draft agents. OPERATOR stays the place agents run and
@@ -18,9 +18,9 @@ the place people decide.
 
 ## Slices
 
-1. **Connect and read** (this slice): `/api/mcp`, OPERATOR's own OAuth sign-in and consent page,
+1. **Connect and read** (done): `/api/mcp`, OPERATOR's own OAuth sign-in and consent page,
    `mcp_grants`, Settings > Connected apps, seven read tools.
-2. **Draft writes**: `create_agent` and `update_agent` land as off-duty drafts (decided Nov 23 2026),
+2. **Draft writes** (done, below): `create_agent` and `update_agent` land as off-duty drafts (decided Nov 23 2026),
    `propose` files a proposal from Claude. Owner only.
 3. **Try it and the move**: `try_agent` dry runs through `withRun`, and a guide for moving an agent that
    was set up in a Claude project into OPERATOR.
@@ -106,3 +106,40 @@ the body. `check:roles` and `check:audit` cover the two actions; `check:settings
 Apply the migration, then merge. Nothing changes for anyone until a member connects an app. No new
 settings: client ids are signed with `SESSION_SECRET`. The production address must be reachable without
 Vercel Authentication for Claude to connect.
+
+## Slice 2: draft writes (owner only)
+
+Three tools, offered only when the connected member is an owner (read again on every call). Each one
+writes through the code the Control Room already uses, so nothing new can go live, act or spend:
+
+| Tool | Goes through | Lands as | Link back |
+|---|---|---|---|
+| `create_agent` | `createBuiltAgent` | A new agent, v1, **off duty**, $1 a day, no schedule, no actions. Optionally in an open seat (`setHolder`). | `/agents/<id>` |
+| `update_agent` | `saveSpecVersion` | A **draft version**. What runs today doesn't change until a person tries it and goes live. | `/agents/<id>` |
+| `propose` | `fileProposal` (source `claude`) | A **proposal** on Proposals, decided by a person. Same checks as a head's proposal: no actions. | `/proposals/<id>` |
+
+Rules, in code:
+
+- **Tools**: Claude may list reads and calculations only (`draftTools`, at most 8). Reports, actions and
+  tools from servers the owner added are refused when asked for, and on a change they carry over as they
+  were. Dropping a read is fine.
+- **Based-on version**: `update_agent` needs `based_on_version`, the newest version `get_agent` showed. If
+  someone saved since, the change is refused and Claude reads again (`staleRead`). Only fields passed change.
+- **Never looser**: a change is checked by `readSpec` like a builder save, the model's provider must have a
+  key, and `specLooser` must find nothing (no new report or action, no higher run limits). Run limits,
+  Notion pages, agents it reads from, duty, budget and schedule aren't arguments at all.
+- **Who**: versions are saved by `<email> (via <app>)`; each write is audited (`create_agent`, `save_spec`,
+  `file_proposal`) with the app's name.
+- The consent page lists the three draft lines only for an owner.
+
+### Tests
+
+`npm run check:operator-mcp` adds: draft tools are owner only (a viewer and an approver are offered reads
+only, and a call below owner never reaches the tool), no draft takes duty, budget, schedule, limits or
+actions, `draftTools` and `staleRead`, enum and line-break handling, and the source: the server uses
+`createBuiltAgent`, `saveSpecVersion` and `fileProposal` and never `activateSpecVersion`, `acceptProposal`,
+`declineProposal`, the gateway, `withRun` or dashboard actions, and still writes no table but `mcp_grants`.
+
+### Rolling it out
+
+No migration and no new settings. Merge; an owner's Claude sees the three tools on its next `tools/list`.
