@@ -7,12 +7,16 @@ import { readFileSync } from "node:fs";
 import {
   CHECKS, CHECK_TILES, HELP_USES, MAX_FINDINGS, MAX_STEPS, RUNNING_STALE_MS, SALES_GAP_KEYS, SETUP_CHECKS_FREE, SETUP_CHECK_LIMITS, SETUP_CHECK_MODEL, STEP_MAX, TITLE_MAX,
   FIXES, FIX_LIMITS, MAX_FIX_CARDS, QBO_SETUP_KEYS, SHOPIFY_SETUP_KEYS, THIN_DESCRIPTION, CHECK_OF_MCP, fixAgents, fixDirective, readFixRun, shopifySetupNumbers,
+  KLAVIYO_SETUP_KEYS, MAX_RETURNS_A_ROUND, RECHECK_DAYS, checkHref, dueReturns, klaviyoSetupNumbers, recheckFrom,
   autoInSetup, checkDirective, checkHelpUrl, countLine, hasCheck, helpDomains, isStale, keepFindings, readFinding, readFindings, salesGap, wasFetched, type Finding,
 } from "../core/setup-check-rules";
 import { GA4_SETUP_KEYS } from "../core/ga4-rules";
 import { TOOLS } from "../core/tools/catalog";
 import { TOOLS as GATEWAY } from "../core/gateway/policy";
-import { MCP_SERVERS } from "../core/mcp-rules";
+import { MCP_SERVERS, flowRows } from "../core/mcp-rules";
+import * as Mc from "../core/mailchimp-rules";
+import { PROPOSAL_KINDS, proposalTitle } from "../core/proposal-rules";
+import type { Org } from "../core/org-rules";
 import * as Me from "../core/meta-rules";
 import { TENANT_TABLES } from "../core/tenancy";
 import { modelDef } from "../integrations/models";
@@ -20,8 +24,8 @@ import { modelDef } from "../integrations/models";
 const read = (f: string) => readFileSync(f, "utf8");
 
 // ---- what a check may use: one read, the store comparison, its report tool and help reads
-assert.deepEqual(CHECK_TILES, ["analytics", "shopify", "meta", "quickbooks"], "Google Analytics (slice 1), Shopify and QuickBooks (slice 2), Meta Ads (slice 3)");
-assert.ok(hasCheck("analytics") && hasCheck("shopify") && !hasCheck("klaviyo") && !hasCheck("toString"));
+assert.deepEqual(CHECK_TILES, ["analytics", "shopify", "meta", "klaviyo", "mailchimp", "quickbooks"], "Google Analytics (slice 1), Shopify and QuickBooks (slice 2), Meta Ads (slice 3), Klaviyo and Mailchimp (slice 4)");
+assert.ok(hasCheck("analytics") && hasCheck("shopify") && hasCheck("klaviyo") && !hasCheck("stripe") && !hasCheck("toString"));
 const ga = CHECKS.analytics;
 assert.equal(TOOLS[ga.read].kind, "read");
 assert.equal(TOOLS[ga.read].trusted, false, "account text is untrusted");
@@ -74,7 +78,7 @@ assert.ok("url" in checkHelpUrl("https://answers.support.google.com/x", ["suppor
 // ---- only pages the run fetched: a link it never read is dropped after the run
 assert.ok(wasFetched("https://support.google.com/analytics/answer/1?hl=en", ["https://support.google.com/analytics/answer/1/"]));
 assert.ok(!wasFetched("https://support.google.com/analytics/answer/2", ["https://support.google.com/analytics/answer/1"]));
-const f = (severity: Finding["severity"], help_url: string | null): Finding => ({ severity, topic: "ga4.x", title: "t", why: "w", evidence: ["currency"], steps: help_url ? ["s"] : [], help_url, state: "open", fix: null, fix_run: null });
+const f = (severity: Finding["severity"], help_url: string | null): Finding => ({ severity, topic: "ga4.x", title: "t", why: "w", evidence: ["currency"], steps: help_url ? ["s"] : [], help_url, state: "open", fix: null, fix_run: null, skipped_at: null, returned_at: null });
 const k = keepFindings([f("good", null), f("worth_fixing", "https://support.google.com/a"), f("broken", "https://support.google.com/b"), f("broken", "https://support.google.com/never")], ["https://support.google.com/a", "https://support.google.com/b"]);
 assert.equal(k.dropped, 1);
 assert.deepEqual(k.kept.map((x) => x.severity), ["broken", "worth_fixing", "good"], "broken first");
@@ -140,7 +144,7 @@ for (const tile of ["shopify", "quickbooks"] as const) {
 }
 assert.deepEqual([...CHECKS.shopify.evidence], [...SHOPIFY_SETUP_KEYS]);
 assert.deepEqual([...CHECKS.quickbooks.evidence], [...QBO_SETUP_KEYS]);
-assert.deepEqual(CHECK_OF_MCP, { ga4: "analytics", shopify: "shopify", quickbooks: "quickbooks", meta: "meta" });
+assert.deepEqual(CHECK_OF_MCP, { ga4: "analytics", shopify: "shopify", quickbooks: "quickbooks", meta: "meta", klaviyo: "klaviyo", mailchimp: "mailchimp" });
 // every fix is an existing gateway action type, staged by the catalog tool that becomes it, read from tools that exist
 for (const [type, fx] of Object.entries(FIXES)) {
   assert.ok(Object.hasOwn(GATEWAY, type), `${type} is an existing action type`);
@@ -232,5 +236,83 @@ const t2 = Me.setupTotals([acct(null, null)]);
 assert.ok(!("pixels" in t2.totals) && t2.unread.includes("pixels") && t2.unread.includes("adsets_learning"), "parts Meta refused are unread");
 for (const k of Object.keys(t1.totals)) assert.ok((Me.META_SETUP_KEYS as readonly string[]).includes(k), `${k} is an evidence key`);
 assert.equal(read("supabase/migrations/20261231090000_setup_checks_meta.sql").includes("check (tool in ('analytics', 'shopify', 'quickbooks', 'meta'))"), true);
+
+// ======== slice 4 (card 284): Klaviyo, Mailchimp, and skipped findings back once from a head ========
+for (const t of ["klaviyo", "mailchimp"] as const) {
+  assert.equal(TOOLS[CHECKS[t].read].kind, "read");
+  assert.equal(TOOLS[CHECKS[t].read].trusted, false, "flow and automation names are untrusted");
+  assert.deepEqual([...CHECKS[t].fixes], [], "no fix: nothing in an email tool is changed by a check");
+  assert.equal(CHECK_OF_MCP[t], t);
+}
+// Klaviyo: get_flows on the existing scopes, fixed fields only
+assert.ok(MCP_SERVERS.klaviyo.readTools.includes("get_flows") && MCP_SERVERS.klaviyo.scopes.includes("flows:read"));
+assert.deepEqual([...MCP_SERVERS.klaviyo.scopes], ["accounts:read", "lists:read", "metrics:read", "campaigns:read", "flows:read"], "no new Klaviyo scopes");
+assert.match(MCP_SERVERS.klaviyo.url, /read-only=true/, "still the read-only server");
+const klav = read("integrations/klaviyo.ts");
+assert.match(klav, /"get_flows", \{ fields_flow: \["name", "status", "trigger_type", "archived"\]/, "fixed fields only");
+assert.doesNotMatch(klav, /flow-actions|include:/, "never a flow's actions or message content");
+const flows = flowRows({ data: [
+  { id: "F1", attributes: { name: "Welcome   Series", status: "live", trigger_type: "Added to List", archived: false } },
+  { id: "F2", attributes: { name: "Abandoned cart", status: "draft", trigger_type: "Metric", archived: false } },
+  { id: "F3", attributes: { name: "Old", status: "live", trigger_type: "Metric", archived: true } },
+  { id: "F4", attributes: { name: "Browse", status: "live", trigger_type: "Metric" } },
+  { attributes: { name: "no id" } },
+] });
+assert.equal(flows.length, 4); assert.equal(flows[0].name, "Welcome Series");
+assert.deepEqual(klaviyoSetupNumbers(2, flows, ["Placed Order", "Started Checkout", "Opened Email"], false), {
+  lists: 2, flows: 3, flows_live: 2, flows_draft: 1, flows_manual: 0, flows_archived: 1, live_metric_triggered: 1, live_list_triggered: 1, live_date_triggered: 0, flows_unconfigured: 0,
+  metric_placed_order: 1, metric_started_checkout: 1, metric_viewed_product: 0, metric_active_on_site: 0, flows_more_than_read: 0,
+});
+assert.deepEqual(Object.keys(klaviyoSetupNumbers(0, [], [], true)), [...KLAVIYO_SETUP_KEYS], "every number is an evidence key");
+// Mailchimp: three fixed GETs on our own server, settings only
+assert.ok(MCP_SERVERS.mailchimp.readTools.includes("mailchimp_setup") && !MCP_SERVERS.mailchimp.writeTools.length);
+assert.deepEqual(Mc.checkMailchimpArgs("mailchimp_setup", {}), { tool: "mailchimp_setup" });
+assert.ok("problem" in Mc.checkMailchimpArgs("mailchimp_setup", { list: "x" }), "the setup read takes no inputs");
+for (const path of Object.values(Mc.SETUP_PATHS)) assert.doesNotMatch(path, /members|email_address|merge_fields/, "never a member or an email address");
+const mcSrv = read("integrations/mailchimp-server.ts").replace(/^\s*(\/\/|\*).*$/gm, "");
+const setupBranch = mcSrv.slice(mcSrv.indexOf('a.tool === "mailchimp_setup"'), mcSrv.indexOf('a.tool === "mailchimp_audiences"'));
+assert.ok(setupBranch.length > 0 && !/method:/.test(setupBranch), "mailchimp_setup only GETs");
+const mcs = Mc.readMcSetup(
+  { automations: [{ status: "sending", settings: { title: "Welcome" }, trigger_settings: { workflow_type: "welcomeSeries" }, emails_sent: 40 }, { status: "paused", settings: { title: "Cart" }, trigger_settings: { workflow_type: "abandonedCart" } }, { status: "sending", trigger_settings: { workflow_type: "firstPurchase" } }] },
+  { lists: [{ double_optin: true, has_welcome: false, stats: { member_count: 120 } }, { double_optin: false, has_welcome: true, stats: { member_count: "30" } }] },
+  null,
+);
+assert.deepEqual(mcs.totals, { audiences: 2, members: 150, audiences_double_optin: 1, audiences_with_welcome: 1, automations: 3, automations_sending: 2, automations_paused: 1, automations_welcome: 1, automations_abandoned_cart: 0, automations_after_purchase: 1 });
+assert.deepEqual(mcs.unread, ["stores"], "a part Mailchimp refused is unread, not zero");
+assert.deepEqual(Mc.readMcSetup(null, null, { stores: [{ is_syncing: false, automations: { abandoned_cart: { status: "sending" }, abandoned_browse: { status: "paused" } } }] }).totals, { stores: 1, stores_syncing: 0, store_abandoned_cart_on: 1, store_abandoned_browse_on: 0 });
+for (const key of Object.keys(mcs.totals)) assert.ok((Mc.MAILCHIMP_SETUP_KEYS as readonly string[]).includes(key), `${key} is an evidence key`);
+// skipped findings come back once, from the head who owns the tool, filed by code
+const day = 86_400_000, at = Date.parse("2026-12-30T12:00:00Z");
+const sk = (title: string, skipped_at: string | null, extra: Partial<Finding> = {}): Finding => ({ ...f("worth_fixing", "https://help.klaviyo.com/a"), title, state: "skipped", skipped_at, ...extra });
+const rows = [{ tile: "klaviyo" as const, status: "done", updatedAt: "2026-12-25T00:00:00Z", findings: [
+  sk("old enough", new Date(at - RECHECK_DAYS * day).toISOString()), sk("too new", new Date(at - 3 * day).toISOString()), sk("back already", "2026-11-01T00:00:00Z", { returned_at: "2026-12-01T00:00:00Z" }),
+  sk("before skipped_at existed", null), { ...sk("open", "2026-11-01T00:00:00Z"), state: "open" as const }, { ...sk("good", "2026-11-01T00:00:00Z"), severity: "good" as const },
+] }];
+assert.deepEqual(dueReturns(rows, at).map((d) => d.finding.title), ["old enough"], "once, 3 weeks after the skip; the row's last change stands in for an old skip");
+assert.deepEqual(dueReturns([{ ...rows[0], updatedAt: "2026-11-01T00:00:00Z" }], at).map((d) => d.index), [0, 3]);
+assert.equal(dueReturns([{ ...rows[0], findings: Array.from({ length: 6 }, (_, i) => sk(`x${i}`, "2026-11-01T00:00:00Z")) }], at).length, MAX_RETURNS_A_ROUND);
+assert.deepEqual(readFindings([{ ...sk("t", "2026-12-01T00:00:00Z"), returned_at: "nope" }])[0].returned_at, null);
+const org: Org = { departments: [], seats: [
+  { id: "co", departmentId: null, parentId: null, title: "Chief of staff", sub: "", holder: "agent", agentId: "avery", sort: 0 },
+  { id: "mh", departmentId: "mkt", parentId: null, title: "Head of marketing", sub: "", holder: "agent", agentId: "sloane", sort: 1 },
+  { id: "m1", departmentId: "mkt", parentId: "mh", title: "Email", sub: "", holder: "agent", agentId: "cam", sort: 2 },
+] };
+const needsOf = (t: string) => TOOLS[t]?.needs;
+assert.deepEqual(recheckFrom("klaviyo", { cam: ["klaviyo_lists"], quinn: ["shopify_orders"] }, needsOf, org), { agentId: "sloane", deptId: "mkt" }, "the head of the agent who reads Klaviyo");
+assert.deepEqual(recheckFrom("klaviyo", {}, needsOf, org), { agentId: "avery", deptId: null }, "no one reads it: the company seat");
+assert.equal(recheckFrom("klaviyo", {}, needsOf, { departments: [], seats: [] }), null, "no one to file it: it waits on the Desk");
+assert.equal(checkHref("mailchimp"), "/connections?c=mailchimp");
+// the proposal: its own kind, filed only by code, a yes only opens the finding again
+assert.ok(!(PROPOSAL_KINDS as readonly string[]).includes("setup_finding"), "a head's propose tool can't file it");
+assert.equal(proposalTitle({ kind: "setup_finding", tile: "klaviyo", index: 0, title: "No welcome flow" }), "Finish setup: No welcome flow");
+const props = read("core/proposals.ts");
+assert.match(props.slice(props.indexOf('p.kind === "setup_finding") {'), props.indexOf('p.kind === "new_tool") {')), /setFindingState\(now\.tile, p\.index, "open"\)/);
+const sc = read("core/setup-check.ts");
+const ret = sc.slice(sc.indexOf("export async function returnSkipped"), sc.indexOf("/** A line for Avery"));
+assert.doesNotMatch(ret, /runExplore|withRun|callWriteTool/, "no model runs and nothing in the tool changes");
+assert.ok(ret.indexOf("returned_at:") < ret.indexOf("fileSetupFinding("), "marked returned before the proposal is filed: never twice");
+assert.match(read("app/api/dispatch/route.ts"), /on \? await returnSkipped\(now\)/, "only while the org is on");
+const sql4 = read("supabase/migrations/20270101090000_setup_checks_email.sql");
+assert.ok(sql4.includes("check (tool in ('analytics', 'shopify', 'quickbooks', 'meta', 'klaviyo', 'mailchimp'))") && sql4.includes("'goal', 'setup_finding'))"));
 
 console.log("check:setup-check ok");

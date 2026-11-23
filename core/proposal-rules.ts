@@ -10,8 +10,8 @@ import type { DeptDraft } from "@/core/department-rules";
 /** What a head (or Avery's File a proposal) may file. */
 export const PROPOSAL_KINDS = ["hire", "grant_tool", "new_tool", "retire", "goal"] as const;
 /** Every kind a proposal can be: a new department is filed only by an owner, from Avery's draft (card 156). */
-export type ProposalKind = (typeof PROPOSAL_KINDS)[number] | "department";
-export const KIND_WORDS: Record<ProposalKind, string> = { hire: "Hire", grant_tool: "Grant a tool", new_tool: "New tool", retire: "Retire", department: "New department", goal: "Goal change" };
+export type ProposalKind = (typeof PROPOSAL_KINDS)[number] | "department" | "setup_finding";
+export const KIND_WORDS: Record<ProposalKind, string> = { hire: "Hire", grant_tool: "Grant a tool", new_tool: "New tool", retire: "Retire", department: "New department", goal: "Goal change", setup_finding: "Finish setup" };
 
 export type Brain = "quick" | "thinking";
 /** Claude models only (owner's call, Nov 12). Specialists stay quick unless the job needs judgment (decision 5). */
@@ -35,6 +35,11 @@ export type ProposalPlan =
    * changes or drops; the rest is the goal as it would be. The measure, target and date are checked
    * by planGoal on the server (it knows the business's own measures), again at the owner's yes.
    */
+  /**
+   * Card 284: a setup check finding the founder skipped, back once from the head who owns that tool.
+   * Filed by code only (never by a head's propose tool); the yes opens it again on Connections.
+   */
+  | { kind: "setup_finding"; tile: string; index: number; title: string }
   | { kind: "goal"; change: GoalChange; goal: string | null; title: string | null; measure: string | null; target: string | null; dueOn: string | null };
 
 export const GOAL_CHANGES = ["new", "change", "drop"] as const;
@@ -133,6 +138,7 @@ export function proposalTitle(p: ProposalPlan, labelOf: (toolId: string) => stri
     case "retire": return p.agent ? `Retire ${p.agent}` : `Close the ${p.seat} seat`;
     case "department": return `New department: ${p.draft.name}`;
     case "goal": return p.change === "new" ? `New goal: ${p.title}` : p.change === "drop" ? `Drop goal: ${p.goal}` : `Change goal: ${p.goal}`;
+    case "setup_finding": return `Finish setup: ${p.title.length > 90 ? `${p.title.slice(0, 89)}…` : p.title}`;
   }
 }
 

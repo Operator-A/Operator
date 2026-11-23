@@ -11,10 +11,12 @@ import { withRun } from "@/core/runs";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
 import { SETUP_AGENT } from "@/core/setup-rules";
+import { loadOrg } from "@/core/org";
+import { fileSetupFinding } from "@/core/proposals";
 import { TILE_BY_ID, type ToolTileId } from "@/core/tools-step-rules";
 import {
   CHECKS, EVIDENCE_MAX, FIXES, FIX_LIMITS, HELP_USES, MAX_STEPS, SETUP_CHECK_EFFORT, SETUP_CHECK_LIMITS, SETUP_CHECK_MODEL, SEVERITIES, STEP_MAX, TITLE_MAX, TOPIC_MAX, WHY_MAX,
-  checkDirective, countLine, fixAgents, fixDirective, hasCheck, helpDomains, isStale, keepFindings, readFinding, readFindings, type CheckTile, type Finding, type FixRun, type FixType,
+  checkDirective, countLine, dueReturns, recheckFrom, fixAgents, fixDirective, hasCheck, helpDomains, isStale, keepFindings, readFinding, readFindings, type CheckTile, type Finding, type FixRun, type FixType,
 } from "@/core/setup-check-rules";
 
 export interface SetupCheck { tile: CheckTile; status: "running" | "done" | "failed"; findings: Finding[]; summary: string | null; costUsd: number; runId: string | null; updatedAt: string }
@@ -131,9 +133,39 @@ export async function setFindingState(tile: CheckTile, index: number, state: "op
   const now = await setupCheck(tile);
   if (!now || now.status !== "done") throw new Error("That check has no findings yet.");
   if (!Number.isInteger(index) || index < 0 || index >= now.findings.length) throw new Error("Unknown finding.");
-  const findings = now.findings.map((f, i) => (i === index ? { ...f, state } : f));
+  // card 284: a skip starts the clock for its one return as a head's proposal
+  const findings = now.findings.map((f, i) => (i === index ? { ...f, state, skipped_at: state === "skipped" ? new Date().toISOString() : f.skipped_at } : f));
   const { error } = await db().from("setup_checks").update({ findings }).eq("tool", tile);
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Card 284, from the scheduler: skipped findings whose time has come go back to the owner once, as a
+ * proposal from the head who owns that tool (recheckFrom). Code files it; no model runs and nothing in the
+ * tool changes. The owner's yes opens the finding again on Connections. Marked returned either way the
+ * proposal went in, so it never comes back twice; with no agent to file it, it waits on the Desk.
+ */
+export async function returnSkipped(nowMs: number): Promise<string[]> {
+  const checks = await setupChecks();
+  const due = dueReturns(checks ?? [], nowMs);
+  if (!due.length) return [];
+  const org = await loadOrg();
+  if (!org) return [];
+  const { grants } = await liveGrants();
+  const filed: string[] = [];
+  for (const d of due) {
+    const from = recheckFrom(d.tile, grants, (t) => TOOLS[t]?.needs, org);
+    if (!from) continue;
+    // marked first, from the row as it is now: a proposal is never filed twice for one finding
+    const row = await setupCheck(d.tile);
+    const f = row?.findings[d.index];
+    if (!row || !f || f.title !== d.finding.title || f.state !== "skipped" || f.returned_at) continue;
+    const findings = row.findings.map((x, i) => (i === d.index ? { ...x, returned_at: new Date(nowMs).toISOString() } : x));
+    const { error } = await db().from("setup_checks").update({ findings }).eq("tool", d.tile);
+    if (error) throw new Error(error.message);
+    await fileSetupFinding({ tile: d.tile, index: d.index, title: f.title, why: f.why }, from).then(() => filed.push(`${d.tile}: ${f.title}`), (e: unknown) => console.error("[setup check] re-check", e instanceof Error ? e.message : e));
+  }
+  return filed;
 }
 
 /** A line for Avery's next setup reply: what the finished checks found, counted in code. Null with none. */

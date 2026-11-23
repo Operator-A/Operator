@@ -162,7 +162,7 @@ export const SCOPE_WORDS: Record<string, string> = {
   offline_access: "stay signed in, so morning runs work while you sleep",
   "https://www.googleapis.com/auth/gmail.readonly": "search and read email. Google refuses it anything that drafts, sends, labels or deletes",
   "https://www.googleapis.com/auth/analytics.readonly": "see your Analytics reports. Google refuses it any change to your Analytics account",
-  "a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts and campaign reports)": "read your audiences’ sizes and how each campaign did. Mailchimp keys reach the whole account, so our server is the limit: it has no other calls",
+  "a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts, campaign reports and automation settings)": "read your audiences’ sizes, how each campaign did, and how your automations are set up. Mailchimp keys reach the whole account, so our server is the limit: it has no other calls",
   "a second Mailchimp API key, used only to make a draft campaign you approved": "make a draft campaign you approved. Our server has no send or schedule call, so you send it from Mailchimp",
   "ads_read": "read your ad accounts and each ad’s spend and results. Our server never asks for audiences or people.",
   "ads_management": "pause a running ad you approved, when it is over your cost target. Only the gateway uses it; our server can’t change a budget, start, edit or delete anything.",

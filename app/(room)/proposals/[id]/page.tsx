@@ -13,6 +13,7 @@ import { billing, hireCost } from "@/dashboard/cost";
 import { draftView } from "@/dashboard/department";
 import { DraftBody } from "@/dashboard/components/department";
 import { costDetail, monthWords, usd as costUsd } from "@/core/cost-rules";
+import { CHECKS, hasCheck } from "@/core/setup-check-rules";
 
 // One proposal (docs/company-mode.md, slice 3, the Hire artboard): who asked and why, what it
 // holds, what a yes does, what code checks again at the tap, and Yes / Change it first / Not now.
@@ -43,6 +44,7 @@ function yesDoes(p: Proposal["payload"]): { label: string; does: string } {
       : p.change === "drop"
         ? { label: "Drop this goal", does: "Drops the goal, as if you did it on its goal page. Its history stays." }
         : { label: "Change this goal", does: "Saves the change, as if you edited it on its goal page. A new measure starts its pace again from today." };
+    case "setup_finding": return { label: "Open it again", does: "Opens the finding again on Connections, with its click-by-click steps and any Fix it for me. Nothing in the tool changes, and any fix still waits on Approvals." };
     case "retire": return p.agentId
       ? { label: `Retire ${p.agent}`, does: `Takes ${p.agent} off duty and opens its seat. Its versions, runs and memory stay, and you can turn it back on.` }
       : { label: `Close the ${p.seat} seat`, does: `Removes the empty ${p.seat} seat from the chart.` };
@@ -81,6 +83,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
     : p.kind === "grant_tool" ? [["Teammate", p.agent], ["Tool", toolLabel(p.tool)]]
     : p.kind === "new_tool" ? [["What it reads", p.what]]
     : p.kind === "department" ? []
+    : p.kind === "setup_finding" ? [["Tool", hasCheck(p.tile) ? CHECKS[p.tile].name : p.tile], ["Finding", p.title]]
     : p.kind === "goal" ? [
       ["Department", dept?.name ?? ""],
       ["Change", p.change === "new" ? "A new goal" : p.change === "drop" ? `Drop “${p.goal}”` : `Change “${p.goal}”`],

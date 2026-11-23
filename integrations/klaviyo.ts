@@ -3,7 +3,7 @@ import "server-only";
 // size, and campaign and flow results. Every count and rate is added up in code from the raw reply
 // (core/mcp-rules.ts), never by a model.
 import { callMcpTool } from "@/integrations/mcp";
-import { REPORT_STATS, listSize, namedRows, nextCursor, reportRows, reportTotals, type ReportRow } from "@/core/mcp-rules";
+import { REPORT_STATS, flowRows, listSize, namedRows, nextCursor, reportRows, reportTotals, type FlowRow, type ReportRow } from "@/core/mcp-rules";
 
 const PAGES = 10;
 
@@ -51,4 +51,30 @@ export async function klaviyoReport(kind: "campaign" | "flow", period: string): 
   });
   const rows = reportRows(raw, kind);
   return { rows, totals: reportTotals(rows) };
+}
+
+/** Every flow's name, status and trigger (card 284, the setup check). Fixed fields only: no actions or message content. */
+export async function klaviyoFlows(): Promise<{ flows: FlowRow[]; more: boolean }> {
+  const flows: FlowRow[] = [];
+  let cursor: string | null = null;
+  for (let i = 0; i < PAGES; i++) {
+    const page = await callMcpTool("klaviyo", "get_flows", { fields_flow: ["name", "status", "trigger_type", "archived"], page_size: 50, ...(cursor ? { page_cursor: cursor } : {}) });
+    flows.push(...flowRows(page));
+    cursor = nextCursor(page);
+    if (!cursor) return { flows, more: false };
+  }
+  return { flows, more: true };
+}
+
+/** Every metric's name: which store events reach Klaviyo (Placed Order, Started Checkout and the like). */
+export async function klaviyoMetricNames(): Promise<string[]> {
+  const out: string[] = [];
+  let cursor: string | null = null;
+  for (let i = 0; i < PAGES; i++) {
+    const page = await callMcpTool("klaviyo", "get_metrics", { fields_metric: ["name"], ...(cursor ? { page_cursor: cursor } : {}) });
+    out.push(...namedRows(page).map((m) => m.name));
+    cursor = nextCursor(page);
+    if (!cursor) break;
+  }
+  return out;
 }

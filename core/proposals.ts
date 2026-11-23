@@ -15,6 +15,7 @@ import { createGoal, editGoal, getGoal, GOALS_MISSING, listGoals, ownMeasureDefs
 import { MAX_GOALS_PER_DEPT, planGoal, type GoalInput } from "@/core/goal-rules";
 
 import { hireSpec, planProposal, proposalTitle, toolInfoOf, type ProposalKind, type ProposalPlan } from "@/core/proposal-rules";
+import { CHECKS, RECHECK_DAYS, checkHref, hasCheck, type CheckTile } from "@/core/setup-check-rules";
 
 export type ProposalState = "pending" | "accepted" | "declined" | "built" | "failed";
 export interface Proposal {
@@ -150,6 +151,31 @@ export async function fileProposal(input: Record<string, unknown>, from: { agent
   return data.id as string;
 }
 
+/**
+ * Card 284: a skipped setup check finding, back once from the head who owns that tool. Filed by code from
+ * the scheduler (core/setup-check.ts returnSkipped), not by a head's propose tool, so planProposal never
+ * sees this kind. The why is the finding's own why, already shown on the card.
+ */
+export async function fileSetupFinding(f: { tile: string; index: number; title: string; why: string }, from: { agentId: string; deptId: string | null }): Promise<string> {
+  const plan: ProposalPlan = { kind: "setup_finding", tile: f.tile, index: f.index, title: f.title.slice(0, 120) };
+  const { data, error } = await db().from("proposals").insert({
+    kind: plan.kind, title: proposalTitle(plan), source: "agent", from_agent: from.agentId, department_id: from.deptId, run_id: null, payload: plan,
+    why: `You skipped this in setup ${RECHECK_DAYS} days ago or more. ${f.why}`.slice(0, 600),
+  }).select("id").single();
+  if (error) throw new Error(/proposals/.test(error.message) ? PROPOSALS_MISSING : error.message);
+  return data.id as string;
+}
+
+/** The finding a setup_finding proposal names, as it is now, or why it can't be opened again. */
+async function setupFindingNow(p: Extract<Resolved, { kind: "setup_finding" }>): Promise<{ tile: CheckTile; problem: string | null }> {
+  if (!hasCheck(p.tile)) return { tile: "analytics", problem: "That tool has no setup check any more." };
+  const { setupCheck } = await import("@/core/setup-check");
+  const f = (await setupCheck(p.tile))?.findings[p.index];
+  if (!f || f.title !== p.title) return { tile: p.tile, problem: "That check ran again since, so this finding isn't on it any more. Its new findings are on Connections." };
+  if (f.state !== "skipped") return { tile: p.tile, problem: "It's already open on Connections." };
+  return { tile: p.tile, problem: null };
+}
+
 export async function listProposals(states: ProposalState[], limit = 50): Promise<Proposal[] | null> {
   const { data, error } = await db().from("proposals").select(COLS).in("state", states).order("created_at", { ascending: false }).limit(limit);
   return error ? null : (data ?? []) as Proposal[];
@@ -255,6 +281,15 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
       await close(id, "accepted", `Goal changed: ${c.goal!.title}.`, c.goal!.id);
       return { text: "Goal changed.", href: `/goals/${c.goal!.id}` };
     }
+    if (p.kind === "setup_finding") {
+      // card 284: the yes opens the finding again where its steps (and any Fix it for me) are; nothing else changes
+      const now = await setupFindingNow(p);
+      if (now.problem) throw new Error(now.problem);
+      const { setFindingState } = await import("@/core/setup-check");
+      await setFindingState(now.tile, p.index, "open");
+      await close(id, "accepted", "Opened again on Connections.");
+      return { text: `Opened again on ${CHECKS[now.tile].name} in Connections, with its steps.`, href: checkHref(now.tile) };
+    }
     if (p.kind === "new_tool") {
       // a yes hands out nothing: the owner picks how on Find a tool, where an ask for a connector is counted
       await close(id, "accepted", "Sent to Find a tool.");
@@ -357,6 +392,13 @@ export async function proposalChecks(pr: Proposal, org: Org): Promise<Check[]> {
       ...(problems.length ? problems.map((text) => ({ ok: false, text })) : [{ ok: true, text: `No ${p.draft.name} department yet, every name is free, and every tool is a read tool on the list` }]),
       ...(asks.length ? [{ ok: true, text: `No connection for ${asks.join(", ")}: a request is logged when you approve` }] : []),
       { ok: true, text: "Every agent starts off duty with no actions; each one’s first run drafts its playbook for you to approve" },
+    ];
+  }
+  if (p.kind === "setup_finding") {
+    const now = await setupFindingNow(p);
+    return [
+      now.problem ? { ok: false, text: now.problem } : { ok: true, text: `It is still skipped on the ${CHECKS[now.tile].name} check` },
+      { ok: true, text: "A yes only opens it again on Connections: nothing in the tool changes, and any fix still goes through Approvals" },
     ];
   }
   if (p.kind === "goal") {

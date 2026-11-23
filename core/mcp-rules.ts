@@ -62,8 +62,9 @@ export const MCP_SERVERS = {
     // read-only=true turns off every tool that can change the account; no profile reviews or other
     // user-written content (Klaviyo's MCP docs, 2026).
     url: "https://mcp.klaviyo.com/mcp?read-only=true&disable-tools-with-user-generated-content=true",
-    readTools: ["get_lists", "get_list", "get_metrics", "get_campaign_report", "get_flow_report"],
-    // Klaviyo's read scopes for those tools (lists, metrics, campaign and flow reports).
+    // get_flows (card 284, the setup check): each flow's name, status and trigger, asked for by fixed fields only
+    readTools: ["get_lists", "get_list", "get_metrics", "get_campaign_report", "get_flow_report", "get_flows"],
+    // Klaviyo's read scopes for those tools (lists, metrics, campaign and flow reports, flows).
     scopes: ["accounts:read", "lists:read", "metrics:read", "campaigns:read", "flows:read"],
     reportTools: [],
     writeTools: [],
@@ -208,13 +209,13 @@ export const MCP_SERVERS = {
     name: "Mailchimp",
     // Our own server (integrations/mailchimp-server.ts) over Mailchimp's Marketing API (card 252).
     // Mailchimp's hosted MCP server isn't documented for other apps, and Mailchimp has no narrower key:
-    // every key reaches the whole account. So our server is the limit: these two reads, asking
-    // Mailchimp for counts and names only, never a member or an email address.
+    // every key reaches the whole account. So our server is the limit: these three reads, asking
+    // Mailchimp for counts, names and settings only, never a member or an email address.
     auth: "token",
     url: "https://mailchimp.com/developer/marketing/api/",
-    readTools: ["mailchimp_audiences", "mailchimp_campaigns"],
+    readTools: ["mailchimp_audiences", "mailchimp_campaigns", "mailchimp_setup"],
     reportTools: [],
-    scopes: ["a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts and campaign reports)"],
+    scopes: ["a Mailchimp API key (Mailchimp keys can't be narrowed; our server only reads audience counts, campaign reports and automation settings)"],
     writeTools: [],
     signInHint: "In Mailchimp: your profile picture, Profile, Extras, API keys, Create A Key, name it OPERATOR agents, Generate Key, then copy it (it ends in -us and a number) and paste it here.",
   },
@@ -540,6 +541,16 @@ const str = (x: unknown, max = 160): string => (typeof x === "string" ? x.replac
 /** Rows of a JSON:API list reply (lists, metrics): id and name. */
 export function namedRows(payload: unknown): { id: string; name: string }[] {
   return arr(obj(payload).data).map((d) => ({ id: str(obj(d).id, 40), name: str(obj(obj(d).attributes).name) })).filter((r) => r.id);
+}
+
+export const FLOW_STATUSES = ["live", "draft", "manual"] as const;
+export interface FlowRow { id: string; name: string; status: string; trigger: string; archived: boolean }
+/** Each flow's name, status and trigger from get_flows (fields_flow only). Names are the business's own words: untrusted. */
+export function flowRows(payload: unknown): FlowRow[] {
+  return arr(obj(payload).data).map((d) => {
+    const a = obj(obj(d).attributes);
+    return { id: str(obj(d).id, 40), name: str(a.name, 80), status: str(a.status, 20).toLowerCase(), trigger: str(a.trigger_type, 30), archived: a.archived === true };
+  }).filter((r) => r.id);
 }
 
 /** The cursor for the next page, from links.next (`page[cursor]=…`), or null. */

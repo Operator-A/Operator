@@ -34,7 +34,7 @@ import { emailOwner } from "@/integrations/email";
 import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, INVOICE_DRAFT, QBO_CATEGORIZE, DRAFT_LIMITS, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_REFUND, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS as GATEWAY_TOOLS, refuseProposal } from "@/core/gateway/policy";
 import { REFUND_LIMITS, SHOPIFY_REFUND_GRANT, dollars, DISCOUNT_LIMITS, SHOPIFY_DISCOUNT_GRANT, addDays, normCode, refuseDiscountDates, CARRIER_NAMES, COPY_LIMITS, SHOPIFY_COPY_GRANT, SHOPIFY_SHIP_GRANT, normTracking, SHOPIFY_STOCK_GRANT, SHOPIFY_TAGS_GRANT, STOCK_LIMITS, STOCK_REASONS, TAG_LIMITS, copyText, productTarget, refuseCopyFacts, stockTarget, stockTargetOf, tagList } from "@/core/shopify-actions";
 import { calendarFree, calendarWeek } from "@/integrations/calendar";
-import { mailchimpAudiences, mailchimpCampaigns } from "@/integrations/mailchimp";
+import { mailchimpAudiences, mailchimpCampaigns, mailchimpSetup } from "@/integrations/mailchimp";
 import type { McPeriod } from "@/core/mailchimp-rules";
 import { wooLowStock, wooOrders } from "@/integrations/woo";
 import { NOTE_MAX, type WooPeriod } from "@/core/woo-rules";
@@ -52,9 +52,9 @@ import { proposeLesson } from "@/core/memory";
 import { reactionTally } from "@/core/reactions";
 import { domainOf } from "@/core/lead-rules";
 import { hasGmail } from "@/integrations/gmail";
-import { klaviyoListSize, klaviyoLists, klaviyoReport } from "@/integrations/klaviyo";
+import { klaviyoFlows, klaviyoListSize, klaviyoLists, klaviyoMetricNames, klaviyoReport } from "@/integrations/klaviyo";
 import { ga4Channels, ga4Overview, ga4Setup, ga4TopPages } from "@/integrations/ga4";
-import { THIN_DESCRIPTION, salesGap, shopifySetupNumbers } from "@/core/setup-check-rules";
+import { THIN_DESCRIPTION, salesGap, klaviyoSetupNumbers, shopifySetupNumbers } from "@/core/setup-check-rules";
 import { ordersBetween } from "@/integrations/shopify/orders";
 import { stripeBalance, stripeCustomers, stripeMoneyIn, stripeOpenInvoices, stripeSubscriptions } from "@/integrations/stripe";
 import { INVOICE_CURRENCIES, INVOICE_LIMITS, MAX_INVOICE_USD, STRIPE_PERIODS, invoiceCents, type InvoiceLine, type StripePeriod } from "@/core/stripe-rules";
@@ -388,6 +388,15 @@ const TOOLS_LIST: ToolDef[] = [
     run: async (p) => { const r = await klaviyoReport("flow", String(p.period)); return { data: r, numbers: r.totals }; },
   },
   {
+    id: "klaviyo_setup", label: "Email setup", detail: "How the business's Klaviyo is set up (card 284): each flow's name, status (live, draft, manual) and trigger, counts by status and trigger, how many lists, and whether store events (Placed Order, Started Checkout, Viewed Product, Active on Site) reach Klaviyo, all counted in code. Flow names were typed by people, so they are untrusted",
+    kind: "read", group: "klaviyo", params: [], trusted: false, needs: KLAVIYO, costUsd: 0,
+    run: async () => {
+      const [lists, f, metrics] = await Promise.all([klaviyoLists(), klaviyoFlows(), klaviyoMetricNames()]);
+      const numbers = klaviyoSetupNumbers(lists.length, f.flows, metrics, f.more);
+      return { data: { ...numbers, flows_list: f.flows.filter((x) => !x.archived).slice(0, 60).map(({ name, status, trigger }) => ({ name, status, trigger })) }, numbers };
+    },
+  },
+  {
     id: "analytics_overview", label: "Site visits", detail: "Google Analytics for the business’s site over a period: sessions, users, page views and key events (sales, sign-ups and the other actions the business marked), in total and by day, with key events per 100 sessions worked out in code",
     kind: "read", group: "analytics", trusted: true, needs: ANALYTICS, costUsd: 0,
     params: [{ name: "period", type: "enum", options: REPORT_PERIODS, default: "last_30_days", description: "How far back to look, through yesterday." }],
@@ -552,6 +561,11 @@ const TOOLS_LIST: ToolDef[] = [
       const audiences = r.audiences.map((a, i) => { picks[`a${i + 1}`] = { kind: "audience", id: a.id, label: a.name || a.id }; return { pick: `a${i + 1}`, ...a }; });
       return { data: { audiences }, numbers: { audiences: audiences.length, members: r.members }, picks };
     },
+  },
+  {
+    id: "mailchimp_account_setup", label: "Mailchimp setup", detail: "How the business's Mailchimp is set up (card 284): each audience's welcome email and double opt-in settings, classic automations by type and status (welcome, abandoned cart, after purchase), and connected stores with their abandoned cart and browse automations, counted in code. Mailchimp's API doesn't list Customer Journeys, so a journey isn't seen here. Automation titles were typed by people, so they are untrusted",
+    kind: "read", group: "mailchimp", params: [], trusted: false, needs: MAILCHIMP, costUsd: 0,
+    run: async () => { const r = await mailchimpSetup(); return { data: r, numbers: r.totals as Record<string, number> }; },
   },
   {
     id: "mailchimp_results", label: "Mailchimp campaign results", detail: "Mailchimp campaigns sent in a period: sent, opens, clicks, unsubscribes, orders and revenue, each with rates per 100 sent and totals worked out in code. Subjects can quote anyone, so they are untrusted",

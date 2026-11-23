@@ -14,7 +14,10 @@
 // give one the action on the builder's Tools step: a check never grants anything.
 import { GA4_SETUP_KEYS } from "@/core/ga4-rules";
 import { META_SETUP_KEYS } from "@/core/meta-rules";
-import type { ToolTileId } from "@/core/tools-step-rules";
+import { MAILCHIMP_SETUP_KEYS } from "@/core/mailchimp-rules";
+import type { FlowRow } from "@/core/mcp-rules";
+import { NEED_TILE, type ToolTileId } from "@/core/tools-step-rules";
+import { companySeat, headOf, type Org } from "@/core/org-rules";
 
 export const SEVERITIES = ["broken", "worth_fixing", "good"] as const;
 export type Severity = (typeof SEVERITIES)[number];
@@ -83,15 +86,23 @@ export const FIX_LIMITS = { maxSteps: 10, maxCostUsd: 0.2 };
 export const MAX_FIX_CARDS = 5;
 
 /** The tools with a setup check, each named in code. A tool not here has no check. */
+/** Klaviyo's setup read keys (klaviyo_setup, card 284). */
+export const KLAVIYO_SETUP_KEYS = [
+  "lists", "flows", "flows_live", "flows_draft", "flows_manual", "flows_archived",
+  "live_metric_triggered", "live_list_triggered", "live_date_triggered", "flows_unconfigured",
+  "metric_placed_order", "metric_started_checkout", "metric_viewed_product", "metric_active_on_site", "flows_more_than_read",
+] as const;
 export const CHECKS = {
   analytics: { name: "Google Analytics", read: "analytics_setup", calcs: ["calc_sales_gap"], evidence: [...GA4_SETUP_KEYS, ...SALES_GAP_KEYS], help: ["support.google.com"], fixes: [] },
   shopify: { name: "Shopify", read: "shopify_setup", calcs: [], evidence: [...SHOPIFY_SETUP_KEYS], help: ["help.shopify.com"], fixes: ["shopify.update_copy", "shopify.add_tags"] },
   meta: { name: "Meta Ads", read: "meta_ads_setup", calcs: [], evidence: [...META_SETUP_KEYS], help: ["facebook.com", "developers.facebook.com"], fixes: ["meta.pause_ad"] },
+  klaviyo: { name: "Klaviyo", read: "klaviyo_setup", calcs: [], evidence: [...KLAVIYO_SETUP_KEYS], help: ["help.klaviyo.com"], fixes: [] },
+  mailchimp: { name: "Mailchimp", read: "mailchimp_account_setup", calcs: [], evidence: [...MAILCHIMP_SETUP_KEYS], help: ["mailchimp.com"], fixes: [] },
   quickbooks: { name: "QuickBooks", read: "quickbooks_setup", calcs: [], evidence: [...QBO_SETUP_KEYS], help: ["quickbooks.intuit.com"], fixes: ["quickbooks.categorize_expense"] },
 } as const satisfies Partial<Record<ToolTileId, CheckDef>>;
 export type CheckTile = keyof typeof CHECKS;
 /** Which MCP connection each check reads, for its Connections panel. */
-export const CHECK_OF_MCP: Partial<Record<string, CheckTile>> = { ga4: "analytics", shopify: "shopify", quickbooks: "quickbooks", meta: "meta" };
+export const CHECK_OF_MCP: Partial<Record<string, CheckTile>> = { ga4: "analytics", shopify: "shopify", quickbooks: "quickbooks", meta: "meta", klaviyo: "klaviyo", mailchimp: "mailchimp" };
 export const CHECK_TILES = Object.keys(CHECKS) as CheckTile[];
 export const hasCheck = (t: unknown): t is CheckTile => typeof t === "string" && Object.hasOwn(CHECKS, t);
 
@@ -117,6 +128,9 @@ export interface Finding {
   fix: FixType | null;
   /** The last Fix it for me tap: which agent ran, and what it staged (counted in code). */
   fix_run: FixRun | null;
+  /** Card 284: when the founder skipped it, and when it came back once as a head's proposal. */
+  skipped_at: string | null;
+  returned_at: string | null;
 }
 
 export interface FixRun { status: "running" | "done" | "failed"; agent: string; run_id: string | null; staged: number; note: string; at: string }
@@ -164,7 +178,7 @@ export function readFinding(input: Record<string, unknown>, o: { evidence: reado
     if (!isFix(input.fix) || !(o.fixes ?? []).includes(input.fix)) return { problem: (o.fixes ?? []).length ? `fix is one of ${(o.fixes ?? []).join(", ")}, or left out` : "this tool has no fixes: leave fix out" };
     fix = input.fix;
   }
-  return { finding: { severity, topic, title, why, evidence, steps, help_url, state: "open", fix, fix_run: null } };
+  return { finding: { severity, topic, title, why, evidence, steps, help_url, state: "open", fix, fix_run: null, skipped_at: null, returned_at: null } };
 }
 
 const pathKey = (raw: string) => { try { const u = new URL(raw); return `${u.hostname.toLowerCase()}${u.pathname.replace(/\/+$/, "")}`; } catch { return null; } };
@@ -187,9 +201,49 @@ export function readFindings(raw: unknown): Finding[] {
     if (!SEVERITIES.includes(f.severity as Severity) || typeof f.title !== "string" || typeof f.why !== "string") return [];
     const state: Finding["state"] = f.state === "skipped" || f.state === "fixed" ? f.state : "open";
     const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, MAX_STEPS) : []);
-    return [{ severity: f.severity as Severity, topic: String(f.topic ?? ""), title: f.title.slice(0, TITLE_MAX), why: f.why.slice(0, WHY_MAX), evidence: list(f.evidence), steps: list(f.steps), help_url: typeof f.help_url === "string" ? f.help_url : null, state, fix: isFix(f.fix) ? f.fix : null, fix_run: readFixRun(f.fix_run) }];
+    return [{ severity: f.severity as Severity, topic: String(f.topic ?? ""), title: f.title.slice(0, TITLE_MAX), why: f.why.slice(0, WHY_MAX), evidence: list(f.evidence), steps: list(f.steps), help_url: typeof f.help_url === "string" ? f.help_url : null, state, fix: isFix(f.fix) ? f.fix : null, fix_run: readFixRun(f.fix_run), skipped_at: isoOrNull(f.skipped_at), returned_at: isoOrNull(f.returned_at) }];
   }).slice(0, MAX_FINDINGS);
 }
+
+const isoOrNull = (v: unknown) => (typeof v === "string" && !Number.isNaN(Date.parse(v)) ? v : null);
+
+/**
+ * Re-checks (card 284, decided 2026-11-22 in the spec): a skipped finding comes back once, RECHECK_DAYS
+ * after it was skipped, as a proposal from the department head who owns that tool. Code files it; no model
+ * runs. A finding skipped before skipped_at existed counts from the check's last change.
+ */
+export const RECHECK_DAYS = 21;
+export const MAX_RETURNS_A_ROUND = 3;
+export function dueReturns(checks: readonly { tile: CheckTile; status: string; findings: readonly Finding[]; updatedAt: string }[], nowMs: number): { tile: CheckTile; index: number; finding: Finding }[] {
+  const cutoff = nowMs - RECHECK_DAYS * 86_400_000;
+  return checks.filter((c) => c.status === "done").flatMap((c) => c.findings.flatMap((f, index) => {
+    const since = Date.parse(f.skipped_at ?? c.updatedAt);
+    return f.state === "skipped" && !f.returned_at && f.severity !== "good" && Number.isFinite(since) && since <= cutoff ? [{ tile: c.tile, index, finding: f }] : [];
+  })).slice(0, MAX_RETURNS_A_ROUND);
+}
+
+/** Does this catalog tool read the check's tool (one of its needs is that tool's connection)? */
+export const toolOfTile = (needs: readonly string[] | undefined, tile: CheckTile) => (needs ?? []).some((n) => NEED_TILE[n] === tile);
+
+/**
+ * Who files the re-check: the head of the department of the first agent (by id) holding a tool that reads
+ * this tool, that agent itself when it is the head; with none, whoever holds the company seat. Null when
+ * no agent sits in either, so the finding waits on the Desk.
+ */
+export function recheckFrom(tile: CheckTile, grants: Readonly<Record<string, readonly string[]>>, needsOf: (tool: string) => readonly string[] | undefined, org: Org): { agentId: string; deptId: string | null } | null {
+  const owners = Object.keys(grants).filter((a) => grants[a].some((t) => toolOfTile(needsOf(t), tile))).sort();
+  for (const a of owners) {
+    const seat = org.seats.find((s) => s.holder === "agent" && s.agentId === a);
+    if (!seat?.departmentId) continue;
+    const head = headOf(org, seat.departmentId);
+    if (head?.holder === "agent" && head.agentId) return { agentId: head.agentId, deptId: seat.departmentId };
+  }
+  const co = companySeat(org);
+  return co?.holder === "agent" && co.agentId ? { agentId: co.agentId, deptId: null } : null;
+}
+
+/** Where a tool's setup check shows on Connections. */
+export const checkHref = (tile: CheckTile) => `/connections?c=${tile}`;
 
 /** The card's one-line count, like "2 broken · 1 worth fixing · 3 good". */
 export function countLine(fs: readonly Finding[]): string {
@@ -254,6 +308,24 @@ export function fixDirective(o: { fix: FixType; tool: string; finding: Pick<Find
     `Read first with ${f.reads.join(" and ")}, then stage at most ${MAX_FIX_CARDS} changes with ${f.tool}, the ones that matter most. Each becomes an approval card the owner checks; nothing changes until they approve.`,
     "If nothing you read fits the finding, stage nothing and say so. Finish with one plain sentence on what you staged.",
   ].join("\n\n");
+}
+
+/** Klaviyo's setup numbers (klaviyo_setup, card 284): flows by status and trigger, and which store events reach Klaviyo. */
+const METRIC_KEYS = { metric_placed_order: "placed order", metric_started_checkout: "started checkout", metric_viewed_product: "viewed product", metric_active_on_site: "active on site" } as const;
+export function klaviyoSetupNumbers(lists: number, flows: readonly FlowRow[], metricNames: readonly string[], more: boolean): Record<(typeof KLAVIYO_SETUP_KEYS)[number], number> {
+  const open = flows.filter((f) => !f.archived);
+  const live = open.filter((f) => f.status === "live");
+  const names = new Set(metricNames.map((m) => m.trim().toLowerCase()));
+  const has = (k: keyof typeof METRIC_KEYS) => (names.has(METRIC_KEYS[k]) ? 1 : 0);
+  return {
+    lists, flows: open.length, flows_live: live.length,
+    flows_draft: open.filter((f) => f.status === "draft").length, flows_manual: open.filter((f) => f.status === "manual").length,
+    flows_archived: flows.length - open.length,
+    live_metric_triggered: live.filter((f) => f.trigger === "Metric").length, live_list_triggered: live.filter((f) => f.trigger === "Added to List").length,
+    live_date_triggered: live.filter((f) => f.trigger === "Date Based").length, flows_unconfigured: open.filter((f) => f.trigger === "Unconfigured").length,
+    metric_placed_order: has("metric_placed_order"), metric_started_checkout: has("metric_started_checkout"), metric_viewed_product: has("metric_viewed_product"), metric_active_on_site: has("metric_active_on_site"),
+    flows_more_than_read: more ? 1 : 0,
+  };
 }
 
 /** Shopify's setup numbers (shopify_setup), counted here from the products and the last 30 days' orders. */
