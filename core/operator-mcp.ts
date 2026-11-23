@@ -23,6 +23,8 @@ import { MODEL_LIST } from "@/integrations/models";
 import { mcpStatuses, modelKeysReady } from "@/integrations/mcp";
 import { NEED_TILE, TILE_BY_ID } from "@/core/tools-step-rules";
 import { fileProposal, listProposals } from "@/core/proposals";
+import { finishRun, markLinked } from "@/core/claude-agents";
+import { promptLine, readClaudeTools, readFinish } from "@/core/routine-rules";
 import { LIMITS, answerText, draftTools, hashesMatch, newToken, nextWindow, staleRead, tokenParts, toolList, type OpTool, type ToolAnswer } from "@/core/operator-mcp-rules";
 
 // ---- Grants
@@ -154,9 +156,9 @@ export async function revokeApp(me: { id: string; role: Role }, id: string): Pro
 const clip = (s: unknown, n: number) => (typeof s === "string" ? (s.length > n ? `${s.slice(0, n)}…` : s) : null);
 const money = (n: number) => Math.round(n * 100) / 100;
 
-interface AgentRow { id: string; name: string; model: string; enabled: boolean; daily_budget_usd: number | string }
+interface AgentRow { id: string; name: string; model: string; enabled: boolean; daily_budget_usd: number | string; runs_on?: string; claude_tools?: string[] }
 async function agentRows(): Promise<AgentRow[]> {
-  const { data, error } = await db().from("agents").select("id, name, model, enabled, daily_budget_usd").order("id");
+  const { data, error } = await db().from("agents").select("id, name, model, enabled, daily_budget_usd, runs_on, claude_tools").order("id");
   if (error) throw new Error(error.message);
   return (data ?? []) as AgentRow[];
 }
@@ -224,6 +226,7 @@ async function listAgents(origin: string, args: Record<string, string | number>)
       id: r.id, name: names[r.id] ?? r.name, job: clip(spec.mandate, 200),
       department: where.department, department_id: where.departmentId, seat: where.seat, heads_department: where.isHead,
       on_duty: r.enabled, model: r.model, daily_budget_usd: Number(r.daily_budget_usd),
+      runs_on: r.runs_on === "claude" ? "claude" : "operator", ...(r.runs_on === "claude" ? { claude_tools: r.claude_tools ?? [] } : {}),
       live_version: act?.version ?? null, draft_waiting: !!top && !top.active && (!act || top.version > act.version) ? top.version : null,
       last_30_days: s ? { runs: s.runs, ok: s.ok, failed: s.failed, cost_usd: s.costUsd } : null,
       spent_this_month_usd: money(spend[r.id] ?? 0),
@@ -253,6 +256,7 @@ async function getAgent(origin: string, args: Record<string, string | number>): 
   const where = deptOf(org, row.id);
   const body = {
     id: row.id, name: names[row.id] ?? row.name, on_duty: row.enabled, daily_budget_usd: Number(row.daily_budget_usd),
+    runs_on: row.runs_on === "claude" ? "claude" : "operator", ...(row.runs_on === "claude" ? { claude_tools: row.claude_tools ?? [] } : {}),
     department: where.department, seat: where.seat,
     live: active ? specView(active) : null,
     draft: draft ? specView(draft) : null,
@@ -336,6 +340,16 @@ async function checkSpec(raw: unknown, agentId?: string): Promise<{ spec: AgentS
 }
 
 async function createAgent(caller: Caller, origin: string, args: Args): Promise<ToolAnswer> {
+  // runs in Claude (docs/live-events.md, slice 2): no OPERATOR tools, only the Claude connectors it names, as labels
+  const linked = args.runs_on === "claude";
+  let claudeTools: string[] = [];
+  if (linked) {
+    if (toolList(args.tools).length) return no("Not created: an agent that runs in Claude has no OPERATOR tools. Leave tools empty and name claude_tools.");
+    const c = readClaudeTools(args.claude_tools);
+    if ("problem" in c) return no(`Not created: ${c.problem}.`);
+    claudeTools = c.tools;
+  } else if (args.claude_tools) return no("Not created: claude_tools is only for runs_on claude.");
+  else if (!toolList(args.tools).length) return no("Not created: name the tools it reads with (list_tools), or set runs_on claude.");
   const t = draftTools(toolList(args.tools), [], kindOf);
   if ("problem" in t) return no(`Not created: ${t.problem}.`);
   const got = await checkSpec({
@@ -352,11 +366,22 @@ async function createAgent(caller: Caller, origin: string, args: Args): Promise<
     if (open.length !== 1) return no(open.length ? `More than one open seat is called ${args.seat}.` : `There is no open seat called ${String(args.seat).slice(0, 60)}. get_company lists the seats.`);
     seatId = open[0].id;
   }
-  const id = await createBuiltAgent(got.spec, byOf(caller), "Created from Claude");
+  const id = await createBuiltAgent(got.spec, byOf(caller), linked ? "Created from Claude, runs in Claude" : "Created from Claude");
+  if (linked) {
+    try { await markLinked(id, claudeTools); }
+    catch (e) { return no(`${got.spec.name} was created but couldn't be marked as running in Claude: ${e instanceof Error ? e.message : e}. It stays off duty.`); }
+  }
   if (seatId) {
     try { await setHolder(seatId, "agent", id); seatNote = ` It sits in the ${args.seat} seat.`; } catch (e) { seatNote = ` It isn't on the chart yet: ${e instanceof Error ? e.message : e}`; }
   }
-  await audit(caller.member, "create_agent", id, { name: got.spec.name, via: caller.client });
+  await audit(caller.member, "create_agent", id, { name: got.spec.name, via: caller.client, ...(linked ? { runs_on: "claude" } : {}) });
+  if (linked) {
+    return { text: answerText({
+      created: id, name: got.spec.name, version: 1, on_duty: false, runs_on: "claude", claude_tools: claudeTools,
+      routine_prompt: promptLine(got.spec.name),
+      note: `${got.spec.name} is saved off duty as an agent that runs in Claude.${seatNote} To run it, the owner makes a routine on claude.ai with the connectors above and routine_prompt in its prompt, adds an API trigger, pastes the routine id and token on ${got.spec.name}'s sheet in OPERATOR and puts it on duty. Each run then fires the routine; the session posts its result with finish_run.`,
+    }, `${origin}/agents/${encodeURIComponent(id)}`) };
+  }
   return { text: answerText({
     created: id, name: got.spec.name, version: 1, on_duty: false,
     note: `${got.spec.name} is saved as v1, off duty, with no actions.${seatNote} Nothing runs until a person tries it and puts it on duty in OPERATOR.`,
@@ -457,6 +482,17 @@ async function tryAgent(caller: Caller, origin: string, args: Args): Promise<Too
   return { text: answerText({ agent: id, tried_version: d.version, run: d.rid, status: d.res.status, summary: clip(d.res.summary, 600), routine: d.note.trim() || null }, d.rid ? `${origin}/runs/${d.rid}` : `${origin}/agents/${encodeURIComponent(id)}`), isError: d.res.status !== "ok" };
 }
 
+// ---- Finish a run (live events slice 2): a Claude session posts its result onto the run OPERATOR started
+
+async function finishRunTool(caller: Caller, origin: string, args: Args): Promise<ToolAnswer> {
+  const f = readFinish(args);
+  if ("problem" in f) return no(f.problem);
+  const got = await finishRun(f.runId, f.status, f.result);
+  if ("problem" in got) return no(got.problem);
+  await audit(caller.member, "finish_run", f.runId, { agent: got.agentId, status: f.status, via: caller.client });
+  return { text: answerText({ run: f.runId, status: f.status, note: "Saved on the run in OPERATOR. Anything outward still goes through propose." }, `${origin}/runs/${f.runId}`) };
+}
+
 /** Runs a tool for a caller, inside their org, after checking their role again. */
 export function runTool(caller: Caller, origin: string, tool: OpTool, args: Record<string, string | number>): Promise<ToolAnswer> {
   if (!atLeast(caller.member.role, tool.min)) return Promise.resolve({ text: `${tool.title} needs the ${tool.min} role.`, isError: true });
@@ -474,6 +510,7 @@ export function runTool(caller: Caller, origin: string, tool: OpTool, args: Reco
       case "propose": return propose(caller, origin, args);
       case "get_run": return getRun(origin, args);
       case "try_agent": return tryAgent(caller, origin, args);
+      case "finish_run": return finishRunTool(caller, origin, args);
       default: return Promise.resolve({ text: `${tool.name} isn't built yet.`, isError: true });
     }
   });

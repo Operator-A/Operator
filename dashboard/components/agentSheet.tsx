@@ -23,6 +23,10 @@ export interface SheetActions {
   keep: (memoryId: string, forCrew: boolean) => Promise<Result>;
   discard: (memoryId: string) => Promise<Result>;
   goBack: (version: number, confirmed: boolean) => Promise<Result>;
+  /** An agent that runs in Claude (live events slice 2): its routine, and moving it into OPERATOR. */
+  routineSave: (routine: string, token: string) => Promise<Result>;
+  routineRemove: () => Promise<Result>;
+  moveIn: () => Promise<Result>;
 }
 
 const DAY_KEYS = [1, 2, 3, 4, 5, 6, 0];
@@ -49,6 +53,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
   const [drawn, setDrawn] = useState(d);
   if (drawn !== d) { setDrawn(d); setF(init()); setConfirm(null); }
   const [addReads, setAddReads] = useState(false);
+  const [rt, setRt] = useState({ routine: "", token: "" });
   const [pick, setPick] = useState(false);
 
   useEffect(() => {
@@ -108,7 +113,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
         </div>
         <div className="ag-state">
           <button type="button" className="dp-tog" aria-pressed={st} disabled={busy} onClick={() => go(() => act.duty(!st))}><i />{st ? "On duty" : "Off duty"}</button>
-          {d.model && <span className="dp-where">Runs on {d.model}</span>}
+          {d.claude ? <span className="dp-where">Runs in Claude</span> : d.model && <span className="dp-where">Runs on {d.model}</span>}
           <span className="dp-pill ag-next">{d.next ? `Next: ${d.next}` : d.manual ? "Only when you ask" : "No run planned"}</span>
           <button type="button" className="dp-btn" disabled={busy || !controls} title={controls ? undefined : "Real runs are off on this OPERATOR"} onClick={() => go(act.run)}>Run now</button>
         </div>
@@ -131,7 +136,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
                     {r.result && <span className="res">{r.result}</span>}
                   </button>
                   {on && r.lines.length > 0 && <ul className="dp-steps">{r.lines.map((l, i) => <li key={i} className={l.state}><span className="ck" /><span>{l.label}</span></li>)}</ul>}
-                  <span className="meta">{runFoot(r.steps, r.at, r.endedAt, r.costUsd)} · <Link href={`/runs/${r.id}`}>How it thought</Link></span>
+                  <span className="meta">{runFoot(r.steps, r.at, r.endedAt, r.costUsd)} · {r.session ? <a href={r.session} target="_blank" rel="noopener noreferrer">Open in Claude</a> : <Link href={`/runs/${r.id}`}>How it thought</Link>}</span>
                 </div>
               );
             })}
@@ -142,7 +147,37 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
         {tab === "edit" && (
           <div className="ag-body">
             {!d.spec && <span className="dp-note">{d.name} has no saved version to edit.</span>}
-            {d.spec && d.draft && (
+            {d.claude && (
+              <>
+                <div className="ag-draft">
+                  <b>{d.name} runs in Claude.</b>
+                  <span>Each run, on its schedule, from a chain, an event or Run now, starts a session of your Claude routine. The session posts its result back here. What it does with its Claude connectors happens in Claude, outside OPERATOR’s approval cards and caps; its prompt asks it to send anything outward here as a proposal.</span>
+                </div>
+                <div className="fld"><span className="lbl">Uses in Claude</span>
+                  <div className="dp-chipset">{d.claude.tools.length ? d.claude.tools.map((t) => <span key={t} className="dp-chip">{t}</span>) : <span className="dp-note">No connectors named.</span>}</div></div>
+                <div className="fld"><span className="lbl">Job</span><span style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{d.spec?.directive || "No job saved."}</span>
+                  <span className="dp-note">Sent with every run. Change it in the routine’s prompt on claude.ai.</span></div>
+                <div className="fld"><span className="lbl">Claude routine</span>
+                  {d.claude.routine.connected
+                    ? <span style={{ fontSize: 14 }}>{d.claude.routine.paused ? `Paused: ${d.claude.routine.paused}` : `Connected: ${d.claude.routine.routine ?? "routine"}`}</span>
+                    : <span className="dp-note">Not connected yet. Nothing runs until it is.</span>}
+                  <ol className="dp-note" style={{ paddingLeft: 18, margin: "6px 0" }}>
+                    <li>On claude.ai, open Routines and click New routine. Give it the connectors above.</li>
+                    <li>Paste this line into its prompt: <code style={{ userSelect: "all" }}>{d.claude.prompt}</code></li>
+                    <li>Click Edit, then Trigger, then API, then Generate token. Copy the routine id (trig_…) and the token. Claude shows the token once.</li>
+                  </ol>
+                  <input aria-label="Routine id" placeholder="trig_…" value={rt.routine} onChange={(e) => setRt((x) => ({ ...x, routine: e.target.value }))} autoComplete="off" />
+                  <input aria-label="Routine token" placeholder="sk-ant-oat01-…" type="password" value={rt.token} onChange={(e) => setRt((x) => ({ ...x, token: e.target.value }))} autoComplete="off" />
+                  <div className="dp-btns">
+                    <button type="button" className="dp-btn dark" disabled={busy || !rt.routine.trim() || !rt.token.trim()} onClick={() => go(async () => { const r = await act.routineSave(rt.routine, rt.token); if (r.ok) setRt({ routine: "", token: "" }); return r; })}>{d.claude.routine.connected ? "Replace" : "Save"}</button>
+                    {d.claude.routine.connected && <button type="button" className="dp-btn" disabled={busy} onClick={() => go(act.routineRemove)}>Forget token</button>}
+                  </div>
+                  <span className="dp-note">The token is locked away and never shown again. It can only start this one routine.</span></div>
+                <div className="fld"><span className="lbl">When OPERATOR has its connectors</span>
+                  <button type="button" className="dp-btn" style={{ alignSelf: "flex-start" }} disabled={busy} onClick={() => { if (window.confirm(`Move ${d.name} into OPERATOR? It keeps its runs and goes off duty until you give it reads, try it and go live.`)) go(act.moveIn); }}>Move into OPERATOR</button></div>
+              </>
+            )}
+            {d.spec && d.draft && !d.claude && (
               <div className="ag-draft">
                 <b>Draft v{d.version} isn’t live yet.</b>
                 <span>{d.tried ? (d.tried.clean ? `Its try worked on every step (${d.tried.at}).` : `Its latest try ${d.tried.why}.`) : "Try it on today’s data. It sends nothing."} {d.live ? `v${d.live} keeps running until you go live.` : ""}</span>
@@ -156,7 +191,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
                 </div>
               </div>
             )}
-            {d.spec && (
+            {d.spec && !d.claude && (
               <>
                 <div className="fld"><label htmlFor="ag-job">Job</label>
                   <textarea id="ag-job" maxLength={4000} value={f.job} onChange={(e) => set({ job: e.target.value })} />
@@ -188,7 +223,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
               <span className="dp-tog on" style={{ alignSelf: "flex-start" }}><i />Also when I ask (Run now)</span>
               <span className="dp-note">Times are on the quarter hour, in your business’s time zone. What starts a run is checked by OPERATOR before the agent wakes, and never picks who gets emailed, what’s bought or what’s posted.</span>
             </div>
-            {d.spec && (
+            {d.spec && !d.claude && (
               <>
                 <div className="fld"><span className="lbl">Reads</span>
                   <div className="dp-chipset">
@@ -209,7 +244,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
             )}
             <div className="fld"><label htmlFor="ag-budget">Daily AI budget</label>
               <div className="row2"><span>$</span><input type="number" id="ag-budget" min={0} max={d.ceiling} step={0.05} value={f.budget} onChange={(e) => set({ budget: e.target.value })} style={{ width: 110 }} /><span className="dp-note">${d.monthAtPace.toFixed(2)} in the last 30 days</span></div></div>
-            {d.spec && <Link href={`/build/${d.id}?edit=1`} className="dp-note" style={{ textDecoration: "underline" }}>More detail, step by step: what a good result looks like, run limits, pages and other agents it reads</Link>}
+            {d.spec && !d.claude && <Link href={`/build/${d.id}?edit=1`} className="dp-note" style={{ textDecoration: "underline" }}>More detail, step by step: what a good result looks like, run limits, pages and other agents it reads</Link>}
             <div className="fld"><span className="lbl">Reports to</span><span style={{ fontSize: 14 }}>{d.boss ?? "No one yet"}</span></div>
             {d.lessons.length > 0 && (
               <div className="fld"><span className="lbl">Lessons to review</span>

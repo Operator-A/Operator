@@ -37,8 +37,9 @@ export const SCOPE = "operator";
 // ---- Tools
 
 /** read: changes nothing. draft: makes an off-duty agent, a draft version or a proposal, never more.
- *  try: one logged dry run (a preview) that sends nothing and counts against the agent's budget. */
-export type ToolKind = "read" | "draft" | "try";
+ *  try: one logged dry run (a preview) that sends nothing and counts against the agent's budget.
+ *  finish: writes a linked agent's own run result, once, labelled as the Claude session's words. */
+export type ToolKind = "read" | "draft" | "try" | "finish";
 export interface OpTool {
   name: string;
   title: string;
@@ -98,7 +99,9 @@ export const OP_TOOLS: readonly OpTool[] = [
     inputSchema: { type: "object", properties: {
       name: text(80, "The agent's name."), ...SPEC_PROPS,
       seat: text(60, "An open seat's title from get_company, to put the agent in it."),
-    }, additionalProperties: false, required: ["name", "job", "directive", "good_result", "tools"] } },
+      runs_on: { type: "string", enum: ["operator", "claude"], description: "operator (default): it runs in OPERATOR with the tools above. claude: it needs a connector only Claude has, so OPERATOR shows it and fires one of the owner's Claude routines for each run; leave tools empty and name claude_tools." },
+      claude_tools: text(400, "runs_on claude: the Claude connectors it uses, comma separated (at most 8), like Google Drive, Slack. Shown in OPERATOR as labels; never granted there."),
+    }, additionalProperties: false, required: ["name", "job", "directive", "good_result"] } },
   { name: "update_agent", title: "Change an agent", kind: "draft", min: "owner",
     description: "Saves a change to an agent as a new draft version. What runs today doesn't change until a person tries the draft and goes live in OPERATOR. Read the agent with get_agent first and pass the version you read; if it changed since, read it again. Only the fields you pass change. Reports, actions and tools from servers the owner added carry over as they are.",
     inputSchema: { type: "object", properties: {
@@ -129,6 +132,13 @@ export const OP_TOOLS: readonly OpTool[] = [
       target: text(30, "goal: the number to reach."),
       due_on: text(10, "goal: the date to reach it by, like 2027-03-31."),
     }, additionalProperties: false, required: ["kind", "why"] } },
+  { name: "finish_run", title: "Finish a run", kind: "finish", min: "owner",
+    description: "For an agent that runs in Claude: posts this session's result onto the run OPERATOR started (the run id is in OPERATOR's note). Once per run, within 24 hours. It changes nothing else; anything outward goes through propose.",
+    inputSchema: { type: "object", properties: {
+      run: { type: "string", maxLength: 40, description: "The run id from OPERATOR's note." },
+      status: { type: "string", enum: ["ok", "failed"], description: "How the run went." },
+      result: text(4000, "What the session did and found, in a few sentences."),
+    }, additionalProperties: false, required: ["run", "status", "result"] } },
   { name: "try_agent", title: "Try an agent", kind: "try", min: "owner",
     description: "Tries an agent once on today's data: its draft, or its live version when there is no draft. It reads and thinks like a real run but sends nothing, queues no approval card and saves nothing for other agents. It is logged as a try, costs model time against the agent's daily budget, and works while the agent is off duty. It answers once the try starts; read the result with get_run. Going live stays a tap in OPERATOR.",
     inputSchema: { type: "object", properties: {

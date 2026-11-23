@@ -13,6 +13,9 @@ import type { FeedRun } from "@/dashboard/dept-feed";
 import { when } from "@/dashboard/format";
 import { nextRuns } from "@/dashboard/schedule";
 import { BUDGET_CEILING, type AgentSpec } from "@/core/agent-spec";
+import { runsOn } from "@/core/claude-agents";
+import { promptLine } from "@/core/routine-rules";
+import { routineState, type RoutineState } from "@/integrations/mcp";
 
 export interface SheetChoice { id: string; label: string; on: boolean; ready: boolean; why?: string }
 export interface SheetData {
@@ -34,6 +37,8 @@ export interface SheetData {
   /** Lessons proposed from your rejections, waiting for Keep or Discard. */
   lessons: { id: string; text: string }[];
   versions: { version: number; note: string; when: string; active: boolean }[];
+  /** An agent that runs in Claude (docs/live-events.md, slice 2): its Claude connectors, routine and the prompt line to paste. */
+  claude: { tools: string[]; routine: RoutineState; prompt: string } | null;
 }
 
 const READ_KINDS = new Set(["read", "calculate"]);
@@ -45,11 +50,15 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
   if (!a) return null;
   const since = new Date(Date.now() - 60 * 864e5).toISOString();
   const month = new Date(Date.now() - 30 * 864e5).toISOString();
-  const [b, custom, keys, runs, spend, proposed] = await Promise.all([
+  const [b, custom, keys, runs, spend, proposed, where] = await Promise.all([
     getBuilder(id), customMenuFor(), builderModelKeys(), deptRuns([id], roster.byId, since, 20),
     db().from("agent_runs").select("cost_usd").eq("agent_id", id).gte("started_at", month),
     db().from("agent_memory").select("id, text").eq("agent_id", id).eq("state", "proposed").order("created_at", { ascending: false }).limit(20),
+    runsOn(id),
   ]);
+  const claude = where.on === "claude"
+    ? { tools: where.tools, routine: await routineState(id).catch(() => ({ connected: false, routine: null, paused: "Can’t be read right now.", connectedAt: null })), prompt: promptLine(a.name) }
+    : null;
   const menu = builderMenu(roster.crew, undefined, custom, keys);
   const working = b?.draft ?? b?.active ?? null;
   const spec = working?.spec ?? null;
@@ -86,5 +95,6 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
     remembers: (b?.standards ?? []).map((x) => ({ id: x.id, text: x.text, shared: x.grp !== "standing_order" })),
     lessons: (proposed.data ?? []).map((r) => ({ id: r.id as string, text: String(r.text) })),
     versions: (b?.versions ?? []).slice(0, 8).map((v) => ({ version: v.version, note: v.note ?? "", when: when(v.createdAt, tz), active: v.active })),
+    claude,
   };
 }
