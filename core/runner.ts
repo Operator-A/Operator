@@ -220,11 +220,13 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
   const serverUsed: Record<string, number> = {};
   const tz = await orgTz();
   const asTool = (t: ToolDef) => (t.server
-    ? { type: t.server.type, name: t.id, max_uses: Math.max(1, t.server.maxUses - (serverUsed[t.id] ?? 0)), ...(t.server.type === "web_search_20260209" ? { user_location: { type: "approximate", country: "US", timezone: tz } } : {}), ...(t.server.allowedDomains ? { allowed_domains: t.server.allowedDomains } : {}) }
+    ? { type: t.server.type, name: t.id, max_uses: t.server.maxUses, ...(t.server.type === "web_search_20260209" ? { user_location: { type: "approximate", country: "US", timezone: tz } } : {}), ...(t.server.allowedDomains ? { allowed_domains: t.server.allowedDomains } : {}) }
     : { name: t.id, description: `${t.label}. ${t.detail}.`, input_schema: inputSchema(paramsOf(t, ctx)) });
-  /** What the model may still call: server tools drop out once they reach their per-run cap. */
+  /** What the model may call. Fixed once the model loop starts: thinking blocks are bound to the exact tool list
+   *  they were made with, so a list that changes between turns makes the next request a 400. A server tool's
+   *  per-run cap is kept by a note and the step limit's wrap-up instead of by dropping it from the list. */
   let callable: ToolDef[] = offered;
-  const toolList = () => [...callable.filter((t) => !t.server || (serverUsed[t.id] ?? 0) < t.server.maxUses).map(asTool), FINISH] as unknown as Anthropic.Beta.BetaToolUnion[];
+  const toolList = () => [...callable.map(asTool), FINISH] as unknown as Anthropic.Beta.BetaToolUnion[];
   const today = localDate(tz, 0);
   const system = [
     { type: "text" as const, text: SAFETY },
@@ -390,6 +392,9 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
       }
     }
 
+    const tools = toolList();
+    const capNoted = new Set<string>();
+    let capStop = false;
     for (let turn = 0; turn < spec.limits.maxSteps + 4; turn++) {
       // hard stop on cost: the worst this next turn could cost, before it is sent
       const worst = costUsd(spec.model, lastIn + 3000, maxOut);
@@ -402,7 +407,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
           cache_control: { type: "ephemeral" },
           betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
           output_config: { effort: spec.effort },
-          system, tools: toolList(), messages,
+          system, tools, messages,
         });
         const tin = inputTokens(res.usage), tout = res.usage.output_tokens;
         const searches = res.usage.server_tool_use?.web_search_requests ?? 0;
@@ -422,17 +427,31 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
         step({ kind: "tool", tool: b.name, input: b.input, output: "Ran on Claude's side. What came back is web pages: untrusted data.", ok: true, ms: 0 });
       }
       if (res.stop_reason === "refusal") throw new Error("The model declined the request");
+      // a server tool at its per-run cap: say so once; searching again after that ends the run at the next turn
+      const capNotes: string[] = [];
+      let overCap = false;
+      const capped: string[] = [];
+      for (const t of serverTools) {
+        const used = serverUsed[t.id] ?? 0;
+        if (used < t.server!.maxUses) continue;
+        if (capNoted.has(t.id)) { if (used > t.server!.maxUses) overCap = true; continue; }
+        capped.push(t.id);
+        capNotes.push(`You have used all ${t.server!.maxUses} ${t.label.toLowerCase()} calls this run. Don't call ${t.id} again.`);
+      }
+      if (overCap) capNotes.push("Call finish now with what you have.");
 
       messages.push({ role: "assistant", content: res.content as Anthropic.Beta.BetaContentBlockParam[] });
       const calls = res.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
       const fin = calls.find((b) => b.name === "finish");
       if (fin) { const fi = fin.input as { result?: unknown; numbers?: unknown }; result = String(fi.result ?? "").slice(0, 3000); cited = fi.numbers ?? null; break; }
-      if (wrapUp) { stopped = `the ${spec.limits.maxSteps}-step limit`; break; }
+      if (wrapUp) { stopped = capStop ? "the web limit" : `the ${spec.limits.maxSteps}-step limit`; break; }
+      if (overCap) { wrapUp = true; capStop = true; }
       if (!calls.length) {
         if (res.stop_reason === "pause_turn") continue;
         if (text && nudged) { result = text.slice(0, 3000); break; }
         nudged = true;
-        messages.push({ role: "user", content: "Call finish now with your result." });
+        capped.forEach((id) => capNoted.add(id));
+        messages.push({ role: "user", content: [...capNotes, "Call finish now with your result."].join("\n") });
         continue;
       }
 
@@ -447,7 +466,8 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
         const r = await runTool(call.name, call.input);
         results.push({ type: "tool_result", tool_use_id: call.id, content: r.content, ...(r.ok ? {} : { is_error: true }) });
       }
-      messages.push({ role: "user", content: results });
+      capped.forEach((id) => capNoted.add(id));
+      messages.push({ role: "user", content: capNotes.length ? [...results, { type: "text" as const, text: capNotes.join("\n") }] : results });
     }
     if (result == null && !stopped) stopped = "the turn limit";
 

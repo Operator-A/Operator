@@ -271,6 +271,23 @@ async function main() {
   assert.equal((delivered[0] as { domain: string }).domain, "fleet.coffee");
   assert.equal(r12.steps.filter((s) => s.tool === "report_leads" && !s.ok).length, 1);
   assert.deepEqual(draftSteps(r12.steps), []);
+  // thinking blocks are bound to the tool list they were made with: it stays byte-identical every turn, even after
+  // the web cap is reached; the cap is a note after the tool results, and searching past it ends the run
+  const cap = 2;
+  const capTools: Record<string, ToolDef> = { ...lTools, web_search: { ...TOOLS.web_search, server: { ...TOOLS.web_search.server!, maxUses: cap } } };
+  const toolsSent: string[] = [];
+  let lastUser: unknown = null;
+  const rc12 = await runExplore(rowan, { agentId: "wholesale_hunter", tools: capTools, client: fake((t, b) => {
+    toolsSent.push(JSON.stringify(b.tools)); lastUser = JSON.parse(JSON.stringify(b.messages[b.messages.length - 1]));
+    const search = { type: "server_tool_use", id: `s${t}`, name: "web_search", input: { query: "q" } } as unknown as Block;
+    if (t < cap) return reply([search, { type: "tool_use", id: `l${t}`, name: "report_leads", input: leadIn }]);
+    return reply([search, { type: "tool_use", id: `x${t}`, name: "report_leads", input: leadIn }]);
+  }) });
+  assert.ok(toolsSent.length > cap && toolsSent.every((x) => x === toolsSent[0]), "the tool list never changes inside a run");
+  assert.ok(toolsSent[0].includes(`"max_uses":${cap}`));
+  assert.match(JSON.stringify(lastUser), /Call finish now/);
+  assert.equal(rc12.finished, false);
+  assert.match(rc12.summary, /web limit/);
   // a run that doesn't finish delivers none of its rows
   delivered.length = 0;
   await runExplore(rowan, { agentId: "wholesale_hunter", tools: lTools, deliver: true, client: fake(() => reply([{ type: "tool_use", id: `l${n}`, name: "report_leads", input: leadIn }])) });
