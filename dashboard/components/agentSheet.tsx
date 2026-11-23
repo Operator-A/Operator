@@ -203,6 +203,10 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false 
               <div className="ag-draft">
                 <b>Draft v{d.version} isn’t live yet.</b>
                 <span>{d.tried ? (d.tried.clean ? `Its try worked on every step (${d.tried.at}).` : `Its latest try ${d.tried.why}.`) : "Try it on today’s data. It sends nothing."} {d.live ? `v${d.live} keeps running until you go live.` : ""}</span>
+                {d.atGoLive.length > 0 && (
+                  <div className="ag-golive"><span className="lbl">When it goes live</span>
+                    <ul>{d.atGoLive.map((l) => <li key={l}>{l}</li>)}</ul></div>
+                )}
                 <div className="dp-btns">
                   <button type="button" className="dp-btn" disabled={busy || !controls} onClick={() => go(act.tryIt)}>{d.tried ? "Try again" : "Try it"}</button>
                   <button type="button" className="dp-btn dark" disabled={busy || !controls || !d.tried?.clean} onClick={() => start(async () => {

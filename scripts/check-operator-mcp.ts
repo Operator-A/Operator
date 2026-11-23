@@ -9,6 +9,8 @@ import {
   resourceMetadata, toolsFor, tokenParts, TOOL_BY_NAME, MAX_DRAFT_TOOLS, MAX_DRAFT_ACTIONS, MOVE_PROMPT, draftActions, CONSENT_OWNER_LINES, draftTools, staleRead, toolList, type RpcRequest,
 } from "../core/operator-mcp-rules";
 import { TENANT_TABLES } from "../core/tenancy";
+import { eventKey, flowWithStarts, readDays, readStarts, readStored, startsToday, startsWords, type DraftStarts } from "../core/draft-starts-rules";
+import { flowProblems, soloKey, type Flow } from "../core/flow-rules";
 
 const read = (p: string) => readFileSync(p, "utf8");
 const SECRET = "s".repeat(40);
@@ -99,8 +101,77 @@ const run = async () => {
   assert.match(upd, /specLooser\(base\.spec, \{ \.\.\.got\.spec, tools: got\.spec\.tools\.filter\(\(x\) => !a\.added\.includes\(x\)\) \}\)/, "only the actions Claude named are let past specLooser; reports, custom tools and higher limits still refuse the draft");
   assert.match(upd, /saveSpecVersion\(id, got\.spec,/, "an action lands in a draft version, never the live one");
   assert.ok(!/activateSpecVersion|goLive|setAgentTime|setEnabled/.test(upd), "the server never makes a draft live, sets a schedule or puts an agent on duty");
-  assert.match(read("dashboard/actions.ts"), /const looser = target\.active \? \[\] : specLooser\(now\?\.spec \?\? null, target\.spec\);\n    if \(looser\.length && !confirmed\) return \{ ok: false, text: `Confirm first/, "Go live asks to confirm each action a draft adds");
+  assert.match(read("dashboard/actions.ts"), /const looser = target\.active \? \[\] : specLooser\(now\?\.spec \?\? null, target\.spec\);\n    const asks = \[\.\.\.looser,/, "Go live asks to confirm each action a draft adds");
   assert.match(read("CLAUDE.md"), /They change nothing\n  until the owner's Go live, after a clean try, on a confirm that lists each one\./, "the hard rule says drafted actions wait for Go live");
+
+  // ---- when an agent starts, in a draft (slice 4 part 2): applied to today's flow only at Go live
+  assert.equal(readDays("weekdays"), "weekdays");
+  assert.equal(readDays("mon, wed, fri"), "on:135");
+  assert.equal(readDays("Monday"), "mondays");
+  assert.equal(readDays("sun sat"), "on:06");
+  assert.equal(readDays("someday"), null);
+  const agentOf = (r: string) => ({ quinn: "quinn", morgan: "morgan", avery: "avery" } as Record<string, string>)[r.toLowerCase()] ?? null;
+  const rs = (a: Record<string, string | number>) => readStarts(a, "quinn", agentOf);
+  assert.deepEqual(rs({}), { starts: null }, "no start arguments, no starts");
+  assert.deepEqual(rs({ days: "weekdays", time: "08:00" }), { starts: { when: { days: "weekdays", time: "08:00" } } });
+  assert.deepEqual(rs({ by_hand: "yes" }), { starts: { when: "by_hand" } });
+  assert.match((rs({ days: "weekdays", time: "08:10" }) as { problem: string }).problem, /quarter hour/);
+  assert.match((rs({ days: "weekdays" }) as { problem: string }).problem, /time must be/);
+  assert.match((rs({ by_hand: "yes", days: "daily", time: "09:00" }) as { problem: string }).problem, /pick one/);
+  assert.deepEqual(rs({ start_on_event: "shopify.order_created", min_total: 50 }), { starts: { event: { type: "event", event: "shopify.order_created", minTotal: 50 } } });
+  assert.match((rs({ start_on_event: "gmail.new" }) as { problem: string }).problem, /start_on_event must be one of/);
+  assert.match((rs({ min_total: 5 }) as { problem: string }).problem, /goes with start_on_event/);
+  assert.match((rs({ by_hand: "yes", start_on_event: "stripe.invoice_paid" }) as { problem: string }).problem, /only by hand/);
+  assert.deepEqual(rs({ run_after: "Morgan", after_result: "any" }), { starts: { after: { agent: "morgan", when: "any" } } });
+  assert.match((rs({ run_after: "quinn" }) as { problem: string }).problem, /after itself/);
+  assert.match((rs({ run_after: "nobody" }) as { problem: string }).problem, /exactly one agent/);
+  assert.deepEqual(rs({ run_after: "none" }), { starts: { after: "none" } });
+  const crew = { ids: ["avery", "morgan", "quinn", "rowan"], manualOnly: new Set<string>() };
+  const today: Flow = { chains: [
+    { key: "solo-morgan", name: "Morgan", on: true, start: { type: "schedule", days: "weekdays", time: "07:00" }, steps: [{ agent: "morgan" }] },
+    { key: "morning", name: "Morning", on: true, start: { type: "schedule", days: "daily", time: "06:00" }, steps: [{ agent: "rowan" }, { agent: "avery" }] },
+  ] };
+  const frozen = JSON.stringify(today);
+  const apply = (st: DraftStarts, manual = true) => flowWithStarts(today, manual, "quinn", "Quinn", st);
+  const sched = apply({ when: { days: "weekdays", time: "08:00" } }) as { flow: Flow; manual: boolean };
+  assert.equal(sched.manual, false);
+  assert.deepEqual(sched.flow.chains.find((c) => c.key === soloKey("quinn"))?.start, { type: "schedule", days: "weekdays", time: "08:00" }, "a schedule makes its own chain");
+  assert.deepEqual(flowProblems(sched.flow, crew), []);
+  assert.equal(JSON.stringify(today), frozen, "working out a draft's starts never changes today's flow");
+  const ev = apply({ event: { type: "event", event: "shopify.order_created", minTotal: 50 } }) as { flow: Flow; manual: boolean };
+  assert.equal(ev.manual, false, "starting on an event means it no longer runs only by hand");
+  assert.deepEqual(ev.flow.chains.find((c) => c.key === eventKey("quinn"))?.start, { type: "event", event: "shopify.order_created", minTotal: 50 });
+  assert.deepEqual(flowProblems(ev.flow, crew), []);
+  const evOff = flowWithStarts(ev.flow, false, "quinn", "Quinn", { event: "none" }) as { flow: Flow };
+  assert.ok(!evOff.flow.chains.some((c) => c.key === eventKey("quinn")), "none drops its event chain");
+  const aft = apply({ after: { agent: "morgan", when: "ok" } }) as { flow: Flow; manual: boolean };
+  assert.deepEqual(aft.flow.chains.find((c) => c.key === "solo-morgan")?.steps, [{ agent: "morgan" }, { agent: "quinn", when: "ok" }], "run after: the next step of that agent's own chain");
+  assert.deepEqual(flowProblems(aft.flow, crew), []);
+  const out = flowWithStarts(aft.flow, false, "quinn", "Quinn", { after: "none" }) as { flow: Flow };
+  assert.deepEqual(out.flow.chains.find((c) => c.key === "solo-morgan")?.steps, [{ agent: "morgan" }]);
+  assert.deepEqual((apply({ after: { agent: "avery", when: "ok" } }) as { flow: Flow }).flow.chains.find((c) => c.key === "morning")?.steps.map((x) => x.agent), ["rowan", "avery", "quinn"], "a shared chain that ends with that agent and has room takes it");
+  const full: Flow = { chains: [{ key: "big", name: "Big", on: true, start: { type: "schedule", days: "daily", time: "06:00" }, steps: [{ agent: "rowan" }, { agent: "avery" }, { agent: "morgan" }] }] };
+  assert.match((flowWithStarts(full, true, "quinn", "Quinn", { after: { agent: "morgan", when: "ok" } }) as { refuse: string }).refuse, /already has 3 agents/);
+  assert.match((apply({ after: { agent: "quinn", when: "ok" } }) as { refuse: string }).refuse, /nothing to follow/);
+  const hand = flowWithStarts(sched.flow, false, "quinn", "Quinn", { when: "by_hand" }) as { flow: Flow; manual: boolean };
+  assert.equal(hand.manual, true);
+  assert.ok(!hand.flow.chains.some((c) => c.steps.some((x) => x.agent === "quinn") && c.start.type !== "button"), "by hand: out of every chain that starts on its own");
+  assert.deepEqual(startsWords({ when: { days: "weekdays", time: "08:00" }, event: { type: "event", event: "shopify.order_created", minTotal: 50 }, after: { agent: "morgan", when: "any" } }, { morgan: "Morgan" }),
+    ["Runs on weekdays at 08:00", "Also starts on each Shopify: new order of 50 or more", "Runs after Morgan finishes, however it went"]);
+  assert.deepEqual(startsToday(aft.flow, "quinn", false, { morgan: "Morgan" }), ["After Morgan in Morgan"]);
+  assert.deepEqual(startsToday(today, "quinn", true, {}), ["When someone presses Run now"]);
+  assert.deepEqual(readStored({ when: { days: "weekdays", time: "08:00" }, after: { agent: "Bad Id!", when: "ok" } }), { when: { days: "weekdays", time: "08:00" } }, "a malformed part of a stored starts is dropped");
+  assert.equal(readStored(null), null);
+  for (const k of ["days", "time", "by_hand", "start_on_event", "min_total", "run_after", "after_result"]) assert.ok(k in update.inputSchema.properties && !(k in create.inputSchema.properties), `only update_agent takes ${k}`);
+  const srv = read("core/operator-mcp.ts");
+  assert.ok(!/saveFlowVersion|activateFlow|manual_only/.test(srv), "the server never changes the flow or by-hand: starts wait on the draft");
+  assert.match(srv, /saveSpecVersion\(id, got\.spec, .*, byOf\(caller\), starts\)/, "starts are saved on the draft version");
+  const golive = read("dashboard/actions.ts");
+  assert.match(golive, /const starts = target\.active \? null : readStored\(await versionStarts\(agentId, version\)\);/, "Go live reads the version's starts");
+  assert.match(golive, /const asks = \[\.\.\.looser, \.\.\.\(plan\?\.lines \?\? \[\]\)\];\n    if \(asks\.length && !confirmed\) return \{ ok: false, text: `Confirm first/, "Go live's confirm lists each start change");
+  assert.match(golive, /if \(problems\.length\) return \{ ok: false, text: `Go live is locked: /, "a flow that doesn't check out locks Go live");
+  const mig = read("supabase/migrations/20270107090000_draft_starts.sql");
+  assert.match(mig, /alter table agent_defs add column starts jsonb/);
 
   assert.equal(staleRead(3, 3), null);
   assert.match(staleRead(2, 3)!, /changed since you read it \(you read v2, the newest is v3\)/);
