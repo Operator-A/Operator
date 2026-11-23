@@ -23,6 +23,7 @@
     "check:chat": "npx --yes tsx --conditions=react-server scripts/check-chat.ts",
     "check:chat-ui": "npx --yes tsx scripts/check-chat-ui.ts",
     "check:mcp": "npx --yes tsx scripts/check-mcp.ts",
+    "check:operator-mcp": "npx --yes tsx scripts/check-operator-mcp.ts",
     "check:org-switch": "npx --yes tsx scripts/check-org-switch.ts",
     "check:tenancy": "npx --yes tsx scripts/check-tenancy.ts",
     "check:roles": "npx --yes tsx scripts/check-roles.ts",

@@ -70,15 +70,19 @@ const run = async () => {
   assert.ok(!/^"use server"/.test(readFileSync("dashboard/signin.ts", "utf8")) && readFileSync("dashboard/signin.ts", "utf8").startsWith('import "server-only";'));
 
   // every server action checks a role; sign-in is the only exception
-  const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupCheckActions.ts", ...["ee/billing-actions.ts", "ee/signup-actions.ts", "ee/brain-actions.ts", "ee/playbook-actions.ts"].filter((f) => existsSync(f))];
+  const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupCheckActions.ts", "dashboard/mcpActions.ts", ...["ee/billing-actions.ts", "ee/signup-actions.ts", "ee/brain-actions.ts", "ee/playbook-actions.ts"].filter((f) => existsSync(f))];
   // sign-up comes before there is a member, like signing in: the sign-up code is its check
   const NO_MEMBER_YET: Record<string, string> = { "ee/signup-actions.ts": "signUp" };
+  // connecting an app to yourself, or disconnecting your own: any member (docs/operator-mcp.md); the
+  // MCP server then offers each tool by role, and revokeApp lets only an owner end someone else's
+  const ANY_MEMBER: Record<string, readonly string[]> = { "dashboard/mcpActions.ts": ["allowApp", "disconnectApp"] };
   let n = 0;
   for (const f of files) {
     const src = readFileSync(f, "utf8");
     for (const m of src.matchAll(/export async function (\w+)\([^\n]*\{\n([^\n]*\n){0,3}/g)) {
       if (NO_MEMBER_YET[f] === m[1]) continue;
       n++;
+      if (ANY_MEMBER[f]?.includes(m[1])) { assert.match(m[0], /await asRole\("viewer"\)/, `${f}: ${m[1]} checks the member`); continue; }
       assert.match(m[0], /await asRole\("(approver|owner)"\)|await asRole\(\w+ \? "(approver|owner)" : "(approver|owner)"\)/, `${f}: ${m[1]} checks a role`);
     }
   }

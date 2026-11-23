@@ -18,6 +18,16 @@ const nextConfig: NextConfig = {
     // the live-run refresher, clear this cache. check:speed keeps both between 1 and 60 s.
     staleTimes: { dynamic: 30, static: 30 },
   },
+  // OPERATOR's own MCP server (docs/operator-mcp.md): where Claude finds the sign-in, at the addresses
+  // RFC 9728 and RFC 8414 name, answered by plain route handlers.
+  async rewrites() {
+    return [
+      { source: "/.well-known/oauth-protected-resource", destination: "/api/oauth/meta/resource" },
+      { source: "/.well-known/oauth-protected-resource/:path*", destination: "/api/oauth/meta/resource" },
+      { source: "/.well-known/oauth-authorization-server", destination: "/api/oauth/meta/server" },
+      { source: "/.well-known/oauth-authorization-server/:path*", destination: "/api/oauth/meta/server" },
+    ];
+  },
 };
 
 export default nextConfig;

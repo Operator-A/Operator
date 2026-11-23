@@ -9,6 +9,7 @@ export const CORE_SECTIONS: readonly SectionLink[] = [
   { slug: "", label: "General", hint: "Time zone, theme, you" },
   { slug: "business", label: "Business", hint: "What agents know and where things go" },
   { slug: "people", label: "People", hint: "Who signs in, and their role" },
+  { slug: "apps", label: "Connected apps", hint: "Claude and other apps that read OPERATOR" },
   { slug: "limits", label: "Limits", hint: "Caps, vendors, no-email list" },
 ];
 
