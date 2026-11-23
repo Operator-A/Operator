@@ -22,8 +22,8 @@ import { Icon } from "@/dashboard/components/Icon";
 import { inSetup } from "@/core/setup";
 import { firstJobView } from "@/dashboard/firstJob";
 import { FirstJobCard } from "@/dashboard/components/firstJob";
-import { followUpsView } from "@/dashboard/followUps";
-import { FollowUpsCard } from "@/dashboard/components/followUps";
+import { followUpsView, skippedFindings } from "@/dashboard/followUps";
+import { FollowUpsCard, SkippedFindingsCard } from "@/dashboard/components/followUps";
 import { atLeast } from "@/core/roles";
 
 // The Desk (docs/company-mode.md, slice 5): home. Goals with where each stands and its head's latest
@@ -59,10 +59,10 @@ export default async function Desk() {
   // a new business starts with setup (card 151, docs/setup.md), not an empty Desk
   if (await inSetup()) redirect("/start");
   const now = f.now;
-  const owner = atLeast((await requireSession()).role, "owner");
+  const role = (await requireSession()).role, owner = atLeast(role, "owner"), approver = atLeast(role, "approver");
   const open = needs(f, now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value));
   const org = await loadOrg().catch(() => null);
-  const [goals, pending, first, bill, finish] = await Promise.all([goalsByDept(org), listProposals(["pending"], 12).catch(() => null), firstJobView(f).catch(() => null), billing(), followUpsView(f).catch(() => [])]);
+  const [goals, pending, first, bill, finish, skipped] = await Promise.all([goalsByDept(org), listProposals(["pending"], 12).catch(() => null), firstJobView(f).catch(() => null), billing(), followUpsView(f).catch(() => []), skippedFindings().catch(() => [])]);
   const allGoals = org && goals ? org.departments.flatMap((d) => goals[d.id] ?? []) : [];
   // each goal tile carries its head's latest word (the head's own report, so its words, not code's)
   const heads = org ? org.departments.map((d) => headOf(org, d.id)).filter((s) => s?.holder === "agent" && s.agentId).map((s) => s!.agentId as string) : [];
@@ -98,6 +98,7 @@ export default async function Desk() {
 
       {first && <FirstJobCard v={first} owner={owner} />}
       <FollowUpsCard items={finish} owner={owner} />
+      <SkippedFindingsCard items={skipped} approver={approver} />
 
 
       <section className="card" style={{ gap: 12 }} aria-labelledby="goals-h">

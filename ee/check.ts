@@ -218,14 +218,13 @@ assert.match(creditWords({ billing: "own_key", balance: 3 }), /your own Claude k
   assert.match(claude, /if \(edition\(\) === "open"\) throw new Error\(NO_CLAUDE_KEY\)/, "the open edition never asks for a hosted key");
 }
 
-// free setup (card 162, decided 2026-11-20): setup messages are free up to SETUP_FREE_USD while in setup; after setup, credits
-assert.equal(SETUP_FREE_USD, 2);
-assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: 0 }), 2);
-assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: 0.75 }), 1.25);
+assert.equal(SETUP_FREE_USD, 3); // raised from $2 on 2026-11-22
+assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: 0 }), 3);
+assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: 0.75 }), 2.25);
 assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: 5 }), 0, "never below zero");
 assert.equal(setupFreeLeft({ inSetup: false, setupSpentUsd: 0 }), 0, "nothing free once setup is done");
 assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: Number.NaN }), 0, "a spend that can't be read leaves nothing free");
-assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: -3 }), 2, "a negative spend never adds to the allowance");
+assert.equal(setupFreeLeft({ inSetup: true, setupSpentUsd: -3 }), 3, "a negative spend never adds to the allowance");
 assert.equal(setupRunCharge(0.05, 1), 0, "inside the allowance: free");
 assert.equal(setupRunCharge(0.05, 0.03), 0.024, "only the part past the allowance, plus 20%");
 assert.equal(setupRunCharge(0.05, 0), 0.06, "allowance used up: the full charge");

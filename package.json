@@ -42,6 +42,7 @@
     "check:daily-numbers": "npx --yes tsx scripts/check-daily-numbers.ts",
     "check:brief": "npx --yes tsx scripts/check-brief.ts",
     "check:setup": "npx --yes tsx --conditions=react-server scripts/check-setup.ts",
+    "check:setup-check": "npx --yes tsx --conditions=react-server scripts/check-setup-check.ts",
     "check:cost": "npx --yes tsx --conditions=react-server scripts/check-cost.ts",
     "check:department": "npx --yes tsx --conditions=react-server scripts/check-department.ts",
     "check:memory-reach": "npx --yes tsx --conditions=react-server scripts/check-memory-reach.ts",

@@ -197,7 +197,7 @@ export const MCP_SERVERS = {
     // it any change to the account. Each tool runs one fixed report on the property the owner picked.
     auth: "google",
     url: "https://analyticsdata.googleapis.com/v1beta",
-    readTools: ["ga4_properties", "ga4_overview", "ga4_top_pages", "ga4_channels"],
+    readTools: ["ga4_properties", "ga4_overview", "ga4_top_pages", "ga4_channels", "ga4_setup"],
     reportTools: [],
     scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
     writeTools: [],

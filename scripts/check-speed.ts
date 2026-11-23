@@ -15,6 +15,8 @@ import { statusMap } from "../core/mcp-rules";
 const READ_ONLY = new Set([
   "dashboard/actions.ts:dryRun", "dashboard/actions.ts:previewChain", "dashboard/actions.ts:dryRunBuilt",
   "dashboard/connectionActions.ts:customScopes", "dashboard/authActions.ts:signIn",
+  // the setup check card (card 281) keeps its own state: starting answers at once and the card polls the row
+  "dashboard/setupCheckActions.ts:startSetupCheck", "dashboard/setupCheckActions.ts:setupCheckState",
 ]);
 
 /** Exported server actions in one "use server" file that neither refresh nor redirect. */

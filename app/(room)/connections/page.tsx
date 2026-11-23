@@ -24,9 +24,15 @@ import { ga4PickProperty, klaviyoPickList, metaSetTarget, mcpDisconnect, mcpSave
 import { ga4PropertyList } from "@/integrations/ga4";
 import { when } from "@/dashboard/format";
 import { emailState } from "@/integrations/email";
+import { setupCheck, type SetupCheck } from "@/core/setup-check";
+import { SetupCheckCard } from "@/dashboard/components/setupCheck";
+import { atLeast } from "@/core/roles";
+
+// a setup check (card 281) runs after its button answers, inside this request's time
+export const maxDuration = 300;
 
 /** An MCP connection's state for its panel: signed in or not, and Klaviyo's lists to pick the counted one from. */
-interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; properties?: { id: string; name: string; account: string }[] | null; targets?: Record<string, number | null> | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null }
+interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; properties?: { id: string; name: string; account: string }[] | null; targets?: Record<string, number | null> | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null; check?: { initial: SetupCheck | null; owner: boolean; approver: boolean } | null }
 
 
 /** The vault's state: is MCP_SECRET_KEY set, and is every sign-in locked with it. */
@@ -129,6 +135,8 @@ function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView
                     : <ActionButton className="btn outline sm" action={ga4PickProperty.bind(null, p.id)}>Use this one</ActionButton>}
                 </span>
               ))}
+              {/* card 281: the setup check, once a property is picked */}
+              {v.check && <SetupCheckCard tile="analytics" name="Google Analytics" initial={v.check.initial} owner={v.check.owner} approver={v.check.approver} auto={false} />}
             </div>
           )}
           {id === "klaviyo" && (
@@ -279,7 +287,9 @@ export default async function Connections({ searchParams }: { searchParams: Prom
     if (status?.connected && !status.paused && sel.mcp === "ga4") {
       try { properties = await ga4PropertyList(); } catch (e) { listsProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
     }
-    mcp = { status, lists, listsProblem, properties, log, vault, org, orgProblem };
+    const check = status?.connected && !status.paused && sel.mcp === "ga4" && status.settings.propertyId
+      ? { initial: await setupCheck("analytics").catch(() => null), owner: atLeast(me.role, "owner"), approver: atLeast(me.role, "approver") } : null;
+    mcp = { status, lists, listsProblem, properties, log, vault, org, orgProblem, check };
   }
   const more = await Promise.all((sel?.mcpMore ?? []).map(async (id) => {
     const [status, log] = await Promise.all([mcpStatus(id), mcpLog(id)]);

@@ -396,11 +396,13 @@ export async function askSetup(message: string, siteRaw: string, connected: Read
     limits: setupLimits(ready),
     outputName: "setup reply",
   };
+  // card 281: what the finished setup checks found, counted in code, so she can mention it once
+  const checked = await import("@/core/setup-check").then((m) => m.checkNote()).catch(() => null);
   let finished = false, said: string | null = null, readAPage = false;
   const res = await withRun(SETUP_AGENT, "setup", async (runId) => {
     const r = await runExplore(spec, {
       agentId: SETUP_AGENT, runId, deliver: true, chat: true, maxOut: SETUP_MAX_OUT,
-      prompt: `${setupPrompt(history.map((h) => ({ role: h.role, text: h.text })), message, site)}${upFront ? `\n\n${upFront.block}` : ""}`,
+      prompt: `${setupPrompt(history.map((h) => ({ role: h.role, text: h.text })), message, site)}${upFront ? `\n\n${upFront.block}` : ""}${checked ? `\n\n${checked}` : ""}`,
       tools: { ...TOOLS, ...Object.fromEntries(tools.map((t) => [t.id, t])) },
     });
     finished = r.finished; said = r.result;

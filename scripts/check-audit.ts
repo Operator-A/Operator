@@ -24,6 +24,8 @@ const AUDITED = [
   "saveBusinessProfile", "saveWhereThingsGo", "saveProductFacts", "saveDailyNumbers", "saveTimeZone",
   // first-run setup: facts every agent is told, and installing departments
   "setupAddFact", "setupEditFact", "setupConfirmFact", "setupRemoveFact", "setupInstall", "setupStartEmpty", "setupShopifyStore", "setupTimeZone", "setupAnswerTool", "setupSnapshot",
+  // the setup check (card 281): a model run, and the founder skipping or reopening a finding
+  "startSetupCheck", "skipFinding", "reopenFinding",
   // the org chart: budgets, email caps, who holds a seat, drafts routing
   "orgSetDeptBudget", "orgSetDeptEmails", "placeAgent", "orgSetHolder", "orgSetLeadChecks",
   // proposals change an agent's spec or routine
@@ -35,6 +37,7 @@ const AUDITED = [
 // not audited: they change nothing an agent may do, spend or reach, or keep their own history
 const NOT_AUDITED: Record<string, string> = {
   dryRun: "reads only, no model, nothing logged",
+  setupCheckState: "reads the check's row while the card polls; changes nothing",
   setupGo: "which step of setup is on screen; changes nothing else",
   setupSkipTool: "which setup question is left for later; connects nothing",
   setupPlanClear: "takes back a setup part's plan; connects nothing",
@@ -71,7 +74,7 @@ const NOT_AUDITED: Record<string, string> = {
   setupOtherTool: "a request for a connector and a note of the tool the business uses, no access",
 };
 
-const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupActions.ts"];
+const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupActions.ts", "dashboard/setupCheckActions.ts"];
 const seen = new Set<string>();
 for (const f of files) {
   const src = readFileSync(f, "utf8");

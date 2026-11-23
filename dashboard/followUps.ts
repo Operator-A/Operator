@@ -6,10 +6,19 @@ import { listExports } from "@/core/exports";
 import { followUps, type FollowUp } from "@/core/tools-step-rules";
 import { connectedTiles } from "./toolsStep";
 import type { Floor } from "./data";
+import { setupChecks } from "@/core/setup-check";
+import { CHECKS, type CheckTile, type Finding } from "@/core/setup-check-rules";
 
 export async function followUpsView(f: Floor): Promise<FollowUp[]> {
   const st = await setupState();
   if (!st.done || !Object.keys(st.plans).length) return [];
   const [connected, exports] = await Promise.all([connectedTiles(f.health), listExports()]);
   return followUps(st.plans, connected, new Set((exports ?? []).map((e) => e.service_key)));
+}
+
+/** Setup check findings the founder skipped (card 281): they wait on the Desk with their steps until opened again. */
+export interface SkippedFinding { tile: CheckTile; name: string; index: number; finding: Finding }
+export async function skippedFindings(): Promise<SkippedFinding[]> {
+  const checks = (await setupChecks()) ?? [];
+  return checks.filter((c) => c.status === "done").flatMap((c) => c.findings.flatMap((f, index) => (f.state === "skipped" ? [{ tile: c.tile, name: CHECKS[c.tile].name, index, finding: f }] : [])));
 }
