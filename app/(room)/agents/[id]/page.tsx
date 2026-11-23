@@ -21,7 +21,7 @@ import { Icon } from "@/dashboard/components/Icon";
 import { RunTable } from "@/dashboard/components/RunTable";
 import { builderMenu, customMenuFor, mapFor } from "@/dashboard/builder";
 import { AgentTabs, Avatar, LockList, Pill, Summary } from "@/dashboard/components/ui";
-import { loadOrg, reportsTo, seatOf, seatPath } from "@/core/org";
+import { reportsTo, seatOf, seatPath } from "@/core/org";
 
 // A real Lead finder run takes a few minutes. realRun returns at once and finishes the run in after(),
 // which lives as long as this page's function allows.
@@ -36,27 +36,29 @@ const ABILITY_CLASS = { read: "lv-read", do: "lv-draft", hands: "lv-write" } as 
 const STAGE_COLORS: Record<string, string> = { new: "var(--mut2)", drafted: "var(--yel)", contacted: "var(--acc)", replied: "var(--pink)", tasting: "var(--peach)", won: "var(--mint)", lost: "var(--ink2)", skip: "var(--track)" };
 
 export default async function AgentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
-  const { id } = await params;
+  const [{ id }, { tab: tabParam }, f, jar] = await Promise.all([params, searchParams, getFloor(), cookies()]);
   // every agent with a live version, the same whether it started in code or the app (docs/agent-roster.md)
-  const f = await getFloor();
   const a = f.byId[id];
   if (!a) notFound();
-  const tabParam = (await searchParams).tab;
   const tab: Tab = TABS.find((k) => k === tabParam) ?? "overview";
   const row = f.agents[id];
   const st = stateOf(a, row, f.runs, f.spentToday[id] ?? 0);
   const controls = controlsOn();
   // cards that belong to a tool, not to an agent: any agent whose live version has it gets the card
   const has = (tool: string) => (f.grants[id] ?? []).includes(tool);
-  const pipeline = has("report_leads") ? await getPipeline() : null;
-  const books = has("report_books_sync") ? await getBooks() : null;
-  const mem = tab === "memory" || tab === "overview" ? await getMemory(id) : null;
-  const how = tab === "overview" ? await howItWorks(id) : null;
-  const place = tab === "overview" ? await placeOf(id, f) : null;
-  const reactions = tab === "overview" ? await getReactionsFor(id) : null;
+  // what this tab shows, in one round (card 302, docs/speed.md)
+  const overview = tab === "overview";
+  const [pipeline, books, mem, how, place, reactions] = await Promise.all([
+    has("report_leads") ? getPipeline() : null,
+    has("report_books_sync") ? getBooks() : null,
+    tab === "memory" || overview ? getMemory(id) : null,
+    overview ? howItWorks(id) : null,
+    overview ? placeOf(id, f) : null,
+    overview ? getReactionsFor(id) : null,
+  ]);
   const score = tallyWords(reactions?.tally);
   const runs = f.runs.filter((r) => r.agent_id === id);
-  const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === id);
+  const unseen = needs(f, f.now, parseSeen(jar.get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === id);
 
   return (
     <>
@@ -454,7 +456,7 @@ function Memory({ a, f, domains, mem }: { a: CrewMember; f: Floor; domains?: str
 
 /** Where the agent sits on the org chart and who it reports to (docs/org-chart.md), as one row. */
 async function placeOf(id: string, f: Floor): Promise<[string, string] | null> {
-  const org = await loadOrg();
+  const org = f.chart;
   if (!org) return null;
   const seat = seatOf(org, id);
   if (!seat) return ["Org chart", "Not on the chart yet. Put it in a seat on Crew."];

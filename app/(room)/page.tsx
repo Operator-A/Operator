@@ -11,7 +11,7 @@ import { hm, longDay } from "@/dashboard/format";
 import { PRI_COLOR, interruptCount, needs, split } from "@/dashboard/needs";
 import { INTERRUPT_WORDS, interruptKind, type Interrupt } from "@/dashboard/needs-rules";
 import { deskGreeting, deskLine, firstSentence } from "@/dashboard/desk";
-import { companySeat, deptOf, groupByDepartment, headOf, latestOutputs, loadOrg } from "@/core/org";
+import { companySeat, deptOf, groupByDepartment, headOf, latestOutputs } from "@/core/org";
 import { listProposals } from "@/core/proposals";
 import { billing, hireCost } from "@/dashboard/cost";
 import { monthWords, usd, type Billing } from "@/core/cost-rules";
@@ -55,13 +55,16 @@ function goalLine(p: Extract<ProposalPlan, { kind: "goal" }>, dept?: string | nu
 }
 
 export default async function Desk() {
-  const f = await getFloor(); // checks the login first, so the page is never built ahead of a request
+  // two rounds (card 302, docs/speed.md): the floor (which checks the login), setup state and the member
+  // together; then everything that needs the floor or its chart together
+  const jar = await cookies(); // per request only, so nothing here is read at build time (no database)
+  const [f, setup, me] = await Promise.all([getFloor(), inSetup(), requireSession()]);
   // a new business starts with setup (card 151, docs/setup.md), not an empty Desk
-  if (await inSetup()) redirect("/start");
+  if (setup) redirect("/start");
   const now = f.now;
-  const role = (await requireSession()).role, owner = atLeast(role, "owner"), approver = atLeast(role, "approver");
-  const open = needs(f, now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value));
-  const org = await loadOrg().catch(() => null);
+  const role = me.role, owner = atLeast(role, "owner"), approver = atLeast(role, "approver");
+  const open = needs(f, now, parseSeen(jar.get(SEEN_COOKIE)?.value));
+  const org = f.chart;
   const [goals, pending, first, bill, finish, skipped] = await Promise.all([goalsByDept(org), listProposals(["pending"], 12).catch(() => null), firstJobView(f).catch(() => null), billing(), followUpsView(f).catch(() => []), skippedFindings().catch(() => [])]);
   const allGoals = org && goals ? org.departments.flatMap((d) => goals[d.id] ?? []) : [];
   // each goal tile carries its head's latest word (the head's own report, so its words, not code's)

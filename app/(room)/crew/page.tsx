@@ -12,7 +12,6 @@ import { listProposals, proposalsBySeat } from "@/core/proposals";
 import { GOALS_MISSING } from "@/core/goals";
 import { orgAddDepartment, orgAddDeptRule, orgAddSeat, orgEditDeptRule, orgEditSeat, orgForgetDeptRule, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetDeptBudget, orgSetDeptEmails, orgSetHolder, orgSetLeadChecks } from "@/dashboard/orgActions";
 import { controlsOn } from "@/dashboard/session";
-import { loadOrg } from "@/core/org";
 import { loadFlow } from "@/core/flow";
 import { AgentCard } from "@/dashboard/components/orgBits";
 import { OrgCanvas } from "@/dashboard/components/OrgCanvas";
@@ -59,7 +58,7 @@ export default async function Crew({ searchParams }: { searchParams: Promise<{ v
 const NO_ORG = "The org chart tables aren’t up to date: apply the org chart migrations (20261115090000_org_chart.sql, 20261116090000_department_budgets.sql).";
 
 async function Chart({ f, edit }: { f: Awaited<ReturnType<typeof getFloor>>; edit: boolean }) {
-  const org = await loadOrg();
+  const org = f.chart; // read once with the floor (card 302)
   if (!org) return <div className="card"><span className="sub">{NO_ORG}</span></div>;
   // the canvas also draws hand-offs, from the chains that are on; without the flow it draws none
   const [extras, goals, pending, flow] = await Promise.all([deptExtras(org), goalsByDept(org), listProposals(["pending"]).catch(() => null), edit ? null : loadFlow(f.palette).catch(() => null)]);
@@ -91,7 +90,7 @@ async function Chart({ f, edit }: { f: Awaited<ReturnType<typeof getFloor>>; edi
 }
 
 async function Schedule({ f }: { f: Awaited<ReturnType<typeof getFloor>> }) {
-  const [d, org] = await Promise.all([getCrewCanvas(f), loadOrg().catch(() => null)]);
+  const [d, org] = [await getCrewCanvas(f), f.chart];
   const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, perRun: a.perRun ?? null }));
   const plan = planOrgOn(members, d.flow.chains, f.now, f.tz);
   const day = orgDay({

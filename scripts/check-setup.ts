@@ -195,7 +195,8 @@ assert.match(setup, /allowedDomains: \[host\]/, "Read a web page is held to the 
 assert.match(setup, /const state = stateFor\(readAPage\);/, "facts are saved in the state code decides");
 assert.match(setup, /if \(res\.status === "ok" && finished\)/, "facts are saved only after a run that finished");
 assert.match(setup, /checkAddress\(/, "the site address is checked before it is used");
-assert.match(read("app/(room)/page.tsx"), /if \(await inSetup\(\)\) redirect\("\/start"\);/, "the Desk sends a new business to setup");
+// card 302: the Desk reads setup state with its other loads, then redirects before drawing anything
+assert.match(read("app/(room)/page.tsx"), /const \[f, setup[^\]]*\] = await Promise\.all\(\[getFloor\(\), inSetup\(\)[\s\S]*?if \(setup\) redirect\("\/start"\);/, "the Desk sends a new business to setup");
 assert.doesNotMatch(read("app/(room)/page.tsx"), /TemplatePicker|Start your crew/, "the picker moved to setup");
 
 // ---- Your company (card 153): the chart is drawn in code from Avery's sketch, never by the model

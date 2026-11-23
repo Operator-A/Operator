@@ -7,10 +7,10 @@ import { emailState } from "@/integrations/email";
 // Status (docs/usage.md, slice 4): everything that needs a look, on one page. Alerts (red) also
 // email the owner from the scheduler; warnings only show here.
 export default async function Status() {
-  await requireSession();
-  const { facts: f, problems } = await readStatus();
+  // one round (card 302, docs/speed.md)
+  const [, { facts: f, problems }, mail] = await Promise.all([requireSession(), readStatus(), emailState()]);
   const alerts = problems.filter((p) => p.level === "alert").length;
-  const mail = await emailState(), emails = mail.ok;
+  const emails = mail.ok;
   const tile = (label: string, value: React.ReactNode, sub: string) => (
     <div className="card" style={{ padding: "14px 18px", gap: 4, flex: "1 1 150px" }}>
       <span className="sub">{label}</span>

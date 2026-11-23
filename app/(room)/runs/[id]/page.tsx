@@ -21,23 +21,22 @@ import { Avatar, Summary } from "@/dashboard/components/ui";
 
 export default async function Replay({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const run = await getRun(id);
+  // the run and the floor together (card 302, docs/speed.md); getRun checks the login too
+  const [run, f, jar] = await Promise.all([getRun(id), getFloor(), cookies()]);
   if (!run) notFound();
-  const f = await getFloor();
   const a = f.byId[run.agent_id];
   if (!a) notFound();
-  const unseen = needs(f, f.now, parseSeen((await cookies()).get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === a.id);
+  const unseen = needs(f, f.now, parseSeen(jar.get(SEEN_COOKIE)?.value)).some((n) => n.run && n.agentId === a.id);
   const others = f.runs.filter((r) => r.agent_id === a.id && r.status !== "skipped" && r.id !== run.id).slice(0, 6);
   const has = (tool: string) => (f.grants[a.id] ?? []).includes(tool);
   const reactable = run.status === "ok" || run.status === "failed";
-  const [items, mf, steps, said, rules] = await Promise.all([
+  const [items, mf, steps, said, rules, custom, chain, asked] = await Promise.all([
     has("report_leads") ? leadItemsOfRun(run.id) : null, mapFor(a.id), mapSteps(run.id),
     reactable ? getRunReactions(run.id) : Promise.resolve({} as Awaited<ReturnType<typeof getRunReactions>>), reactable ? getReactRules(a.id) : null,
+    customMenuFor(), run.trigger === "chain" ? getChainRuns(run.id) : null, run.trigger === "chat" ? askedIn(run.id).catch(() => null) : null,
   ]);
   const leads = items ? items.length : null;
-  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.crew, f.health, await customMenuFor()), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps, f.tz) });
-  const chain = run.trigger === "chain" ? await getChainRuns(run.id) : null;
-  const asked = run.trigger === "chat" ? await askedIn(run.id).catch(() => null) : null;
+  const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.crew, f.health, custom), schedule: null, chain: null, usedBy: mf.usedBy, edit: null, run: mapRunOf(run, steps, f.tz) });
   const look = RUN_LOOK[run.status];
 
   // Where the money went, split in code with the same prices the agents bill with.

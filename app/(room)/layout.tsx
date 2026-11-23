@@ -15,7 +15,7 @@ import { currentDraftView } from "@/dashboard/department";
 import { atLeast } from "@/core/roles";
 import { sendToAvery } from "@/dashboard/chatActions";
 import { CHAT_MISSING, chatHistory } from "@/core/avery-chat";
-import { agentNames, companySeat, loadOrg } from "@/core/org";
+import { agentNames, companySeat } from "@/core/org";
 import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 
@@ -24,11 +24,12 @@ export const maxDuration = 120;
 
 export default async function RoomLayout({ children }: { children: React.ReactNode }) {
   // one round for everything the frame shows (card 202, docs/speed.md); a bad session still redirects before anything is drawn
-  const [floor, jar, history, org, biz, me, draft] = await Promise.all([
-    getFloor(), cookies(), chatHistory(30).catch(() => null), loadOrg().catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), requireSession(),
+  const [floor, jar, history, biz, me, draft] = await Promise.all([
+    getFloor(), cookies(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), requireSession(),
     // card 156: the department draft Avery is filling in, at the top of her panel
     currentDraftView().catch(() => null),
   ]);
+  const org = floor.chart; // read once with the floor (card 302)
   const theme = jar.get("cr_theme")?.value === "dark" ? "dark" : "light";
   const open = needs(floor, floor.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
   const red = alerting(open);
