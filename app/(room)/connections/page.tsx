@@ -10,7 +10,8 @@ import { Avatar, LockList } from "@/dashboard/components/ui";
 import { ActionButton, KeyForm, TargetForm } from "@/dashboard/components/client";
 import { metaTargets } from "@/core/meta-targets";
 import { RESULT_KINDS, RESULT_LABEL } from "@/core/meta-rules";
-import { claudeRemoveKey } from "@/dashboard/connectionActions";
+import { claudeRemoveKey, modelRemoveKey, modelSaveKey } from "@/dashboard/connectionActions";
+import { MODEL_PROVIDERS } from "@/core/model-key-rules";
 import { claudeState } from "@/dashboard/claude";
 import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
 import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
@@ -333,6 +334,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", columnGap: 24 }}><LockList rules={HARD_RULES} dark /></div>
       </div>
       <Suspense fallback={<SkelPane />}><ClaudeCard owner={me.role === "owner"} query={sp} /></Suspense>
+      <Suspense fallback={<SkelPane />}><ModelKeysCard owner={me.role === "owner"} /></Suspense>
       <div className="card" style={{ gap: 10 }}>
         <span className="card-t">Behind the scenes</span>
         {BEHIND_THE_SCENES.map((b) => (
@@ -370,6 +372,36 @@ async function ClaudeCard({ owner, query }: { owner: boolean; query: Readonly<Re
       </span>
       <ClaudeChoice state={state} picked={pickedChoice(state, query.claude)} owner={owner} back="connections" query={query} />
       {owner && state.ownKey && <ActionButton className="btn outline sm" action={claudeRemoveKey} confirm={{ title: "Forget the Claude key?", body: state.edition === "cloud" ? "The key is forgotten here, and runs move to OPERATOR’s Claude on your credits. Delete it in the Claude Console too if it shouldn’t work anywhere." : "The key is forgotten here. Delete it in the Claude Console too if it shouldn’t work anywhere.", confirmLabel: "Forget it", kind: "danger" }}>Forget the key</ActionButton>}
+    </div>
+  );
+}
+
+/** The business's own keys for other model providers (docs/agent-setup.md, "Models across providers"). */
+async function ModelKeysCard({ owner }: { owner: boolean }) {
+  const states = await Promise.all(MODEL_PROVIDERS.map((p) => mcpStatus(p.vaultId)));
+  return (
+    <div className="card" id="models" style={{ gap: 10 }}>
+      <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="cpu" size={15} />Other models</span>
+      <span className="ink2" style={{ fontSize: 12.5 }}>Your own key for another AI provider, billed by that provider. Agents can be put on these models once picking a model per agent ships; until then every agent stays on Claude. Picking another model sends that agent’s facts and memory to the provider.</span>
+      {MODEL_PROVIDERS.map((p, i) => {
+        const st = states[i], on = !!st?.connected, paused = on && !!st?.paused;
+        return (
+          <div key={p.id} style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 8, borderTop: "1px solid var(--bd)" }}>
+            <span className="row" style={{ gap: 8, justifyContent: "space-between" }}>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{p.name}</span>
+              <span className="pill sm" style={{ background: paused ? "var(--yel-soft)" : on ? "var(--mint-soft)" : "var(--soft)", color: paused ? "var(--yel-ink)" : on ? "var(--mint-ink)" : "var(--ink2)" }}>{paused ? "Paused" : on ? "Key saved" : "No key"}</span>
+            </span>
+            {paused && st?.lastError && <span className="ink2" style={{ fontSize: 12.5 }}>{st.lastError}</span>}
+            {owner
+              ? <>
+                  {!on && <span className="ink2" style={{ fontSize: 12.5 }}>Make a key at {p.where}, then paste it here.</span>}
+                  <KeyForm label={`${p.name} API key`} save={modelSaveKey.bind(null, p.id)} placeholder={p.placeholder} replace={on} />
+                  {on && <ActionButton className="btn outline sm" action={modelRemoveKey.bind(null, p.id)} confirm={{ title: `Forget the ${p.name} key?`, body: `The key is forgotten here. Delete it at ${p.name} too if it shouldn’t work anywhere.`, confirmLabel: "Forget it", kind: "danger" }}>Forget the key</ActionButton>}
+                </>
+              : !on && <span className="sub">Ask an owner of this business to paste it.</span>}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -120,6 +120,12 @@ stored id that falls off the list is ignored like any other invalid setup value.
 - Other providers (decided 2026-11-23): first each business's own key per provider, sealed in the
   vault and called directly; later OPERATOR credits through Vercel AI Gateway. Gateway keys are set
   per Vercel team, not per request, so a business's own key can't go through it.
+- Provider keys (slice 2): Connections > Other models takes an owner's key for OpenAI, xAI or Google
+  (`core/model-key-rules.ts`). It is shape-checked, then checked with one read-only list-models call
+  that never follows a redirect, sealed with the org's data key on its own `mcp_connections` row
+  (`openai_key`, `xai_key`, `google_ai_key`), and never shown again. `modelKey()` opens one, and only
+  `integrations/llm.ts` may call it (`check:mcp`). A provider key carries no scopes, so the runner and
+  the gateway stay the limit, as on Claude.
 - The run summary names the model that wrote the result, and the run replay splits cost by the
   model whose price matches the logged cost.
 - Changing a price or adding a model is a pull request; read the provider's price page that day.

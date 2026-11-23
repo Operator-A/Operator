@@ -17,7 +17,7 @@ const AUDITED = [
   // the builder and the flow
   "createBuilt", "saveSpec", "goBack", "setBuiltBudget", "goLive", "saveCrewFlow", "rollBackFlow",
   // Connections
-  "mcpDisconnect", "mcpSaveKey", "claudeSaveKey", "claudeRemoveKey", "vaultReseal", "klaviyoPickList", "ga4PickProperty", "metaSetTarget", "customAdd", "customScopes", "customKey", "customToolOn", "customToolOff", "customNumber", "customPause", "customRemove",
+  "mcpDisconnect", "mcpSaveKey", "claudeSaveKey", "claudeRemoveKey", "modelSaveKey", "modelRemoveKey", "vaultReseal", "klaviyoPickList", "ga4PickProperty", "metaSetTarget", "customAdd", "customScopes", "customKey", "customToolOn", "customToolOff", "customNumber", "customPause", "customRemove",
   // people and roles
   "peopleAdd", "peopleSetRole", "peopleRemove",
   // the business's own words, which every agent is told

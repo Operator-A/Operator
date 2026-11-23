@@ -124,7 +124,8 @@ shipping and refund confirmations.
   duty with no actions). No tool approves or rejects a card, puts an agent on duty, turns the org on,
   grants an action or a custom tool, or changes a cap, budget, schedule, vendor, connection or member.
   What a tool returns is scrubbed (`scrubSecrets`) and agent-written text in it is labelled as such.
-- One credential store: every sign-in and service key lives in the token vault (`core/vault.ts`),
+- One credential store: every sign-in and service key, including a business's own Claude key and its keys for
+  other model providers (`core/model-key-rules.ts`; opened only by `integrations/llm.ts`), lives in the token vault (`core/vault.ts`),
   sealed with its org's own random data key and bound to that org; the data key is kept only
   wrapped by `MCP_SECRET_KEY` (never derived from another secret), connected on Connections.
   Only `integrations/mcp.ts` and `core/gateway` import the vault (lint enforces it). Settings in

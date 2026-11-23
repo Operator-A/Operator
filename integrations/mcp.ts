@@ -20,6 +20,7 @@ import {
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
 import { orgId } from "@/core/tenancy";
+import { PROVIDER_BY_ID, checkAnswer, readModelKey, type ModelProvider } from "@/core/model-key-rules";
 import { looksLikeNotionKey } from "@/core/notion-blocks";
 import { checkNotionKey, notionServer } from "./notion-server";
 import { checkShopifyKey, shopifyServer } from "./shopify-server";
@@ -1247,6 +1248,46 @@ export async function claudeKey(): Promise<string | null> {
   const r = await row(CLAUDE_KEY_ID).catch(() => null);
   if (!r?.secret || r.paused_at) return null;
   const s = await readSecret<KeySecret>(CLAUDE_KEY_ID, r);
+  return s?.key ?? null;
+}
+
+// ---- The business's own keys for other model providers (docs/agent-setup.md, "Models across providers").
+// Same as the Claude key: sealed with the org's data key on a connection row of its own, checked with one
+// read-only call that never follows a redirect, never echoed, logged or shown; only this file opens one.
+
+/** Keeps a provider key in the vault, after the provider confirms it works. */
+export async function saveModelKey(provider: ModelProvider, pasted: string): Promise<void> {
+  if (!keys().current) throw new Error(VAULT_MISSING);
+  const p = PROVIDER_BY_ID[provider];
+  const read = readModelKey(p, pasted);
+  if ("problem" in read) throw new Error(read.problem);
+  const { key } = read;
+  let res: Response;
+  try {
+    res = await fetch(p.check.url, { headers: { [p.check.header]: `${p.check.prefix}${key}` }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15_000) });
+  } catch (e) { throw new Error(`${p.name} couldn't be reached to check the key: ${scrubSecrets(e instanceof Error ? e.message : String(e), [key]).slice(0, 120)}`); }
+  const answer = checkAnswer(p, res.status);
+  if ("problem" in answer) throw new Error(answer.problem);
+  const now = new Date().toISOString();
+  const { error } = await db().from("mcp_connections").upsert({ id: p.vaultId, secret: await sealSecret({ key } satisfies KeySecret), connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
+  if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
+  await logEvent(p.vaultId, "connected", `${p.name} API key`, [key]);
+}
+
+/** Forgets a provider key here. It keeps working at the provider until it is deleted there. */
+export async function removeModelKey(provider: ModelProvider): Promise<void> {
+  const id = PROVIDER_BY_ID[provider].vaultId;
+  const { error } = await db().from("mcp_connections").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  await logEvent(id, "disconnected");
+}
+
+/** A provider key, opened for one call; null when the business has none or it is paused. Only integrations/llm.ts calls this. */
+export async function modelKey(provider: ModelProvider): Promise<string | null> {
+  const id = PROVIDER_BY_ID[provider].vaultId;
+  const r = await row(id).catch(() => null);
+  if (!r?.secret || r.paused_at) return null;
+  const s = await readSecret<KeySecret>(id, r);
   return s?.key ?? null;
 }
 

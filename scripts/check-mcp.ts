@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { migration } from "./lib/schema";
 import { join } from "node:path";
+import * as ModelKeyRules from "../core/model-key-rules";
 import { CTX_META, callThrough, createHost, listThrough, served } from "../core/tools/mcp-host";
 import type { ToolDef } from "../core/tools/types";
 import { checkNotionArgs, looksLikeNotionKey, notionPageId } from "../core/notion-blocks";
@@ -979,6 +980,48 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
   assert.ok("problem" in C.customArgs(inputs, {}, { project_id: "x".repeat(3000) }), "inputs over 2 KB are refused");
   assert.match(C.customReply("y".repeat(C.MAX_CUSTOM_REPLY + 50)), /\[cut, 50 more characters\]$/);
   assert.equal(C.customReply({ a: 1 }), '{"a":1}');
+}
+
+// ---- The business's own keys for other model providers (docs/agent-setup.md, "Models across providers")
+{
+  const R = ModelKeyRules;
+  assert.deepEqual(R.MODEL_PROVIDERS.map((p) => p.id), ["openai", "xai", "google"]);
+  assert.equal(new Set(R.MODEL_PROVIDERS.map((p) => p.vaultId)).size, R.MODEL_PROVIDERS.length, "one vault row per provider");
+  for (const p of R.MODEL_PROVIDERS) {
+    assert.match(p.vaultId, /^[a-z][a-z0-9_]{1,30}$/, "fits mcp_connections.id");
+    assert.notEqual(p.vaultId, "anthropic_key");
+    assert.ok(!(p.vaultId in MCP_SERVERS), `${p.vaultId} is not an MCP server id`);
+    assert.match(p.check.url, /^https:\/\/[a-z0-9.-]+\//, "the key check goes to the provider over https");
+  }
+  const P = R.PROVIDER_BY_ID;
+  assert.deepEqual(R.readModelKey(P.openai, `  sk-proj-${"a".repeat(40)}  `), { key: `sk-proj-${"a".repeat(40)}` }, "a pasted key is trimmed");
+  assert.ok("key" in R.readModelKey(P.xai, `xai-${"b".repeat(40)}`));
+  assert.ok("key" in R.readModelKey(P.google, `AIza${"c".repeat(35)}`));
+  assert.ok("problem" in R.readModelKey(P.openai, `xai-${"a".repeat(40)}`), "another provider's key is refused");
+  assert.ok("problem" in R.readModelKey(P.google, `sk-${"a".repeat(40)}`));
+  assert.ok("problem" in R.readModelKey(P.openai, "sk-" + "a".repeat(400)), "over 300 characters is refused");
+  assert.ok("problem" in R.readModelKey(P.openai, 42));
+  assert.ok("ok" in R.checkAnswer(P.openai, 200));
+  assert.match((R.checkAnswer(P.xai, 401) as { problem: string }).problem, /didn’t accept/);
+  assert.match((R.checkAnswer(P.google, 400) as { problem: string }).problem, /didn’t accept/, "Google answers 400 for a bad key");
+  assert.match((R.checkAnswer(P.openai, 503) as { problem: string }).problem, /answered 503/);
+  assert.ok(!R.isModelProvider("anthropic") && R.isModelProvider("xai"));
+  const save = mcpSrc.slice(mcpSrc.indexOf("export async function saveModelKey"), mcpSrc.indexOf("export async function removeModelKey"));
+  assert.ok(save.includes("secret: await sealSecret({ key } satisfies KeySecret)"), "a provider key is sealed in the vault");
+  assert.ok(save.includes('await logEvent(p.vaultId, "connected", `${p.name} API key`, [key]);'), "the log names the provider, never the key");
+  assert.match(save, /redirect: "error"/, "checking the key never follows a redirect");
+  assert.match(save, /scrubSecrets\(e instanceof Error \? e\.message : String\(e\), \[key\]\)/, "a failed check never echoes the key");
+  // only integrations/llm.ts may open a provider key
+  const walkTs = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? (f === "node_modules" || f.startsWith(".") ? [] : walkTs(p)) : /\.(ts|tsx)$/.test(f) ? [p] : []; });
+  for (const dir of ["app", "core", "dashboard", "integrations", "templates", "ee"]) for (const f of walkTs(dir)) {
+    if (f === "integrations/mcp.ts" || f === "integrations/llm.ts") continue;
+    assert.ok(!/\bmodelKey\(/.test(readFileSync(f, "utf8")), `${f} must not open a provider key`);
+  }
+  const acts = readFileSync("dashboard/connectionActions.ts", "utf8");
+  for (const fn of ["modelSaveKey", "modelRemoveKey"]) {
+    const body = acts.slice(acts.indexOf(`export async function ${fn}`));
+    assert.match(body, /^[^\n]+\n\s+const \{ me, no \} = await asRole\("owner"\); if \(no\) return no;\n\s+if \(!isModelProvider\(provider\)\)/, `${fn}: owners only, and only a listed provider`);
+  }
 }
 
 // ---- The business's own Claude key (docs/tenancy.md, slice 8.1c)
