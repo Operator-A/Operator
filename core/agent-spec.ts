@@ -218,11 +218,11 @@ export async function newAgentId(name: string): Promise<string> {
 }
 
 /** Creates a built agent: off duty, $1 a day, no schedule, with the given spec as v1. */
-export async function createBuiltAgent(spec: AgentSpec, by: string): Promise<string> {
+export async function createBuiltAgent(spec: AgentSpec, by: string, note = "Created in the builder"): Promise<string> {
   const id = await newAgentId(spec.name);
   const a = await db().from("agents").insert({ id, name: spec.name, model: spec.model, enabled: false, daily_budget_usd: 1 });
   if (a.error) throw new Error(a.error.message);
-  const d = await db().from("agent_defs").insert({ agent_id: id, version: 1, spec, note: "Created in the builder", created_by: by, active: true });
+  const d = await db().from("agent_defs").insert({ agent_id: id, version: 1, spec, note, created_by: by, active: true });
   if (d.error) throw new Error(`The agent was created but its spec wasn’t saved: ${d.error.message}`);
   return id;
 }

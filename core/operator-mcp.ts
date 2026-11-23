@@ -1,22 +1,26 @@
 import "server-only";
-// OPERATOR's own MCP server (docs/operator-mcp.md, slice 1): the sign-ins (mcp_grants) and the read
-// tools. The rules (tool list, tokens, PKCE, JSON-RPC) are in core/operator-mcp-rules.ts.
+// OPERATOR's own MCP server (docs/operator-mcp.md): the sign-ins (mcp_grants), the read tools (slice 1)
+// and the draft tools (slice 2). The rules (tool list, tokens, PKCE, JSON-RPC) are in core/operator-mcp-rules.ts.
 //
 // Every call runs as the token's business (withOrg) and reads the member again, so a removed member, a
-// changed role or a Disconnect applies on the next call. The tools here only read, through db(), the
-// same tables the Control Room shows. Slice 2 adds draft writes through the builder's own code.
+// changed role or a Disconnect applies on the next call. Reads go through db(), the same tables the
+// Control Room shows. Draft tools (owner only) write only through the builder's and proposals' own code:
+// createBuiltAgent (off duty, no actions), saveSpecVersion (a draft; what runs doesn't change) and
+// fileProposal (a person decides it). Nothing here goes live, puts an agent on duty or grants an action.
 import { db } from "@/core/db";
 import { withOrg } from "@/core/tenancy";
 import { memberById } from "@/core/members";
 import { atLeast, type Role } from "@/core/roles";
-import { agentNames, headOf, loadOrg, monthSpendByAgent, runStats, seatOf, type Org } from "@/core/org";
-import { draftOf, listSpecVersions, specModelOk } from "@/core/agent-spec";
+import { agentNames, headOf, loadOrg, monthSpendByAgent, runStats, seatOf, setHolder, type Org } from "@/core/org";
+import { NO_MODEL_KEYS, createBuiltAgent, draftOf, listSpecVersions, modelReady, readSpec, saveSpecVersion, specLooser, specModelOk, type AgentSpec } from "@/core/agent-spec";
+import { isCustomToolId } from "@/core/custom-mcp-rules";
+import { audit } from "@/core/audit";
 import { TOOLS } from "@/core/tools/catalog";
 import { MODEL_LIST } from "@/integrations/models";
-import { mcpStatuses } from "@/integrations/mcp";
+import { mcpStatuses, modelKeysReady } from "@/integrations/mcp";
 import { NEED_TILE, TILE_BY_ID } from "@/core/tools-step-rules";
-import { listProposals } from "@/core/proposals";
-import { LIMITS, answerText, hashesMatch, newToken, nextWindow, tokenParts, type OpTool, type ToolAnswer } from "@/core/operator-mcp-rules";
+import { fileProposal, listProposals } from "@/core/proposals";
+import { LIMITS, answerText, draftTools, hashesMatch, newToken, nextWindow, staleRead, tokenParts, toolList, type OpTool, type ToolAnswer } from "@/core/operator-mcp-rules";
 
 // ---- Grants
 
@@ -310,7 +314,101 @@ async function listBrains(): Promise<ToolAnswer> {
   return { text: answerText(body, null) };
 }
 
-/** Runs a read tool for a caller, inside their org, after checking their role again. */
+// ---- Draft tools (slice 2, owner only)
+
+type Args = Record<string, string | number>;
+const no = (text: string): ToolAnswer => ({ text, isError: true });
+/** A tool's kind as Claude may pick it: "custom" for a server the owner added, undefined when it isn't on the list. */
+const kindOf = (id: string) => (isCustomToolId(id) ? "custom" : TOOLS[id] && !TOOLS[id].codeOnly && !TOOLS[id].server ? TOOLS[id].kind : undefined);
+/** Who saved a version: the member, through the app they connected. */
+const byOf = (c: Caller) => `${c.member.email} (via ${c.client})`.slice(0, 200);
+
+/** A spec checked like a builder save: anything code doesn't offer refuses it, and the model's provider must have a key. */
+async function checkSpec(raw: unknown, agentId?: string): Promise<{ spec: AgentSpec } | { problem: string }> {
+  const { spec, problems } = readSpec(raw, agentId);
+  if (problems.length) return { problem: `Not saved. This asks for something OPERATOR doesn't offer: ${problems.join("; ")}.` };
+  const keys = await modelKeysReady().catch(() => NO_MODEL_KEYS);
+  if (!modelReady(spec.model, keys)) return { problem: `Not saved. ${spec.model} needs its provider's key on Connections > Other models; list_brains names the models.` };
+  return { spec };
+}
+
+async function createAgent(caller: Caller, origin: string, args: Args): Promise<ToolAnswer> {
+  const t = draftTools(toolList(args.tools), [], kindOf);
+  if ("problem" in t) return no(`Not created: ${t.problem}.`);
+  const got = await checkSpec({
+    name: args.name, mandate: args.job, directive: args.directive, goodResult: args.good_result,
+    model: args.model ?? "claude-haiku-5-5", effort: args.effort ?? "low", tools: t.tools,
+  });
+  if ("problem" in got) return no(got.problem);
+  // an open seat, named before anything is made, so a wrong name makes nothing
+  let seatId: string | null = null, seatNote = "";
+  if (args.seat) {
+    const org = await loadOrg();
+    const want = String(args.seat).toLowerCase();
+    const open = (org?.seats ?? []).filter((x) => x.holder === "open" && x.title.toLowerCase() === want);
+    if (open.length !== 1) return no(open.length ? `More than one open seat is called ${args.seat}.` : `There is no open seat called ${String(args.seat).slice(0, 60)}. get_company lists the seats.`);
+    seatId = open[0].id;
+  }
+  const id = await createBuiltAgent(got.spec, byOf(caller), "Created from Claude");
+  if (seatId) {
+    try { await setHolder(seatId, "agent", id); seatNote = ` It sits in the ${args.seat} seat.`; } catch (e) { seatNote = ` It isn't on the chart yet: ${e instanceof Error ? e.message : e}`; }
+  }
+  await audit(caller.member, "create_agent", id, { name: got.spec.name, via: caller.client });
+  return { text: answerText({
+    created: id, name: got.spec.name, version: 1, on_duty: false,
+    note: `${got.spec.name} is saved as v1, off duty, with no actions.${seatNote} Nothing runs until a person tries it and puts it on duty in OPERATOR.`,
+  }, `${origin}/agents/${encodeURIComponent(id)}`) };
+}
+
+async function updateAgent(caller: Caller, origin: string, args: Args): Promise<ToolAnswer> {
+  const f = await findAgent(String(args.agent));
+  if ("problem" in f) return no(f.problem);
+  const id = f.row.id;
+  const versions = await listSpecVersions(id);
+  if (!versions.length) return no(`${f.names[id] ?? id} wasn't made in the builder, so it has no versions to change here.`);
+  const newest = versions.reduce((m, v) => (v.version > m.version ? v : m));
+  const stale = staleRead(Number(args.based_on_version), newest.version);
+  if (stale) return no(stale);
+  const base = draftOf(versions) ?? versions.find((v) => v.active) ?? newest;
+  const t = draftTools(args.tools != null ? toolList(args.tools) : null, base.spec.tools, kindOf);
+  if ("problem" in t) return no(`Not saved: ${t.problem}.`);
+  const pick = <K extends keyof AgentSpec>(k: K, a: string): AgentSpec[K] => (args[a] != null ? (args[a] as AgentSpec[K]) : base.spec[k]);
+  const got = await checkSpec({
+    ...base.spec,
+    name: pick("name", "name"), mandate: pick("mandate", "job"), directive: pick("directive", "directive"), goodResult: pick("goodResult", "good_result"),
+    model: pick("model", "model"), effort: pick("effort", "effort"), tools: t.tools,
+  }, id);
+  if ("problem" in got) return no(got.problem);
+  // belt and braces: a draft from Claude never lets a run reach or spend more than the version it came from
+  const looser = specLooser(base.spec, got.spec);
+  if (looser.length) return no(`Not saved: that ${looser.join("; ")}. Make that change in OPERATOR.`);
+  if (JSON.stringify(base.spec) === JSON.stringify(got.spec)) return no(`Nothing changed from v${base.version}.`);
+  const v = await saveSpecVersion(id, got.spec, String(args.note ?? "").trim() || "Changed from Claude", byOf(caller));
+  await audit(caller.member, "save_spec", id, { version: v, via: caller.client });
+  return { text: answerText({
+    agent: id, saved_as_draft: v, based_on: base.version,
+    note: `Saved as draft v${v}. What runs today hasn't changed: a person tries the draft and goes live in OPERATOR.`,
+  }, `${origin}/agents/${encodeURIComponent(id)}`) };
+}
+
+async function propose(caller: Caller, origin: string, args: Args): Promise<ToolAnswer> {
+  let deptId: string | null = null;
+  if (args.department) {
+    const org = await loadOrg();
+    const want = String(args.department).toLowerCase();
+    const d = (org?.departments ?? []).find((x) => x.id === args.department || x.name.toLowerCase() === want);
+    if (!d) return no(`There is no department called ${String(args.department).slice(0, 60)}. get_company lists them.`);
+    deptId = d.id;
+  }
+  const { department: _d, ...input } = args;
+  void _d;
+  let pid: string;
+  try { pid = await fileProposal(input, { agentId: null, source: "claude", deptId }); } catch (e) { return no(`Not filed: ${e instanceof Error ? e.message : e}`); }
+  await audit(caller.member, "file_proposal", pid, { kind: args.kind, via: caller.client });
+  return { text: answerText({ proposal: pid, note: "Filed. Nothing happens until a person decides it in OPERATOR." }, `${origin}/proposals/${pid}`) };
+}
+
+/** Runs a tool for a caller, inside their org, after checking their role again. */
 export function runTool(caller: Caller, origin: string, tool: OpTool, args: Record<string, string | number>): Promise<ToolAnswer> {
   if (!atLeast(caller.member.role, tool.min)) return Promise.resolve({ text: `${tool.title} needs the ${tool.min} role.`, isError: true });
   return withOrg(caller.orgId, () => {
@@ -322,6 +420,9 @@ export function runTool(caller: Caller, origin: string, tool: OpTool, args: Reco
       case "list_waiting": return listWaiting(origin);
       case "list_tools": return listTools(origin);
       case "list_brains": return listBrains();
+      case "create_agent": return createAgent(caller, origin, args);
+      case "update_agent": return updateAgent(caller, origin, args);
+      case "propose": return propose(caller, origin, args);
       default: return Promise.resolve({ text: `${tool.name} isn't built yet.`, isError: true });
     }
   });
