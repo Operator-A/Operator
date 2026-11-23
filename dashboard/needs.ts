@@ -56,7 +56,7 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
     const n = cards[k];
     if (n) out.push({ pri: "High", title: `${s(n, "approval")} waiting for your OK`, sub: APPROVAL_SUB[k], href: "/approvals", n, source: { from: "approval", tool: f.approvalTools.find((t) => interruptKind({ from: "approval", tool: t }) === k) ?? "" } });
   }
-  // proposals: the four's kinds show as cards on the Desk; the rest are one line for later
+  // proposals: the four's kinds show as cards on the Company page; the rest are one line for later
   const kinds: Record<string, number> = {};
   for (const k of f.proposalKinds) kinds[k] = (kinds[k] ?? 0) + 1;
   for (const k of INTERRUPTS) {
@@ -105,7 +105,7 @@ export function split(list: readonly Need[]): { now: Need[]; later: Need[] } {
 
 /**
  * What may put a red mark on the frame (an agent's badge, the bell): everything but "connect a tool".
- * A tool not connected yet is setup, not a fault: it shows on the Desk and on Connections (card 189).
+ * A tool not connected yet is setup, not a fault: it shows on the Company page and on Connections (card 189).
  */
 export const alerting = (list: readonly Need[]) => list.filter((x) => x.source.from !== "connection");
 

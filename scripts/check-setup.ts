@@ -385,7 +385,7 @@ assert.match(setup186, /wrapUp: offer/, "Start this company opens the wrap-up; S
 assert.match(page186, /if \(!setup && !state\.wrapUp\) redirect\("\/"\)/, "/start keeps the founder for the wrap-up");
 assert.match(page186, /planBlock\(\{ kind: "run"/, "credits are asked of the paid layer through planBlock; core never reads ee");
 assert.match(page186, /firstJobView\(await jobFloor\(health\)\)/, "the wrap-up reads a small floor, not getFloor");
-assert.match(page186, /action=\{setupToDesk\}/, "Go to your Desk ends the wrap-up");
+assert.match(page186, /action=\{setupToCompany\}/, "Go to your Company page ends the wrap-up");
 assert.doesNotMatch(page186, /Credits for your crew’s work/, "the old second credits panel is gone");
 assert.match(acts186, /href: "\/start", text: `Started:/, "Start this company stays in setup");
 

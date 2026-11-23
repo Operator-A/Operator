@@ -1,6 +1,8 @@
 // Checks the department pages (docs/department-pages.md): the tab in the address, the red counts and
 // who works in a department, on a small chart. No database, no network. Run: npm run check:dept
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
+import { COMPANY_TABS, companyTab, companyHref, addDeptHref, ADD_DEPT_SAY, goalsWord } from "../dashboard/company-rules";
 import { readFileSync } from "node:fs";
 import { DEPT_TABS, agentHref, goalHref, hireHref, settingsHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
 import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from "../core/flow-rules";
@@ -131,7 +133,7 @@ assert.ok(/withRun\(headId, "chat"/.test(headChat), "every message to a head is 
 assert.ok(/crewNowTool\(org, deptId\)/.test(headChat) && /fileProposalTool\(reach, deptId\)/.test(headChat), "the head sees and files for its own department only");
 assert.ok(!/callWriteTool|core\/gateway/.test(headChat), "the head's chat never reaches the gateway");
 assert.ok(/export async function sendToHead[\s\S]*?asRole\("approver"\)[\s\S]*?controlsOn\(\)[\s\S]*?cleanMessage/.test(actions), "sendToHead checks the role, real runs and the message");
-assert.ok(/<HeadChat /.test(page) && /send=\{sendToHead\}/.test(page), "the Chat tab talks through sendToHead");
+assert.ok(/<HeadChat /.test(page) && /send=\{sendToHead\.bind\(null, id\)\}/.test(page), "the Chat tab talks through sendToHead");
 assert.ok(/"dept_chat"/.test(read("core/tenancy.ts")), "dept_chat is a tenant table");
 
 const live = read("app/(room)/dept/[id]/live/route.ts"), feedSrv = read("dashboard/deptFeed.ts"), chat = read("dashboard/components/headChat.tsx");
@@ -280,6 +282,29 @@ const chartSrc = read("dashboard/components/OrgChart.tsx");
 assert.ok(!/DeptEditor|LimitForm|setBudget|setLeadChecks|addRule/.test(chartSrc) && /\/dept\/\$\{d\.id\}\?settings=1/.test(chartSrc), "Crew's department editor is gone; its Settings opens the department's page");
 assert.ok(!/orgEditDeptRule/.test(orgActs), "the rule editor went with it");
 
+// slice 8: Avery's Company page, home in place of the Desk and the floating Avery panel
+{
+  assert.deepEqual([...COMPANY_TABS], ["chat", "departments", "goals", "approvals"], "the same four tabs as a department, Departments in place of Agents");
+  assert.equal(companyTab("nope"), "chat"); assert.equal(companyTab("goals"), "goals");
+  assert.equal(companyHref("chat"), "/"); assert.equal(companyHref("approvals"), "/?tab=approvals");
+  assert.equal(addDeptHref(), `/?say=${encodeURIComponent(ADD_DEPT_SAY)}`, "Add a department types into Avery's chat");
+  assert.equal(goalsWord([]), "No goals yet."); assert.equal(goalsWord(["on_track", "behind", "reached"]), "2 of 3 goals on track."); assert.equal(goalsWord(["behind"]), "1 goal, behind or not measured yet.");
+  const home = read("app/(room)/page.tsx"), frame = read("app/(room)/layout.tsx");
+  assert.ok(/<HeadChat [\s\S]*?send=\{sendToAvery\}/.test(home) && /chatHistory\(/.test(home), "the Company chat is Avery's chat: the same table and the same server action");
+  assert.ok(/deptRuns\(\[chiefId\]/.test(home), "Avery's runs post in her chat");
+  assert.ok(/const waiting = interruptCount\(open\);/.test(home) && /const waiting = interruptCount\(open\);/.test(frame), "the Company page counts the same four as the menu and the bell");
+  assert.ok(/<ApprovalCard /.test(home) && !/approve\.bind/.test(home), "the Approvals tab draws the same card, so approving is one path");
+  assert.ok(/<GoalTiles /.test(home) && /<GoalTiles /.test(page), "the Company and department Goals tabs draw the same tiles");
+  assert.ok(/redirect\("\/start"\)/.test(home), "a business in setup still starts at setup");
+  assert.ok(!/AveryChat|chatHistory|sendToAvery/.test(frame), "the frame no longer draws the floating Avery panel");
+  assert.ok(/label: "Company"/.test(frame) && !/label: "Desk"/.test(frame) && /addDeptHref\(\)/.test(frame), "the menu says Company, and Add a department opens Avery's interview");
+  const sendAvery = read("dashboard/chatActions.ts");
+  assert.ok(/export async function sendToAvery[\s\S]*?asRole\("approver"\)[\s\S]*?controlsOn\(\)[\s\S]*?cleanMessage/.test(sendAvery), "Avery's chat keeps its checks");
+  assert.ok(!/callWriteTool|core\/gateway/.test(read("core/avery-chat.ts")), "Avery's chat never reaches the gateway");
+  const dir = "app/(room)";
+  const left = ["app", "dashboard"].flatMap((d) => execSync(`grep -rl "AveryChat\\|Back to the Desk\\|on your Desk\\|to your Desk" ${d} || true`, { encoding: "utf8" }).split("\n").filter(Boolean));
+  assert.deepEqual(left, [], `no link or words for the Desk or the floating panel are left (${dir})`);
+}
 // card 370: a move card's lines, Now → New
 assert.deepEqual(moveRows({ dept: "Marketing", seat: "Tess (new seat)", boss: "Sloane" }, { dept: null, seat: null, boss: null }), [
   { k: "Department", from: "None", to: "Marketing" },

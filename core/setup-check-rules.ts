@@ -229,7 +229,7 @@ export const toolOfTile = (needs: readonly string[] | undefined, tile: CheckTile
 /**
  * Who files the re-check: the head of the department of the first agent (by id) holding a tool that reads
  * this tool, that agent itself when it is the head; with none, whoever holds the company seat. Null when
- * no agent sits in either, so the finding waits on the Desk.
+ * no agent sits in either, so the finding waits on the Company page.
  */
 export function recheckFrom(tile: CheckTile, grants: Readonly<Record<string, readonly string[]>>, needsOf: (tool: string) => readonly string[] | undefined, org: Org): { agentId: string; deptId: string | null } | null {
   const owners = Object.keys(grants).filter((a) => grants[a].some((t) => toolOfTile(needsOf(t), tile))).sort();

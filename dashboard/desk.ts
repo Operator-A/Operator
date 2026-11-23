@@ -1,4 +1,4 @@
-// The Desk (docs/company-mode.md, slice 5): its greeting and summary line, counted in code. Pure, so
+// The day's greeting and summary line on the Company page (docs/department-pages.md, slice 8; was the Desk), counted in code. Pure, so
 // `npm run check:chat` can test it.
 import type { GoalStatus } from "@/core/goal-rules";
 

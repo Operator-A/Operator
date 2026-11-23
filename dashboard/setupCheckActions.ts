@@ -64,11 +64,11 @@ async function setState(tile: string, index: number, state: "open" | "skipped"):
   try {
     await setFindingState(tile, index, state);
     revalidatePath("/"); revalidatePath("/connections"); revalidatePath("/start");
-    return { ok: true, text: state === "skipped" ? "Skipped. It stays on your Desk if you want it later." : "Opened again." };
+    return { ok: true, text: state === "skipped" ? "Skipped. It stays on your Company page if you want it later." : "Opened again." };
   } catch (e) { return fail(e); }
 }
 
-/** Skip on a finding: it leaves the tool's card and waits on the Desk. */
+/** Skip on a finding: it leaves the tool's card and waits on the Company page. */
 export async function skipFinding(tile: string, index: number): Promise<ActionResult> {
   const { me, no } = await asRole("approver"); if (no) return no;
   const r = await setState(tile, index, "skipped");
@@ -76,7 +76,7 @@ export async function skipFinding(tile: string, index: number): Promise<ActionRe
   return r;
 }
 
-/** Open again, from the Desk or the card. */
+/** Open again, from the Company page or the card. */
 export async function reopenFinding(tile: string, index: number): Promise<ActionResult> {
   const { me, no } = await asRole("approver"); if (no) return no;
   const r = await setState(tile, index, "open");

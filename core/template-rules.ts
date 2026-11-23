@@ -26,7 +26,7 @@ export interface Template extends Omit<Crew, "flow"> {
   /** Lowercase id, the file's name. */
   id: string;
   name: string;
-  /** One line for the Desk's picker. */
+  /** One line for the Company page's picker. */
   about: string;
   /** Its chains. A chain with the same key in another picked template merges into one, in template order. */
   chains: unknown[];

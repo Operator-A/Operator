@@ -45,7 +45,7 @@ const NOT_AUDITED: Record<string, string> = {
   setupGo: "which step of setup is on screen; changes nothing else",
   setupSkipTool: "which setup question is left for later; connects nothing",
   setupPlanClear: "takes back a setup part's plan; connects nothing",
-  setupToDesk: "leaves the setup wrap-up for the Desk; changes nothing else",
+  setupToCompany: "leaves the setup wrap-up for the Company page; changes nothing else",
   previewChain: "dry runs only",
   applyWaiting: "applies approvals already audited",
   queueQuinn: "queues a run that withRun logs",

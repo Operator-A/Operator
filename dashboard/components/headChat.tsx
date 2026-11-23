@@ -1,6 +1,7 @@
 "use client";
 // A department's chat (docs/department-pages.md, slices 2 and 3), as in the approved mockup: a glass room
-// with the conversation with the head and every run of the department's agents. A run shows its checklist
+// with the conversation with the head and every run of the department's agents. The Company page (slice 8)
+// uses the same room for Avery's chat, with Avery's runs and the cards that need the owner pinned at the end. A run shows its checklist
 // (built in code from its logged steps), its result and its drafts as approval cards; while it is going the
 // chat polls the department's runs (app/(room)/dept/[id]/live) so its steps appear as they happen. Each
 // message to the head is one logged run of the head (dashboard/chatActions.ts sendToHead).
@@ -41,10 +42,17 @@ function RunCard({ r, tz, cards }: { r: FeedRun; tz: string; cards: Record<strin
   );
 }
 
-export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, starters, missing, send, hires = [], hireActs, changes = [], changeActs, controls = false, say = "" }: {
+export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, starters, missing, send, hires = [], hireActs, changes = [], changeActs, controls = false, say = "", live: liveAt, pinned, empty }: {
   deptId: string; dept: string; head: string | null; title: string; tz: string;
   talk: FeedTalk[]; runs: FeedRun[]; cards: Record<string, React.ReactNode>; starters: string[]; missing: string | null;
-  send: (deptId: string, text: string) => Promise<ChatAnswer>;
+  /** One message to the head (a server action already bound to its department, or Avery's). */
+  send: (text: string) => Promise<ChatAnswer>;
+  /** Where the runs are polled as they happen: the department's own by default; null polls nothing. */
+  live?: string | null;
+  /** Cards drawn on the server, shown after the conversation (the Company page's Needs you, slice 8). */
+  pinned?: React.ReactNode;
+  /** The line an empty chat shows. */
+  empty?: string;
   /** Hire cards (slice 5): hires waiting on you and agents never put on duty. */
   hires?: HireCardView[]; hireActs?: HireActs; controls?: boolean;
   /** Change cards (slice 6): changes to an agent or a goal the head filed, waiting on you or decided this week. */
@@ -85,12 +93,14 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
   }, [items.length, busy, going]);
 
   // runs as they happen: poll often while one is going, now and then otherwise
+  const liveUrl = liveAt === undefined ? `/dept/${deptId}/live` : liveAt;
   useEffect(() => {
+    if (!liveUrl) return;
     let stop = false;
     const since = [loadedAt, ...items.filter((i) => i.kind === "run" && i.status === "running").map((i) => i.at)].sort()[0];
     const t = setTimeout(async () => {
       try {
-        const res = await fetch(`/dept/${deptId}/live?since=${encodeURIComponent(since)}`, { cache: "no-store" });
+        const res = await fetch(`${liveUrl}?since=${encodeURIComponent(since)}`, { cache: "no-store" });
         if (!res.ok || stop) return;
         const got = ((await res.json()).runs ?? []) as FeedRun[];
         const wasGoing = new Set(items.filter((i) => i.kind === "run" && i.status === "running").map((i) => i.id));
@@ -110,7 +120,7 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
     setMine((m) => [...m, { id: `z${Date.now()}`, role: "owner", text: t, notes: [], runId: null, at: now }]);
     start(async () => {
       let a: ChatAnswer;
-      try { a = await send(deptId, t); } catch (e) { a = { ok: false, reply: e instanceof Error ? e.message : "Something went wrong.", notes: [], runId: null, costUsd: 0, kept: false }; }
+      try { a = await send(t); } catch (e) { a = { ok: false, reply: e instanceof Error ? e.message : "Something went wrong.", notes: [], runId: null, costUsd: 0, kept: false }; }
       // a kept reply comes back in the server's fresh draw; only one that wasn't kept is added here
       if (!a.kept) setMine((m) => [...m, { id: `a${Date.now()}`, role: "head", text: a.reply, notes: a.notes, runId: a.runId, at: new Date().toISOString() }]);
     });
@@ -147,7 +157,7 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
       <div className="dp-log" ref={log} aria-live="polite">
         {!items.length && !extra.length && (
           <p className="dp-empty">
-            {head ? `Ask ${head} how ${dept} is doing, tell ${head} a rule for one of its agents in your own words, or ask to hire into ${dept}. Every run in ${dept} posts here too: its steps, its result and anything waiting for your OK.` : `Every run in ${dept} posts here: its steps, its result and anything waiting for your OK.`}
+            {empty ?? (head ? `Ask ${head} how ${dept} is doing, tell ${head} a rule for one of its agents in your own words, or ask to hire into ${dept}. Every run in ${dept} posts here too: its steps, its result and anything waiting for your OK.` : `Every run in ${dept} posts here: its steps, its result and anything waiting for your OK.`)}
           </p>
         )}
         {missing && <p className="dp-empty">{missing}</p>}
@@ -171,6 +181,7 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
             {extra.filter((h) => h.at >= it.at && (i === items.length - 1 || h.at < items[i + 1].at)).map((h) => h.el(it.kind !== "run" && it.role === "head"))}
           </Fragment>
         ))}
+        {pinned}
         {tried.map((t) => <span key={t.id} className={t.ok ? "dp-done" : "dp-note dp-bad"}>{t.ok && <Icon name="check" size={14} />}{t.text}</span>)}
         {busy && <div className="dp-msg"><div className="dp-av head">{headIni}</div><div className="dp-glass dp-typing" aria-label={`${head} is looking`}><i /><i /><i /></div></div>}
       </div>

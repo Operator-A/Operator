@@ -79,7 +79,7 @@ export function waitingByTemplate(connected: ReadonlySet<ToolTileId>): Record<st
   }));
 }
 
-/** The tiles connected now, without the who and the property list (the Desk's first job, card 154). */
+/** The tiles connected now, without the who and the property list (the Company page's first job, card 154). */
 export async function connectedTiles(health: Record<IntegrationId, boolean>): Promise<Set<ToolTileId>> {
   const mcpStatus = await statuses();
   const on = TOOL_TILES.map((tile) => {

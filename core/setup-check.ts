@@ -146,7 +146,7 @@ export async function setFindingState(tile: CheckTile, index: number, state: "op
  * Card 284, from the scheduler: skipped findings whose time has come go back to the owner once, as a
  * proposal from the head who owns that tool (recheckFrom). Code files it; no model runs and nothing in the
  * tool changes. The owner's yes opens the finding again on Connections. Marked returned either way the
- * proposal went in, so it never comes back twice; with no agent to file it, it waits on the Desk.
+ * proposal went in, so it never comes back twice; with no agent to file it, it waits on the Company page.
  */
 export async function returnSkipped(nowMs: number): Promise<string[]> {
   const checks = await setupChecks();

@@ -148,10 +148,10 @@ for (const f of ["app"].filter(existsSync).flatMap(walk).filter((x) => x.startsW
 // 8. The page frame draws first (card 303): what calls the business's tools (goal numbers, a connection's account
 //    details, how agents think) streams in behind <Suspense>, so the title, tabs and fast cards don't wait for it.
 const SUSPENDED = (inner: string) => new RegExp(`<Suspense(?: key=\\{\\w+\\})? fallback=\\{<\\w+[^}]*\\}>${inner}`);
-assert.ok(SUSPENDED("<DeskGoals\\b").test(`<Suspense fallback={<SkelTiles />}><DeskGoals goalsP={goalsP} />`));
-assert.ok(!SUSPENDED("<DeskGoals\\b").test(`<section><DeskGoals goalsP={goalsP} />`));
-const desk = read("app/(room)/page.tsx");
-if (/await goalsByDept\(/.test(desk) || !SUSPENDED("<DeskGoals\\b").test(desk) || !SUSPENDED("<DeskLine\\b").test(desk)) problems.push("app/(room)/page.tsx: the Desk's goals (read from the tools) should stream in behind <Suspense> (DeskGoals, DeskLine), not hold up the page (card 303).");
+assert.ok(SUSPENDED("<Pane\\b").test(`<Suspense key={tab} fallback={<PaneSkel />}><Pane tab={tab} />`));
+assert.ok(!SUSPENDED("<Pane\\b").test(`<section><Pane tab={tab} />`));
+const home = read("app/(room)/page.tsx");
+if (!SUSPENDED("<Pane\\b").test(home) || !SUSPENDED("<TodayLine\\b").test(home) || /export default async function Company[\s\S]*?await goalsByDept\([\s\S]*?\n\}\n/.test(home.split("\ntype P = ")[0])) problems.push("app/(room)/page.tsx: the Company page's tabs and its day line (goal numbers read from the tools) should stream in behind <Suspense> (Pane, TodayLine), not hold up the title and tabs (card 303).");
 const conn = read("app/(room)/connections/page.tsx");
 if (!SUSPENDED("<SelDetail\\b").test(conn) || !SUSPENDED("<ClaudeCard\\b").test(conn)) problems.push("app/(room)/connections/page.tsx: a connection's detail (SelDetail) and ClaudeCard call services; each should sit in <Suspense> (card 303).");
 if (!SUSPENDED("\\{view === \"schedule\" \\? <Schedule\\b").test(read("app/(room)/crew/page.tsx"))) problems.push("app/(room)/crew/page.tsx: the chart (goal numbers from the tools) should stream in behind <Suspense> under the title and views (card 303).");

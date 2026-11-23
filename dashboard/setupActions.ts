@@ -87,7 +87,7 @@ export async function setupSnapshot(tile: string): Promise<ActionResult> {
   } catch (e) { return fail(e); }
 }
 
-/** Takes back a part's plan (card 183): "Change my answer" in setup, "Not now" on the Desk afterwards. */
+/** Takes back a part's plan (card 183): "Change my answer" in setup, "Not now" on the Company page afterwards. */
 export async function setupPlanClear(cat: string): Promise<ActionResult & { href?: string }> {
   const { no } = await asRole("approver"); if (no) return no;
   if (!isCategory(cat)) return { ok: false, text: "Unknown part of the company." };
@@ -95,7 +95,7 @@ export async function setupPlanClear(cat: string): Promise<ActionResult & { href
     const setup = await inSetup();
     await planCategory(cat, null);
     revalidatePath("/start"); revalidatePath("/");
-    return setup ? { ok: true, href: `/start?q=${cat}`, text: "Cleared." } : { ok: true, text: "Removed from your Desk. You can connect it any time on Connections." };
+    return setup ? { ok: true, href: `/start?q=${cat}`, text: "Cleared." } : { ok: true, text: "Removed from your Company page. You can connect it any time on Connections." };
   } catch (e) { return fail(e); }
 }
 
@@ -156,8 +156,8 @@ export async function setupInstall(picked: string[]): Promise<ActionResult & { h
   } catch (e) { return fail(e); }
 }
 
-/** Go to your Desk (card 186): ends the wrap-up after the first job, or when no agent is ready yet. Changes nothing else. */
-export async function setupToDesk(): Promise<ActionResult & { href?: string }> {
+/** Go to your Company page (card 186): ends the wrap-up after the first job, or when no agent is ready yet. Changes nothing else. */
+export async function setupToCompany(): Promise<ActionResult & { href?: string }> {
   const { no } = await asRole("approver"); if (no) return no;
   try {
     await endWrapUp();
