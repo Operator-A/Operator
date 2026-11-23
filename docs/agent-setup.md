@@ -115,8 +115,15 @@ stored id that falls off the list is ignored like any other invalid setup value.
   edge and `core/runner.ts` doesn't change.
 - Claude runs on the business's own key or OPERATOR credits (Connections > Claude API). The Claude
   client keeps prompt caching, effort, the server-side refusal fallback and Anthropic's web tools.
-  The builder and `specModelOk` (`core/agent-spec.ts`) still offer only Claude until the builder's
-  model picker lands (slice 4).
+  Any listed model is valid in a spec (`specModelOk`, `core/agent-spec.ts`); one on another provider
+  can be saved only while that provider's key is saved and not paused (`modelReady`, checked on save in
+  `dashboard/actions.ts`), and every turn checks the key again, so removing a key later stops the run
+  with a line naming Connections > Other models.
+- Builder picker (slice 4): Thinking > Advanced lists every model grouped by provider, with prices.
+  A provider without a key shows its models greyed with "add a key on Connections > Other models".
+  The Quick, Balanced and Deep presets stay on Claude, and so do the agents Avery proposes. Under the
+  picker a line says who bills the run, that the agent's job, facts and memory go to that provider,
+  and that web search and fetch run only on Claude.
 - Other providers (decided 2026-11-23): first each business's own key per provider, sealed in the
   vault and called directly; later OPERATOR credits through Vercel AI Gateway. Gateway keys are set
   per Vercel team, not per request, so a business's own key can't go through it.

@@ -1023,6 +1023,11 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
     assert.equal(new URL(p.turns.url).host, new URL(p.check.url).host, `${p.id}: turns go to the same host the key was checked with`);
   }
   assert.equal(P.openai.turns.wire, "responses", "OpenAI function tools need the Responses API");
+  const ready = mcpSrc.slice(mcpSrc.indexOf("export async function modelKeysReady"));
+  assert.ok(ready.includes("await mcpStatuses()") && !/readSecret|openSecret/.test(ready.slice(0, 400)), "the builder learns which keys are saved without opening any");
+  const acts2 = readFileSync("dashboard/actions.ts", "utf8");
+  assert.match(acts2, /\.\.\.\(await customGone\(spec\)\), \.\.\.\(await modelGone\(spec\)\)\]/, "saving a draft refuses a model whose provider has no key");
+  assert.equal((acts2.match(/await modelGone\(spec\)/g) ?? []).length, 2, "both the edit and the create path check the key");
   assert.equal(P.google.turns.wire, "chat");
   assert.ok(R.keyRefused(401) && R.keyRefused(403) && !R.keyRefused(429) && !R.keyRefused(500));
   const acts = readFileSync("dashboard/connectionActions.ts", "utf8");

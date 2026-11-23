@@ -1,5 +1,5 @@
 import { createBuilt } from "@/dashboard/actions";
-import { builderMenu, customMenuFor, listBuilt, listOthers, listTemplates } from "@/dashboard/builder";
+import { builderMenu, builderModelKeys, customMenuFor, listBuilt, listOthers, listTemplates } from "@/dashboard/builder";
 import { getCrewFloor, requireSession } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
 import { Flow } from "@/dashboard/components/Flow";
@@ -22,14 +22,14 @@ export default async function NewAgent({ searchParams }: { searchParams: Promise
   const seats = org ? seatChoices(org, null).filter((x) => x.free) : undefined;
   const seat = org?.seats.find((x) => x.id === (hire ? hire.seatId : sp.seat) && x.holder === "open") ?? null;
   const seatBlocks = await seatToolChoices(org);
-  const floor = await getCrewFloor();
+  const [floor, custom, keys] = await Promise.all([getCrewFloor(), customMenuFor(), builderModelKeys()]);
   if (built == null) return <div className="card"><span className="sub">The runner migration (20261113120000_agent_builder_runner.sql) isn’t applied yet.</span></div>;
   return (
     <Flow
       agentId={null}
       saved={null}
       nextVersion={1}
-      menu={builderMenu(floor.crew, floor.health, await customMenuFor())}
+      menu={builderMenu(floor.crew, floor.health, custom, keys)}
       step={sp.step}
       controls={controlsOn()}
       templates={templates}
