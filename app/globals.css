@@ -652,7 +652,38 @@ a.goal-add:hover { text-decoration: none; color: var(--ink); }
 /* Avery's chat (docs/company-mode.md, slice 5): a side panel on a wide screen, a bar and a sheet on a phone */
 .avery-av { width: 30px; height: 30px; flex: none; border-radius: 999px; background: var(--acc); color: #111114; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
 .avery-av.lg { width: 36px; height: 36px; font-size: 15px; }
-.avery { display: none; width: 360px; flex: none; position: sticky; top: 12px; align-self: flex-start; height: calc(100vh - 120px); min-height: 420px; flex-direction: column; gap: 10px; background: var(--dark2); color: #F4F3EE; border-radius: 24px; padding: 16px; box-sizing: border-box; }
+/* card 290: the panel stays mounted and slides; its width is dragged by the left edge (dashboard/chat-ui.ts).
+   The outer box animates its width and clips; the dark card inside keeps its width pinned right, so it slides
+   rather than squeezing. Motion only after the owner's first open or close (.anim), never on a page load. */
+.avery { display: flex; justify-content: flex-end; flex: none; position: sticky; top: 12px; align-self: flex-start; width: var(--avery-w, 380px); height: calc(100vh - 120px); min-height: 420px; overflow: hidden; border-radius: 24px; }
+.avery:not(.d-open) { width: 0; margin-left: -8px; opacity: 0; transform: translateX(24px); pointer-events: none; }
+.avery.anim { transition: width .38s cubic-bezier(.4, 0, .2, 1), margin-left .38s cubic-bezier(.4, 0, .2, 1), transform .38s cubic-bezier(.4, 0, .2, 1), opacity .3s ease; }
+.avery.dragging { transition: none; user-select: none; }
+.avery-in { width: var(--avery-w, 380px); flex: none; height: 100%; display: flex; flex-direction: column; gap: 10px; background: var(--dark2); color: #F4F3EE; border-radius: 24px; padding: 16px; box-sizing: border-box; }
+.avery-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 14px; z-index: 2; cursor: col-resize; touch-action: none; outline: none; }
+.avery-grip::after { content: ""; position: absolute; left: 5px; top: 50%; width: 4px; height: 44px; margin-top: -22px; border-radius: 4px; background: rgba(244, 243, 238, .16); transition: background .2s ease, height .2s ease, margin-top .2s ease; }
+.avery-grip:hover::after, .avery-grip:focus-visible::after, .avery.dragging .avery-grip::after { background: var(--acc); height: 64px; margin-top: -32px; }
+.avery-tab { animation: avery-fade .3s ease both; }
+@keyframes avery-fade { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+/* her reply's light formatting (dashboard/chat-ui.ts parseReply): paragraphs, lists, short headings */
+.avery-md { display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
+.avery-md p { margin: 0; }
+.avery-md ul, .avery-md ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.avery-md li::marker { color: #B5B4AD; }
+.avery-md b { font-weight: 650; color: #fff; }
+.avery-md-h { font-size: 14.5px; }
+.avery-md code { font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: #1A1A1F; border: 1px solid #3A3A40; border-radius: 6px; padding: 1px 5px; }
+/* the department draft (card 290): a one-line strip; tapping it shows the card in place of the messages */
+.avery-draft { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); background: #2C2C31; color: #F4F3EE; border-radius: 14px; padding: 9px 12px; font: inherit; text-align: left; cursor: pointer; transition: background .2s ease, border-color .2s ease; }
+.avery-draft:hover, .avery-draft.on { background: #34343A; border-color: var(--acc); }
+.avery-draft-k { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--acc); }
+.avery-draft-t { flex: 1; min-width: 0; font-size: 13px; color: #B5B4AD; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.avery-draft-t b { color: #F4F3EE; font-weight: 600; }
+.avery-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: #B5B4AD; font: inherit; font-size: 13px; padding: 4px 2px; cursor: pointer; }
+.avery-back:hover { color: #F4F3EE; }
+.avery-draft-card .card { color: var(--ink); }
+.avery-draft-card { animation: avery-rise .28s cubic-bezier(.22, .8, .24, 1) both; }
+@keyframes avery-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .avery-head { display: flex; align-items: center; gap: 10px; }
 .avery-sub { font-size: 12px; color: #B5B4AD; }
 .avery-x { width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: #F4F3EE; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
@@ -674,16 +705,21 @@ a.goal-add:hover { text-decoration: none; color: var(--ink); }
 .avery-tab { flex: none; align-self: flex-start; position: sticky; top: 12px; width: 56px; border: 1px solid var(--bd); background: var(--card); color: var(--ink); border-radius: 18px; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 10px; cursor: pointer; font: inherit; }
 .avery-tab-t { writing-mode: vertical-rl; font-size: 13px; font-weight: 600; }
 .avery-bar { display: none; }
-@media (min-width: 861px) { .avery.d-open { display: flex; } }
-@media (max-width: 1100px) { .avery { width: 320px; } }
 @media (max-width: 860px) {
   .avery-tab { display: none; }
   .avery-bar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; align-items: center; gap: 10px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: var(--dark2); color: #F4F3EE; border: 0; font: inherit; text-align: left; cursor: pointer; }
   .avery-bar-t { flex: 1; min-width: 0; background: #2C2C31; border: 1px solid #55554F; border-radius: 14px; padding: 11px 14px; font-size: 14px; color: #B5B4AD; }
   .main { padding-bottom: 96px; }
-  .avery.m-open { display: flex; }
-  .avery { position: fixed; inset: 0; z-index: 60; width: 100%; height: 100dvh; min-height: 0; border-radius: 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
+  /* the phone sheet slides up from the bottom and back down; closed, it is hidden and inert */
+  .avery, .avery:not(.d-open) { position: fixed; inset: 0; z-index: 60; width: 100%; height: 100dvh; min-height: 0; margin: 0; opacity: 1; border-radius: 0; transform: translateY(100%); visibility: hidden; pointer-events: none; }
+  .avery.m-open { transform: none; visibility: visible; pointer-events: auto; }
+  .avery.anim { transition: transform .38s cubic-bezier(.22, .8, .24, 1), visibility 0s linear .38s; }
+  .avery.m-open.anim { transition: transform .38s cubic-bezier(.22, .8, .24, 1), visibility 0s; }
+  .avery-in { width: 100%; border-radius: 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
+  .avery-grip { display: none; }
 }
+@media (prefers-reduced-motion: reduce) { .avery.anim, .avery.m-open.anim, .avery-grip::after, .avery-draft { transition: none; } .avery-tab, .avery-draft-card .card { color: var(--ink); }
+.avery-draft-card { animation: none; } }
 
 /* Crew > Schedule: the org's day and the cost table (dashboard/components/OrgDay.tsx). On a phone the
    timeline drops its name column (the name sits above each track) and the cost table becomes one
