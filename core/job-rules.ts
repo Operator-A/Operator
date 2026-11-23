@@ -25,6 +25,10 @@ export interface ChainCtx {
   parent?: string;
   /** Started with the Run chain button: later steps go on even while the chain or the org is off. */
   manual?: boolean;
+  /** Started by a live event (docs/live-events.md): its inbound_events row, handed to the first step as facts. */
+  event?: string;
+  /** A catch-up run: how many more events came in while the chain was at its cap. */
+  held?: number;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -32,18 +36,20 @@ export const isUuid = (s: unknown): s is string => typeof s === "string" && UUID
 
 /** A chain step's payload: names a chain and a step of the saved flow, nothing else. */
 export function chainPayload(ctx: ChainCtx): Record<string, unknown> {
-  return { chainId: ctx.chainId, key: ctx.key, step: ctx.step, ...(ctx.parent ? { parent: ctx.parent } : {}), ...(ctx.manual ? { manual: true } : {}) };
+  return { chainId: ctx.chainId, key: ctx.key, step: ctx.step, ...(ctx.parent ? { parent: ctx.parent } : {}), ...(ctx.manual ? { manual: true } : {}), ...(ctx.event ? { event: ctx.event } : {}), ...(ctx.held ? { held: ctx.held } : {}) };
 }
 
 /** A chain step's payload, checked; null when it is malformed. */
 export function readChainPayload(p: unknown): ChainCtx | null {
   if (!p || typeof p !== "object" || Array.isArray(p)) return null;
-  const { chainId, key, step, parent, manual } = p as Record<string, unknown>;
+  const { chainId, key, step, parent, manual, event, held } = p as Record<string, unknown>;
   if (!isUuid(chainId) || typeof key !== "string" || !/^[a-z0-9_-]{1,40}$/.test(key)) return null;
   if (typeof step !== "number" || !Number.isInteger(step) || step < 0 || step > 9) return null;
   if (parent !== undefined && !isUuid(parent)) return null;
   if (manual !== undefined && typeof manual !== "boolean") return null;
-  return { chainId, key, step, ...(parent ? { parent } : {}), ...(manual ? { manual: true } : {}) };
+  if (event !== undefined && !isUuid(event)) return null;
+  if (held !== undefined && (typeof held !== "number" || !Number.isInteger(held) || held < 0 || held > 10_000)) return null;
+  return { chainId, key, step, ...(parent ? { parent } : {}), ...(manual ? { manual: true } : {}), ...(event ? { event } : {}), ...(held ? { held } : {}) };
 }
 
 /** One job per step of a chain: enqueueing the same step twice does nothing. */

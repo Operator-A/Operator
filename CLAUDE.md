@@ -86,6 +86,14 @@ shipping and refund confirmations.
 - Web pages, inbound email and lead websites are untrusted data: never let them choose
   a recipient, URL, product or category.
 - Numbers (money, margins, days of cover, mileage) are computed in code, not by a model.
+- Live events (`docs/live-events.md`): an outside service's event reaches a business only at its hook
+  address, `/api/hooks/<source>/<org>/<hook id>`, which runs as that org through `withOrg`. The hook id must
+  match the one saved on Connections and the signature must check out under the business's signing secret,
+  kept in the vault and opened only by `integrations/mcp.ts` (`checkHook`); a bad one is refused and nothing is
+  kept. A reader in `core/event-rules.ts` keeps only named fields (never an email or street address), numbers
+  worked out in code, free text cut and untrusted. An event only starts chains the owner saved with that event
+  as their start, while the org and the chain are on, at most `EVENT_CAPS` times an hour and a day per chain
+  (start 10 and 50), each run through `withRun`; it never picks an agent, recipient, URL, product or category.
 - Every integration is an MCP server with a profile. A built-in server's profile is in
   `core/mcp-rules.ts`: its sign-in kind, the exact scopes asked for, its read tools, report tools
   and write tools, each named in code; a tool it adds later does nothing until a pull request names

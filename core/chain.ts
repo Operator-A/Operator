@@ -11,6 +11,7 @@ import { chainDedupe, chainPayload, type ChainCtx } from "@/core/job-rules";
 import { enqueue, kick } from "@/core/jobs";
 import { orgOn } from "@/core/org-switch";
 import { withRun } from "@/core/runs";
+import { eventSummary, isEventType, type EventFacts } from "@/core/event-rules";
 
 export type { ChainCtx } from "@/core/job-rules";
 
@@ -52,7 +53,8 @@ export async function runChainStep(origin: string, ctx: ChainCtx): Promise<{ out
   if (!found) return { outcome: `Skipped: ${step.agent} isn't an agent.` };
   // a manual-only agent runs in a chain only when the owner pressed Run chain
   if (found.manualOnly && !ctx.manual) return { outcome: "Skipped: this agent runs only by hand; start its chain with Run chain." };
-  const handoff = step.passAlong ? await handoffFrom(ctx.parent) : null;
+  // the first step of a chain an event started reads that event (docs/live-events.md); later steps read the step before
+  const handoff = ctx.event && ctx.step === 0 ? await eventHandoff(ctx.event, ctx.held ?? 0) : step.passAlong ? await handoffFrom(ctx.parent) : null;
   const log = (w: string) => console.log(`[chain ${c.key}] ${w}`);
   try {
     const res = await withRun(found.id, "chain", (runId, memory) => found.job({ runId, memory, handoff }), { chain: { chainId: ctx.chainId, key: ctx.key, step: ctx.step, parent: ctx.parent } });
@@ -80,13 +82,26 @@ export async function claimFiring(key: string, at: number, chainId: string): Pro
 }
 
 /** The run before, handed to the next agent as facts: who it was, how it ended, its summary and numbers. */
-export async function handoffFrom(parent: string | undefined) {
+/**
+ * The event that started a chain, handed to its first step as facts (docs/live-events.md): its label, the
+ * words written in code from its named fields, and its numbers. Null when the row is gone (kept 30 days).
+ */
+export async function eventHandoff(id: string, held: number): Promise<Handoff | null> {
+  const { data } = await db().from("inbound_events").select("event_type, facts, received_at").eq("id", id).maybeSingle();
+  if (!data || !isEventType(data.event_type)) return null;
+  const f = data.facts as EventFacts;
+  return { from: f.label, status: "ok", summary: eventSummary(f, held).slice(0, 1500), metrics: f.numbers ?? {}, endedAt: data.received_at as string, kind: "event" };
+}
+
+/** What one step hands the next, or (kind "event") what started the chain. Data, never instructions. */
+export interface Handoff { from: string; status: string; summary: string; metrics: Record<string, number>; endedAt: string | null; kind?: "event" }
+
+export async function handoffFrom(parent: string | undefined): Promise<Handoff | null> {
   if (!parent) return null;
   const { data } = await db().from("agent_runs").select("agent_id, status, summary, error, metrics, ended_at").eq("id", parent).maybeSingle();
   if (!data) return null;
   return { from: data.agent_id as string, status: data.status as string, summary: ((data.summary ?? data.error ?? "") as string).slice(0, 1500), metrics: (data.metrics ?? {}) as Record<string, number>, endedAt: data.ended_at as string | null };
 }
-export type Handoff = NonNullable<Awaited<ReturnType<typeof handoffFrom>>>;
 
 /**
  * An approval was decided in the Control Room: while the org is on, start every chain that is on and starts on this

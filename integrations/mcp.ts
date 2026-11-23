@@ -21,6 +21,8 @@ import {
 import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
 import { orgId } from "@/core/tenancy";
 import { MODEL_PROVIDERS, PROVIDER_BY_ID, checkAnswer, readModelKey, type ModelProvider } from "@/core/model-key-rules";
+import { HOOK_ID, SOURCES, SOURCE_BY_ID, readSigningSecret, type EventSource } from "@/core/event-rules";
+import { sameId, shopifySigned, stripeSigned } from "@/core/event-signature";
 import { looksLikeNotionKey } from "@/core/notion-blocks";
 import { checkNotionKey, notionServer } from "./notion-server";
 import { checkShopifyKey, shopifyServer } from "./shopify-server";
@@ -1300,4 +1302,61 @@ export async function pauseModelKey(provider: ModelProvider, why: string, key: s
 export async function modelKeysReady(): Promise<Record<ModelProvider, boolean>> {
   const all = await mcpStatuses();
   return Object.fromEntries(MODEL_PROVIDERS.map((p) => [p.id, !!all[p.vaultId]?.connected && !all[p.vaultId]?.paused])) as Record<ModelProvider, boolean>;
+}
+
+// ---- Live events (docs/live-events.md, slice 1): each source's signing secret, sealed with the org's data
+// key on a connection row of its own (core/event-rules.ts SOURCES), with the hook id beside it in plain
+// settings: the hook id only says which address is this business's, the secret proves the sender. Only
+// this file opens the secret, and only to check one event's signature; it is never shown, logged or sent.
+
+/** Keeps a source's signing secret, and makes the hook address if there is none yet. Returns the hook id. */
+export async function saveHookSecret(source: EventSource, pasted: string): Promise<string> {
+  if (!keys().current) throw new Error(VAULT_MISSING);
+  const s = SOURCE_BY_ID[source];
+  const read = readSigningSecret(s, pasted);
+  if ("problem" in read) throw new Error(read.problem);
+  const r = await row(s.vaultId).catch(() => null);
+  const hook = r?.settings?.hook && HOOK_ID.test(r.settings.hook) ? r.settings.hook : randomBytes(24).toString("base64url");
+  const now = new Date().toISOString();
+  const { error } = await db().from("mcp_connections").upsert({ id: s.vaultId, secret: await sealSecret({ key: read.key } satisfies KeySecret), settings: { hook }, connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
+  if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
+  await logEvent(s.vaultId, "connected", `${s.name} live events signing secret`, [read.key]);
+  return hook;
+}
+
+/** Forgets a source's signing secret and its hook address: events sent to the old address are refused from now on. */
+export async function removeHookSecret(source: EventSource): Promise<void> {
+  const id = SOURCE_BY_ID[source].vaultId;
+  const { error } = await db().from("mcp_connections").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  await logEvent(id, "disconnected");
+}
+
+export interface HookState { source: EventSource; connected: boolean; hook: string | null; connectedAt: string | null }
+
+/** Each source's live events state, read without opening any secret. */
+export async function hookStates(): Promise<HookState[]> {
+  const all = await mcpStatuses();
+  return SOURCES.map((s) => {
+    const st = all[s.vaultId];
+    const hook = st?.settings?.hook && HOOK_ID.test(st.settings.hook) ? st.settings.hook : null;
+    return { source: s.id, connected: !!st?.connected && !!hook, hook, connectedAt: st?.connectedAt ?? null };
+  });
+}
+
+/**
+ * Whether an event sent to this business's hook address is real: the hook id is the saved one and the
+ * signature checks out under the saved signing secret. Runs as the business (withOrg around it). Says
+ * why not in words that name no secret.
+ */
+export async function checkHook(source: EventSource, hook: string, raw: string, headers: Record<string, string | null>, nowS = Math.floor(Date.now() / 1000)): Promise<{ ok: true } | { ok: false; status: number; why: string }> {
+  const id = SOURCE_BY_ID[source].vaultId;
+  const r = await row(id).catch(() => null);
+  const saved = r?.settings?.hook;
+  if (!r?.secret || !saved || !HOOK_ID.test(hook) || !sameId(saved, hook)) return { ok: false, status: 404, why: "No live events address like that here." };
+  if (r.paused_at) return { ok: false, status: 410, why: "Live events from this service are paused." };
+  const s = await readSecret<KeySecret>(id, r);
+  if (!s?.key) return { ok: false, status: 503, why: "The signing secret can’t be opened; paste it again on Connections." };
+  const good = source === "shopify" ? shopifySigned(raw, headers["x-shopify-hmac-sha256"] ?? null, s.key) : stripeSigned(raw, headers["stripe-signature"] ?? null, s.key, nowS);
+  return good ? { ok: true } : { ok: false, status: 400, why: "Bad signature." };
 }
