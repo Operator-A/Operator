@@ -12,9 +12,11 @@ the place people decide.
 - An agent lives in OPERATOR. Nothing is synced, and Claude keeps no copy.
 - Reads come from OPERATOR on every call. Writes (slice 2) go one way, as off-duty drafts or proposals,
   through the builder's and proposals' own code, and carry the version they were based on.
-- Approving or rejecting cards, Go live, the org switch, granting actions or custom tools, caps, budgets,
-  schedules, vendors, Connections and People are never tools. A tool call written by a model is not a
-  person's tap.
+- Approving or rejecting cards, Go live, the org switch, granting custom tools, raising caps or budgets,
+  vendors, Connections and People are never tools. A tool call written by a model is not a person's tap.
+- Actions (and, in slice 4's second part, when an agent starts) may be put into a **draft** by
+  `update_agent` (decided 2026-11-23). They change nothing until the owner's Go live, after a clean try, on a
+  confirm that lists each one. See "Slice 4: actions and starts in a draft" below.
 
 ## Slices
 
@@ -24,6 +26,8 @@ the place people decide.
    `propose` files a proposal from Claude. Owner only.
 3. **Try it and the move** (done, below): `try_agent` dry runs through `withRun`, and a guide for moving an agent that
    was set up in a Claude project into OPERATOR.
+4. **Actions and starts in a draft** (part 1 built, below): `update_agent` puts actions, and next when the
+   agent starts, into a draft that applies only at the owner's Go live.
 
 ## Slice 1: connect and read
 
@@ -123,11 +127,12 @@ Rules, in code:
 
 - **Tools**: Claude may list reads and calculations only (`draftTools`, at most 8). Reports, actions and
   tools from servers the owner added are refused when asked for, and on a change they carry over as they
-  were. Dropping a read is fine.
+  were. Dropping a read is fine. Actions change only through `add_actions` and `drop_actions` (slice 4).
 - **Based-on version**: `update_agent` needs `based_on_version`, the newest version `get_agent` showed. If
   someone saved since, the change is refused and Claude reads again (`staleRead`). Only fields passed change.
 - **Never looser**: a change is checked by `readSpec` like a builder save, the model's provider must have a
-  key, and `specLooser` must find nothing (no new report or action, no higher run limits). Run limits,
+  key, and `specLooser` must find nothing apart from the actions named in `add_actions` (no new report or
+  custom tool, no higher run limits). Run limits,
   Notion pages, agents it reads from, duty, budget and schedule aren't arguments at all.
 - **Who**: versions are saved by `<email> (via <app>)`; each write is audited (`create_agent`, `save_spec`,
   `file_proposal`) with the app's name.
@@ -187,3 +192,37 @@ Claude account has: it lands off duty with no OPERATOR tools, and the answer car
 the routine's prompt. `finish_run` (owner only, kind `finish`) lets the routine's session post its result
 onto the run OPERATOR started: once per run, within 24 hours, and only on a run that fired a session. See
 `docs/live-events.md`, slice 2.
+
+## Slice 4: actions and starts in a draft (decided 2026-11-23)
+
+Spec: "Spec: Claude changes agent actions, triggers and schedules" (Claude Doc). Two parts.
+
+### Part 1: actions (built)
+
+`update_agent` takes `add_actions` and `drop_actions`, comma-separated action ids from `list_tools`.
+
+- **Which actions**: only ones an approver may give any agent (`agents: "granted"` in code, `any_agent` in
+  `list_tools`) whose service is connected; dropping needs only that the agent has it (`draftActions`, at most
+  8 actions in all). `readSpec` checks the gateway's allow-list for the agent again.
+- **Where it waits**: in the new draft version's tools (`saveSpecVersion`), as the agent sheet's Can do
+  toggles do. What runs today doesn't change.
+- **Go live**: the owner's Go live (Controls on, a clean try of that version) already lists each added action
+  through `specLooser` ("adds the action ...") and asks to confirm. Taking an action away needs no confirm.
+- **Still refused**: a report, a tool from a server the owner added, or higher run limits in the same draft
+  (`specLooser` runs on the draft minus the actions Claude named). `create_agent` still makes an agent with no
+  actions: Claude creates it, then drafts v2.
+- Every action still starts at Draft on the trust ladder, so each send is an approval card.
+- Audit: `save_spec` records `adds_actions` and `drops_actions`.
+
+### Part 2: starts (next)
+
+`days`/`time`, `by_hand`, `start_on_event` and `run_after` on `update_agent`, kept in a new
+`agent_defs.starts` column on the draft version and applied to the crew flow at Go live (`flowProblems`,
+`flowLooser` on the confirm).
+
+### Tests
+
+`npm run check:operator-mcp`: `draftActions` (granted and connected only, no repeats, drop keeps the rest,
+both lists at once refused, at most 8), only `update_agent` takes the action arguments, the server never calls
+`activateSpecVersion`, `goLive`, `setAgentTime` or `setEnabled`, only the named actions skip `specLooser`, and
+Go live asks to confirm added actions.

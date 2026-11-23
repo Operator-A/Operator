@@ -7,7 +7,8 @@ import "server-only";
 // Control Room shows. Draft tools (owner only) write only through the builder's and proposals' own code:
 // createBuiltAgent (off duty, no actions), saveSpecVersion (a draft; what runs doesn't change) and
 // fileProposal (a person decides it). try_agent (slice 3) runs the builder's own try (core/agent-try.ts):
-// a logged preview run that sends nothing. Nothing here goes live, puts an agent on duty or grants an action.
+// a logged preview run that sends nothing. Nothing here goes live or puts an agent on duty: an action Claude
+// adds (update_agent's add_actions) waits in the draft until the owner's Go live lists it and they confirm.
 import { db } from "@/core/db";
 import { withOrg } from "@/core/tenancy";
 import { memberById } from "@/core/members";
@@ -25,7 +26,7 @@ import { NEED_TILE, TILE_BY_ID } from "@/core/tools-step-rules";
 import { fileProposal, listProposals } from "@/core/proposals";
 import { finishRun, markLinked } from "@/core/claude-agents";
 import { promptLine, readClaudeTools, readFinish } from "@/core/routine-rules";
-import { LIMITS, answerText, draftTools, hashesMatch, newToken, nextWindow, staleRead, tokenParts, toolList, type OpTool, type ToolAnswer } from "@/core/operator-mcp-rules";
+import { LIMITS, answerText, draftActions, draftTools, hashesMatch, newToken, nextWindow, staleRead, tokenParts, toolList, type OpTool, type ToolAnswer } from "@/core/operator-mcp-rules";
 
 // ---- Grants
 
@@ -260,7 +261,7 @@ async function getAgent(origin: string, args: Record<string, string | number>): 
     department: where.department, seat: where.seat,
     live: active ? specView(active) : null,
     draft: draft ? specView(draft) : null,
-    note: "Going live, duty, schedules and budgets are changed in OPERATOR. When you change this agent later, say which version you read.",
+    note: "Going live, duty, schedules and budgets are changed in OPERATOR. Actions (tools of kind action) change through update_agent's add_actions and drop_actions, in a draft. When you change this agent later, say which version you read.",
   };
   return { text: answerText(body, `${origin}/agents/${encodeURIComponent(row.id)}`) };
 }
@@ -300,18 +301,26 @@ async function listWaiting(origin: string): Promise<ToolAnswer> {
   return { text: answerText(body, `${origin}/approvals`) };
 }
 
-async function listTools(origin: string): Promise<ToolAnswer> {
+/** Whether the services a tool needs are connected and not paused; null when it needs none. */
+async function connectedCheck(): Promise<(needs: readonly string[]) => boolean | null> {
   const st = await mcpStatuses().catch(() => ({} as Awaited<ReturnType<typeof mcpStatuses>>));
-  const connected = (needs: readonly string[]): boolean | null => {
+  return (needs) => {
     const tiles = needs.map((n) => NEED_TILE[n]).filter(Boolean);
     if (!tiles.length) return null;
     return tiles.every((t) => { const mcp = TILE_BY_ID[t]?.mcp; const s = mcp ? st[mcp] : undefined; return !!s?.connected && !s.paused; });
   };
+}
+
+async function listTools(origin: string): Promise<ToolAnswer> {
+  const connected = await connectedCheck();
   const all = Object.values(TOOLS);
   const view = (t: (typeof all)[number]) => ({ id: t.id, label: t.label, kind: t.kind, group: t.group, what: t.detail, connected: connected(t.needs) });
   const body = {
     tools: all.filter((t) => t.kind !== "action").map(view),
-    actions: all.filter((t) => t.kind === "action").map((t) => ({ ...view(t), note: "Only an approver grants an action, on the agent's Can do toggles in OPERATOR. Every action starts as an approval card." })),
+    actions: all.filter((t) => t.kind === "action").map((t) => ({ ...view(t), any_agent: t.agents === "granted",
+      note: t.agents === "granted"
+        ? "update_agent's add_actions can put it in a draft once it is connected. It applies only when a person goes live in OPERATOR, and every send starts as an approval card."
+        : "Code names the agents that may use it; it can't be given to others." })),
   };
   return { text: answerText(body, `${origin}/connections`) };
 }
@@ -400,22 +409,36 @@ async function updateAgent(caller: Caller, origin: string, args: Args): Promise<
   const base = draftOf(versions) ?? versions.find((v) => v.active) ?? newest;
   const t = draftTools(args.tools != null ? toolList(args.tools) : null, base.spec.tools, kindOf);
   if ("problem" in t) return no(`Not saved: ${t.problem}.`);
+  // actions (decided 2026-11-23): only into the draft, only ones an approver may give any agent, connected
+  const connected = await connectedCheck();
+  const a = draftActions(t.tools, toolList(args.add_actions), toolList(args.drop_actions), (tid) => {
+    const def = kindOf(tid) ? TOOLS[tid] : undefined;
+    return def ? { kind: def.kind, label: def.label, granted: def.agents === "granted", connected: connected(def.needs) !== false } : undefined;
+  });
+  if ("problem" in a) return no(`Not saved: ${a.problem}.`);
   const pick = <K extends keyof AgentSpec>(k: K, a: string): AgentSpec[K] => (args[a] != null ? (args[a] as AgentSpec[K]) : base.spec[k]);
   const got = await checkSpec({
     ...base.spec,
     name: pick("name", "name"), mandate: pick("mandate", "job"), directive: pick("directive", "directive"), goodResult: pick("goodResult", "good_result"),
-    model: pick("model", "model"), effort: pick("effort", "effort"), tools: t.tools,
+    model: pick("model", "model"), effort: pick("effort", "effort"), tools: a.tools,
   }, id);
   if ("problem" in got) return no(got.problem);
-  // belt and braces: a draft from Claude never lets a run reach or spend more than the version it came from
-  const looser = specLooser(base.spec, got.spec);
+  // belt and braces: apart from the actions it named, a draft from Claude never lets a run reach or spend
+  // more than the version it came from. Those actions wait for Go live, which lists them (specLooser).
+  const looser = specLooser(base.spec, { ...got.spec, tools: got.spec.tools.filter((x) => !a.added.includes(x)) });
   if (looser.length) return no(`Not saved: that ${looser.join("; ")}. Make that change in OPERATOR.`);
   if (JSON.stringify(base.spec) === JSON.stringify(got.spec)) return no(`Nothing changed from v${base.version}.`);
   const v = await saveSpecVersion(id, got.spec, String(args.note ?? "").trim() || "Changed from Claude", byOf(caller));
-  await audit(caller.member, "save_spec", id, { version: v, via: caller.client });
+  await audit(caller.member, "save_spec", id, { version: v, via: caller.client, ...(a.added.length ? { adds_actions: a.added } : {}), ...(a.dropped.length ? { drops_actions: a.dropped } : {}) });
+  const label = (x: string) => TOOLS[x]?.label ?? x;
+  const acts = [
+    a.added.length ? ` It adds ${a.added.map(label).join(", ")}: Go live lists each one and asks to confirm, and every send starts as an approval card.` : "",
+    a.dropped.length ? ` It takes away ${a.dropped.map(label).join(", ")}.` : "",
+  ].join("");
   return { text: answerText({
     agent: id, saved_as_draft: v, based_on: base.version,
-    note: `Saved as draft v${v}. What runs today hasn't changed: a person tries the draft and goes live in OPERATOR.`,
+    ...(a.added.length ? { adds_actions: a.added } : {}), ...(a.dropped.length ? { drops_actions: a.dropped } : {}),
+    note: `Saved as draft v${v}. What runs today hasn't changed: a person tries the draft and goes live in OPERATOR.${acts}`,
   }, `${origin}/agents/${encodeURIComponent(id)}`) };
 }
 
