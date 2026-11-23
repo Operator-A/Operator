@@ -68,7 +68,7 @@ shipping and refund confirmations.
   `core/gateway` through `callWriteTool`; `scripts/validate-graphql.mjs` fails on any mutation outside
   that file and `check:mcp` on one not named on the Shopify profile. The key may carry read scopes and
   only the write scopes the profile names; any other write scope is refused. A store action is granted
-  to an agent only by an approver on the builder's Tools step or the agent sheet's Can do toggles, never by a proposal. No agent deletes a
+  to an agent only by an approver on the builder's Tools step or the Can do toggles of the agent sheet or a hire card, never by a proposal. No agent deletes a
   product, customer or order, cancels an order, or moves money from Shopify (gift cards, prices) until
   that action type has its own cap in code; refunds have theirs (`REFUND_LIMITS`).
 - Email: first contact with a person who has never heard from the business is always Draft

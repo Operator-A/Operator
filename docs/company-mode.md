@@ -218,8 +218,8 @@ Proposals page says so and the tool refuses to save.
 `hireSpec`), `core/proposals.ts` (store, resolve against the chart, `acceptProposal`,
 `declineProposal`, `markBuilt`, `proposalChecks`, `proposalsBySeat`), the `propose` tool in
 `core/tools/catalog.ts`, `headBlock` and the `head` seat scope in `core/org-rules.ts`,
-`dashboard/proposalActions.ts`, `dashboard/components/proposals.tsx`, `app/(room)/proposals/`,
-`/build/new?proposal=`.
+`dashboard/proposalActions.ts`, `dashboard/components/proposals.tsx`, `app/(room)/proposals/`. A hire also
+shows as a hire card in its department's chat (`docs/department-pages.md`, slice 5).
 
 **What it replaces.** The outside new-agent skill's direct inserts into `agents`, `agent_defs` and
 `seats`: it now files a pending proposal (source `claude`) that the owner decides here. New agent on Crew

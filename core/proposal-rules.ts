@@ -6,6 +6,7 @@
 // with no actions; a tool becomes a draft version that still needs Try it and Go live).
 
 import type { DeptDraft } from "@/core/department-rules";
+import { daysOf, type Days } from "@/core/flow-rules";
 
 /** What a head (or Avery's File a proposal) may file. */
 export const PROPOSAL_KINDS = ["hire", "grant_tool", "new_tool", "retire", "goal"] as const;
@@ -24,7 +25,12 @@ export const MAX_HIRE_TOOLS = 8;
 
 /** What a proposal holds once checked. Names are resolved to ids on the server, against the chart. */
 export type ProposalPlan =
-  | { kind: "hire"; name: string; seat: string; job: string; eachRun: string; goodResult: string; tools: string[]; brain: Brain }
+  /**
+   * `days`/`time`: when it would run (null days = only when asked); `can`: actions it would need, as
+   * suggestions only. They show as toggles that start off on the hire card, and only an approver's taps
+   * grant one (docs/department-pages.md, slice 5). Older hires have neither.
+   */
+  | { kind: "hire"; name: string; seat: string; job: string; eachRun: string; goodResult: string; tools: string[]; brain: Brain; days?: Days | null; time?: string | null; can?: string[] }
   | { kind: "grant_tool"; agent: string; tool: string }
   | { kind: "new_tool"; what: string }
   | { kind: "retire"; agent: string | null; seat: string | null }
@@ -45,10 +51,34 @@ export type ProposalPlan =
 export const GOAL_CHANGES = ["new", "change", "drop"] as const;
 export type GoalChange = (typeof GOAL_CHANGES)[number];
 
-export interface ToolInfo { kind: string; label: string }
-/** The tool list as planProposal reads it. */
-export const toolInfoOf = (tools: Readonly<Record<string, { id: string; kind: string; label: string }>>): Record<string, ToolInfo> =>
-  Object.fromEntries(Object.values(tools).map((t) => [t.id, { kind: t.kind, label: t.label }]));
+export interface ToolInfo { kind: string; label: string; granted?: boolean }
+/** The tool list as planProposal reads it. `granted`: an action an approver may give any agent. */
+export const toolInfoOf = (tools: Readonly<Record<string, { id: string; kind: string; label: string; agents?: unknown }>>): Record<string, ToolInfo> =>
+  Object.fromEntries(Object.values(tools).map((t) => [t.id, { kind: t.kind, label: t.label, granted: t.kind === "action" && t.agents === "granted" }]));
+
+export const MAX_HIRE_CAN = 4;
+const DAY_NAMES: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+
+/**
+ * When a hire would run, from the head's words: "daily" / "every day", "weekdays", "mondays", day names
+ * ("mon, wed, fri"), or "only when asked". Null days means only when asked. A problem string when unclear.
+ */
+export function hireWhen(days: unknown, time: unknown): { days: Days | null; time: string | null } | { problem: string } {
+  const d = String(days ?? "").trim().toLowerCase();
+  const t = String(time ?? "").trim();
+  if (!d || /ask|manual|never|run now/.test(d)) return { days: null, time: null };
+  let set: Days | null = null;
+  if (/^(daily|every ?day)$/.test(d)) set = "daily";
+  else if (/^(weekdays?|every weekday|mon(day)?\s*-\s*fri(day)?)$/.test(d)) set = "weekdays";
+  else {
+    const picks = d.split(/[\s,]+|and/).map((w) => w.trim().slice(0, 3)).filter(Boolean);
+    if (!picks.length || picks.some((w) => !(w in DAY_NAMES))) return { problem: "days must be daily, weekdays, day names like mon, wed, fri, or only when asked" };
+    set = daysOf(picks.map((w) => DAY_NAMES[w]));
+  }
+  if (!set) return { problem: "days must name at least one day" };
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) return { problem: "time must be a 24-hour time like 08:00" };
+  return { days: set, time: t };
+}
 
 const one = (v: unknown, max: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 const many = (v: unknown, max: number) => String(v ?? "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, max);
@@ -90,7 +120,18 @@ export function planProposal(input: Record<string, unknown>, tools: Record<strin
     if (ids.length > MAX_HIRE_TOOLS) return { problem: `at most ${MAX_HIRE_TOOLS} tools` };
     for (const id of ids) { const no = checkTool(id); if (no) return { problem: no }; }
     const brain = (input.brain === "thinking" ? "thinking" : "quick") as Brain;
-    return { plan: { kind, name, seat, job, eachRun, goodResult, tools: ids, brain }, why };
+    const when = hireWhen(input.days, input.time);
+    if ("problem" in when) return when;
+    // actions it would need: suggestions only, each one an approver may grant; none is given here
+    const can = toolIds(input.can);
+    if (can.length > MAX_HIRE_CAN) return { problem: `can lists at most ${MAX_HIRE_CAN} actions` };
+    for (const id of can) {
+      const t = tools[id];
+      if (!t) return { problem: `${id} isn't on the tool list` };
+      if (t.kind !== "action") return { problem: `${t.label} is a ${t.kind} tool: put it in tools, not can` };
+      if (!t.granted) return { problem: `${t.label} is an action code gives only to named agents, so a hire can't suggest it` };
+    }
+    return { plan: { kind, name, seat, job, eachRun, goodResult, tools: ids, brain, days: when.days, time: when.time, can }, why };
   }
   if (kind === "grant_tool") {
     const agent = one(input.agent, 40);

@@ -187,7 +187,7 @@ export function fileProposalTool(reach: ChatReach, ownDept?: string): ToolDef {
         const d = deptNamed(r.department as string | undefined, reach.departments);
         try {
           await fileProposal(r, { agentId: ctx.agentId, runId: ctx.runId ?? null, source: "agent", deptId: ("id" in d ? d.id : null) ?? ownDept ?? null });
-          notes.push(`Filed for you to decide: ${r.title}. It waits on Proposals.`);
+          notes.push(r.kind === "hire" && ownDept ? `Drafted a hire card for you: ${r.title}.` : `Filed for you to decide: ${r.title}. It waits on Proposals.`);
         } catch (e) { notes.push(`Not filed (${r.title}): ${e instanceof Error ? e.message : e}`); }
       }
       return notes.join(" | ");

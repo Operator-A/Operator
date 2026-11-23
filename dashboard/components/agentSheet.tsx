@@ -185,7 +185,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
                   <button type="button" disabled>From a connected tool, like a new order<small>Soon</small></button>
                 </div>
               )}
-              <span className="dp-tog" aria-pressed="true" role="img" aria-label="Also runs when you press Run now" style={{ alignSelf: "flex-start" }}><i />Also when I ask (Run now)</span>
+              <span className="dp-tog on" style={{ alignSelf: "flex-start" }}><i />Also when I ask (Run now)</span>
               <span className="dp-note">Times are on the quarter hour, in your business’s time zone. What starts a run is checked by OPERATOR before the agent wakes, and never picks who gets emailed, what’s bought or what’s posted.</span>
             </div>
             {d.spec && (

@@ -128,7 +128,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
               <div className="row wrap" style={{ gap: 8 }}>
                 <ActionButton className="btn primary" disabled={blocked} title={blocked ? "A check below failed. Change it first, or say not now." : undefined} action={proposalAccept.bind(null, pr.id)} follow={p.kind === "new_tool"}
                   confirm={{ title: `${yes.label}?`, body: yes.does, confirmLabel: yes.label, kind: "primary" }}>{yes.label}</ActionButton>
-                {p.kind === "hire" && <Link className="btn outline" href={`/build/new?proposal=${pr.id}`}>Change it first</Link>}
+                {p.kind === "hire" && pr.department_id && <Link className="btn outline" href={`/dept/${pr.department_id}`}>Change it in the chat</Link>}
                 <NotNowButton decline={proposalDecline.bind(null, pr.id)} headName={pr.from_agent ? fromName : null} />
               </div>
               <span className="card-t" style={{ marginTop: 6 }}>Checked in code</span>

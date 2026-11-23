@@ -15,7 +15,7 @@ const AUDITED = [
   // caps, vendors, suppressions
   "setCap", "addVendor", "suppressEmail",
   // the builder and the flow
-  "createBuilt", "saveSpec", "goBack", "setBuiltBudget", "goLive", "saveCrewFlow", "rollBackFlow",
+  "saveSpec", "goBack", "setBuiltBudget", "goLive", "saveCrewFlow", "rollBackFlow",
   // Connections
   "mcpDisconnect", "mcpSaveKey", "claudeSaveKey", "claudeRemoveKey", "modelSaveKey", "modelRemoveKey", "vaultReseal", "klaviyoPickList", "ga4PickProperty", "metaSetTarget", "customAdd", "customScopes", "customKey", "customToolOn", "customToolOff", "customNumber", "customPause", "customRemove",
   // people and roles
@@ -29,7 +29,7 @@ const AUDITED = [
   // the org chart: budgets, email caps, who holds a seat, drafts routing
   "orgSetDeptBudget", "orgSetDeptEmails", "placeAgent", "orgSetHolder", "orgSetLeadChecks",
   // proposals change an agent's spec or routine
-  "proposalAccept", "proposalDecline",
+  "proposalAccept", "hireInChat", "proposalDecline",
   // a new department: the owner files it from Avery's draft, or throws the draft away
   "proposeDepartment", "discardDepartmentDraft",
   // OPERATOR's own MCP server: an app (Claude) connected or disconnected
@@ -70,7 +70,6 @@ const NOT_AUDITED: Record<string, string> = {
   goalEdit: "goals keep their own rows",
   goalSetState: "goals keep their own rows",
   planJobDone: "a to-do ticked",
-  proposalCreate: "only a suggestion; accepting it is audited",
   sendToAvery: "a chat message, kept in the chat",
   sendToHead: "a chat message to a department head, kept in the department chat",
   sendSetup: "a setup message, kept in the chat; withRun logs the run",

@@ -23,17 +23,15 @@ import { approvalDecided, startStep } from "@/core/chain";
 import { orgId, withOrg } from "@/core/tenancy";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, dayWords, type AgentTime, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
-import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, createBuiltAgent, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
+import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { modelDef } from "@/integrations/models";
 import { modelKeysReady } from "@/integrations/mcp";
 import { dryRunTools } from "@/core/runner";
-import { TOOLS } from "@/core/tools/catalog";
 import { customMenu } from "@/core/tools/custom";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { lastTry } from "./builder";
 import { activePlaybook, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
 import { startTry as startTryRun, tryOnce, tryTarget } from "@/core/agent-try";
-import { loadOrg, seatPath, setHolder } from "@/core/org";
 import { getFloor, getRoster, asRole } from "./data";
 import { currentPick, needsOf } from "./firstJob";
 import { markFirstJob, setupState } from "@/core/setup";
@@ -606,35 +604,6 @@ async function checkedDraft(draft: unknown, agentId: string): Promise<{ spec: Ag
   const { spec, problems } = readSpec(draft, agentId);
   const all = [...problems, ...(await customGone(spec)), ...(await modelGone(spec))];
   return all.length ? { error: `This draft asks for something code doesn’t offer: ${all.join("; ")}.` } : { spec };
-}
-
-/**
- * Creates a new agent, off duty, from the builder flow's draft (docs/builder-flow.md, slice 2). The
- * draft is checked against code like any save; a new agent has no gateway actions, since the
- * gateway names the agents that may ask for each one.
- */
-/** Creates the agent off duty as v1, and puts it in the seat picked in step 1 when that seat is still open. */
-export async function createBuilt(draft: unknown, seatId?: string | null): Promise<ActionResult & { id?: string }> {
-  const { me, no } = await asRole("owner"); if (no) return no;
-  try {
-    const { spec, problems: p0 } = readSpec(draft);
-    const problems = [...p0, ...(await customGone(spec)), ...(await modelGone(spec))];
-    if (problems.length) return { ok: false, text: `Not created. This draft asks for something code doesn’t offer: ${problems.join("; ")}.` };
-    // a granted action (card 250) is the owner's to give here; an action that names its agents isn't
-    if (spec.tools.some((t) => TOOLS[t]?.kind === "action" && TOOLS[t]?.agents !== "granted")) return { ok: false, text: "Not created. A new agent can’t ask for that action: code names which agents may." };
-    const id = await createBuiltAgent(spec, me.email);
-    let seated = "";
-    if (seatId && UUID.test(seatId)) {
-      const o = await loadOrg();
-      const seat = o?.seats.find((s) => s.id === seatId);
-      if (o && seat?.holder === "open") {
-        try { await setHolder(seat.id, "agent", id); seated = ` It sits in ${seatPath(o, seat)}.`; } catch (e) { seated = ` It isn’t on the chart yet: ${e instanceof Error ? e.message : e}`; }
-      } else seated = " That seat was taken meanwhile, so it isn’t on the chart yet.";
-    }
-    revalidatePath("/", "layout");
-    await audit(me, "create_agent", id, { name: spec.name });
-    return { ok: true, text: `${spec.name} is saved as v1, off duty.${seated}`, id };
-  } catch (e) { return fail(e); }
 }
 
 /** Saves the flow's draft as the next version, a draft: today's version keeps running until Go live. */

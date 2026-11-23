@@ -139,7 +139,10 @@ export async function fileProposal(input: Record<string, unknown>, from: { agent
   const { data: open, error: e1 } = await db().from("proposals").select("id, title").eq("state", "pending").eq("source", from.source).limit(200);
   if (e1) throw new Error(/proposals/.test(e1.message) ? PROPOSALS_MISSING : e1.message);
   const mine = (open ?? []) as { id: string; title: string }[];
-  if (mine.some((p) => same(p.title, title))) throw new Error(`“${title}” is already waiting for the owner`);
+  // a hire filed again for the same name in the same department replaces the one waiting (Change something
+  // on the hire card, docs/department-pages.md slice 5); anything else filed twice is refused
+  const again = got.plan.kind === "hire" ? await waitingHire(got.plan.name, res.dept) : null;
+  if (!again && mine.some((p) => same(p.title, title))) throw new Error(`“${title}” is already waiting for the owner`);
   if (from.agentId) {
     const { count } = await db().from("proposals").select("id", { count: "exact", head: true }).eq("state", "pending").eq("from_agent", from.agentId);
     if ((count ?? 0) >= MAX_PENDING_PER_AGENT) throw new Error(`${MAX_PENDING_PER_AGENT} proposals are already waiting for the owner; wait for an answer`);
@@ -148,6 +151,7 @@ export async function fileProposal(input: Record<string, unknown>, from: { agent
     kind: got.plan.kind, title, source: from.source, from_agent: from.agentId, department_id: res.dept, run_id: from.runId ?? null, payload: res.r, why: got.why,
   }).select("id").single();
   if (error) throw new Error(error.message);
+  if (again) await close(again, "declined", "Replaced by a newer draft of the same hire.").catch(() => undefined);
   return data.id as string;
 }
 
@@ -192,6 +196,13 @@ async function close(id: string, state: ProposalState, outcome: string, ref: str
   if (error) throw new Error(error.message);
 }
 
+/** A pending hire for this name in this department, if one is waiting. */
+async function waitingHire(name: string, deptId: string | null): Promise<string | null> {
+  if (!deptId) return null;
+  const { data } = await db().from("proposals").select("id, payload").eq("state", "pending").eq("kind", "hire").eq("department_id", deptId).limit(50);
+  return ((data ?? []) as { id: string; payload: { name?: string } }[]).find((r) => same(r.payload?.name ?? "", name))?.id ?? null;
+}
+
 /** Is the hire's name free, and is its seat still where it was? Throws with what changed. */
 async function hireChecks(p: Extract<Resolved, { kind: "hire" }>, org: Org) {
   const { data } = await db().from("agents").select("id").ilike("name", p.name).limit(1);
@@ -200,10 +211,15 @@ async function hireChecks(p: Extract<Resolved, { kind: "hire" }>, org: Org) {
   if (!p.seatId && !org.seats.some((s) => s.id === p.parentSeatId)) throw new Error("The seat it would sit under isn't on the chart any more.");
 }
 
-/** The spec a hire would create, checked against code like any save. */
-export function hireDraft(p: Extract<Resolved, { kind: "hire" }>) {
-  const { spec, problems } = readSpec(hireSpec(p));
-  const actions = spec.tools.filter((t) => TOOLS[t]?.kind === "action");
+/**
+ * The spec a hire would create, checked against code like any save. `grants` are the actions an approver
+ * turned on on the hire card: only ones the hire suggested and an approver may give (slice 5).
+ */
+export function hireDraft(p: Extract<Resolved, { kind: "hire" }>, grants: readonly string[] = []) {
+  const ok = grants.filter((g) => (p.can ?? []).includes(g) && TOOLS[g]?.kind === "action" && TOOLS[g]?.agents === "granted");
+  const base = hireSpec(p);
+  const { spec, problems } = readSpec({ ...base, tools: [...base.tools, ...ok] });
+  const actions = spec.tools.filter((t) => TOOLS[t]?.kind === "action" && !ok.includes(t));
   // only the owner grants a tool from a server they added, on the builder's Tools step
   const custom = spec.tools.filter((t) => !TOOLS[t]);
   return { spec, problems: [...problems, ...actions.map((t) => `${toolLabel(t)} is an action, which a new agent can't have`), ...custom.map(() => "a tool from a server you added is granted only on the builder's Tools step")] };
@@ -217,10 +233,10 @@ async function seatHire(p: Extract<Resolved, { kind: "hire" }>, agentId: string)
 }
 
 /**
- * The owner's yes. Each kind goes through the app's own path, checked again now. `agentFromBuilder` is
- * set when he changed a hire first in the builder, which already created the agent off duty.
+ * The owner's yes. Each kind goes through the app's own path, checked again now. `grants`: on a hire, the
+ * actions an approver turned on on the hire card (slice 5); `agentId` is the agent a hire created.
  */
-export async function acceptProposal(id: string, opts: { agentFromBuilder?: string } = {}): Promise<{ text: string; href: string | null }> {
+export async function acceptProposal(id: string, opts: { grants?: readonly string[] } = {}): Promise<{ text: string; href: string | null; agentId?: string }> {
   const pr = await getProposal(id);
   if (!pr || pr.state !== "pending") throw new Error("That proposal isn't waiting any more.");
   const org = await loadOrg();
@@ -228,18 +244,14 @@ export async function acceptProposal(id: string, opts: { agentFromBuilder?: stri
   const p = pr.payload;
   try {
     if (p.kind === "hire") {
-      if (opts.agentFromBuilder) {
-        await close(id, "accepted", `Hired as ${opts.agentFromBuilder}, changed first in the builder, off duty.`, opts.agentFromBuilder);
-        return { text: "Hired, off duty.", href: `/build/${opts.agentFromBuilder}` };
-      }
       await hireChecks(p, org);
-      const d = hireDraft(p);
+      const d = hireDraft(p, opts.grants ?? []);
       if (d.problems.length) throw new Error(`It asks for something code doesn’t offer: ${d.problems.join("; ")}.`);
       const agentId = await createBuiltAgent(d.spec, pr.from_agent ? `proposal from ${pr.from_agent}` : "proposal");
       let where = "";
       try { where = ` in ${await seatHire(p, agentId)}`; } catch (e) { where = `, but not on the chart yet: ${e instanceof Error ? e.message : e}`; }
       await close(id, "accepted", `Created ${p.name} (${agentId}) off duty as v1${where}.`, agentId);
-      return { text: `${p.name} is hired, off duty, as v1${where}. Try it, then Go live.`, href: `/build/${agentId}` };
+      return { text: `${p.name} is hired, off duty, as v1${where}. Try it, then put it on duty.`, href: `/agents/${agentId}`, agentId };
     }
     if (p.kind === "grant_tool") {
       const t = TOOLS[p.tool];

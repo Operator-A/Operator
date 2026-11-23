@@ -1,4 +1,5 @@
 // MCP connection rules (docs/company-mode.md, slice 6): `npm run check:mcp`. Pure: no network.
+import { BRAINS } from "../core/proposal-rules";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { migration } from "./lib/schema";
@@ -1027,7 +1028,9 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
   assert.ok(ready.includes("await mcpStatuses()") && !/readSecret|openSecret/.test(ready.slice(0, 400)), "the builder learns which keys are saved without opening any");
   const acts2 = readFileSync("dashboard/actions.ts", "utf8");
   assert.match(acts2, /\.\.\.\(await customGone\(spec\)\), \.\.\.\(await modelGone\(spec\)\)\]/, "saving a draft refuses a model whose provider has no key");
-  assert.equal((acts2.match(/await modelGone\(spec\)/g) ?? []).length, 2, "both the edit and the create path check the key");
+  assert.equal((acts2.match(/await modelGone\(spec\)/g) ?? []).length, 1, "the edit path checks the key (new agents are hired in the chat, slice 5)");
+  // a hire's model comes from code (BRAINS: Claude models), never from the head, so it needs no other provider's key
+  assert.ok(Object.values(BRAINS).every((b) => b.model.startsWith("claude-")), "a hire runs on a Claude model picked in code");
   assert.equal(P.google.turns.wire, "chat");
   assert.ok(R.keyRefused(401) && R.keyRefused(403) && !R.keyRefused(429) && !R.keyRefused(500));
   const acts = readFileSync("dashboard/connectionActions.ts", "utf8");

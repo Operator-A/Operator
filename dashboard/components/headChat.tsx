@@ -8,6 +8,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import type { ChatAnswer } from "@/core/avery-chat";
+import type { HireCardView } from "@/dashboard/hire-rules";
+import { HireCard, type HireActs } from "./hireCard";
 import { clock, dayLabel, initialsOf, mergeFeed, runFoot, runState, runTitle, type FeedRun, type FeedTalk } from "@/dashboard/dept-feed";
 import { Reply } from "./chatReply";
 import { Icon } from "./Icon";
@@ -37,15 +39,22 @@ function RunCard({ r, tz, cards }: { r: FeedRun; tz: string; cards: Record<strin
   );
 }
 
-export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, starters, missing, send }: {
+export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, starters, missing, send, hires = [], hireActs, controls = false, say = "" }: {
   deptId: string; dept: string; head: string | null; title: string; tz: string;
   talk: FeedTalk[]; runs: FeedRun[]; cards: Record<string, React.ReactNode>; starters: string[]; missing: string | null;
   send: (deptId: string, text: string) => Promise<ChatAnswer>;
+  /** Hire cards (slice 5): hires waiting on you and agents never put on duty. */
+  hires?: HireCardView[]; hireActs?: HireActs; controls?: boolean;
+  /** Typed into the box when the page opens (a "hire an agent" link). */
+  say?: string;
 }) {
   const router = useRouter();
   const [mine, setMine] = useState<FeedTalk[]>([]);
   const [live, setLive] = useState<FeedRun[]>([]);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(say);
+  // tries this page started: they keep going while the server redraws the cards
+  const [trying, setTrying] = useState<string[]>([]);
+  const [tried, setTried] = useState<{ id: string; ok: boolean; text: string }[]>([]);
   const [busy, start] = useTransition();
   const log = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -103,21 +112,35 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
     });
   };
 
+  const startTry = (agentId: string) => {
+    if (!hireActs || trying.includes(agentId)) return;
+    setTrying((t) => [...t, agentId]);
+    void hireActs.tryIt(agentId, true)
+      .then((r) => ({ ok: r.ok, text: r.ok ? "First try done. Its result is above." : r.text }), (e: unknown) => ({ ok: false, text: e instanceof Error ? e.message : "The try didn’t finish." }))
+      .then((r) => { setTrying((t) => t.filter((x) => x !== agentId)); setTried((d) => [...d, { id: `${agentId}:${Date.now()}`, ...r }]); });
+  };
+  const change = (t: string) => { setText(t); requestAnimationFrame(() => box.current?.focus()); };
+
   // a divider above the first message of each day
   const labels = items.map((it) => dayLabel(it.at, tz, now));
   const day = (i: number) => (i === 0 || labels[i] !== labels[i - 1] ? <div className="dp-day">{labels[i]}</div> : null);
   const headIni = initialsOf(head ?? dept);
+  const hireCard = (h: HireCardView, cont = false) => hireActs ? (
+    <HireCard key={h.key} c={h} dept={dept} head={head ?? dept} headTitle={title} controls={controls} acts={hireActs} cont={cont}
+      trying={!!h.agentId && trying.includes(h.agentId)} onTry={startTry} onChange={change} />
+  ) : null;
 
   return (
     <div className="dp-room">
       <div className="dp-blob b0" /><div className="dp-blob b1" /><div className="dp-blob b2" />
       <div className="dp-log" ref={log} aria-live="polite">
-        {!items.length && (
+        {!items.length && !hires.length && (
           <p className="dp-empty">
             {head ? `Ask ${head} how ${dept} is doing, tell ${head} a rule for one of its agents in your own words, or ask to hire into ${dept}. Every run in ${dept} posts here too: its steps, its result and anything waiting for your OK.` : `Every run in ${dept} posts here: its steps, its result and anything waiting for your OK.`}
           </p>
         )}
         {missing && <p className="dp-empty">{missing}</p>}
+        {hires.filter((h) => !items.length || h.at < items[0].at).map((h) => hireCard(h))}
         {items.map((it, i) => (
           <Fragment key={`${it.kind}:${it.id}`}>
             {day(i)}
@@ -134,8 +157,10 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
                   </div>
                 </div>
               )}
+            {hires.filter((h) => h.at >= it.at && (i === items.length - 1 || h.at < items[i + 1].at)).map((h) => hireCard(h, it.kind !== "run" && it.role === "head"))}
           </Fragment>
         ))}
+        {tried.map((t) => <span key={t.id} className={t.ok ? "dp-done" : "dp-note dp-bad"}>{t.ok && <Icon name="check" size={14} />}{t.text}</span>)}
         {busy && <div className="dp-msg"><div className="dp-av head">{headIni}</div><div className="dp-glass dp-typing" aria-label={`${head} is looking`}><i /><i /><i /></div></div>}
       </div>
       {head && (

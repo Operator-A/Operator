@@ -137,3 +137,32 @@ feed's order; the live route, the runner and the one approval path).
 Tests: `npm run check:dept` (sheet addresses; day sets, words and counts; one schedule chain when a time
 moves; the sheet binds only the existing actions and never writes the database itself; save is owner only
 and makes a version; Go live needs a clean try, in code and on the button; the old pages redirect).
+
+## Slice 5: hire in the chat
+
+- **The head drafts, code checks.** Asked to hire, the head asks at most two questions, then files the hire with
+  its File a proposal tool. A hire now also carries when it runs (`days`, `time`: daily, weekdays, day names
+  or only when asked, read by `hireWhen` in `core/proposal-rules.ts`) and `can`: actions it would need, as
+  suggestions. `can` takes only actions an approver may give (`agents: "granted"`); none is ever one of the
+  hire's tools until a person turns it on.
+- **The hire card.** A pending hire for the department shows in its chat as a card, in time order
+  (`deptHires` in `dashboard/hireCards.ts`, pure parts in `dashboard/hire-rules.ts`): name and seat, job, when,
+  reports to, reads, and Can do toggles that start off. The cost comes from code (`monthCostOf` from the model,
+  tools and limits, times the runs a month the schedule gives), never from the model. Filed again under the
+  same name, a hire replaces the card that was waiting (Change something).
+- **Hire and try once.** `hireInChat` (owner only) accepts the hire through `acceptProposal` with the toggles
+  that were on: `hireDraft` keeps only grants the hire suggested and an approver may give. The agent starts
+  off duty, takes its seat and its schedule. The chat then runs a fresh try with the existing `tryBuilt`; that
+  try posts in the chat as a First try run card (`tryInFeed`: tries post only for agents with a card).
+- **Put on duty.** An agent seated in the department, off duty and with no approved routine keeps its card
+  (`newAgent`). After a clean try the card offers Put on duty, which is the existing `goLive` (needs the clean
+  try, approves the routine the try saved) and then `setEnabled`. A try that wasn't clean says why and offers
+  Try again. Agents drafted from Claude through the Operator connector get the same card.
+- **Links.** Open seats, Crew's New agent and a proposal's Change it open the department's chat with the hire
+  typed in (`hireHref`, `?say=`).
+- **Deletes.** `/build/new`, `createBuilt`, `proposalCreate`, the builder's templates and its create mode. The
+  step editor (`/build/[id]?edit`) stays for an existing agent's fine detail until slice 6.
+
+Tests: `npm run check:dept` (a hire's schedule and suggested actions; a suggestion never becomes a tool; only
+suggested, approver-grantable actions get through a Hire tap; the cost line; card stages; only a new agent's
+first try posts; no link to `/build/new`; the head asks at most two questions) and `npm run check:proposals`.
