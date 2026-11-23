@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { realRun } from "@/dashboard/actions";
 import { getApprovals, getCounts, getOrgSwitch, getReactRules, getRoster, getTz, type ApprovalItem, type ReactRules } from "@/dashboard/data";
-import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptTab, headAgentId, needsByDept, type DeptTab } from "@/dashboard/dept-rules";
+import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptTab, headAgentId, needsByDept, tabHref, type DeptTab } from "@/dashboard/dept-rules";
+import { HEAD_CHAT_MISSING, headHistory } from "@/core/head-chat";
+import { sendToHead } from "@/dashboard/chatActions";
+import { HeadChat } from "@/dashboard/components/headChat";
 import { goalsByDept } from "@/dashboard/goals";
 import { GOALS_MISSING } from "@/core/goals";
 import { headOf, below } from "@/core/org";
@@ -18,8 +21,8 @@ import { GoalTile } from "@/dashboard/components/goals";
 import { Avatar, Empty, Pill } from "@/dashboard/components/ui";
 import { Icon } from "@/dashboard/components/Icon";
 
-// A department's page (docs/department-pages.md): its head, then tabs for the agents who work here,
-// the goals it is held to, and every draft from it waiting on an approver. Chat joins in slice 2.
+// A department's page (docs/department-pages.md): its head, then tabs for the chat with the head (the
+// default), the agents who work here, the goals it is held to, and every draft from it waiting on an approver.
 // Every count and number on it is worked out in code.
 
 const NO_ORG = "The org chart tables aren’t up to date: apply the org chart migrations.";
@@ -48,7 +51,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
       </div>
       <nav className="seg dept-tabs" aria-label={`${dept.name} tabs`}>
         {DEPT_TABS.map((t) => (
-          <IntentLink key={t} href={t === "agents" ? `/dept/${id}` : `/dept/${id}?tab=${t}`} className={tab === t ? "on" : ""} aria-current={tab === t ? "page" : undefined}>
+          <IntentLink key={t} href={tabHref(id, t)} className={tab === t ? "on" : ""} aria-current={tab === t ? "page" : undefined}>
             {TAB_LABEL[t]}{t === "approvals" && waiting > 0 && <span className="dept-n">{waiting}</span>}
           </IntentLink>
         ))}
@@ -64,7 +67,22 @@ type Counts = Awaited<ReturnType<typeof getCounts>>;
 async function Pane({ tab, id, name, roster, counts, tz, orgOn }: { tab: DeptTab; id: string; name: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean }) {
   if (tab === "goals") return <Goals id={id} name={name} roster={roster} />;
   if (tab === "approvals") return <Approvals id={id} name={name} roster={roster} tz={tz} />;
+  if (tab === "chat") return <Chat id={id} name={name} roster={roster} />;
   return <Agents id={id} name={name} roster={roster} counts={counts} tz={tz} orgOn={orgOn} />;
+}
+
+/** Talk to the head: each message is one logged run of the head inside its budget (core/head-chat.ts). */
+async function Chat({ id, name, roster }: { id: string; name: string; roster: Roster }) {
+  const chart = roster.chart!;
+  const headId = headAgentId(chart, id), head = headId ? roster.byId[headId] : null;
+  if (!head) {
+    const seat = headOf(chart, id);
+    return <Empty title={seat?.holder === "owner" ? `You lead ${name}` : `${name} has no head yet`}>{seat?.holder === "owner" ? "There’s no head agent to talk to here. Ask Avery about this department instead." : "Fill its head seat on the Agents tab, then talk to the head here."}</Empty>;
+  }
+  const history = await headHistory(id, 40).catch(() => null);
+  const initial = (history ?? []).map((r) => ({ id: r.id, role: r.role, text: r.text, runId: r.run_id, notes: r.notes }));
+  return <HeadChat deptId={id} dept={name} head={head.name} initial={initial} missing={history ? null : HEAD_CHAT_MISSING} send={sendToHead}
+    starters={[`How is ${name} doing?`, "What needs me here?", "Who is behind?"]} />;
 }
 
 /** Who works here: state, model, last run and its result, what needs you, and when it runs next. */
