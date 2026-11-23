@@ -3,7 +3,7 @@ import "server-only";
 // integrations/mcp.ts on the agents' sign-in. The one write, pausing an ad, is the gateway's
 // (core/gateway, "Meta Ads pauses" sign-in), never called here.
 import { callMcpTool } from "./mcp";
-import type { AccountRow, AdRow, MetaPeriod, MetaResult } from "@/core/meta-rules";
+import type { AccountRow, AdRow, MetaPeriod, MetaResult, MetaSetupAccount } from "@/core/meta-rules";
 
 export const metaAdAccounts = async () => (await callMcpTool("meta", "meta_ad_accounts", {})) as { accounts: AccountRow[] };
 
@@ -12,3 +12,6 @@ export const metaAdResults = async (account: string, period: MetaPeriod, result:
     account: string; currency: string; period: MetaPeriod; result: MetaResult; truncated: boolean;
     ads: AdRow[]; totals: { ads: number; active_ads: number; spend: number; results: number; cost_per_result: number | null; active_over_target: number };
   };
+
+/** The setup check's read (card 283): pixels, their last 7 days of events, and ad sets in learning, counted on our server. */
+export const metaSetup = async () => (await callMcpTool("meta", "meta_setup", {})) as { accounts: MetaSetupAccount[]; totals: Record<string, number>; unread: string[] };

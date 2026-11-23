@@ -57,9 +57,22 @@ against the domains and the pages fetched. Steps are plain text (text params ref
 - With no such agent, nothing runs: the card links to an agent's Tools step to give it the action. A check
   or fix never grants a tool.
 
+## Meta Ads (card 283)
+
+- `meta_setup` is a new read tool on our own Meta server, on the agents' `ads_read` sign-in (no new
+  permission). For up to 3 active ad accounts it GETs the pixels (up to 3 each) with when each last fired,
+  the last 7 days of events by name (all, and server-sent only, from Meta's pixel stats), and the active ad
+  sets' learning stage. It never POSTs. Each part is read softly: a part Meta refuses is listed as unread,
+  not guessed.
+- `meta_ads_setup` (catalog) gives the agent the counts worked out in code (`META_SETUP_KEYS`): pixels never
+  fired or unavailable, hours since one last fired, purchase and add-to-cart events, server events, ad sets
+  in learning or learning limited, spend all time.
+- The one fix is `meta.pause_ad`, the existing pause action (Draft, over-target ads only, no budget change).
+- Migration `20261231090000_setup_checks_meta.sql` widens `setup_checks.tool` to `meta`.
+
 ## Later slices
 
-283 Meta Ads; 284 Klaviyo and
+284 Klaviyo and
 Mailchimp, and heads re-checking; 285 reuse setup how-tos staff reviewed and published to the shared
 playbook (decided 2026-11-23), so fewer checks need a web search.
 
