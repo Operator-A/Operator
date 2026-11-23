@@ -1,7 +1,7 @@
 # OPERATOR's own MCP server: Claude as a front door
 
 Spec (approved Nov 23 2026): "Operator MCP for Claude: spec" (Claude Doc), Build Board card 310. This
-file covers slices 1 and 2 and grows with each slice.
+file covers all three slices.
 
 A member adds OPERATOR to Claude as a custom connector. Claude can then read the company (departments,
 agents, runs, what is waiting) and, from slice 2, draft agents. OPERATOR stays the place agents run and
@@ -22,7 +22,7 @@ the place people decide.
    `mcp_grants`, Settings > Connected apps, seven read tools.
 2. **Draft writes** (done, below): `create_agent` and `update_agent` land as off-duty drafts (decided Nov 23 2026),
    `propose` files a proposal from Claude. Owner only.
-3. **Try it and the move**: `try_agent` dry runs through `withRun`, and a guide for moving an agent that
+3. **Try it and the move** (done, below): `try_agent` dry runs through `withRun`, and a guide for moving an agent that
    was set up in a Claude project into OPERATOR.
 
 ## Slice 1: connect and read
@@ -76,6 +76,7 @@ carries `WWW-Authenticate` with the resource metadata address, so Claude can sig
 | `list_waiting` | Pending approval cards and proposals, in words | `/approvals`, `/proposals/<id>` |
 | `list_tools` | Tools an agent can be given and whether each service is connected; actions apart, marked approver-only | `/connections` |
 | `list_brains` | Models an agent can run on, with prices | |
+| `get_run` (slice 3) | One run in full, tries included: status, cost, summary, each step | `/runs/<id>` |
 
 Every answer goes through `scrubSecrets` plus a list of key shapes, is cut at 24,000 characters, and
 says that run summaries were written by agents.
@@ -143,3 +144,38 @@ actions, `draftTools` and `staleRead`, enum and line-break handling, and the sou
 ### Rolling it out
 
 No migration and no new settings. Merge; an owner's Claude sees the three tools on its next `tools/list`.
+
+## Slice 3: try it, and moving an agent in
+
+### `try_agent` (owner only)
+
+The builder's own try, moved to `core/agent-try.ts` so the builder, the first job and this server share it:
+one run of the draft (or the live version when there is no draft) on today's data, through `withRun` with
+trigger `preview`. It reads and thinks like a real run but sends nothing, queues no card and saves no output
+for other agents; afterwards code drafts or updates the routine, which Go live approves in OPERATOR. It runs
+while the agent is off duty and counts against its daily budget.
+
+- Needs `based_on_version`, the newest version `get_agent` showed (`staleRead`), so the try runs what Claude read.
+- Refused when real runs are switched off on this OPERATOR (`controlsOn`, now in `core/controls.ts`).
+- Starts in the background (`after()`) and answers once the run is logged, with its id; Claude reads the result
+  with `get_run`. `/api/mcp` has `maxDuration = 300`, like the builder's pages.
+- Audited as `try_agent` with the app's name. Going live stays a tap in OPERATOR, after a try where every step worked.
+
+### Moving an agent from a Claude project
+
+Settings > Connected apps shows owners a prompt (`MOVE_PROMPT`) to paste into the Claude project that runs the
+agent. Claude reads the project and OPERATOR (`get_company`, `list_tools`, `list_brains`), writes the agent,
+names what OPERATOR has no tool for and anything it sends, posts or buys (those become actions an approver
+grants here), waits for the owner's OK, then `create_agent`, `try_agent` and `get_run`, and stops. Duty,
+actions and schedule stay in OPERATOR. Every step is a tool on this server, so the same limits hold.
+
+### Tests
+
+`check:operator-mcp`: `try_agent` is owner only and needs the version, `get_run` is a read, the move prompt
+uses only this server's tools and stops before duty, and the source: a try checks `controlsOn` and the version,
+goes through `startTry`, and `core/agent-try.ts` runs through `withRun` as a preview with `trying: true` and
+never acts, goes live or puts an agent on duty. `check:first-job` reads the try from its new home.
+
+### Rolling it out
+
+No migration and no new settings. Merge; an owner's Claude sees `try_agent` and `get_run` on its next list.

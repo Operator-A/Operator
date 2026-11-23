@@ -5,7 +5,7 @@ import { listApps } from "@/core/operator-mcp";
 import { ConnectedApps } from "@/dashboard/components/connectedApps";
 import { SectionHead } from "@/dashboard/components/settingsHead";
 import { disconnectApp } from "@/dashboard/mcpActions";
-import { MCP_PATH } from "@/core/operator-mcp-rules";
+import { MCP_PATH, MOVE_PROMPT } from "@/core/operator-mcp-rules";
 import { headers } from "next/headers";
 
 export default async function AppsPage() {
@@ -14,7 +14,7 @@ export default async function AppsPage() {
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "your-operator";
   return (
     <>
-      <SectionHead title="Connected apps" sub="Apps that read OPERATOR for you, such as Claude. They see what you can see, and change nothing." />
+      <SectionHead title="Connected apps" sub="Apps that reach OPERATOR for you, such as Claude. They see what you can see. An owner's app can also draft agents, try them and file proposals; going live, duty, actions and budgets stay here." />
       <div className="card set-card pad">
         <span className="sub">To connect Claude: in Claude, open Settings, then Connectors, then Add custom connector. Name it OPERATOR and paste this address, then sign in here and tap Allow.</span>
         <code className="pill" style={{ alignSelf: "flex-start", userSelect: "all" }}>{`https://${host}${MCP_PATH}`}</code>
@@ -25,6 +25,13 @@ export default async function AppsPage() {
           />
         )}
       </div>
+      {me.role === "owner" && (
+        <div className="card set-card pad">
+          <span className="sub" style={{ fontWeight: 600 }}>Move an agent from a Claude project</span>
+          <span className="sub">Connect Claude first. Then open the Claude project that runs the agent, and paste this into a new chat there. Claude drafts the agent here, off duty, tries it once and stops; you put it on duty.</span>
+          <pre className="pill" style={{ whiteSpace: "pre-wrap", userSelect: "all", margin: 0, fontSize: 12.5, lineHeight: 1.5 }}>{MOVE_PROMPT}</pre>
+        </div>
+      )}
     </>
   );
 }

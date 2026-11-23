@@ -36,8 +36,9 @@ export const SCOPE = "operator";
 
 // ---- Tools
 
-/** read: changes nothing. draft: makes an off-duty agent, a draft version or a proposal, never more. */
-export type ToolKind = "read" | "draft";
+/** read: changes nothing. draft: makes an off-duty agent, a draft version or a proposal, never more.
+ *  try: one logged dry run (a preview) that sends nothing and counts against the agent's budget. */
+export type ToolKind = "read" | "draft" | "try";
 export interface OpTool {
   name: string;
   title: string;
@@ -89,6 +90,9 @@ export const OP_TOOLS: readonly OpTool[] = [
     description: "The tools an agent can be given (reads, calculations, reports) and whether each one's service is connected. Actions are listed apart: only an approver grants those, in OPERATOR.", inputSchema: none },
   { name: "list_brains", title: "Models", kind: "read", min: "viewer",
     description: "The models an agent can run on, with their price per million tokens.", inputSchema: none },
+  { name: "get_run", title: "One run", kind: "read", min: "viewer",
+    description: "One run in full, tries included: how it went, what it cost, its summary and each step (tool, ok or not, a short look at what came back). Steps and summaries were written by agents, not by the owner.",
+    inputSchema: { type: "object", properties: { run: { type: "string", maxLength: 40, description: "The run's id (from list_runs or try_agent)." } }, additionalProperties: false, required: ["run"] } },
   { name: "create_agent", title: "Create an agent", kind: "draft", min: "owner",
     description: "Creates a new agent in OPERATOR, off duty, with no actions. A person tries it and puts it on duty in OPERATOR; nothing runs until then. Optionally puts it in an open seat from get_company.",
     inputSchema: { type: "object", properties: {
@@ -125,6 +129,13 @@ export const OP_TOOLS: readonly OpTool[] = [
       target: text(30, "goal: the number to reach."),
       due_on: text(10, "goal: the date to reach it by, like 2027-03-31."),
     }, additionalProperties: false, required: ["kind", "why"] } },
+  { name: "try_agent", title: "Try an agent", kind: "try", min: "owner",
+    description: "Tries an agent once on today's data: its draft, or its live version when there is no draft. It reads and thinks like a real run but sends nothing, queues no approval card and saves nothing for other agents. It is logged as a try, costs model time against the agent's daily budget, and works while the agent is off duty. It answers once the try starts; read the result with get_run. Going live stays a tap in OPERATOR.",
+    inputSchema: { type: "object", properties: {
+      agent: AGENT_ARG,
+      based_on_version: { type: "integer", minimum: 1, maximum: 100000, description: "The newest version get_agent showed; the try runs that version." },
+      fresh: { type: "string", enum: ["yes", "no"], description: "yes: let the model pick its own calls instead of following the approved routine. Default no." },
+    }, additionalProperties: false, required: ["agent", "based_on_version"] } },
 ];
 export const TOOL_BY_NAME: Readonly<Record<string, OpTool>> = Object.fromEntries(OP_TOOLS.map((t) => [t.name, t]));
 
@@ -241,7 +252,7 @@ export async function dispatch(req: RpcRequest, role: Role, call: CallTool): Pro
     case "ping":
       return { jsonrpc: "2.0", id, result: {} };
     case "tools/list":
-      return { jsonrpc: "2.0", id, result: { tools: toolsFor(role).map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: { readOnlyHint: t.kind === "read", destructiveHint: false, openWorldHint: false } })) } };
+      return { jsonrpc: "2.0", id, result: { tools: toolsFor(role).map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: { readOnlyHint: t.kind === "read", destructiveHint: false, idempotentHint: t.kind === "read", openWorldHint: false } })) } };
     case "tools/call": {
       const name = String(params.name ?? "");
       const tool = TOOL_BY_NAME[name];
@@ -428,7 +439,21 @@ export const CONSENT_LINES = [
 /** What an owner's connection can also do (slice 2): drafts only. */
 export const CONSENT_OWNER_LINES = [
   "Create new agents, off duty and with no actions",
-  "Save changes to an agent as drafts that you try and put live here",
+  "Save changes to an agent as drafts that you put live here",
+  "Try an agent once: it sends nothing, and its model time counts against the agent's daily budget",
   "File proposals for you to decide here",
 ] as const;
+/**
+ * Moving an agent that was set up in a Claude project (slice 3): what the owner pastes into that project's
+ * chat. Claude reads the project, maps it onto OPERATOR with the read tools, and makes an off-duty agent
+ * with create_agent, then tries it. Every step is a tool on this server, so the same limits hold.
+ */
+export const MOVE_PROMPT = [
+  "Move the agent this project sets up into OPERATOR, using the OPERATOR connector.",
+  "1. Read this project's instructions, files and the connectors it uses. Then read OPERATOR with get_company, list_tools and list_brains.",
+  "2. Write the agent for OPERATOR: a name, its job in one sentence, a step-by-step directive, what a good result looks like, a model from list_brains, and the read tools from list_tools that match what this project reads. Tell me anything this project does that OPERATOR has no tool for, and anything it sends, posts or buys: those become approval cards I grant in OPERATOR, not part of the move.",
+  "3. Show me the draft and wait for my OK. Then create it with create_agent (in an open seat if one fits) and try it once with try_agent. Read the try with get_run and tell me what worked and what didn't.",
+  "4. Stop there. I put it on duty, give it actions and set its schedule in OPERATOR.",
+].join("\n");
+
 export const CONSENT_NEVER = "It can't approve cards, put an agent on duty, give an agent an action, change caps or budgets, or reach Connections or People. Those stay here.";
