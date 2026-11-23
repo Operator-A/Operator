@@ -3,12 +3,15 @@ import { requireSession } from "@/dashboard/data";
 import { readStatus } from "@/core/status";
 import { OVERDUE_MIN, REALERT_HOURS } from "@/core/status-rules";
 import { emailState } from "@/integrations/email";
+import { recentEvents } from "@/core/events";
+import { when } from "@/dashboard/format";
+import { orgTz } from "@/core/tz";
 
 // Status (docs/usage.md, slice 4): everything that needs a look, on one page. Alerts (red) also
 // email the owner from the scheduler; warnings only show here.
 export default async function Status() {
   // one round (card 302, docs/speed.md)
-  const [, { facts: f, problems }, mail] = await Promise.all([requireSession(), readStatus(), emailState()]);
+  const [, { facts: f, problems }, mail, events, tz] = await Promise.all([requireSession(), readStatus(), emailState(), recentEvents(20), orgTz()]);
   const alerts = problems.filter((p) => p.level === "alert").length;
   const emails = mail.ok;
   const tile = (label: string, value: React.ReactNode, sub: string) => (
@@ -46,6 +49,20 @@ export default async function Status() {
         {tile("Runs failed", f.failedRuns.count, "in the last day")}
         {tile("Refused", f.refused.count, "gateway proposals, last day")}
         {tile("Paused", f.paused.length, "connections")}
+      </div>
+
+      <div className="card" id="live-events" style={{ padding: "16px 22px", gap: 0 }}>
+        <span className="card-t" style={{ paddingBottom: 6 }}>Live events</span>
+        {events.length === 0 ? <span className="sub">No events yet. Set a service up under <Link href="/connections#live-events">Connections &gt; Live events</Link>, then start a chain on it on the Crew canvas.</span>
+          : events.map((e, i) => (
+            <div key={e.id} className={"row" + (i ? " rule" : "")} style={{ justifyContent: "space-between", padding: "10px 0", gap: 16, fontSize: 13.5 }}>
+              <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span>{e.label}{e.test ? " (test)" : ""}</span>
+                <span className="muted" style={{ fontSize: 12 }}>{e.outcome ?? "Checking which chains start…"}</span>
+              </span>
+              <span className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{when(e.at, tz)}</span>
+            </div>
+          ))}
       </div>
 
       <span className="sub">

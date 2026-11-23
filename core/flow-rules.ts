@@ -3,7 +3,7 @@
 //
 // The crew flow: which agents run when, and which agent starts
 // after another. A flow is a list of chains. Each chain has one start (a schedule, the Run
-// button, or an approval being decided) and one to three agent steps. A step after the first
+// button, an approval being decided, or a signed outside event) and one to three agent steps. A step after the first
 // can wait for the step before it to finish OK or failed (or either), only go on if a number
 // the code computed passes a check, only run on some days, wait until a time, and pass the
 // earlier step's summary along as facts.
@@ -12,6 +12,7 @@
 // withRun (on duty, daily budget), a skipped run stops the chain, and nothing here can turn an
 // agent on. Inbound email and web pages never choose what runs next: only the saved flow does.
 import { localAt, localDate, nextDay } from "@/core/time";
+import { eventStartProblems, type EventStart } from "@/core/event-rules";
 
 export const MAX_STEPS = 3;
 // room for a one-step chain per agent (an agent's own schedule, docs/org-schedule.md) plus shared chains
@@ -56,7 +57,9 @@ export type Op = ">=" | ">" | "<=" | "<" | "=";
 export type Start =
   | { type: "schedule"; days: Days; time: string }
   | { type: "button" }
-  | { type: "approval"; tool: string; decision: "approve" | "reject" | "any" };
+  | { type: "approval"; tool: string; decision: "approve" | "reject" | "any" }
+  /** A signed event from an outside service (docs/live-events.md): only chains saved with it start. */
+  | EventStart;
 
 export interface Step {
   agent: string;
@@ -118,7 +121,9 @@ export function flowProblems(f: unknown, crew: Crew): string[] {
     } else if (s?.type === "approval") {
       if (!APPROVAL_TOOLS.includes(s.tool)) out.push(`${at}: unknown approval type ${String(s.tool)}.`);
       if (!["approve", "reject", "any"].includes(s.decision)) out.push(`${at}: the approval start needs approve, reject or any.`);
-    } else if (s?.type !== "button") out.push(`${at}: the start must be a schedule, the Run button or an approval.`);
+    } else if (s?.type === "event") {
+      for (const p of eventStartProblems(s)) out.push(`${at}: ${p}`);
+    } else if (s?.type !== "button") out.push(`${at}: the start must be a schedule, the Run button, an approval or an event.`);
     if (!Array.isArray(c.steps) || !c.steps.length) { out.push(`${at} has no agents.`); return; }
     if (c.steps.length > MAX_STEPS) out.push(`${at}: at most ${MAX_STEPS} agents in a chain.`);
     const seen = new Set<string>();

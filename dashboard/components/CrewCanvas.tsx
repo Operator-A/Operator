@@ -10,6 +10,7 @@ import { Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } fro
 import "@xyflow/react/dist/style.css";
 import type { ActionResult, ChainPreviewStep } from "@/dashboard/actions";
 import { DAYS, flowLooser, flowProblems, nextFirings, runsPerMonth, type Chain, type Days, type Flow, type Op, type Start, type Step, type When } from "@/core/flow-rules";
+import { EVENTS, EVENT_BY_TYPE, eventStartWords, type EventStart, type EventType } from "@/core/event-rules";
 import { Icon } from "./Icon";
 import { Modal, Toast, type Confirm } from "./client";
 import { Summary } from "./ui";
@@ -53,6 +54,7 @@ const writeDraft = (f: Flow | null) => { try { if (f) localStorage.setItem(DRAFT
 function startLine(s: Start, tools: CrewCanvasData["approvalTools"]) {
   if (s.type === "schedule") return `${DAY_LABEL[s.days]} at ${clock(s.time)}`;
   if (s.type === "button") return "When you press Run chain";
+  if (s.type === "event") return eventStartWords(s);
   return `When you ${s.decision === "any" ? "decide" : s.decision} ${tools.find((t) => t.id === s.tool)?.label ?? s.tool}`;
 }
 const DAY_LABEL: Record<Days, string> = { daily: "Every day", weekdays: "Weekdays", mondays: "Mondays" };
@@ -140,7 +142,7 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
   // ---- the graph
   const nodes = useMemo<Node[]>(() => draft.chains.flatMap((c, row): Node[] => [
     { id: `${c.key}:start`, type: "block", position: { x: 0, y: row * ROW }, width: 210, height: 116, draggable: false, connectable: false,
-      data: { title: c.name, sub: startLine(c.start, d.approvalTools), lines: [c.on ? "On" : "Off: runs only with Run chain"], icon: c.start.type === "schedule" ? "clock" : c.start.type === "button" ? "play" : "shield-check", selected: sel?.key === c.key && sel.step === "start", dim: !c.on, tag: c.on ? "On" : "Off" } satisfies BlockData },
+      data: { title: c.name, sub: startLine(c.start, d.approvalTools), lines: [c.on ? "On" : "Off: runs only with Run chain"], icon: c.start.type === "schedule" ? "clock" : c.start.type === "button" ? "play" : c.start.type === "event" ? "inbox" : "shield-check", selected: sel?.key === c.key && sel.step === "start", dim: !c.on, tag: c.on ? "On" : "Off" } satisfies BlockData },
     ...c.steps.map((st, k): Node => {
       const a = byId[st.agent];
       return { id: `${c.key}:${k}`, type: "block", position: { x: (k + 1) * COL, y: row * ROW }, width: 210, height: 116, draggable: false, connectable: false,
@@ -235,10 +237,10 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
             <div className="ted-field">
               <span className="ted-k">Starts</span>
               <div className="seg" role="radiogroup" aria-label="Start">
-                {(["schedule", "button", "approval"] as Start["type"][]).map((t) => (
+                {(["schedule", "button", "approval", "event"] as Start["type"][]).map((t) => (
                   <button key={t} type="button" role="radio" aria-checked={chain.start.type === t} className={chain.start.type === t ? "on" : ""}
-                    onClick={() => setChain({ ...chain, start: t === "schedule" ? { type: "schedule", days: "weekdays", time: "06:00" } : t === "button" ? { type: "button" } : { type: "approval", tool: d.approvalTools[0]?.id ?? "", decision: "approve" } })}>
-                    {t === "schedule" ? "Schedule" : t === "button" ? "Run button" : "Approval"}
+                    onClick={() => setChain({ ...chain, start: t === "schedule" ? { type: "schedule", days: "weekdays", time: "06:00" } : t === "button" ? { type: "button" } : t === "event" ? { type: "event", event: EVENTS[0].type } : { type: "approval", tool: d.approvalTools[0]?.id ?? "", decision: "approve" } })}>
+                    {t === "schedule" ? "Schedule" : t === "button" ? "Run button" : t === "event" ? "Live event" : "Approval"}
                   </button>
                 ))}
               </div>
@@ -254,7 +256,14 @@ export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewAct
                   <select className="input sel-auto" value={chain.start.tool} aria-label="Approval type" onChange={(e) => setChain({ ...chain, start: { ...(chain.start as Extract<Start, { type: "approval" }>), tool: e.target.value } })}>{d.approvalTools.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}</select>
                 </span>
               )}
-              <span className="sub">{chain.start.type === "schedule" ? "Chicago time, on a quarter hour. Only while the chain is on." : chain.start.type === "button" ? "Only when you press Run chain below." : "Once a minute at most, so approving twenty receipts starts it once. Only while the chain is on."}</span>
+              {chain.start.type === "event" && (
+                <span className="row wrap" style={{ gap: 8 }}>
+                  <select className="input sel-auto" value={chain.start.event} aria-label="Event" onChange={(e) => setChain({ ...chain, start: { ...(chain.start as EventStart), event: e.target.value as EventType } })}>{EVENTS.map((ev) => <option key={ev.type} value={ev.type}>{ev.label}</option>)}</select>
+                  <input className="input" style={{ width: 120 }} type="number" min={0} step="1" inputMode="decimal" placeholder="Any total" aria-label={EVENT_BY_TYPE[chain.start.event]?.total.label ?? "Minimum total"} value={chain.start.minTotal ?? ""}
+                    onChange={(e) => { const v = e.target.value.trim(); const { minTotal: _drop, ...rest } = chain.start as EventStart; void _drop; setChain({ ...chain, start: v === "" ? rest : { ...rest, minTotal: Math.max(0, Number(v)) } }); }} />
+                </span>
+              )}
+              <span className="sub">{chain.start.type === "schedule" ? "Chicago time, on a quarter hour. Only while the chain is on." : chain.start.type === "button" ? "Only when you press Run chain below." : chain.start.type === "event" ? "Within seconds of the event, once its signature checks out (set it up under Connections > Live events). At most 10 times an hour and 50 a day; the first agent gets the event’s facts. Only while the chain is on." : "Once a minute at most, so approving twenty receipts starts it once. Only while the chain is on."}</span>
             </div>
             <div className="ted-field">
               <span className="ted-k">Cost</span>

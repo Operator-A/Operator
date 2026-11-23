@@ -6,9 +6,10 @@ import { audit } from "@/core/audit";
 import { planBlock } from "@/core/extensions";
 import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
-import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, removeModelKey, saveModelKey, pauseCustom, removeCustomServer, resealAll, saveCustomKey, setCustomNumber, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
+import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, removeModelKey, saveModelKey, saveHookSecret, removeHookSecret, pauseCustom, removeCustomServer, resealAll, saveCustomKey, setCustomNumber, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
 import { isCustomId } from "@/core/custom-mcp-rules";
 import { PROVIDER_BY_ID, isModelProvider } from "@/core/model-key-rules";
+import { SOURCE_BY_ID, isEventSource } from "@/core/event-rules";
 import { knownByAddress } from "@/core/connector-rules";
 import { askFor, closeRequest } from "@/core/connector-requests";
 import { removeExport, switchExports, uploadExport } from "@/core/exports";
@@ -85,6 +86,29 @@ export async function modelRemoveKey(provider: string): Promise<ActionResult> {
     await removeModelKey(provider);
     await audit(me, "disconnect", PROVIDER_BY_ID[provider].vaultId);
     return done(`${PROVIDER_BY_ID[provider].name} key forgotten here. Delete it at ${PROVIDER_BY_ID[provider].name} too if it shouldn’t work anywhere.`);
+  } catch (e) { return fail(e); }
+}
+
+/** A source's live events signing secret (Connections > Live events, docs/live-events.md): locked in the vault; makes the hook address. */
+export async function hookSaveSecret(source: string, key: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!isEventSource(source)) return { ok: false, text: "That service has no live events." };
+  if (typeof key !== "string" || key.length > 300) return { ok: false, text: "That isn’t a signing secret." };
+  try {
+    await saveHookSecret(source, key);
+    await audit(me, "save_key", SOURCE_BY_ID[source].vaultId);
+    return done(`${SOURCE_BY_ID[source].name} signing secret locked in the vault. Events sent to the hook address are checked with it from now on.`);
+  } catch (e) { return fail(e); }
+}
+
+/** Forgets a source's signing secret and hook address: events sent there are refused from now on. */
+export async function hookRemove(source: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!isEventSource(source)) return { ok: false, text: "That service has no live events." };
+  try {
+    await removeHookSecret(source);
+    await audit(me, "disconnect", SOURCE_BY_ID[source].vaultId);
+    return done(`${SOURCE_BY_ID[source].name} live events turned off here. Delete the webhook in ${SOURCE_BY_ID[source].name} too.`);
   } catch (e) { return fail(e); }
 }
 

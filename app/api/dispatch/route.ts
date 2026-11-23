@@ -14,6 +14,7 @@ import { controlsOn } from "@/dashboard/session";
 import { afterSchedule, edition } from "@/core/extensions";
 import { takeSnapshot } from "@/core/brain";
 import { returnSkipped } from "@/core/setup-check";
+import { catchUpHeld, pruneEvents } from "@/core/events";
 
 export const maxDuration = 60;
 
@@ -64,6 +65,9 @@ async function schedule(origin: string, now: number) {
       await startStep(origin, c, { chainId, key: c.key, step: 0 });
     }
   }
+  // live events (docs/live-events.md): one catch-up run per event chain that held events at its cap; never stops the scheduler
+  const caughtUp = on ? await catchUpHeld(origin, now).catch((e) => { console.error("[dispatch] events", e instanceof Error ? e.message : e); return []; }) : [];
+  await pruneEvents(now).catch((e) => console.error("[dispatch] prune events", e instanceof Error ? e.message : e));
   const stale = await failStale(now);
   // a step whose kicks kept failing is skipped once it is hours late, not run at the wrong time of day
   const missed = await failMissed(now);
@@ -77,5 +81,5 @@ async function schedule(origin: string, now: number) {
   // card 284: setup check findings skipped 3 weeks ago come back once as a head's proposal (code, no model), only while the org is on
   const rechecks = on ? await returnSkipped(now).catch((e) => { console.error("[dispatch] setup re-checks", e instanceof Error ? e.message : e); return []; }) : [];
   const alerted = await sendStatusAlerts(origin, now).catch((e) => { console.error("[dispatch] alerts", e instanceof Error ? e.message : e); return []; });
-  return { on, started, kicked: due.length, stale, missed, trusted, brain, rechecks, alerted, problems: flow.problems };
+  return { on, started, caughtUp, kicked: due.length, stale, missed, trusted, brain, rechecks, alerted, problems: flow.problems };
 }

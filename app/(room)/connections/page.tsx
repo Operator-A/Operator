@@ -10,7 +10,12 @@ import { Avatar, LockList } from "@/dashboard/components/ui";
 import { ActionButton, KeyForm, TargetForm } from "@/dashboard/components/client";
 import { metaTargets } from "@/core/meta-targets";
 import { RESULT_KINDS, RESULT_LABEL } from "@/core/meta-rules";
-import { claudeRemoveKey, modelRemoveKey, modelSaveKey } from "@/dashboard/connectionActions";
+import { claudeRemoveKey, hookRemove, hookSaveSecret, modelRemoveKey, modelSaveKey } from "@/dashboard/connectionActions";
+import { SOURCES, hookPath } from "@/core/event-rules";
+import { hookStates } from "@/integrations/mcp";
+import { orgId } from "@/core/tenancy";
+import { env } from "@/core/env";
+import { headers } from "next/headers";
 import { MODEL_PROVIDERS } from "@/core/model-key-rules";
 import { claudeState } from "@/dashboard/claude";
 import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
@@ -335,6 +340,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
       </div>
       <Suspense fallback={<SkelPane />}><ClaudeCard owner={me.role === "owner"} query={sp} /></Suspense>
       <Suspense fallback={<SkelPane />}><ModelKeysCard owner={me.role === "owner"} /></Suspense>
+      <Suspense fallback={<SkelPane />}><LiveEventsCard owner={me.role === "owner"} /></Suspense>
       <div className="card" style={{ gap: 10 }}>
         <span className="card-t">Behind the scenes</span>
         {BEHIND_THE_SCENES.map((b) => (
@@ -399,6 +405,40 @@ async function ModelKeysCard({ owner }: { owner: boolean }) {
                   {on && <ActionButton className="btn outline sm" action={modelRemoveKey.bind(null, p.id)} confirm={{ title: `Forget the ${p.name} key?`, body: `The key is forgotten here. Delete it at ${p.name} too if it shouldn’t work anywhere.`, confirmLabel: "Forget it", kind: "danger" }}>Forget the key</ActionButton>}
                 </>
               : !on && <span className="sub">Ask an owner of this business to paste it.</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Live events (docs/live-events.md, slice 1): each service's hook address and its signing secret. */
+async function LiveEventsCard({ owner }: { owner: boolean }) {
+  const [states, org, h] = await Promise.all([hookStates().catch(() => []), orgId(), headers()]);
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const base = env.dashboardUrl ?? (host ? `https://${host}` : "");
+  return (
+    <div className="card" id="live-events" style={{ gap: 10 }}>
+      <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="inbox" size={15} />Live events</span>
+      <span className="ink2" style={{ fontSize: 12.5 }}>A service tells OPERATOR the moment something happens, so a chain on the Crew canvas can start within seconds instead of at its next scheduled time. OPERATOR checks every event’s signature with the secret you paste here, keeps only its named fields for 30 days, and starts only chains you saved with that event as their start, while the org and the chain are on. A chain starts on events at most 10 times an hour and 50 a day; past that, one catch-up run follows.</span>
+      {SOURCES.map((s) => {
+        const st = states.find((x) => x.source === s.id), on = !!st?.connected;
+        const addr = st?.hook ? `${base}${hookPath(s.id, org, st.hook)}` : null;
+        return (
+          <div key={s.id} style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 8, borderTop: "1px solid var(--bd)" }}>
+            <span className="row" style={{ gap: 8, justifyContent: "space-between" }}>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{s.name}</span>
+              <span className="pill sm" style={{ background: on ? "var(--mint-soft)" : "var(--soft)", color: on ? "var(--mint-ink)" : "var(--ink2)" }}>{on ? "Listening" : "Off"}</span>
+            </span>
+            {addr && <span style={{ fontSize: 12.5 }}>Hook address: <code style={{ wordBreak: "break-all" }}>{addr}</code></span>}
+            {owner
+              ? <>
+                  {!on && <span className="ink2" style={{ fontSize: 12.5 }}>Paste the signing secret first and OPERATOR makes this business’s hook address. Then:</span>}
+                  <ol className="ink2" style={{ fontSize: 12.5, margin: 0, paddingLeft: 18 }}>{s.steps.map((t) => <li key={t}>{t}</li>)}</ol>
+                  <KeyForm label={`${s.name} signing secret`} save={hookSaveSecret.bind(null, s.id)} placeholder={s.placeholder} replace={on} />
+                  {on && <ActionButton className="btn outline sm" action={hookRemove.bind(null, s.id)} confirm={{ title: `Stop ${s.name} live events?`, body: `The signing secret and the hook address are forgotten here, and events sent there are refused. Delete the webhook in ${s.name} too.`, confirmLabel: "Stop", kind: "danger" }}>Stop live events</ActionButton>}
+                </>
+              : !on && <span className="sub">Ask an owner of this business to set it up.</span>}
           </div>
         );
       })}

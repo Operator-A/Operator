@@ -29,6 +29,7 @@
     "check:tenancy": "npx --yes tsx scripts/check-tenancy.ts",
     "check:roles": "npx --yes tsx scripts/check-roles.ts",
     "check:jobs": "npx --yes tsx scripts/check-jobs.ts",
+    "check:events": "npx --yes tsx scripts/check-events.ts",
     "check:templates": "npx --yes tsx --conditions=react-server scripts/check-templates.ts",
     "check:install": "npx --yes tsx --conditions=react-server scripts/check-install.ts",
     "check:audit": "npx --yes tsx scripts/check-audit.ts",
