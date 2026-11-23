@@ -88,32 +88,6 @@ export async function hireInChat(id: string, grants: string[]): Promise<ActionRe
   } catch (e) { return fail(e); }
 }
 
-/**
- * Hire from the department chat (docs/department-pages.md, slice 5): the owner's yes to a hire card, with
- * the actions they turned on. Only actions the hire suggested and an approver may give get through
- * (hireDraft checks again); the agent starts off duty, then gets the hire's schedule. The first try is a
- * separate tap of the existing tryBuilt, so nothing here runs a model.
- */
-export async function hireInChat(id: string, grants: string[]): Promise<ActionResult & { agentId?: string }> {
-  const { me, no } = await asRole("owner"); if (no) return no;
-  if (!UUID.test(String(id))) return { ok: false, text: "Unknown hire." };
-  const pr = await getProposal(id);
-  if (!pr || pr.state !== "pending" || pr.payload.kind !== "hire") return { ok: false, text: "That hire isn’t waiting any more." };
-  const p = pr.payload;
-  const asked = (Array.isArray(grants) ? grants : []).map(String).filter((g) => (p.can ?? []).includes(g));
-  try {
-    const r = await acceptProposal(id, { grants: asked });
-    await audit(me, "accept_proposal", id, { via: "dept_chat", grants: asked });
-    let when = "";
-    if (r.agentId && p.days && p.time) {
-      // off duty, so the schedule only takes effect once it is put on duty
-      const t = await setAgentTime(r.agentId, { days: p.days, time: p.time }, true);
-      when = t.ok ? "" : ` Its schedule wasn’t set: ${t.text}`;
-    }
-    return { ...done(`${r.text}${when}`), agentId: r.agentId };
-  } catch (e) { return fail(e); }
-}
-
 /** Not now, with the reason the owner typed (optional). */
 export async function proposalDecline(id: string, reason: string): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
