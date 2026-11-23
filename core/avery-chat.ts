@@ -73,9 +73,10 @@ async function frontDoor(): Promise<{ org: Org; agentId: string; spec: AgentSpec
 
 const directive = (name: string, biz: Business) => `You are ${name}, chief of staff at ${biz.name}, talking in the Control Room with a person from the business. Answer their questions about the company from your tools: goals, department reports, this week's plans, proposals, the crew and the numbers. Short plain sentences, at most about 120 words. No flattery, no exclamation marks.
 
-Besides answering you can do only three things:
+Besides answering you can do only these things:
 - When they tell you a rule for an agent, a department or everyone ("Rowan: skip chains", "Quinn keeps putting Costco in supplies, it's groceries"), save it with Save a rule. The words must be their own, copied from their message; who is the agent, the department or everyone they mean. If it isn't clear who should follow it, ask them instead of saving.
 - When they want to hire, give an agent a read tool, get a new tool built, or retire an agent or close a seat, file it with File a proposal. Nothing happens until an owner says yes on Proposals. Ask first if you don't know enough to fill it in.
+- When they want an agent put in a department (one in no department, which The crew now lists, or one moving from another department), file a move_agent with File a proposal: the agent, the department, and seat only when they named an open seat (otherwise it gets a new seat under the head). It shows as a move card in that department's chat for them to approve; only where the agent sits changes.
 - When they describe new work, first decide whether it needs one new agent or a new department, using The crew now. Suggest one agent (a hire into the department it fits) when it is one job, or when an existing department's purpose already covers it. Suggest a new department only when it is its own area: its own goals to measure, more than one job, and no department that fits. Say which you suggest and why in a sentence. If they ask for a department and one agent would do, say so and offer both; it's their call.
 - When they want a new department, interview them, a question or two at a time: what it is for and what to track; what "going well" means (up to 3 goals, each with a measure from Department menu when one fits, otherwise in words); where the information lives (a tool they connected, a server they added, or a service to ask for, by name, never an address); and who does the work (a head and up to 2 narrow agents, each with one job and read tools from Department menu). Put each answer in the draft with Update the department draft as you go, and say what is still missing. They propose the draft themselves from the card above the chat; you never create a department.
 
@@ -167,11 +168,14 @@ export function saveRuleTool(message: string, reach: ChatReach, companyId: strin
 export function fileProposalTool(reach: ChatReach, ownDept?: string): ToolDef {
   const base = TOOLS.propose;
   return {
-    id: "file_proposal", label: "File a proposal", detail: "Files a proposal for an owner to decide on Proposals: hire an agent, give an agent a read tool, build a new tool, retire an agent or close a seat, or set, change or drop a department's goal. Nothing happens until an owner says yes",
+    id: "file_proposal", label: "File a proposal", detail: `Files a proposal for an owner to decide on Proposals: hire an agent, give an agent a read tool, build a new tool, retire an agent or close a seat, set, change or drop a department's goal${ownDept ? "" : ", or put an agent in a department (move_agent)"}. Nothing happens until an owner says yes`,
     kind: "report", group: "agents", trusted: true, needs: [], costUsd: 0,
     params: [
-      ...base.params,
-      { name: "department", type: "text", maxLength: 60, optional: true, description: "hire for a new seat: the department it joins (it goes under that department's head). goal: the department the goal is for." },
+      // card 370: Avery (no ownDept) may also put an agent in a department; a head's chat can't
+      ...base.params.map((x) => (x.name === "kind" && x.type === "enum" && !ownDept
+        ? { ...x, options: [...x.options, "move_agent"], description: `${x.description} move_agent: put an agent in a department (agent, department, and seat only for an open seat they named).` }
+        : x.name === "agent" && !ownDept ? { ...x, description: `${x.description.replace(/\.$/, "")}; move_agent: the agent to put in a department.` } : x)),
+      { name: "department", type: "text", maxLength: 60, optional: true, description: `hire for a new seat: the department it joins (it goes under that department's head). goal: the department the goal is for.${ownDept ? "" : " move_agent: the department it goes to."}` },
     ],
     collect: (input, held) => {
       if (held.length >= MAX_FILED) return { problem: `at most ${MAX_FILED} proposals from one message` };
@@ -187,7 +191,9 @@ export function fileProposalTool(reach: ChatReach, ownDept?: string): ToolDef {
         const d = deptNamed(r.department as string | undefined, reach.departments);
         try {
           await fileProposal(r, { agentId: ctx.agentId, runId: ctx.runId ?? null, source: "agent", deptId: ("id" in d ? d.id : null) ?? ownDept ?? null });
-          notes.push(r.kind === "hire" && ownDept ? `Drafted a hire card for you: ${r.title}.` : `Filed for you to decide: ${r.title}. It waits on Proposals.`);
+          notes.push(r.kind === "hire" && ownDept ? `Drafted a hire card for you: ${r.title}.`
+            : r.kind === "move_agent" ? `Filed a move card for you: ${r.title}. Approve it in that department's chat or on Proposals.`
+            : `Filed for you to decide: ${r.title}. It waits on Proposals.`);
         } catch (e) { notes.push(`Not filed (${r.title}): ${e instanceof Error ? e.message : e}`); }
       }
       return notes.join(" | ");

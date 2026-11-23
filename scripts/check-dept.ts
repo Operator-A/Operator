@@ -9,7 +9,7 @@ import { resolveRuleWho, deptNamed } from "../core/chat-rules";
 import type { Org } from "../core/org-rules";
 import { allowedGrants, hireCostLine, hireRuns, hireStage, hireWhenWords, newAgent, tryInFeed } from "../dashboard/hire-rules";
 import { hireWhen, planProposal, toolInfoOf } from "../core/proposal-rules";
-import { changeRows, changeStage, goalRows, goalTitle, keepDecided, savedVersionOf } from "../dashboard/change-rules";
+import { changeRows, changeStage, goalRows, goalTitle, keepDecided, moveRows, savedVersionOf } from "../dashboard/change-rules";
 import { existsSync } from "node:fs";
 import { checklist, dayLabel, goalNumber, inFeed, mergeFeed, resultText, runFoot, runState, runTitle, type FeedRun } from "../dashboard/dept-feed";
 
@@ -251,7 +251,7 @@ assert.equal(goalHref("finance", "Runway"), `/dept/finance?say=${encodeURICompon
 assert.equal(agentHref(org, "quinn", true), `${sheetHref("finance", "agents", "quinn")}&edit=1`);
 
 assert.ok(/export async function changeInChat[\s\S]*?asRole\("owner"\)[\s\S]*?acceptProposal\(id\)[\s\S]*?applyChange\(/.test(pActs), "Approve is the owner's tap and goes through the proposal's own path");
-assert.ok(/kind === "goal" \? await waitingChange\(/.test(proposalsSrc) && /async function waitingChange\(/.test(proposalsSrc) && /Replaced by a newer draft of the same/.test(proposalsSrc), "filing the same change again replaces the waiting card");
+assert.ok(/kind === "goal"( \|\| got\.plan\.kind === "move_agent")? \? await waitingChange\(/.test(proposalsSrc) && /async function waitingChange\(/.test(proposalsSrc) && /Replaced by a newer draft of the same/.test(proposalsSrc), "filing the same change again replaces the waiting card");
 assert.ok(/change === "pause"[\s\S]*?setGoalState|setGoalState[\s\S]*?paused/.test(proposalsSrc), "a goal pause, turn back on or done goes through the goal's own code");
 assert.ok(/saveSpecVersion\(/.test(proposalsSrc) && !/activateSpecVersion/.test(proposalsSrc), "a change saves a draft version; it never goes live by itself");
 assert.ok(/plan\.kind === "change_agent"\) \{[\s\S]{0,200}?!live\.has\(id\)\) return \{ problem[\s\S]{0,120}?id === seat\?\.agentId/.test(proposalsSrc), "a change only reaches an agent in the head's department");
@@ -279,5 +279,21 @@ assert.ok(/<DeptSettingsFor chart=\{chart\} id=\{id\}/.test(page) && /className=
 const chartSrc = read("dashboard/components/OrgChart.tsx");
 assert.ok(!/DeptEditor|LimitForm|setBudget|setLeadChecks|addRule/.test(chartSrc) && /\/dept\/\$\{d\.id\}\?settings=1/.test(chartSrc), "Crew's department editor is gone; its Settings opens the department's page");
 assert.ok(!/orgEditDeptRule/.test(orgActs), "the rule editor went with it");
+
+// card 370: a move card's lines, Now → New
+assert.deepEqual(moveRows({ dept: "Marketing", seat: "Tess (new seat)", boss: "Sloane" }, { dept: null, seat: null, boss: null }), [
+  { k: "Department", from: "None", to: "Marketing" },
+  { k: "Seat", from: "None", to: "Tess (new seat)" },
+  { k: "Reports to", from: "Nobody yet", to: "Sloane" },
+]);
+assert.deepEqual(moveRows({ dept: "Marketing", seat: null, boss: null }, { dept: "Sales", seat: null, boss: null }), [{ k: "Department", from: "Sales", to: "Marketing" }], "a decided card keeps only where it came from");
+const cards = read("dashboard/changeCards.ts");
+assert.ok(/"move_agent"/.test(cards) && /kind: "move"/.test(cards), "moves into a department show as its change cards");
+assert.ok(/c\.kind !== "move"/.test(read("dashboard/components/changeCard.tsx")), "a move card has no Change something (a head can't file a move)");
+assert.ok(/pr\.kind !== "move_agent"/.test(read("dashboard/proposalActions.ts")), "Approve on a move card goes through changeInChat");
+const crew = read("app/(room)/crew/page.tsx");
+assert.ok(/<NotInDepartment agents=\{v\.offChart\}/.test(crew) && /orgPlaceAgent/.test(crew), "Crew adds an agent in no department to one");
+assert.ok(!/step 1/.test(crew) && !/step 1/.test(chartSrc), "no pointer to the builder's deleted seat picker");
+assert.ok(/asRole\("owner"\)/.test(orgActs.slice(orgActs.indexOf("export async function orgPlaceAgent"))), "adding to a department is the owner's");
 
 console.log("check:dept ok");

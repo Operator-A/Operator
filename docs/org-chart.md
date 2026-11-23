@@ -27,7 +27,7 @@ The owner, Nov 13: agents organised like a company, with departments, heads, lea
 - **Seats.** Migration `20261115090000_org_chart.sql` adds `departments` and `seats`. A seat is one box on the chart: it sits in a department under a parent seat (the head has none), and is held by an agent, by the owner (a job that stays with a person, like Content), or nobody yet (open). One company seat (Avery's) sits above every head. An agent sits in one seat at most (unique index), a department has one head, the chart goes 4 levels deep under a head, 12 departments and 80 seats at most. Seeded with the chart from the concept: Avery on top; Finance (Morgan head, Quinn); Sales (Rowan head, an open Follow-ups seat); Coffee (open head, Blair, Sol and Remy planned); Marketing (open head, four open leads, twelve specialists with Sage, Kit, Jules and Ellis planned and Content held by the owner).
 - **Where an agent sits gives it nothing.** What it can read or do is still its saved setup, checked in code. Placing an agent or editing the chart needs the login only, never Controls: nothing here runs, sends or spends.
 - **Code.** `core/org-rules.ts` (pure: tree, depth, who a seat reports to, a seat's path in words, problems, limits; tested by `npm run check:org`), `core/org.ts` (load and the writes, each re-checking the rules), `dashboard/org.ts` (the view: each seat with its agent's state and last run, agents not on the chart, the picker lists), `dashboard/orgActions.ts` (the actions), `dashboard/components/OrgChart.tsx`.
-- **Crew > Org chart** (`/crew`, the default view): you, then Avery, then a card per department with its head and the seats under it. A department whose leads have their own teams spreads the leads side by side. A seat links to its agent (Overview, or the builder page for agents built in the app); an open seat links to New agent with that seat picked and its name in the job line. Agents in no seat are listed under "Not on the chart yet". **Edit chart** turns each seat into a button (a department's name, limits and rules are its settings on its own page since department pages slice 7): rename it, pick who sits there (an agent that sits elsewhere moves, its old seat opens), add a seat under it, remove an open seat with nothing under it, add or remove a department (only when every seat in it is open).
+- **Crew > Org chart** (`/crew`, the default view): you, then Avery, then a card per department with its head and the seats under it. A department whose leads have their own teams spreads the leads side by side. A seat links to its agent (Overview, or the builder page for agents built in the app); an open seat links to New agent with that seat picked and its name in the job line. Agents in no seat are listed under "Not in a department yet", each with Add to a department (card 370, below). **Edit chart** turns each seat into a button (a department's name, limits and rules are its settings on its own page since department pages slice 7): rename it, pick who sits there (an agent that sits elsewhere moves, its old seat opens), add a seat under it, remove an open seat with nothing under it, add or remove a department (only when every seat in it is open).
 - **Builder step 1:** "Where it sits on the org chart" lists the open seats (and its own). For an existing agent it saves straight away, not as part of a version; a new agent takes the seat when it is created (`createBuilt`), unless someone filled it meanwhile.
 - **Overview tab:** an "Org chart" row with the seat's path and who it reports to (an agent, an open seat, or you).
 
@@ -98,3 +98,32 @@ desktop and on a phone, and the phone folding that was here is gone with the rea
 folded. The structured chart described above is **Edit chart** (`/crew?view=edit`): every seat and
 department is a button, with the same actions and server checks. Goals, the budget meter and rules
 for a department show in the canvas's panel when the department is opened.
+
+## Adding an agent to a department (card 370, 2026-11-23)
+
+**Why.** An agent can end up in no department: made from Claude through OPERATOR's MCP with no open seat
+named, or built before the chart. The only way in was Edit chart (add a seat, open it, pick the agent),
+and Crew's note still pointed at the builder's step 1 seat picker, which department pages slice 6 deleted.
+Avery and Claude could not do it at all: proposals only reached agents already in a department.
+
+**Crew.** "Not in a department yet" (on Canvas and on Edit chart; it replaces "Not on the chart yet" and its
+`AgentCard`) shows each agent in no seat with a department picker, a place picker and Add. The places come
+from `placeSpots` (core/org-rules.ts): a new seat under the head first, then the department's open seats,
+head seat first. Add calls `orgPlaceAgent` (owner only, audited) and `placeAgent` (core/org.ts), which runs
+`planPlacement` and then the Edit chart's own `addSeat` and `setHolder`. A new seat is named after the
+agent's role, or its name when it has none (`seatTitleFor`); its job line is the seat's "what it covers".
+
+**Avery.** A new proposal kind, `move_agent` (agent, department, seat only for an open seat named). Only
+Avery's File a proposal offers it (her chat; not a head's chat or a head's Propose tool) and Claude's
+`propose` on OPERATOR's MCP. The server resolves the agent among every agent, the department by name, and
+refuses what `planPlacement` refuses: the company seat's agent, a seat that isn't open or isn't in that
+department, an agent already in that department with no seat named (Edit chart moves it inside one). It
+shows as a move card in that department's chat (Department, Seat, Reports to, Now → New) and on Proposals.
+Approve (owner only, no Controls needed, like any seat change) runs `placeAgent`. Filing the same agent
+into the same department again replaces the waiting card.
+
+**What doesn't change.** Where an agent sits still gives it nothing: no tool, action, budget, schedule or
+duty change. Its old seat, if it had one, opens. No table or migration.
+
+**Checks.** `check:org` (places and placements), `check:proposals` (move_agent words; a head's tool can't
+file it), `check:dept` (move card lines, Crew wiring, owner only), `check:interrupts`, `check:audit`.

@@ -53,7 +53,7 @@ export async function changeInChat(id: string): Promise<ActionResult & { agentId
   const { me, no } = await asRole("owner"); if (no) return no;
   if (!UUID.test(String(id))) return { ok: false, text: "Unknown change." };
   const pr = await getProposal(id);
-  if (!pr || pr.state !== "pending" || (pr.kind !== "change_agent" && pr.kind !== "goal")) return { ok: false, text: "That change isn’t waiting any more." };
+  if (!pr || pr.state !== "pending" || (pr.kind !== "change_agent" && pr.kind !== "goal" && pr.kind !== "move_agent")) return { ok: false, text: "That change isn’t waiting any more." };
   try {
     const r = await acceptProposal(id);
     await audit(me, "accept_proposal", id, { via: "dept_chat" });

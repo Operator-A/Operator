@@ -9,7 +9,7 @@ import { orgDate } from "@/core/tz";
 import { db } from "@/core/db";
 import { createBuiltAgent, draftOf, listSpecVersions, readSpec, saveSpecVersion } from "@/core/agent-spec";
 import { teach } from "@/core/memory";
-import { addSeat, agentNames, below, headOf, liveAgentIds, loadOrg, removeSeat, seatOf, setHolder, unseat, type Org, type Seat } from "@/core/org";
+import { addSeat, agentNames, below, headOf, liveAgentIds, loadOrg, placeAgent, planPlacement, removeSeat, seatOf, seatTitleFor, setHolder, unseat, type Org, type Seat } from "@/core/org";
 import { TOOLS } from "@/core/tools/catalog";
 import { createGoal, editGoal, getGoal, GOALS_MISSING, listGoals, ownMeasureDefs, setGoalState, type Goal } from "@/core/goals";
 import { MAX_GOALS_PER_DEPT, planGoal, type GoalInput } from "@/core/goal-rules";
@@ -25,7 +25,7 @@ export interface Proposal {
   decided_at: string | null; created_at: string;
 }
 /** A plan with names resolved against the chart when it was filed (checked again at the tap). */
-export type Resolved = ProposalPlan & { seatId?: string | null; parentSeatId?: string | null; agentId?: string | null; goalId?: string | null; deptId?: string | null };
+export type Resolved = ProposalPlan & { seatId?: string | null; parentSeatId?: string | null; agentId?: string | null; goalId?: string | null; deptId?: string | null; fromDeptId?: string | null };
 
 export const PROPOSALS_MISSING = "The proposals table isn’t in Supabase yet: apply the migration 20261122090000_proposals.sql.";
 const COLS = "id, kind, title, source, from_agent, department_id, run_id, payload, why, state, outcome, result_ref, decided_at, created_at";
@@ -120,6 +120,22 @@ async function resolve(org: Org, plan: ProposalPlan, seat: Seat | null, deptId: 
     if (id === seat?.agentId) return { problem: "a head can't propose changes to itself; the owner changes a head in its sheet" };
     return { r: { ...plan, agentId: id }, dept: seats.find((s) => s.agentId === id)?.departmentId ?? null };
   }
+  if (plan.kind === "move_agent") {
+    // card 370: Avery (the company seat), the owner and Claude reach every agent and department; a head doesn't
+    if (seat?.departmentId) return { problem: "a head doesn't move agents between departments; the owner asks Avery, or adds it on Crew" };
+    const want = plan.department ? org.departments.find((d) => same(d.name, plan.department!) || d.id === plan.department) : null;
+    const dept = want ?? (deptId ? org.departments.find((d) => d.id === deptId) : null);
+    if (!dept) return { problem: plan.department ? `there is no department called “${plan.department}”` : "department must name the department it goes to" };
+    const all = [...live];
+    const every = await agentNames(all);
+    const id = all.find((x) => same(every[x] ?? "", plan.agent) || same(x, plan.agent)) ?? null;
+    if (!id) return { problem: `there is no agent called ${plan.agent}` };
+    const open = plan.seat ? org.seats.find((s) => s.departmentId === dept.id && s.holder === "open" && same(s.title, plan.seat!)) : null;
+    if (plan.seat && !open) return { problem: `${dept.name} has no open seat called “${plan.seat}”; leave seat out for a new seat under its head` };
+    const ok = planPlacement(org, id, dept.id, open?.id ?? null, every[id] ?? id);
+    if ("problem" in ok) return { problem: ok.problem.replace(/\.$/, "") };
+    return { r: { ...plan, agent: every[id] ?? plan.agent, department: dept.name, agentId: id, deptId: dept.id, seatId: open?.id ?? null, fromDeptId: seatOf(org, id)?.departmentId ?? null }, dept: dept.id };
+  }
   if (plan.kind === "goal") {
     // a head reaches only its own department; Avery (the company seat), the owner and Claude name one
     const dept = seat?.departmentId ?? deptId;
@@ -144,7 +160,8 @@ export async function fileProposal(input: Record<string, unknown>, from: { agent
   }
   const res = await resolve(org, got.plan, seat, from.deptId ?? null);
   if ("problem" in res) throw new Error(res.problem);
-  const title = proposalTitle(got.plan, toolLabel);
+  // a move's title names the department as it is on the chart, not as it was typed
+  const title = proposalTitle(res.r, toolLabel);
   const { data: open, error: e1 } = await db().from("proposals").select("id, title").eq("state", "pending").eq("source", from.source).limit(200);
   if (e1) throw new Error(/proposals/.test(e1.message) ? PROPOSALS_MISSING : e1.message);
   const mine = (open ?? []) as { id: string; title: string }[];
@@ -152,7 +169,7 @@ export async function fileProposal(input: Record<string, unknown>, from: { agent
   // on the hire card, docs/department-pages.md slice 5); anything else filed twice is refused
   // slice 6: so does a change filed again for the same agent or goal (Change something on a change card)
   const again = got.plan.kind === "hire" ? await waitingHire(got.plan.name, res.dept)
-    : got.plan.kind === "change_agent" || got.plan.kind === "goal" ? await waitingChange(res.r, res.dept) : null;
+    : got.plan.kind === "change_agent" || got.plan.kind === "goal" || got.plan.kind === "move_agent" ? await waitingChange(res.r, res.dept) : null;
   if (!again && mine.some((p) => same(p.title, title))) throw new Error(`“${title}” is already waiting for the owner`);
   if (from.agentId) {
     const { count } = await db().from("proposals").select("id", { count: "exact", head: true }).eq("state", "pending").eq("from_agent", from.agentId);
@@ -216,10 +233,10 @@ async function waitingHire(name: string, deptId: string | null): Promise<string 
 
 /** A pending change card for the same agent, or the same goal (by id, or a new goal's title), in this department. */
 async function waitingChange(r: Resolved, deptId: string | null): Promise<string | null> {
-  if (!deptId || (r.kind !== "change_agent" && r.kind !== "goal")) return null;
+  if (!deptId || (r.kind !== "change_agent" && r.kind !== "goal" && r.kind !== "move_agent")) return null;
   const { data } = await db().from("proposals").select("id, payload").eq("state", "pending").eq("kind", r.kind).eq("department_id", deptId).limit(50);
   return ((data ?? []) as { id: string; payload: Resolved }[]).find(({ payload: q }) =>
-    r.kind === "change_agent" ? q.kind === "change_agent" && q.agentId === r.agentId
+    r.kind === "change_agent" || r.kind === "move_agent" ? q.kind === r.kind && q.agentId === r.agentId
       : q.kind === "goal" && (r.goalId ? q.goalId === r.goalId : !q.goalId && same(q.title ?? "", r.title ?? "")))?.id ?? null;
 }
 
@@ -325,6 +342,15 @@ export async function acceptProposal(id: string, opts: { grants?: readonly strin
       const v = await saveSpecVersion(p.agentId, d.spec, `Changes ${what}, asked for in the chat${pr.from_agent ? ` (filed by ${pr.from_agent})` : ""}`, "proposal");
       await close(id, "accepted", `Draft v${v} changes ${what}. It runs only after a clean try and Go live.`, p.agentId);
       return { text: `Saved as draft v${v}. Try it once; it goes live only after a clean try. What runs today hasn’t changed.`, href: null, agentId: p.agentId };
+    }
+    if (p.kind === "move_agent") {
+      // card 370: the same path as Crew's Add to a department, checked again against the chart as it is now
+      if (!p.agentId || !p.deptId) throw new Error("That move names no agent or department.");
+      const { data: row } = await db().from("agents").select("name, role").eq("id", p.agentId).maybeSingle();
+      if (!row) throw new Error(`${p.agent} isn't on the crew any more.`);
+      const at = await placeAgent(p.agentId, p.deptId, { seatId: p.seatId ?? null, title: seatTitleFor({ name: p.agent, role: row.role as string | null }) });
+      await close(id, "accepted", `${p.agent} is in ${at.words}.`, p.agentId);
+      return { text: `${p.agent} is in ${at.words} now. Nothing else about it changed.`, href: null, agentId: p.agentId };
     }
     if (p.kind === "department") {
       // card 156: the department, its people off duty, its goals and asks, through the app's own paths
@@ -457,6 +483,14 @@ export async function proposalChecks(pr: Proposal, org: Org): Promise<Check[]> {
     return [
       { ok: !!s && s.holder !== "agent", text: !s ? "That seat is gone" : s.holder === "agent" ? "Someone sits there now" : `The ${s.title} seat is empty` },
       { ok: !!s && !below(org, s.id).length, text: s && below(org, s.id).length ? "It has seats under it" : "No seats under it" },
+    ];
+  }
+  if (p.kind === "move_agent") {
+    const ok = p.agentId && p.deptId ? planPlacement(org, p.agentId, p.deptId, p.seatId ?? null, p.agent) : { problem: "It names no agent or department." };
+    const dept = org.departments.find((d) => d.id === p.deptId)?.name ?? p.department ?? "the department";
+    return [
+      "problem" in ok ? { ok: false, text: ok.problem.replace(/\.$/, "") } : { ok: true, text: p.seatId ? `The ${org.seats.find((s) => s.id === p.seatId)?.title} seat in ${dept} is open` : `${dept} has room for a new seat under its head` },
+      { ok: true, text: "Only where it sits changes: what it reads, can do, its budget and when it runs stay as they are" },
     ];
   }
   if (p.kind === "department") {

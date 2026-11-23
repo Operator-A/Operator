@@ -228,3 +228,10 @@ the deleted files and links are gone, the sheet's More detail fields), `npm run 
 Tests: `npm run check:dept` (the settings address, the sheet uses those owner-only actions, a raise stops for a
 confirm, emails stay under the company cap, the sheet never writes the database, Crew's editor is gone) and
 `npm run check:audit`.
+
+## Move cards (card 370)
+
+Asked in Avery's chat to put an agent in a department, Avery files a `move_agent` proposal; it shows in that
+department's chat as a change card with Department, Seat and Reports to, Now → New, and Approve / Not now (no
+Change something: a head can't file a move). Approve places the agent through `placeAgent`, the same path as
+Crew's Add to a department. Detail and checks: docs/org-chart.md, "Adding an agent to a department".

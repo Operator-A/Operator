@@ -474,6 +474,12 @@ h1, h2, h3, p { margin: 0; }
 .crew-card { gap: 12px; color: var(--ink); text-decoration: none; transition: transform .15s, box-shadow .15s; }
 .crew-card:hover { text-decoration: none; transform: translateY(-2px); box-shadow: 0 10px 26px rgba(17,17,26,.08); }
 @media (prefers-reduced-motion: reduce) { .crew-card, .crew-card:hover { transition: none; transform: none; } }
+/* card 370: an agent in no department, with Add to a department */
+.place-card:hover { transform: none; box-shadow: none; }
+.place-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; }
+.place-row .input { min-width: 0; padding: 0 12px; }
+.place-row .btn { grid-column: 1 / -1; justify-self: start; }
+@media (max-width: 520px) { .place-row { grid-template-columns: 1fr; } }
 .input { height: 42px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--soft); color: var(--ink); font-size: 13.5px; min-width: 0; }
 
 .switch { position: relative; width: 40px; height: 24px; border-radius: 999px; border: 0; background: var(--track); cursor: pointer; flex: none; transition: background .2s; }

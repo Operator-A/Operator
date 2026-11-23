@@ -55,6 +55,7 @@ function yesDoes(p: Proposal["payload"]): { label: string; does: string } {
     case "change_agent": return { label: `Change ${p.agent}`, does: changesSpec(p)
       ? `Saves a draft version of ${p.agent} with ${changeWhat(p).filter((w) => w !== "when it runs" && w !== "daily budget").join(", ")} changed${p.when || p.budget != null ? `, and sets its ${[p.when ? "schedule" : "", p.budget != null ? "budget" : ""].filter(Boolean).join(" and ")} now` : ""}. The draft runs only after a clean try and Go live.`
       : `Sets ${p.agent}’s ${[p.when ? "schedule" : "", p.budget != null ? "daily budget" : ""].filter(Boolean).join(" and ")}, through the same checks as its sheet.` };
+    case "move_agent": return { label: `Put ${p.agent} in ${p.department ?? "the department"}`, does: `Moves ${p.agent} ${p.seatId ? `into the open ${p.seat} seat` : "into a new seat under the head"} of ${p.department ?? "the department"}; its old seat, if it had one, opens. What it reads, can do, its budget and when it runs stay as they are.` };
     case "setup_finding": return { label: "Open it again", does: "Opens the finding again on Connections, with its click-by-click steps and any Fix it for me. Nothing in the tool changes, and any fix still waits on Approvals." };
     case "retire": return p.agentId
       ? { label: `Retire ${p.agent}`, does: `Takes ${p.agent} off duty and opens its seat. Its versions, runs and memory stay, and you can turn it back on.` }
@@ -96,6 +97,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
     : p.kind === "department" ? []
     : p.kind === "setup_finding" ? [["Tool", hasCheck(p.tile) ? CHECKS[p.tile].name : p.tile], ["Finding", p.title]]
     : p.kind === "change_agent" ? changeRows(p, toolLabel).map((r) => [r.k, r.to] as [string, string])
+    : p.kind === "move_agent" ? [["Agent", p.agent], ["Now", p.fromDeptId ? org.departments.find((d) => d.id === p.fromDeptId)?.name ?? "Another department" : "No department"], ["Goes to", p.department ?? ""], ["Seat", p.seatId ? `${p.seat} (open)` : "A new seat under the head"]]
     : p.kind === "goal" ? [
       ["Department", dept?.name ?? ""],
       ["Change", p.change === "new" ? "A new goal" : p.change === "change" ? `Change “${p.goal}”` : `${GOAL_STATE_DOES[p.change].label}: “${p.goal}”`],
