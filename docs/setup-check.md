@@ -89,9 +89,26 @@ against the domains and the pages fetched. Steps are plain text (text params ref
 - Migration `20270101090000_setup_checks_email.sql`: `setup_checks.tool` takes `klaviyo` and `mailchimp`, and
   `proposals.kind` takes `setup_finding`.
 
+## Staff-reviewed how-tos (card 285)
+
+Decided 2026-11-23: staff review a how-to first, then every business gets it. Cloud edition only.
+
+- **What staff see.** Each business's shared-brain snapshot adds the tools it ran a check on and each gap's
+  topic tag (`tool:topic`), never a title, step or word (`snapshotGaps`; `brain_snapshots.setup_checked`,
+  `setup_gaps`). `brain_patterns()` counts `gap:<tool>:<topic>` among businesses that checked that tool, with
+  the same floor of 5. Settings > Playbook (admin business owners only) lists those gaps, marks the ones with
+  a how-to, and opens a how-to form for the rest (`recurringGaps` in `ee/brain.ts`).
+- **A how-to** is a playbook lesson with a tool, a topic tag, up to 8 steps and a page on that tool's help
+  site, checked by the setup check's own rules (`readHowTo`) and again in the table. Gap patterns are never
+  put into the Hindsight bank; how-to lessons sync like any other lesson.
+- **The check uses it.** The `setupHowTos` slot gives the setup agent the published how-tos for its tool
+  (checked again in `core/extensions.ts`; empty in the open edition). When a gap matches one, the agent
+  files it with that topic, those steps and that page, with no web search; a finding with a how-to's page is
+  kept without fetching it (`keepFindings`). Other gaps are looked up as before.
+- Migration `20270102090000_setup_howtos.sql`.
+
 ## Later slices
 
-285 reuse setup how-tos staff reviewed and published to the shared
-playbook (decided 2026-11-23), so fewer checks need a web search.
+None planned: the setup check epic (280) is complete with card 285.
 
-Tests: `npm run check:setup-check`; the GA4 read in `npm run check:mcp`.
+Tests: `npm run check:setup-check`; the GA4 read in `npm run check:mcp`; gap counting in `npm run check:brain`; how-to lessons in `npm run check:ee`.

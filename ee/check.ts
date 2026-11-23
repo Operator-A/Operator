@@ -13,7 +13,7 @@ import { billingFor } from "../core/cost-rules";
 import { cohortsFor, pickSimilar, recallTags } from "./brain-rules";
 import { BANK_DIRECTIVE, BANK_SETTINGS, PATTERN_PREFIX, RETAIN_BATCH, SYNC_EVERY_MS, cohortWords, docIdOf, statementOf, statementProblem, syncDue, syncPlan, syncWith, tagsOf, type Bank } from "./brain-rules";
 import type { PatternRow } from "../core/brain-rules";
-import { PLAYBOOK_PREFIX, lessonDoc, lessonProblem, playbookPlan, readLesson, syncPlaybook } from "./playbook-rules";
+import { PLAYBOOK_PREFIX, howToOf, lessonDoc, lessonProblem, playbookPlan, readLesson, syncPlaybook } from "./playbook-rules";
 
 const now = Date.parse("2026-12-01T12:00:00Z");
 const DAY = 86_400_000;
@@ -343,8 +343,20 @@ assert.match(readFileSync("ee/index.ts", "utf8"), /^\s+HostedClaude,$/m, "the cl
     [{ ...ok, body: "We saw 18 of 26 online stores keep email marketing after sixty days." }, "count"], [{ ...ok, body: "Write to founders@example.com with questions about this lesson." }, "email"],
     [{ ...ok, body: "Read the full guide at https://example.com before setting this up." }, "link"], [{ ...ok, body: "Bad\u0000character in a lesson body that is long enough." }, "control"]] as const)
     assert.ok(lessonProblem(bad as typeof ok), `${why} is refused`);
-  assert.deepEqual(readLesson({ title: "  Two\nlines ", body: " a  b\r\n\n\n\nc ", kind: "nope" }), { title: "Two lines", body: "a b\n\nc", kind: null });
+  assert.deepEqual(readLesson({ title: "  Two\nlines ", body: " a  b\r\n\n\n\nc ", kind: "nope" }), { title: "Two lines", body: "a b\n\nc", kind: null, howTo: null });
   assert.equal(readLesson({ title: "t", body: "b", kind: "online_store" }).kind, "online_store");
+  // card 285: a lesson may be a setup how-to; its steps and page are checked by the setup check's own rules
+  const how = { tile: "analytics", topic: "ga4.data_retention", steps: "1. Open Admin\n2. Data collection and modification, Data retention\n3. Pick 14 months, Save", help_url: "https://support.google.com/analytics/answer/7667196#x" };
+  const hl = readLesson({ ...ok, setup_tile: "analytics", setup_topic: " GA4.Data_Retention ", steps: how.steps, help_url: how.help_url });
+  assert.equal(lessonProblem(hl), null);
+  const got = howToOf(hl);
+  assert.ok(got && "howTo" in got);
+  assert.deepEqual(got.howTo, { tile: "analytics", topic: "ga4.data_retention", title: ok.title, steps: ["Open Admin", "Data collection and modification, Data retention", "Pick 14 months, Save"], help_url: "https://support.google.com/analytics/answer/7667196" }, "numbering stripped, the page's hash dropped");
+  assert.equal(readLesson({ ...ok, setup_tile: "" }).howTo, null, "no tool: not a how-to");
+  for (const [bad, why] of [[{ ...how, tile: "stripe" }, "a tool with no check"], [{ ...how, topic: "Data Retention" }, "a topic that isn't a tag"], [{ ...how, steps: "" }, "no steps"],
+    [{ ...how, steps: "Open https://example.com" }, "a link in a step"], [{ ...how, steps: "Keep 100% of data" }, "a percentage in a step"], [{ ...how, help_url: "https://example.com/help" }, "a page off the tool's help site"],
+    [{ ...how, steps: Array.from({ length: 9 }, (_, i) => `Step ${i}`).join("\n") }, "more than 8 steps"]] as const)
+    assert.ok(lessonProblem({ ...ok, howTo: bad }), `${why} is refused`);
   const id = "0b9d6e1a-1111-4222-8333-444455556666";
   const doc = lessonDoc({ id, ...ok, kind: "online_store" });
   assert.equal(doc.documentId, `${PLAYBOOK_PREFIX}${id}`);

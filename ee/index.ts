@@ -8,6 +8,7 @@ import { SignupPage } from "./signup-page";
 import { chargeRun, pooledKey } from "./credits";
 import { HostedClaude } from "./hosted-claude";
 import { similarBusinesses, syncBrain } from "./brain";
+import { setupHowTos } from "./playbook";
 
 const cloud: Extensions = {
   edition: "cloud",
@@ -21,6 +22,7 @@ const cloud: Extensions = {
   afterRun: chargeRun,
   afterSchedule: syncBrain,
   similarBusinesses,
+  setupHowTos,
 };
 
 export default cloud;

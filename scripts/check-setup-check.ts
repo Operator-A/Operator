@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import {
   CHECKS, CHECK_TILES, HELP_USES, MAX_FINDINGS, MAX_STEPS, RUNNING_STALE_MS, SALES_GAP_KEYS, SETUP_CHECKS_FREE, SETUP_CHECK_LIMITS, SETUP_CHECK_MODEL, STEP_MAX, TITLE_MAX,
   FIXES, FIX_LIMITS, MAX_FIX_CARDS, QBO_SETUP_KEYS, SHOPIFY_SETUP_KEYS, THIN_DESCRIPTION, CHECK_OF_MCP, fixAgents, fixDirective, readFixRun, shopifySetupNumbers,
+  MAX_HOWTOS, readHowTo, snapshotGaps,
   KLAVIYO_SETUP_KEYS, MAX_RETURNS_A_ROUND, RECHECK_DAYS, checkHref, dueReturns, klaviyoSetupNumbers, recheckFrom,
   autoInSetup, checkDirective, checkHelpUrl, countLine, hasCheck, helpDomains, isStale, keepFindings, readFinding, readFindings, salesGap, wasFetched, type Finding,
 } from "../core/setup-check-rules";
@@ -116,7 +117,7 @@ const run = read("core/setup-check.ts");
 assert.match(run, /withRun\(SETUP_AGENT, trigger,/);
 assert.match(run, /\(await inSetup\(\)\) && !count \? "setup" : "preview"/, "free setup counts it only before departments exist");
 assert.match(run, /maxUses: HELP_USES, allowedDomains: domains/, "web search and fetch are held to the help sites");
-assert.match(run, /keepFindings\(held, fetched\)/, "links are checked against the pages fetched");
+assert.match(run, /keepFindings\(held, fetched, howTos\.map\(\(h\) => h\.help_url\)\)/, "links are checked against the pages fetched, or a staff how-to's page");
 assert.match(run, /if \(res\.status !== "ok" \|\| !finished\) return fail\(/, "nothing is saved from a run that didn't finish");
 assert.match(run, /kind: "report", group: "agents", trusted: true, needs: \[\], costUsd: 0/);
 assert.doesNotMatch(run, /callWriteTool|\bpropose\(/, "a check never writes to the tool itself; a fix only runs an agent, whose cards go to the gateway");
@@ -314,5 +315,36 @@ assert.ok(ret.indexOf("returned_at:") < ret.indexOf("fileSetupFinding("), "marke
 assert.match(read("app/api/dispatch/route.ts"), /on \? await returnSkipped\(now\)/, "only while the org is on");
 const sql4 = read("supabase/migrations/20270101090000_setup_checks_email.sql");
 assert.ok(sql4.includes("check (tool in ('analytics', 'shopify', 'quickbooks', 'meta', 'klaviyo', 'mailchimp'))") && sql4.includes("'goal', 'setup_finding'))"));
+
+// ======== slice 5 (card 285): how-tos OPERATOR staff reviewed, used before any web search ========
+const ht = readHowTo({ tile: "analytics", topic: "ga4.data_retention", title: "Keep data 14 months", steps: "1. Open Admin\n2. Data retention\n3. Pick 14 months", help_url: "https://support.google.com/analytics/answer/7667196" });
+assert.ok("howTo" in ht);
+for (const bad of [{ tile: "stripe" }, { topic: "Data retention" }, { steps: "" }, { steps: "Go to www.example.com" }, { help_url: "https://example.com/x" }, { title: "" }])
+  assert.ok("problem" in readHowTo({ tile: "analytics", topic: "ga4.data_retention", title: "t", steps: "a", help_url: "https://support.google.com/a", ...bad }), `refused: ${JSON.stringify(bad)}`);
+const howTo = ht.howTo;
+const dirH = checkDirective({ tile: "analytics", facts: [], domains: ["support.google.com"], storeName: null, howTos: [howTo, { ...howTo, tile: "shopify", topic: "shopify.x" }] });
+assert.match(dirH, /How-tos OPERATOR staff reviewed for Google Analytics/);
+assert.match(dirH, /ga4\.data_retention: Keep data 14 months/);
+assert.doesNotMatch(dirH, /shopify\.x/, "only this tool's how-tos");
+assert.match(dirH, /don't search or fetch for it/);
+assert.match(dirH, /For each other gap that matters/);
+assert.doesNotMatch(checkDirective({ tile: "analytics", facts: [], domains: ["support.google.com"], storeName: null }), /How-tos OPERATOR/, "none published: nothing said");
+assert.ok(MAX_HOWTOS >= 5);
+// a finding using a how-to's page is kept without fetching it again; any other unread page still drops
+const kh = keepFindings([f("broken", howTo.help_url), f("worth_fixing", "https://support.google.com/never")], [], [howTo.help_url]);
+assert.equal(kh.kept.length, 1); assert.equal(kh.dropped, 1);
+// what crosses to the shared brain: tools checked and gap tags, never a title or step
+const sg = snapshotGaps([
+  { tile: "analytics", status: "done", findings: [f("broken", "https://support.google.com/a"), { ...f("good", null), topic: "ga4.currency" }, { ...f("worth_fixing", "https://support.google.com/b"), topic: "Not A Tag" }] },
+  { tile: "shopify", status: "failed", findings: [{ ...f("broken", "https://help.shopify.com/a"), topic: "shopify.copy" }] },
+]);
+assert.deepEqual(sg, { checked: ["analytics"], gaps: ["analytics:ga4.x"] }, "good findings, failed checks and odd tags stay out");
+assert.ok(!JSON.stringify(sg).includes("why") && !JSON.stringify(sg).includes(" "), "no words cross");
+const ext = read("core/extensions.ts");
+assert.match(ext.slice(ext.indexOf("export async function setupHowTos")), /readHowTo\(h\)/, "every how-to from the slot is checked again in core");
+assert.match(read("core/extensions/none.ts"), /setupHowTos: async \(\) => \[\]/, "the open edition has none");
+assert.match(read("core/setup-check.ts"), /howTos = await setupHowTos\(tile\)/);
+const sql5 = read("supabase/migrations/20270102090000_setup_howtos.sql");
+assert.ok(sql5.includes("'gap:' || g") && sql5.includes("select 5 as n"), "gap patterns under the same floor");
 
 console.log("check:setup-check ok");

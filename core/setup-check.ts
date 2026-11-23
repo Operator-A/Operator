@@ -12,6 +12,7 @@ import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
 import { SETUP_AGENT } from "@/core/setup-rules";
 import { loadOrg } from "@/core/org";
+import { setupHowTos } from "@/core/extensions";
 import { fileSetupFinding } from "@/core/proposals";
 import { TILE_BY_ID, type ToolTileId } from "@/core/tools-step-rules";
 import {
@@ -97,13 +98,15 @@ export async function runCheck(tile: CheckTile, connected: ReadonlySet<string>):
     const store = STORES.find((s) => connected.has(s)) ?? null;
     const c = CHECKS[tile];
     const { data: facts } = await db().from("business_facts").select("text, state").order("created_at").limit(40);
+    // card 285: how-tos OPERATOR staff reviewed for this tool; a gap with one needs no web search
+    const howTos = await setupHowTos(tile);
     const held: Finding[] = [];
     const local = [findingTool(tile, domains, held), helpTool("web_search", domains), helpTool("web_fetch", domains)];
     const tools = [c.read, ...(store ? c.calcs : []), ...local.map((t) => t.id)];
     const spec: AgentSpec = {
       ...loaded.spec,
       name: "Setup check",
-      directive: checkDirective({ tile, facts: (facts ?? []).filter((f) => f.state === "known").map((f) => String(f.text)).slice(0, 30), domains, storeName: store ? TILE_BY_ID[store].name : null }),
+      directive: checkDirective({ tile, facts: (facts ?? []).filter((f) => f.state === "known").map((f) => String(f.text)).slice(0, 30), domains, storeName: store ? TILE_BY_ID[store].name : null, howTos }),
       goodResult: "Every gap that matters filed with its evidence, steps and help page, then one or two plain sentences on the overall state.",
       model: SETUP_CHECK_MODEL, effort: SETUP_CHECK_EFFORT, tools, limits: SETUP_CHECK_LIMITS, outputName: "setup check",
     };
@@ -118,7 +121,7 @@ export async function runCheck(tile: CheckTile, connected: ReadonlySet<string>):
       return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd };
     });
     if (res.status !== "ok" || !finished) return fail(res.status === "skipped" ? `Couldn't run: ${res.summary}` : "The check stopped before it finished, so nothing was saved. Tap Check again.", res.runId, res.costUsd ?? 0);
-    const { kept, dropped } = keepFindings(held, fetched);
+    const { kept, dropped } = keepFindings(held, fetched, howTos.map((h) => h.help_url));
     const summary = `${String(said ?? "").replace(/\s+/g, " ").trim().slice(0, 240)}${dropped ? ` (${dropped} finding${dropped === 1 ? "" : "s"} left out: their help page wasn't one the check read.)` : ""}`.trim() || countLine(kept);
     const { error } = await db().from("setup_checks").update({ status: "done", findings: kept, summary: summary.slice(0, 300), run_id: res.runId, cost_usd: res.costUsd ?? 0, checked_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("tool", tile);
     if (error) throw new Error(error.message);

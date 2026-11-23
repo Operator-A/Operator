@@ -94,6 +94,9 @@ export interface Snapshot {
   levels: string[];
   /** Slice 4b: per campaign type and shape, whether this business's campaigns usually reached 35% opens (core/result-rules.ts). */
   results: Record<string, Record<string, "good" | "low">>;
+  /** Card 285: the tools this business ran a setup check on, and each gap's topic tag (tool:topic), never its words. */
+  setup_checked: string[];
+  setup_gaps: string[];
 }
 
 export interface SnapshotInput {
@@ -116,6 +119,8 @@ export interface SnapshotInput {
   campaigns: readonly CampaignResult[];
   /** Every gateway action type in code (core/gateway/policy.ts TOOLS): anything else is dropped. */
   actionTypes: readonly string[];
+  /** Card 285: from finished setup checks (snapshotGaps in core/setup-check-rules.ts). */
+  setup?: { checked: readonly string[]; gaps: readonly string[] };
 }
 
 export function buildSnapshot(i: SnapshotInput): Snapshot {
@@ -141,11 +146,16 @@ export function buildSnapshot(i: SnapshotInput): Snapshot {
     actions,
     levels: [...new Set(i.levels.filter((l) => types.has(l.tool) && (l.level === "act_undo" || l.level === "act")).map((l) => `${l.tool}:${l.level}`))].sort(),
     results: snapshotResults(i.campaigns),
+    setup_checked: [...new Set((i.setup?.checked ?? []).filter((t) => TILE_RX.test(t)))].sort().slice(0, 12),
+    setup_gaps: [...new Set((i.setup?.gaps ?? []).filter((g) => GAP_RX.test(g)))].sort().slice(0, 40),
   };
 }
 
 const TOOL_RX = /^[a-z]{2,12}:[a-z0-9_]{2,30}$/;
 const DEPT_RX = /^[a-z][a-z0-9_]{1,39}$/;
+/** Card 285: a checked tool, and a gap as tool:topic tag, the same shapes brain_snapshots checks. */
+const TILE_RX = /^[a-z]{2,12}$/;
+export const GAP_RX = /^[a-z]{2,12}:[a-z0-9]{1,20}(\.[a-z0-9_]{1,30}){1,2}$/;
 const TYPE_RX = /^[a-z0-9_.]{2,60}$/;
 const count = (n: unknown, max: number) => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= max;
 
@@ -155,7 +165,7 @@ const count = (n: unknown, max: number) => Number.isInteger(n) && (n as number) 
  */
 export function snapshotProblem(s: Snapshot): string | null {
   const keys = Object.keys(s).sort().join(",");
-  if (keys !== "actions,age_band,bespoke,departments,kind,levels,on_duty,results,revenue_band,taken_on,tools") return `unexpected fields: ${keys}`;
+  if (keys !== "actions,age_band,bespoke,departments,kind,levels,on_duty,results,revenue_band,setup_checked,setup_gaps,taken_on,tools") return `unexpected fields: ${keys}`;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s.taken_on)) return "taken_on isn't a date";
   if (s.kind !== null && !isKind(s.kind)) return "kind isn't on the list";
   if (!(REVENUE_BANDS as readonly string[]).includes(s.revenue_band)) return "revenue_band isn't on the list";
@@ -171,6 +181,8 @@ export function snapshotProblem(s: Snapshot): string | null {
   if (s.levels.length > 30 || s.levels.some((l) => !/^[a-z0-9_.]{2,60}:(act_undo|act)$/.test(l))) return "a level isn't type:level";
   const rp = resultsProblem(s.results);
   if (rp) return rp;
+  if (s.setup_checked.length > 12 || s.setup_checked.some((t) => !TILE_RX.test(t))) return "a checked tool isn't an id";
+  if (s.setup_gaps.length > 40 || s.setup_gaps.some((g) => !GAP_RX.test(g))) return "a setup gap isn't tool:topic";
   return null;
 }
 

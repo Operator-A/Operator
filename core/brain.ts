@@ -9,6 +9,7 @@ import { TEMPLATES } from "@/core/templates";
 import { TOOLS } from "@/core/gateway/policy";
 import { readPlans } from "@/core/tools-step-rules";
 import { checkCampaignResults, recentCampaigns } from "@/core/campaign-results";
+import { hasCheck, readFindings, snapshotGaps } from "@/core/setup-check-rules";
 import { BRAIN_KEY, NO_BRAIN, buildSnapshot, readBrainSettings, snapshotProblem, type BrainSettings, type Snapshot } from "@/core/brain-rules";
 
 export const BRAIN_MISSING = "The shared brain table isn’t in Supabase yet: apply the migration 20261226090000_shared_brain.sql.";
@@ -36,7 +37,7 @@ export async function forgetSnapshot(): Promise<void> {
 
 /** The business's snapshot as it is saved, for Settings. Null when there is none. */
 export async function savedSnapshot(): Promise<Snapshot | null> {
-  const { data, error } = await db().from("brain_snapshots").select("taken_on, kind, revenue_band, age_band, tools, departments, bespoke, on_duty, actions, levels, results").maybeSingle();
+  const { data, error } = await db().from("brain_snapshots").select("taken_on, kind, revenue_band, age_band, tools, departments, bespoke, on_duty, actions, levels, results, setup_checked, setup_gaps").maybeSingle();
   if (error || !data) return null;
   return data as Snapshot;
 }
@@ -45,7 +46,7 @@ export async function savedSnapshot(): Promise<Snapshot | null> {
 export async function computeSnapshot(kind: BrainSettings["kind"]): Promise<Snapshot> {
   const today = await orgDate();
   const since = new Date(Date.now() - 30 * 864e5).toISOString();
-  const [org, setup, conns, depts, agents, approvals, levels, kpis, campaigns] = await Promise.all([
+  const [org, setup, conns, depts, agents, approvals, levels, kpis, campaigns, checks] = await Promise.all([
     db().from("orgs").select("created_at").maybeSingle(),
     db().from("policies").select("value_json").eq("key", "setup").maybeSingle(),
     db().from("mcp_connections").select("id").not("connected_at", "is", null),
@@ -55,6 +56,8 @@ export async function computeSnapshot(kind: BrainSettings["kind"]): Promise<Snap
     db().from("trust_levels").select("tool, level").neq("level", "draft"),
     db().from("kpi_snapshots").select("revenue").gte("date", await orgDate(30)),
     recentCampaigns(),
+    // read here, not through core/setup-check (which reaches the paid layer's slots): only tool, status and findings
+    db().from("setup_checks").select("tool, status, findings"),
   ]);
   for (const r of [org, conns, depts, agents, approvals]) if (r.error) throw new Error(r.error.message);
   const plans = readPlans(((setup.data as { value_json?: { plans?: unknown } } | null)?.value_json ?? {}).plans);
@@ -75,6 +78,8 @@ export async function computeSnapshot(kind: BrainSettings["kind"]): Promise<Snap
     levels: levels.error ? [] : ((levels.data ?? []) as { tool: string; level: string }[]),
     actionTypes: Object.keys(TOOLS),
     campaigns,
+    // card 285: which tools were checked and each gap's topic tag, never a finding's words
+    setup: snapshotGaps(checks.error ? [] : ((checks.data ?? []) as { tool: unknown; status: string; findings: unknown }[]).flatMap((c) => (hasCheck(c.tool) ? [{ tile: c.tool, status: c.status, findings: readFindings(c.findings) }] : []))),
   });
 }
 

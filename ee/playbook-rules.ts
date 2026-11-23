@@ -3,6 +3,7 @@
 // `npm run check:ee` can test them. A lesson is advice written by OPERATOR staff; it never carries a
 // count, a percentage or an address, because figures a founder sees come from counts done in code.
 import { isKind, type BusinessKind } from "@/core/brain-rules";
+import { hasCheck, readHowTo, type CheckTile, type SetupHowTo } from "@/core/setup-check-rules";
 import { RETAIN_BATCH, kindPhrase, type Bank } from "./brain-rules";
 
 /** Every playbook document's id starts with this; the pattern sync never touches these. */
@@ -10,13 +11,25 @@ export const PLAYBOOK_PREFIX = "play-";
 export const TITLE_MAX = 80;
 export const BODY_MAX = 600;
 
-export interface Lesson { id: string; title: string; body: string; kind: BusinessKind | null }
-export interface LessonInput { title: string; body: string; kind: BusinessKind | null }
+/** Card 285: a lesson may also be a setup how-to for one tool's gap topic, with its steps and help page. */
+export interface HowToFields { tile: CheckTile; topic: string; steps: string[]; help_url: string }
+export interface Lesson { id: string; title: string; body: string; kind: BusinessKind | null; howTo?: HowToFields | null }
+export interface LessonInput { title: string; body: string; kind: BusinessKind | null; howTo?: { tile: string; topic: string; steps: string | string[]; help_url: string } | null }
 
 /** Cleans a lesson from the form: trimmed, spaces folded, kind from the list or none. */
-export function readLesson(f: { title?: unknown; body?: unknown; kind?: unknown }): LessonInput {
+export function readLesson(f: { title?: unknown; body?: unknown; kind?: unknown; setup_tile?: unknown; setup_topic?: unknown; steps?: unknown; help_url?: unknown }): LessonInput {
   const clean = (v: unknown) => (typeof v === "string" ? v : "").replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-  return { title: clean(f.title).replace(/\n/g, " "), body: clean(f.body), kind: isKind(f.kind) ? f.kind : null };
+  const tile = clean(f.setup_tile);
+  return {
+    title: clean(f.title).replace(/\n/g, " "), body: clean(f.body), kind: isKind(f.kind) ? f.kind : null,
+    howTo: tile ? { tile, topic: clean(f.setup_topic).toLowerCase(), steps: clean(f.steps), help_url: clean(f.help_url) } : null,
+  };
+}
+
+/** A lesson's how-to as the setup check takes it, checked by the setup check's own rules. */
+export function howToOf(l: { title: string; howTo?: LessonInput["howTo"] | HowToFields | null }): { howTo: SetupHowTo } | { problem: string } | null {
+  if (!l.howTo) return null;
+  return readHowTo({ tile: l.howTo.tile, topic: l.howTo.topic, title: l.title, steps: l.howTo.steps, help_url: l.howTo.help_url });
 }
 
 /** What is wrong with a lesson, in words for the card, or null. */
@@ -30,6 +43,12 @@ export function lessonProblem(l: LessonInput): string | null {
   if (/%|\bpercent\b/i.test(text)) return "Leave out percentages: figures founders see come from counts done in code.";
   if (/\b\d[\d,]*\s+(of|out of|in)\s+(every\s+)?\d[\d,]*\b/i.test(text)) return "Leave out counts like \"18 of 26\": figures founders see come from counts done in code.";
   if (/@|https?:|www\.|\.(com|io|co|net|org)\b/i.test(text)) return "Leave out addresses and links.";
+  if (l.howTo) {
+    if (!hasCheck(l.howTo.tile)) return "Pick the tool this how-to is for.";
+    const h = howToOf(l);
+    if (h && "problem" in h) return h.problem;
+    if (/%|\bpercent\b/i.test([l.howTo.steps].flat().join("\n"))) return "Leave percentages out of the steps.";
+  }
   return null;
 }
 

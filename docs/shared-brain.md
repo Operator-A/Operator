@@ -24,6 +24,7 @@ https://claude.ai/artifact/5MmRitAoTsA2foNB9g6Bhq. Build Board: epic 230, slices
 | Tools by part, names from the lists in code only | A tool name the founder typed, or an export |
 | Starting kits by department id, plus a count of designed departments | A designed department's name or purpose |
 | Approvals per action type (decided, unedited, rejected) and promoted action types | Chat, facts, rules, drafts, reports, customers, leads |
+| Setup checks: tools checked and each gap's topic tag (card 285, staff only) | A finding's title, why, steps or link |
 
 A pattern reaches anything outside the business only when **at least 5 businesses that allow it share
 it**. Below that, nothing comes back, so one unusual business can't be picked out.

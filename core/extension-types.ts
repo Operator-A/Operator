@@ -3,6 +3,7 @@
 import type { ComponentType } from "react";
 import type { Billing } from "@/core/cost-rules";
 import type { Similar, SimilarAsk } from "@/core/brain-rules";
+import type { CheckTile, SetupHowTo } from "@/core/setup-check-rules";
 
 /** What a plan check is asked about. Each is checked as the current org, after the role check. */
 export type PlanAsk =
@@ -78,7 +79,13 @@ export interface Extensions {
    * its kind and its revenue band. null: no shared brain (the open edition), so the tool isn't offered.
    */
   similarBusinesses(ask: SimilarAsk): Promise<Similar | null>;
+  /**
+   * Setup how-tos OPERATOR staff reviewed and published for one tool's setup check (card 285), given to
+   * the setup agent up front so a known gap needs no web search. Staff words only, never a business's.
+   * Empty in the open edition.
+   */
+  setupHowTos(tile: CheckTile): Promise<SetupHowTo[]>;
 }
 
 /** Every slot, so check:open-core can make sure each edition fills each one. */
-export const SLOTS = ["edition", "planBlock", "settingsSections", "HostedClaude", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun", "afterSchedule", "similarBusinesses"] as const satisfies readonly (keyof Extensions)[];
+export const SLOTS = ["edition", "planBlock", "settingsSections", "HostedClaude", "SignupPage", "api", "afterMembersChange", "pooledKey", "afterRun", "afterSchedule", "similarBusinesses", "setupHowTos"] as const satisfies readonly (keyof Extensions)[];
