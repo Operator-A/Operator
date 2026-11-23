@@ -158,12 +158,12 @@ if (!SUSPENDED("\\{view === \"schedule\" \\? <Schedule\\b").test(read("app/(room
 
 // 9. Each page reads only what it shows (card 304): the floor is pieces (the crew and its runs, what waits on the owner,
 //    which tools are set up, the time zone, the org switch), each read once per request. Only the pages that show all of
-//    it (the frame, the Desk, an agent, a run's replay, Crew) and the first-job action ask for the whole floor; the rest
+//    it (the frame, the Desk, an agent, a run's replay, Crew, Everyone) and the first-job action ask for the whole floor; the rest
 //    name their pieces (getRoster, getCrewFloor, getTz, ...).
 assert.ok(floorIsPieces(`export const getFloor = cache(async (): Promise<Floor> => {\n  const [a, b, c, d, e] = await Promise.all([getRoster(), getCounts(), getHealth(), getTz(), getOrgSwitch()]);\n  return x;\n});`));
 assert.ok(!floorIsPieces(`export const getFloor = cache(async (): Promise<Floor> => {\n  const [a, b] = await Promise.all([getRoster(), db().from("x").select("y")]);\n  return x;\n});`));
 if (!floorIsPieces(dataSrc)) problems.push("dashboard/data.ts: getFloor should be its pieces (getRoster, getCounts, getHealth, getTz, getOrgSwitch) in one round, reading nothing itself (card 304).");
-const WHOLE_FLOOR = new Set(["app/(room)/layout.tsx", "app/(room)/page.tsx", "app/(room)/agents/[id]/page.tsx", "app/(room)/runs/[id]/page.tsx", "app/(room)/crew/page.tsx", "dashboard/actions.ts", "dashboard/data.ts"].map((x) => join(...x.split("/"))));
+const WHOLE_FLOOR = new Set(["app/(room)/layout.tsx", "app/(room)/page.tsx", "app/(room)/agents/[id]/page.tsx", "app/(room)/runs/[id]/page.tsx", "app/(room)/crew/page.tsx", "app/(room)/everyone/page.tsx", "dashboard/actions.ts", "dashboard/data.ts"].map((x) => join(...x.split("/"))));
 for (const f of ["app", "dashboard"].filter(existsSync).flatMap(walk).filter((x) => /\.tsx?$/.test(x) && !WHOLE_FLOOR.has(x))) {
   if (/\bgetFloor\(\)/.test(readFileSync(f, "utf8"))) problems.push(`${f}: reads the whole floor; ask for only the pieces this page shows (getRoster, getCrewFloor, getTz, getCounts, getHealth, getOrgSwitch; card 304).`);
 }

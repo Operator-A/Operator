@@ -8,7 +8,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PAD, SPINE, defaultOpen, deptBox, layoutCanvas, moveLines, seatName, teamSize, type Box, type CanvasData, type CanvasDept, type CanvasRun, type CanvasSeat, type Line } from "../org-canvas";
-import { GoalTile } from "./goals";
 import { Icon } from "./Icon";
 import { DeptLimits } from "./orgBits";
 
@@ -311,28 +310,14 @@ function Panel({ d, opened, picked, pick }: { d: CanvasData; opened: CanvasDept 
     );
   }
   if (opened) {
-    const ids = new Set(opened.seats.map((s) => s.id)), moves = moveLines(d, opened.id), open = opened.seats.filter((s) => s.holder === "open").length;
+    // a department's agents, goals, approvals and runs live on its own page (docs/department-pages.md, slice 1)
+    const open = opened.seats.filter((s) => s.holder === "open").length, agents = opened.seats.filter((s) => s.agent).length;
     return (
       <aside className="card lc-panel" aria-live="polite">
-        <div className="stack" style={{ gap: 4 }}><span className="lc-k">Department</span><h2 className="lc-h2">{opened.name}</h2><span className="sub">{opened.seats.length} seat{opened.seats.length === 1 ? "" : "s"}{open ? ` · ${open} open` : ""}</span></div>
+        <div className="stack" style={{ gap: 4 }}><span className="lc-k">Department</span><h2 className="lc-h2">{opened.name}</h2><span className="sub">{agents} agent{agents === 1 ? "" : "s"} · {opened.seats.length} seat{opened.seats.length === 1 ? "" : "s"}{open ? ` · ${open} open` : ""}</span></div>
         <DeptLimits d={opened} />
-        {opened.goals != null && (
-          <div className="lc-sec">
-            <span className="lc-k">Goals</span>
-            {opened.goals.map((g) => <GoalTile key={g.id} g={g} />)}
-            {opened.goals.length === 0 && <Link href={`/goals/new?dept=${opened.id}`} className="goal-add"><Icon name="plus" size={14} />Set a goal for {opened.name}</Link>}
-          </div>
-        )}
-        {moves.length > 0 && <div className="lc-sec"><span className="lc-k">How work moves here</span><ul className="lc-moves">{moves.map((l) => <li key={l}>{l}</li>)}</ul></div>}
-        {opened.rules.length > 0 && <div className="lc-sec"><span className="lc-k">Rules every agent here follows</span><ul className="lc-moves">{opened.rules.map((r) => <li key={r}>{r}</li>)}</ul></div>}
-        <div className="lc-sec">
-          <span className="lc-k">Agents</span>
-          {opened.seats.filter((s) => s.agent).map((s) => (
-            <button key={s.id} type="button" className="lc-row" onClick={() => pick(s.id)}><span><b>{s.agent!.name}</b><span className="sub">{s.title}</span></span><span className={`lc-st ${s.agent!.state}`}>{s.agent!.label}</span></button>
-          ))}
-          {!opened.seats.some((s) => s.agent) && <span className="sub">No agent sits here yet. Click an open seat to build one.</span>}
-        </div>
-        <div className="lc-sec"><span className="lc-k">Today</span><Feed runs={d.runs.filter((r) => ids.has(r.seat))} /></div>
+        <Link href={`/dept/${opened.id}`} className="btn dark sm" style={{ alignSelf: "flex-start" }}>Open {opened.name}<Icon name="chevron-right" size={14} /></Link>
+        <span className="sub">Its agents, goals and what waits on you are on its page. Click an agent here to see what it does.</span>
         <Link href="/crew?view=edit" className="lc-link"><Icon name="pencil" size={13} />Edit seats, budget and rules</Link>
       </aside>
     );

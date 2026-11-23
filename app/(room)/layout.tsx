@@ -16,6 +16,7 @@ import { atLeast } from "@/core/roles";
 import { sendToAvery } from "@/dashboard/chatActions";
 import { CHAT_MISSING, chatHistory } from "@/core/avery-chat";
 import { agentNames, companySeat } from "@/core/org";
+import { headAgentId, needsByDept } from "@/dashboard/dept-rules";
 import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 
@@ -54,6 +55,13 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     { href: "/runs", match: "/runs*", icon: "history", label: "Runs" },
     { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: toConnect(floor.health, floor.grants), noteColor: "var(--ink2)" },
   ];
+  // each department under its own name, with its head and a red count of what waits on you there (docs/department-pages.md)
+  const deptNeeds = org ? needsByDept(org.departments.map((d) => d.id), floor.approvalOwners.map((o) => o.dept)).byDept : {};
+  const depts = (org?.departments ?? []).map((d) => {
+    const head = headAgentId(org!, d.id), n = deptNeeds[d.id] ?? 0;
+    return { href: `/dept/${d.id}`, match: `/dept/${d.id}`, icon: "message-circle", label: d.name, note: head ? floor.byId[head]?.name : undefined, noteColor: "var(--mut)", count: n ? String(n) : undefined, red: true };
+  });
+  const deptGroup = depts.length > 0 && <div className="side-group"><span className="side-label">Departments</span>{depts.map((it) => <SideLink key={it.href} {...it} />)}</div>;
 
   return (
     <div className="page">
@@ -68,7 +76,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
           </nav>
           <div className="top-right">
             <span className="wide-only"><ThemeToggle initial={theme} /></span>
-            <Link href="/" className="round" title={red.length ? `${red.length} thing${red.length === 1 ? "" : "s"} need${red.length === 1 ? "s" : ""} you` : "Nothing needs you"} style={{ position: "relative" }}>
+            <Link href="/everyone" className="round" title={red.length ? `${red.length} thing${red.length === 1 ? "" : "s"} need${red.length === 1 ? "s" : ""} you` : "Nothing needs you"} style={{ position: "relative" }}>
               <Icon name="bell" />
               {!!red.length && <span style={{ position: "absolute", top: 11, right: 12, width: 7, height: 7, borderRadius: 999, background: "var(--red)", border: "1.5px solid var(--soft)" }} />}
             </Link>
@@ -78,6 +86,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
               <div className="sheet-group">
                 {nav.map((it) => <SideLink key={it.label} {...it} />)}
               </div>
+              {depts.length > 0 && <div className="sheet-group"><span className="side-label">Departments</span>{depts.map((it) => <SideLink key={it.href} {...it} />)}</div>}
               <div className="sheet-group">
                 <SideLink href="/status" match="/status" icon="circle-alert" label="Status" />
                 <SideLink href="/settings" match="/settings*" icon="settings" label="Settings" />
@@ -92,6 +101,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             <div className="side-group">
               {nav.map((it) => <SideLink key={it.label} {...it} />)}
             </div>
+            {deptGroup}
             <div className="side-spacer" style={{ flex: 1 }} />
             <SideLink href="/status" match="/status" icon="circle-alert" label="Status" />
             <SideLink href="/settings" match="/settings*" icon="settings" label="Settings" />

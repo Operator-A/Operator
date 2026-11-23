@@ -316,7 +316,7 @@ assert.equal(similarNote({ counts: [], playbook: [{ title: "Connect the bank fir
   assert.match(runner, /brainNote: opts\.worked\?\.note \?\? null/, "each staged card carries code's note");
   const gw = readFileSync("core/gateway/index.ts", "utf8");
   assert.equal((gw.match(/await recordCampaign\(a\.id, (CAMPAIGN_DRAFT|MAILCHIMP_DRAFT), out\.campaignId/g) ?? []).length, 2, "both campaign drafts are recorded on apply");
-  assert.match(readFileSync("app/(room)/approvals/page.tsx", "utf8"), /i\.brain_note && /);
+  assert.match(readFileSync("dashboard/components/approvalBits.tsx", "utf8"), /i\.brain_note && /); // the card both approvals views draw
 }
 
 // ---- 6. the company reveal: one "why" line per department, a kit's own count first, each line once
