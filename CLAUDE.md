@@ -68,7 +68,8 @@ shipping and refund confirmations.
   `core/gateway` through `callWriteTool`; `scripts/validate-graphql.mjs` fails on any mutation outside
   that file and `check:mcp` on one not named on the Shopify profile. The key may carry read scopes and
   only the write scopes the profile names; any other write scope is refused. A store action is granted
-  to an agent only by an approver on the Can do toggles of the agent sheet or a hire card, never by a proposal. No agent deletes a
+  to an agent only by an approver: on the Can do toggles of the agent sheet, on a hire card, or by the owner's Go live of a
+  draft that lists it (one Claude drafted included), never by a proposal. No agent deletes a
   product, customer or order, cancels an order, or moves money from Shopify (gift cards, prices) until
   that action type has its own cap in code; refunds have theirs (`REFUND_LIMITS`).
 - Email: first contact with a person who has never heard from the business is always Draft
@@ -140,8 +141,11 @@ shipping and refund confirmations.
   business through `withOrg` and reads the member and their role again. Tools that change anything only
   make drafts or proposals through the builder's and proposals' own code (an agent made there starts off
   duty with no actions), except `finish_run`, which only saves a Claude session's result onto the run of an
-  agent that runs in Claude that started it, once, labelled as the session's words. No tool approves or rejects a card, puts an agent on duty, turns the org on,
-  grants an action or a custom tool, or changes a cap, budget, schedule, vendor, connection or member.
+  agent that runs in Claude that started it, once, labelled as the session's words. `update_agent` may also put actions the gateway allows that agent, and
+  when it starts (a schedule, by hand, a live event, after another agent), into a draft version. They change nothing
+  until the owner's Go live, after a clean try, on a confirm that lists each one. No tool approves or rejects a card,
+  makes a draft live, puts an agent on duty, turns the org on, grants a custom tool, raises a budget or cap, or changes
+  a vendor, connection or member.
   What a tool returns is scrubbed (`scrubSecrets`) and agent-written text in it is labelled as such.
 - One credential store: every sign-in and service key, including a business's own Claude key and its keys for
   other model providers (`core/model-key-rules.ts`; opened only by `integrations/llm.ts`), lives in the token vault (`core/vault.ts`),

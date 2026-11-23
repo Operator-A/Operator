@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import {
   CONSENT_NEVER, LIMITS, MCP_PATH, OP_TOOLS, PROTOCOL_VERSIONS, answerText, authServerMetadata, bearerOf, challenge, checkArgs, clientIdOf, clientOf, dispatch,
   hashSecret, hashesMatch, isResponse, newToken, nextWindow, originOf, pickProtocol, pkceOk, readAuthorize, readRegistration, readRpc, redirectAllowed, redirectOk,
-  resourceMetadata, toolsFor, tokenParts, TOOL_BY_NAME, MAX_DRAFT_TOOLS, MOVE_PROMPT, CONSENT_OWNER_LINES, draftTools, staleRead, toolList, type RpcRequest,
+  resourceMetadata, toolsFor, tokenParts, TOOL_BY_NAME, MAX_DRAFT_TOOLS, MAX_DRAFT_ACTIONS, MOVE_PROMPT, draftActions, CONSENT_OWNER_LINES, draftTools, staleRead, toolList, type RpcRequest,
 } from "../core/operator-mcp-rules";
 import { TENANT_TABLES } from "../core/tenancy";
 
@@ -73,6 +73,35 @@ const run = async () => {
   assert.deepEqual(draftTools(["r2"], ["r1", "act", "rep", "srv__t"], k), { tools: ["r2", "act", "rep", "srv__t"] }, "dropping a read is fine; actions, reports and added-server tools stay as they were");
   assert.deepEqual(draftTools([], ["r1", "act"], k), { tools: ["act"] });
   assert.deepEqual(draftTools(null, ["r1", "act"], k), { tools: ["r1", "act"] }, "no tools argument leaves them as they are");
+  // ---- actions in a draft (decided 2026-11-23): only granted, connected actions; they wait for Go live
+  const acts: Record<string, { kind: string; label: string; granted: boolean; connected: boolean }> = {
+    tag: { kind: "action", label: "Tag an order", granted: true, connected: true },
+    off: { kind: "action", label: "Hold on the calendar", granted: true, connected: false },
+    fixed: { kind: "action", label: "Pay a vendor", granted: false, connected: true },
+    r1: { kind: "read", label: "Read orders", granted: false, connected: true },
+  };
+  const ai = (id: string) => acts[id];
+  assert.deepEqual(draftActions(["r1"], ["tag"], [], ai), { tools: ["r1", "tag"], added: ["tag"], dropped: [] });
+  assert.deepEqual(draftActions(["r1", "tag"], ["tag"], [], ai), { tools: ["r1", "tag"], added: [], dropped: [] }, "an action it has already isn't added again");
+  assert.deepEqual(draftActions(["r1", "tag", "fixed"], [], ["tag"], ai), { tools: ["r1", "fixed"], added: [], dropped: ["tag"] }, "taking an action away keeps the rest");
+  assert.match((draftActions([], ["off"], [], ai) as { problem: string }).problem, /isn't connected/);
+  assert.match((draftActions([], ["fixed"], [], ai) as { problem: string }).problem, /code names the agents/);
+  assert.match((draftActions([], ["r1"], [], ai) as { problem: string }).problem, /isn't an action/);
+  assert.match((draftActions([], ["nope"], [], ai) as { problem: string }).problem, /isn't on the tool list/);
+  assert.match((draftActions(["tag"], ["tag"], ["tag"], ai) as { problem: string }).problem, /both add_actions and drop_actions/);
+  assert.match((draftActions(["r1"], [], ["r1"], ai) as { problem: string }).problem, /isn't one of its actions/);
+  const many = Object.fromEntries(Array.from({ length: MAX_DRAFT_ACTIONS + 1 }, (_, i) => [`a${i}`, { kind: "action", label: `A${i}`, granted: true, connected: true }]));
+  assert.match((draftActions(Object.keys(many).slice(0, MAX_DRAFT_ACTIONS), [`a${MAX_DRAFT_ACTIONS}`], [], (id) => many[id]) as { problem: string }).problem, /at most 8 actions/);
+  for (const k of ["add_actions", "drop_actions"]) assert.ok(k in update.inputSchema.properties && !(k in create.inputSchema.properties), `only update_agent takes ${k}; a new agent has no actions`);
+  assert.match(update.description, /Go live lists every action the draft adds/);
+  assert.match(CONSENT_NEVER, /put a draft live/);
+  const upd = read("core/operator-mcp.ts");
+  assert.match(upd, /specLooser\(base\.spec, \{ \.\.\.got\.spec, tools: got\.spec\.tools\.filter\(\(x\) => !a\.added\.includes\(x\)\) \}\)/, "only the actions Claude named are let past specLooser; reports, custom tools and higher limits still refuse the draft");
+  assert.match(upd, /saveSpecVersion\(id, got\.spec,/, "an action lands in a draft version, never the live one");
+  assert.ok(!/activateSpecVersion|goLive|setAgentTime|setEnabled/.test(upd), "the server never makes a draft live, sets a schedule or puts an agent on duty");
+  assert.match(read("dashboard/actions.ts"), /const looser = target\.active \? \[\] : specLooser\(now\?\.spec \?\? null, target\.spec\);\n    if \(looser\.length && !confirmed\) return \{ ok: false, text: `Confirm first/, "Go live asks to confirm each action a draft adds");
+  assert.match(read("CLAUDE.md"), /They change nothing\n  until the owner's Go live, after a clean try, on a confirm that lists each one\./, "the hard rule says drafted actions wait for Go live");
+
   assert.equal(staleRead(3, 3), null);
   assert.match(staleRead(2, 3)!, /changed since you read it \(you read v2, the newest is v3\)/);
 
@@ -190,7 +219,7 @@ const run = async () => {
 
   assert.equal(originOf("http://internal:3000/api/mcp", "op.example.com", "https"), ORIGIN);
   assert.equal(originOf("https://op.example.com/x", null, null), ORIGIN);
-  assert.match(CONSENT_NEVER, /can't approve cards, put an agent on duty/);
+  assert.match(CONSENT_NEVER, /can't approve cards, put a draft live .*put an agent on duty/);
 
   // ---- the source: one business per call, drafts only through the builder's and proposals' code
   const store = read("core/operator-mcp.ts");
@@ -200,7 +229,6 @@ const run = async () => {
   assert.match(read("core/claude-agents.ts"), /\.is\("claude_session->>finished_at", null\)/, "a run takes its result once");
   assert.match(store, /await saveSpecVersion\(id, got\.spec,/, "a change is saved as a draft version");
   assert.match(store, /fileProposal\(input, \{ agentId: null, source: "claude", deptId \}\)/, "a proposal is filed as from Claude");
-  assert.match(store, /const looser = specLooser\(base\.spec, got\.spec\);/, "a change never lets a run reach or spend more");
   assert.match(store, /const stale = staleRead\(Number\(args\.based_on_version\), newest\.version\);/, "a change made since the read is refused");
   const tryFn = store.slice(store.indexOf("async function tryAgent"), store.indexOf("/** Runs a tool for a caller"));
   assert.match(tryFn, /^async function tryAgent[\s\S]*if \(!controlsOn\(\)\) return no\(/, "a try is refused when real runs are switched off");
