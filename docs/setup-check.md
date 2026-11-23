@@ -70,10 +70,28 @@ against the domains and the pages fetched. Steps are plain text (text params ref
 - The one fix is `meta.pause_ad`, the existing pause action (Draft, over-target ads only, no budget change).
 - Migration `20261231090000_setup_checks_meta.sql` widens `setup_checks.tool` to `meta`.
 
+## Klaviyo, Mailchimp, and re-checks (card 284)
+
+- `klaviyo_setup` reads, on Klaviyo's read-only server and the existing scopes (`flows:read` was already
+  asked for), every flow's name, status and trigger (`get_flows` with fixed fields, never a flow's actions or
+  messages), the lists and the metric names. Code counts flows by status and trigger and whether Placed
+  Order, Started Checkout, Viewed Product and Active on Site reach Klaviyo (`KLAVIYO_SETUP_KEYS`).
+- `mailchimp_account_setup` reads `mailchimp_setup`, a new read on our own Mailchimp server: three fixed GETs
+  (classic automations, each audience's welcome and double opt-in settings, connected stores and their
+  abandoned cart and browse automations), never a member or an email address. Mailchimp's API doesn't list
+  Customer Journeys, and the read says so. A part Mailchimp refuses is unread, not zero.
+- Neither has a fix: the agent's finding has its steps, and the founder does it in the tool.
+- **Re-checks.** A finding the founder skipped comes back once, `RECHECK_DAYS` (21) after the skip, as a
+  proposal ("Finish setup") from the head of the department whose agent reads that tool, or from the company
+  seat when none does (`recheckFrom`). The scheduler files it in code while the org is on, at most 3 a round;
+  no model runs. The finding is marked returned before the proposal is filed, so it never comes back twice.
+  The owner's yes opens it again on Connections; nothing in the tool changes.
+- Migration `20270101090000_setup_checks_email.sql`: `setup_checks.tool` takes `klaviyo` and `mailchimp`, and
+  `proposals.kind` takes `setup_finding`.
+
 ## Later slices
 
-284 Klaviyo and
-Mailchimp, and heads re-checking; 285 reuse setup how-tos staff reviewed and published to the shared
+285 reuse setup how-tos staff reviewed and published to the shared
 playbook (decided 2026-11-23), so fewer checks need a web search.
 
 Tests: `npm run check:setup-check`; the GA4 read in `npm run check:mcp`.

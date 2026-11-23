@@ -2,18 +2,20 @@ import "server-only";
 // Our own Mailchimp MCP server (card 252, docs/mcp-everywhere.md "Mailchimp"). Mailchimp's hosted MCP
 // server isn't documented for other apps, and every Mailchimp key reaches the whole account, so our
 // server is the limit: this file is the only one that calls Mailchimp's Marketing API, and it has
-// exactly these calls. Agents' key (profile "mailchimp"): audiences with counts, and campaign reports,
+// exactly these calls. Agents' key (profile "mailchimp"): audiences with counts, campaign reports, and the
+// setup check's settings read (card 284: automations, audience settings, connected stores),
 // asking Mailchimp for fixed fields with no member or email address. The gateway's key (profile
 // "mailchimp_drafts"): one draft campaign to one of the business's own audiences. There is no send,
 // schedule, test-send, copy or delete call here, and none may be added (check:mcp fails on one):
 // the owner sends every campaign from Mailchimp. Only integrations/mcp.ts imports this file (lint).
 import { MCP_PROTOCOL, checkedTools, type McpId } from "@/core/mcp-rules";
-import { AUDIENCE_FIELDS, DRAFT_TOOL, REPORT_FIELDS, baseOf, checkMailchimpArgs, checkMcDraftArgs, mcCampaignHtml, mcCampaignTitle, readAudiences, readReports, sinceOf } from "@/core/mailchimp-rules";
+import { AUDIENCE_FIELDS, DRAFT_TOOL, REPORT_FIELDS, SETUP_PATHS, readMcSetup, baseOf, checkMailchimpArgs, checkMcDraftArgs, mcCampaignHtml, mcCampaignTitle, readAudiences, readReports, sinceOf } from "@/core/mailchimp-rules";
 
 const TIMEOUT_MS = 25_000;
 const DESCRIPTIONS: Record<string, string> = {
   mailchimp_audiences: "Every audience in the business's Mailchimp with its member count, unsubscribes and campaigns sent.",
   mailchimp_campaigns: "Campaigns sent in a period: sent, opens, clicks, unsubscribes, orders and revenue, with rates worked out in code.",
+  mailchimp_setup: "How the business's Mailchimp is set up: audiences' welcome and double opt-in settings, classic automations by type and status, and connected stores' abandoned cart and browse automations, counted in code. Read only.",
   [DRAFT_TOOL]: "Creates one draft campaign to one of the business's Mailchimp audiences. Never sends or schedules it. Gateway only, after an approval.",
 };
 
@@ -74,7 +76,13 @@ export function mailchimpServer(profile: McpId, key: string, now: () => number =
           } else {
             const a = checkMailchimpArgs(name, req.params?.arguments);
             if ("problem" in a) return toolError(id, `Input refused: ${a.problem}`);
-            if (a.tool === "mailchimp_audiences") {
+            if (a.tool === "mailchimp_setup") {
+              // each part read softly: one Mailchimp refuses is listed as unread, not guessed
+              const soft = (path: string, what: string) => mc<unknown>(key, path, undefined, what).catch(() => null);
+              const [autos, lists, stores] = await Promise.all([soft(SETUP_PATHS.automations, "list automations"), soft(SETUP_PATHS.lists, "list audiences"), soft(SETUP_PATHS.stores, "list stores")]);
+              if (autos == null && lists == null && stores == null) throw new Error("Mailchimp refused every part of the setup read.");
+              result = readMcSetup(autos, lists, stores);
+            } else if (a.tool === "mailchimp_audiences") {
               const audiences = readAudiences(await mc(key, `/lists?count=100&fields=${AUDIENCE_FIELDS}`, undefined, "list audiences"));
               result = { audiences, members: audiences.reduce((n, l) => n + l.members, 0) };
             } else {

@@ -14,7 +14,7 @@
 import { CAMPAIGN_FIELDS, CAMPAIGN_LIMITS, refuseCampaign, type CampaignArgs } from "@/core/klaviyo-draft-rules";
 import { REPORT_PERIODS } from "@/core/mcp-rules";
 
-export const MAILCHIMP_TOOLS = ["mailchimp_audiences", "mailchimp_campaigns"] as const;
+export const MAILCHIMP_TOOLS = ["mailchimp_audiences", "mailchimp_campaigns", "mailchimp_setup"] as const;
 export const DRAFT_TOOL = "mailchimp_create_draft";
 export { CAMPAIGN_FIELDS as MC_FIELDS, CAMPAIGN_LIMITS as MC_LIMITS };
 export type McPeriod = (typeof REPORT_PERIODS)[number];
@@ -33,13 +33,14 @@ export function baseOf(key: string): string {
 export const audienceIdOk = (s: unknown): s is string => typeof s === "string" && /^[A-Za-z0-9]{6,20}$/.test(s);
 
 /** A read tool's input, checked again on our server. Anything not named here is refused. */
-export function checkMailchimpArgs(tool: string, raw: unknown): { tool: "mailchimp_audiences" } | { tool: "mailchimp_campaigns"; period: McPeriod } | { problem: string } {
+export function checkMailchimpArgs(tool: string, raw: unknown): { tool: "mailchimp_audiences" } | { tool: "mailchimp_setup" } | { tool: "mailchimp_campaigns"; period: McPeriod } | { problem: string } {
   const a = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const allowed: Record<string, string[]> = { mailchimp_audiences: [], mailchimp_campaigns: ["period"] };
+  const allowed: Record<string, string[]> = { mailchimp_audiences: [], mailchimp_campaigns: ["period"], mailchimp_setup: [] };
   if (!(tool in allowed)) return { problem: `${tool || "that"} isn't a Mailchimp read tool` };
   const extra = Object.keys(a).filter((k) => !allowed[tool].includes(k));
   if (extra.length) return { problem: `unknown input: ${extra.join(", ")}` };
   if (tool === "mailchimp_audiences") return { tool: "mailchimp_audiences" };
+  if (tool === "mailchimp_setup") return { tool: "mailchimp_setup" };
   const period = (a.period ?? "last_90_days") as McPeriod;
   if (!REPORT_PERIODS.includes(period)) return { problem: `period is one of ${REPORT_PERIODS.join(", ")}` };
   return { tool: "mailchimp_campaigns", period };
@@ -103,3 +104,66 @@ export function mcCampaignHtml(body: string): string {
 }
 /** The draft's title in Mailchimp, so the owner can tell it came from an agent. */
 export const mcCampaignTitle = (subject: string, date: string) => `Draft from OPERATOR · ${date} · ${subject}`.slice(0, 100);
+
+/**
+ * The setup check's read (card 284): three fixed GETs, settings only, never a member or an email address.
+ * Classic automations (Mailchimp's API doesn't list Customer Journeys), each audience's welcome and
+ * double opt-in settings, and connected stores with their abandoned cart and browse automations.
+ */
+export const SETUP_PATHS = {
+  automations: "/automations?count=100&fields=automations.id,automations.status,automations.settings.title,automations.trigger_settings.workflow_type,automations.emails_sent,total_items",
+  lists: "/lists?count=100&fields=lists.id,lists.double_optin,lists.has_welcome,lists.stats.member_count,total_items",
+  stores: "/ecommerce/stores?count=20&fields=stores.id,stores.platform,stores.is_syncing,stores.automations,total_items",
+} as const;
+export const MAILCHIMP_SETUP_KEYS = [
+  "audiences", "members", "audiences_double_optin", "audiences_with_welcome",
+  "automations", "automations_sending", "automations_paused", "automations_welcome", "automations_abandoned_cart", "automations_after_purchase",
+  "stores", "stores_syncing", "store_abandoned_cart_on", "store_abandoned_browse_on",
+] as const;
+export type McSetupNumbers = Partial<Record<(typeof MAILCHIMP_SETUP_KEYS)[number], number>>;
+export interface McAutomation { title: string; status: string; type: string; sent: number }
+
+const rows = (v: unknown, key: string): Record<string, unknown>[] => {
+  const a = (v && typeof v === "object" ? (v as Record<string, unknown>)[key] : null);
+  return Array.isArray(a) ? a.filter((x): x is Record<string, unknown> => !!x && typeof x === "object") : [];
+};
+const sub = (v: unknown) => (v && typeof v === "object" ? v as Record<string, unknown> : {});
+const AFTER_PURCHASE = new Set(["firstPurchase", "purchaseFollowup", "productFollowup", "categoryFollowup", "bestCustomers"]);
+
+/**
+ * Counts from the three reads, worked out here. A part Mailchimp refused (null) leaves its keys out and
+ * is listed in unread, never a zero. Automation titles are the business's own words: untrusted.
+ */
+export function readMcSetup(automations: unknown | null, lists: unknown | null, stores: unknown | null): { totals: McSetupNumbers; automations: McAutomation[] | null; unread: string[] } {
+  const totals: McSetupNumbers = {};
+  const unread: string[] = [];
+  let autos: McAutomation[] | null = null;
+  if (lists == null) unread.push("audiences");
+  else {
+    const ls = rows(lists, "lists");
+    totals.audiences = ls.length;
+    totals.members = ls.reduce((n, l) => n + num(sub(l.stats).member_count), 0);
+    totals.audiences_double_optin = ls.filter((l) => l.double_optin === true).length;
+    totals.audiences_with_welcome = ls.filter((l) => l.has_welcome === true).length;
+  }
+  if (automations == null) unread.push("automations");
+  else {
+    autos = rows(automations, "automations").slice(0, 100).map((a) => ({ title: plain(sub(a.settings).title, 80), status: plain(a.status, 12), type: plain(sub(a.trigger_settings).workflow_type, 30), sent: num(a.emails_sent) }));
+    totals.automations = autos.length;
+    totals.automations_sending = autos.filter((a) => a.status === "sending").length;
+    totals.automations_paused = autos.filter((a) => a.status === "paused").length;
+    totals.automations_welcome = autos.filter((a) => a.status === "sending" && /^welcome/i.test(a.type)).length;
+    totals.automations_abandoned_cart = autos.filter((a) => a.status === "sending" && a.type === "abandonedCart").length;
+    totals.automations_after_purchase = autos.filter((a) => a.status === "sending" && AFTER_PURCHASE.has(a.type)).length;
+  }
+  if (stores == null) unread.push("stores");
+  else {
+    const ss = rows(stores, "stores");
+    const on = (s: Record<string, unknown>, k: string) => plain(sub(sub(s.automations)[k]).status, 12) === "sending";
+    totals.stores = ss.length;
+    totals.stores_syncing = ss.filter((s) => s.is_syncing === true).length;
+    totals.store_abandoned_cart_on = ss.filter((s) => on(s, "abandoned_cart")).length;
+    totals.store_abandoned_browse_on = ss.filter((s) => on(s, "abandoned_browse")).length;
+  }
+  return { totals, automations: autos, unread };
+}
