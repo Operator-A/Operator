@@ -16,7 +16,7 @@ const label = (tool: string) => TOOLS[tool]?.label ?? "Used a connected tool";
 export async function deptRuns(agentIds: string[], byId: Record<string, CrewMember>, since?: string, limit = 25, fresh: ReadonlySet<string> = new Set()): Promise<FeedRun[]> {
   if (!agentIds.length) return [];
   const from = since ?? new Date(Date.now() - 7 * 864e5).toISOString();
-  const { data: runs, error } = await db().from("agent_runs").select("id, agent_id, trigger, status, started_at, ended_at, summary, error, cost_usd")
+  const { data: runs, error } = await db().from("agent_runs").select("id, agent_id, trigger, status, started_at, ended_at, summary, error, cost_usd, metrics")
     .in("agent_id", agentIds).gte("started_at", from).order("started_at", { ascending: false }).limit(limit * 2);
   if (error) return [];
   const mine = (runs ?? []).filter((r) => inFeed(String(r.trigger)) || tryInFeed(String(r.trigger), String(r.agent_id), fresh)).slice(0, limit);
@@ -35,7 +35,7 @@ export async function deptRuns(agentIds: string[], byId: Record<string, CrewMemb
     const a = byId[r.agent_id as string];
     const status = (["running", "ok", "failed", "skipped"].includes(r.status) ? r.status : "failed") as RunStatus;
     return {
-      id: r.id, agentId: r.agent_id, name: a?.name ?? r.agent_id, role: a?.role ?? "", at: r.started_at, endedAt: r.ended_at ?? null, trigger: String(r.trigger), status,
+      id: r.id, agentId: r.agent_id, name: a?.name ?? r.agent_id, role: a?.role ?? "", at: r.started_at, endedAt: r.ended_at ?? null, trigger: String(r.trigger), status, version: Number((r.metrics ?? {}).spec_version) || null,
       lines: checklist(own, label, status === "running"), steps: own.filter((s) => s.kind === "tool").length, costUsd: Number(r.cost_usd ?? 0),
       result: status === "running" ? "" : resultText(r.summary ?? null, r.error ?? null, status), drafts: drafts.get(r.id) ?? [],
     };

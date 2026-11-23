@@ -1,4 +1,5 @@
 import { zoneLabel } from "@/core/time";
+import { goalHref } from "@/dashboard/dept-rules";
 import { cookies } from "next/headers";
 import { Suspense } from "react";
 import Link from "next/link";
@@ -112,7 +113,7 @@ export default async function Desk() {
       <section className="card" style={{ gap: 12 }} aria-labelledby="goals-h">
         <div className="row wrap" style={{ gap: 12 }}>
           <h2 id="goals-h" className="card-t">Goals</h2>
-          <Link href="/goals/new" className="btn outline sm"><Icon name="plus" size={14} />Set a goal</Link>
+          {org?.departments[0] && <Link href={goalHref(org.departments[0].id)} className="btn outline sm"><Icon name="plus" size={14} />Set a goal</Link>}
         </div>
         <Suspense fallback={<SkelTiles />}><DeskGoals goalsP={goalsP} org={org} quoteOf={quoteOf} /></Suspense>
       </section>

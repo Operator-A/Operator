@@ -36,7 +36,7 @@ tool returns those collections, the offer terms and the website, with counts in 
 ## Who uses it
 
 Rowan's outreach drafts may claim only what Product facts says, and Reese checks Rowan's drafts
-against it. Any agent can be given it on the builder's Tools step.
+against it. Any agent can be given it on the Can do toggles of the agent sheet.
 
 ## Moving off a pack's own offer tool
 

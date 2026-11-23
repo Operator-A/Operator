@@ -2,13 +2,15 @@
 // who works in a department, on a small chart. No database, no network. Run: npm run check:dept
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { DEPT_TABS, agentHref, hireHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
+import { DEPT_TABS, agentHref, goalHref, hireHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
 import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from "../core/flow-rules";
 import { deptReach, headDirective } from "../core/head-chat-rules";
 import { resolveRuleWho, deptNamed } from "../core/chat-rules";
 import type { Org } from "../core/org-rules";
 import { allowedGrants, hireCostLine, hireRuns, hireStage, hireWhenWords, newAgent, tryInFeed } from "../dashboard/hire-rules";
 import { hireWhen, planProposal, toolInfoOf } from "../core/proposal-rules";
+import { changeRows, changeStage, goalRows, goalTitle, keepDecided, savedVersionOf } from "../dashboard/change-rules";
+import { existsSync } from "node:fs";
 import { checklist, dayLabel, goalNumber, inFeed, mergeFeed, resultText, runFoot, runState, runTitle, type FeedRun } from "../dashboard/dept-feed";
 
 const org: Org = {
@@ -67,7 +69,9 @@ assert.deepEqual(deptReach(org, "sales", {}).agents, []);
 const dir = headDirective({ name: "Morgan", title: "CFO", dept: "Finance", business: "Corner Bike Shop", agents: ["Quinn", "Rae"] });
 assert.match(dir, /You are Morgan, CFO of Finance at Corner Bike Shop/);
 assert.match(dir, /Quinn, Rae/);
-assert.match(dir, /never run, start, stop or change an agent, and you never send, buy or post/);
+assert.match(dir, /never run, start or stop an agent, or change one yourself, and you never send, buy or post/);
+assert.match(dir, /change_agent/, "a change is asked for as a change card");
+assert.match(dir, /never gives an action or picks a model/);
 assert.match(dir, /copied from their message/);
 
 // wiring: the menu, the page and Everyone use these counts, and the page and the Approvals page draw one card
@@ -167,9 +171,7 @@ assert.ok(!/activateSpecVersion|agent_defs|db\(\)/.test(sheet + sheetFor), "the 
 assert.ok(/export async function saveSpec[\s\S]*?asRole\("owner"\)[\s\S]*?saveSpecVersion/.test(actionsSrc), "a changed job, model, reads or can do (grants) saves a draft, and only the owner can");
 assert.ok(/export async function goLive[\s\S]*?lastTry[\s\S]*?if \(!t\.clean\)/.test(actionsSrc), "a draft goes live only after a clean try");
 assert.ok(/disabled=\{busy \|\| !controls \|\| !d\.tried\?\.clean\}/.test(sheet), "Go live stays locked in the sheet until the try is clean");
-assert.ok(/redirect\(agentHref\(roster\.chart, id\)\)/.test(read("app/(room)/agents/[id]/page.tsx")), "old agent pages open the sheet");
-const build = read("app/(room)/build/[id]/page.tsx");
-assert.ok(/redirect\(agentHref\(org, id\)\)/.test(build) && !/TryLive|goLive|tryBuilt/.test(build), "the builder page keeps only the step editor; the rest is in the sheet");
+for (const f of ["app/(room)/agents/[id]/page.tsx", "app/(room)/build/[id]/page.tsx"]) assert.ok(/redirect\(agentHref\(roster\.chart, id, sp\.edit != null\)\)/.test(read(f)), `${f} opens the sheet, on Edit when asked`);
 assert.ok(/<AgentSheetFor id=\{sp\.agent\}/.test(page) && /<AgentSheetFor id=\{sp\.agent\}/.test(everyone), "the department page and Everyone open the sheet");
 
 // hiring in the chat (slice 5): the head suggests, code counts, only the owner's taps grant, a new agent starts off duty
@@ -215,7 +217,50 @@ assert.ok(!/tryBuilt|runExplore|withRun/.test(pActs.replace(/^\s*(\/\/|\*|\/\*\*
 assert.ok(/acts\.goLive\([\s\S]*?acts\.duty\(/.test(hireCard) && /stage === "clean" && <button/.test(hireCard), "Put on duty is offered only after a clean try, through Go live then on duty");
 assert.ok(!/db\(\)|agent_defs|activateSpecVersion/.test(hireCard + read("dashboard/components/headChat.tsx")), "the card never writes the database itself");
 for (const f of ["app/(room)/crew/page.tsx", "app/(room)/dept/[id]/page.tsx", "app/(room)/proposals/[id]/page.tsx", "dashboard/org.ts"]) assert.ok(!/build\/new/.test(read(f)), `${f} has no link to the old new-agent screens`);
-assert.ok(!/agentId: string \| null|p\.create|templates/.test(read("dashboard/components/Flow.tsx")), "the step editor only edits an existing agent");
+
+// slice 6: changing agents and goals by asking. A change is words until the owner's Approve.
+const quinnNow = { days: "weekdays" as const, time: "08:00", budget: 2, job: "Match receipts.", goodResult: "", tools: ["goal_progress"], costCap: 0.25 };
+const chg = { kind: "change_agent" as const, agent: "Quinn", when: { days: "daily" as const, time: "06:00" }, budget: null, job: null, goodResult: "Every new supplier over $500, flagged with why.", add: ["approvals_waiting"], drop: ["goal_progress"], costCap: 0.4 };
+assert.deepEqual(changeRows(chg, (id) => id.toUpperCase(), quinnNow), [
+  { k: "When", from: "Weekdays at 08:00", to: "Every day at 06:00" },
+  { k: "Good result", from: null, to: chg.goodResult },
+  { k: "Reads", from: null, to: "+ APPROVALS_WAITING, − GOAL_PROGRESS" },
+  { k: "Cost cap a run", from: "$0.25", to: "$0.40" },
+], "each line is Now → New, worked out in code");
+assert.equal(changeRows(chg, (x) => x)[0].from, null, "no Now side without the agent");
+const goalNew = { kind: "goal" as const, change: "new" as const, goal: null, title: "Runway 8 months", measure: "runway_months", target: "8", dueOn: "2027-06-30" };
+assert.deepEqual(goalRows(goalNew, null).map((r) => r.k), ["Goal", "Counted", "Target", "By"]);
+const goalPause = { kind: "goal" as const, change: "pause" as const, goal: "Runway", title: null, measure: null, target: null, dueOn: null };
+assert.deepEqual(goalRows(goalPause, { title: "Runway", measure: null, target: null, dueOn: null, state: "active" }), [{ k: "Goal", from: null, to: "Runway" }, { k: "State", from: "Running", to: "Paused" }]);
+assert.equal(goalTitle(goalNew), "Runway 8 months"); assert.equal(goalTitle(goalPause), "Runway");
+const goalChange = { kind: "goal" as const, change: "change" as const, goal: "Runway", title: null, measure: null, target: "8", dueOn: null };
+assert.deepEqual(goalRows(goalChange, { title: "Runway", measure: "runway_months", target: 6, dueOn: null, state: "active" }), [{ k: "Target", from: "6", to: "8" }]);
+const st = (o: Partial<Parameters<typeof changeStage>[0]>) => changeStage({ state: "accepted", spec: true, draftVersion: 4, savedVersion: 4, tryOf: null, ...o });
+assert.equal(st({ state: "pending" }), "proposed");
+assert.equal(st({}), "draft");
+assert.equal(st({ tryOf: { clean: false, status: "running" } }), "trying");
+assert.equal(st({ tryOf: { clean: true, status: "ok" } }), "clean", "Go live only after a clean try of the change's own version");
+assert.equal(st({ tryOf: { clean: false, status: "ok" } }), "failed");
+assert.equal(st({ draftVersion: null }), "done", "once live, the card is done");
+assert.equal(st({ draftVersion: 5 }), "done", "a newer draft from elsewhere ends this card's buttons");
+assert.equal(st({ spec: false }), "done"); assert.equal(st({ state: "declined" }), "done");
+assert.equal(savedVersionOf("Draft v4 changes Quinn's job."), 4); assert.equal(savedVersionOf("Approved."), null); assert.equal(savedVersionOf(null), null);
+assert.ok(keepDecided("Approved: Quinn runs daily at 06:00.") && !keepDecided("Replaced by a newer draft of the same change."), "a replaced card leaves the chat");
+assert.equal(goalHref("finance"), `/dept/finance?say=${encodeURIComponent("Set a goal: ")}`);
+assert.equal(goalHref("finance", "Runway"), `/dept/finance?say=${encodeURIComponent("Change the goal “Runway”: ")}`);
+assert.equal(agentHref(org, "quinn", true), `${sheetHref("finance", "agents", "quinn")}&edit=1`);
+
+assert.ok(/export async function changeInChat[\s\S]*?asRole\("owner"\)[\s\S]*?acceptProposal\(id\)[\s\S]*?applyChange\(/.test(pActs), "Approve is the owner's tap and goes through the proposal's own path");
+assert.ok(/kind === "goal" \? await waitingChange\(/.test(proposalsSrc) && /async function waitingChange\(/.test(proposalsSrc) && /Replaced by a newer draft of the same/.test(proposalsSrc), "filing the same change again replaces the waiting card");
+assert.ok(/change === "pause"[\s\S]*?setGoalState|setGoalState[\s\S]*?paused/.test(proposalsSrc), "a goal pause, turn back on or done goes through the goal's own code");
+assert.ok(/saveSpecVersion\(/.test(proposalsSrc) && !/activateSpecVersion/.test(proposalsSrc), "a change saves a draft version; it never goes live by itself");
+assert.ok(/plan\.kind === "change_agent"\) \{[\s\S]{0,200}?!live\.has\(id\)\) return \{ problem[\s\S]{0,120}?id === seat\?\.agentId/.test(proposalsSrc), "a change only reaches an agent in the head's department");
+assert.ok(!/db\(\)|agent_defs|activateSpecVersion/.test(read("dashboard/components/changeCard.tsx")), "the change card never writes the database itself");
+for (const f of ["dashboard/components/Flow.tsx", "dashboard/flowSteps.ts", "dashboard/components/GoalForm.tsx", "app/(room)/goals/new/page.tsx"]) assert.ok(!existsSync(f), `${f} went with slice 6`);
+const appFiles = ["app/(room)/dept/[id]/page.tsx", "app/(room)/page.tsx", "app/(room)/goals/[id]/page.tsx", "app/(room)/proposals/[id]/page.tsx", "app/(room)/connections/find/page.tsx", "dashboard/agentMap.ts", "dashboard/needs.ts", "core/proposals.ts", "dashboard/components/agentSheet.tsx"];
+for (const f of appFiles) assert.ok(!/\/build\/\$\{|\/build\/[a-z]|goals\/new/.test(read(f)), `${f} has no link to the old step editor or goal form`);
+const sheetSrc = read("dashboard/components/agentSheet.tsx");
+assert.ok(/More detail/.test(sheetSrc) && /goodResult/.test(sheetSrc) && /maxCostUsd/.test(sheetSrc) && /notionPages/.test(sheetSrc) && /readsFrom/.test(sheetSrc) && /reportPage/.test(sheetSrc), "the sheet's More detail holds good result, limits, pages, other agents' results and where it saves");
 assert.ok(/ask at most two short questions/.test(headDirective({ name: "Morgan", title: "CFO", dept: "Finance", business: "Shop", agents: [] })), "the head asks at most two questions before it files a hire");
 
 console.log("check:dept ok");

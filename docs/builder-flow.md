@@ -2,6 +2,8 @@
 
 The owner, Nov 13: the agent builder was confusing (Preview vs Compare, code vs runner, one giant page, picking access). The fix is a guided flow, one step per screen, with sources and actions grouped by integration, and a cleanup of the parts of the Control Room it replaces. Approved mockup: https://claude.ai/artifact/7CMrevM88XBcFDtkVWzfeX (the flow, every screen in order, and a Cleanup map board). Status lives on the Build Board, epic "Builder flow" (cards Order 50-56).
 
+> **Department pages slice 6 (2026-11-23):** the step editor (`/build/[id]?edit`, `Flow.tsx`, `flowSteps.ts`) is gone. Everything it edited is in the agent sheet's Edit tab (its More detail section holds a good result, run limits, Notion pages, other agents' results and where it saves), or is asked for in the department's chat as a change card. `/build/[id]` only redirects to the sheet. See docs/department-pages.md. What follows is the history.
+
 **Rule for every slice: it deletes what it replaces in the same PR.** No second way to do the same thing is left behind.
 
 ## The flow

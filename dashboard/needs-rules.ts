@@ -33,7 +33,7 @@ export function interruptKind(s: Source, money: ReadonlySet<string> = MONEY_TOOL
   if (s.from === "proposal") {
     if (s.kind === "hire" || s.kind === "department") return "new_agent";
     if (s.kind === "goal") return "goal";
-    // grant a read tool, a new tool, retire: decided on Proposals, after the summary
+    // grant a read tool, a new tool, retire, a change to an agent: decided in the chat or on Proposals, after the summary
     return null;
   }
   return null;

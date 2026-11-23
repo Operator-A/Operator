@@ -12,7 +12,7 @@ import { deptRuns } from "@/dashboard/deptFeed";
 import type { FeedRun } from "@/dashboard/dept-feed";
 import { when } from "@/dashboard/format";
 import { nextRuns } from "@/dashboard/schedule";
-import { BUDGET_CEILING, type AgentSpec } from "@/core/agent-spec";
+import { BUDGET_CEILING, RUN_LIMITS, type AgentSpec } from "@/core/agent-spec";
 
 export interface SheetChoice { id: string; label: string; on: boolean; ready: boolean; why?: string }
 export interface SheetData {
@@ -34,6 +34,10 @@ export interface SheetData {
   /** Lessons proposed from your rejections, waiting for Keep or Discard. */
   lessons: { id: string; text: string }[];
   versions: { version: number; note: string; when: string; active: boolean }[];
+  /** More detail (slice 6): other agents whose latest result it may read, the report tools it may have, and the run limits in code. */
+  others: { id: string; name: string; outputName: string }[];
+  reports: SheetChoice[];
+  limits: { maxSteps: { min: number; max: number }; maxCostUsd: { min: number; max: number } };
 }
 
 const READ_KINDS = new Set(["read", "calculate"]);
@@ -86,5 +90,9 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
     remembers: (b?.standards ?? []).map((x) => ({ id: x.id, text: x.text, shared: x.grp !== "standing_order" })),
     lessons: (proposed.data ?? []).map((r) => ({ id: r.id as string, text: String(r.text) })),
     versions: (b?.versions ?? []).slice(0, 8).map((v) => ({ version: v.version, note: v.note ?? "", when: when(v.createdAt, tz), active: v.active })),
+    others: (b?.others ?? []).filter((o) => o.id !== id).map((o) => ({ id: o.id, name: o.name, outputName: o.outputName })),
+    reports: tools.filter((t) => t.kind === "report" && t.grantable && (t.connected || has.has(t.id)))
+      .map((t) => ({ id: t.id, label: t.label, on: has.has(t.id), ready: t.connected, why: t.connected ? undefined : "Not connected" })),
+    limits: { maxSteps: { min: RUN_LIMITS.maxSteps.min, max: RUN_LIMITS.maxSteps.max }, maxCostUsd: { min: RUN_LIMITS.maxCostUsd.min, max: RUN_LIMITS.maxCostUsd.max } },
   };
 }

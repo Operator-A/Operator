@@ -10,6 +10,8 @@ import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import type { ChatAnswer } from "@/core/avery-chat";
 import type { HireCardView } from "@/dashboard/hire-rules";
 import { HireCard, type HireActs } from "./hireCard";
+import type { ChangeCardView } from "@/dashboard/change-rules";
+import { ChangeCard, type ChangeActs } from "./changeCard";
 import { clock, dayLabel, initialsOf, mergeFeed, runFoot, runState, runTitle, type FeedRun, type FeedTalk } from "@/dashboard/dept-feed";
 import { Reply } from "./chatReply";
 import { Icon } from "./Icon";
@@ -24,7 +26,7 @@ function RunCard({ r, tz, cards }: { r: FeedRun; tz: string; cards: Record<strin
       <div className="dp-bub">
         <div className="dp-who"><b>{r.name}</b> {r.role ? `${r.role} · ` : ""}{clock(r.at, tz)} <span className="tag">run</span></div>
         <div className="dp-glass dp-run">
-          <div className="dp-run-t">{runTitle(r.trigger)}<span className={`st ${st.look}`}>{st.word}</span></div>
+          <div className="dp-run-t">{runTitle(r.trigger, r.version ?? null)}<span className={`st ${st.look}`}>{st.word}</span></div>
           {r.lines.length > 0 && (
             <ul className="dp-steps">
               {r.lines.map((l, i) => <li key={i} className={l.state}><span className="ck" /><span>{l.label}</span></li>)}
@@ -39,12 +41,14 @@ function RunCard({ r, tz, cards }: { r: FeedRun; tz: string; cards: Record<strin
   );
 }
 
-export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, starters, missing, send, hires = [], hireActs, controls = false, say = "" }: {
+export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, starters, missing, send, hires = [], hireActs, changes = [], changeActs, controls = false, say = "" }: {
   deptId: string; dept: string; head: string | null; title: string; tz: string;
   talk: FeedTalk[]; runs: FeedRun[]; cards: Record<string, React.ReactNode>; starters: string[]; missing: string | null;
   send: (deptId: string, text: string) => Promise<ChatAnswer>;
   /** Hire cards (slice 5): hires waiting on you and agents never put on duty. */
   hires?: HireCardView[]; hireActs?: HireActs; controls?: boolean;
+  /** Change cards (slice 6): changes to an agent or a goal the head filed, waiting on you or decided this week. */
+  changes?: ChangeCardView[]; changeActs?: ChangeActs;
   /** Typed into the box when the page opens (a "hire an agent" link). */
   say?: string;
 }) {
@@ -116,7 +120,7 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
     if (!hireActs || trying.includes(agentId)) return;
     setTrying((t) => [...t, agentId]);
     void hireActs.tryIt(agentId, true)
-      .then((r) => ({ ok: r.ok, text: r.ok ? "First try done. Its result is above." : r.text }), (e: unknown) => ({ ok: false, text: e instanceof Error ? e.message : "The try didn’t finish." }))
+      .then((r) => ({ ok: r.ok, text: r.ok ? "Try done. Its result is above." : r.text }), (e: unknown) => ({ ok: false, text: e instanceof Error ? e.message : "The try didn’t finish." }))
       .then((r) => { setTrying((t) => t.filter((x) => x !== agentId)); setTried((d) => [...d, { id: `${agentId}:${Date.now()}`, ...r }]); });
   };
   const change = (t: string) => { setText(t); requestAnimationFrame(() => box.current?.focus()); };
@@ -129,18 +133,25 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
     <HireCard key={h.key} c={h} dept={dept} head={head ?? dept} headTitle={title} controls={controls} acts={hireActs} cont={cont}
       trying={!!h.agentId && trying.includes(h.agentId)} onTry={startTry} onChange={change} />
   ) : null;
+  const changeCard = (c: ChangeCardView, cont = false) => changeActs ? (
+    <ChangeCard key={c.key} c={c} head={head ?? dept} headTitle={title} controls={controls} acts={changeActs} cont={cont}
+      trying={!!c.agentId && trying.includes(c.agentId)} onTry={startTry} onChange={change} />
+  ) : null;
+  // hire and change cards, in time order between the messages and runs
+  const extra = [...hires.map((h) => ({ at: h.at, el: (cont: boolean) => hireCard(h, cont) })), ...changes.map((c) => ({ at: c.at, el: (cont: boolean) => changeCard(c, cont) }))]
+    .sort((x, y) => x.at.localeCompare(y.at));
 
   return (
     <div className="dp-room">
       <div className="dp-blob b0" /><div className="dp-blob b1" /><div className="dp-blob b2" />
       <div className="dp-log" ref={log} aria-live="polite">
-        {!items.length && !hires.length && (
+        {!items.length && !extra.length && (
           <p className="dp-empty">
             {head ? `Ask ${head} how ${dept} is doing, tell ${head} a rule for one of its agents in your own words, or ask to hire into ${dept}. Every run in ${dept} posts here too: its steps, its result and anything waiting for your OK.` : `Every run in ${dept} posts here: its steps, its result and anything waiting for your OK.`}
           </p>
         )}
         {missing && <p className="dp-empty">{missing}</p>}
-        {hires.filter((h) => !items.length || h.at < items[0].at).map((h) => hireCard(h))}
+        {extra.filter((h) => !items.length || h.at < items[0].at).map((h) => h.el(false))}
         {items.map((it, i) => (
           <Fragment key={`${it.kind}:${it.id}`}>
             {day(i)}
@@ -157,7 +168,7 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
                   </div>
                 </div>
               )}
-            {hires.filter((h) => h.at >= it.at && (i === items.length - 1 || h.at < items[i + 1].at)).map((h) => hireCard(h, it.kind !== "run" && it.role === "head"))}
+            {extra.filter((h) => h.at >= it.at && (i === items.length - 1 || h.at < items[i + 1].at)).map((h) => h.el(it.kind !== "run" && it.role === "head"))}
           </Fragment>
         ))}
         {tried.map((t) => <span key={t.id} className={t.ok ? "dp-done" : "dp-note dp-bad"}>{t.ok && <Icon name="check" size={14} />}{t.text}</span>)}

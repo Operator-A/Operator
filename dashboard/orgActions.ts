@@ -9,7 +9,7 @@ import { withActor } from "@/core/actor";
 import { db } from "@/core/db";
 import { loadCaps } from "@/core/gateway";
 import { addDepartmentRule, editMemory, forgetMemory } from "@/core/memory";
-import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks, unseat } from "@/core/org";
+import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, removeSeat, renameDepartment, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks } from "@/core/org";
 import type { ActionResult } from "./actions";
 import { getRoster, asRole } from "./data";
 import { controlsOn } from "./session";
@@ -75,19 +75,6 @@ export async function orgSetHolder(seatId: string, who: string): Promise<ActionR
     await setHolder(seatId, "agent", id);
     await audit(me, "set_seat_holder", seatId, { who });
     return done(`${(await getRoster()).byId[id]?.name ?? "The agent"} sits there now. Its old seat, if it had one, is open.`);
-  } catch (e) { return fail(e); }
-}
-
-/** From the builder's step 1: put an agent in a seat, or take it off the chart (null). */
-export async function placeAgent(agentId: string, seatId: string | null): Promise<ActionResult> {
-  const { me, no } = await asRole("owner"); if (no) return no;
-  if (!(await knownAgent(String(agentId)))) return { ok: false, text: "Unknown agent." };
-  try {
-    if (seatId == null) { await unseat(agentId); await audit(me, "place_agent", agentId, { seat: seatId }); return done("Off the chart. Its seat is open."); }
-    if (!UUID.test(String(seatId))) return { ok: false, text: "Unknown seat." };
-    await setHolder(seatId, "agent", agentId);
-    await audit(me, "place_agent", agentId, { seat: seatId });
-    return done("Placed on the chart.");
   } catch (e) { return fail(e); }
 }
 

@@ -230,6 +230,8 @@ h1, h2, h3, p { margin: 0; }
 .dp-kv { display: grid; grid-template-columns: 110px minmax(0,1fr); gap: 6px 12px; font-size: 13px; margin: 0; }
 .dp-kv dt { color: var(--mut); font-weight: 600; } .dp-kv dd { margin: 0; color: var(--ink); line-height: 1.45; }
 .dp-kv dd .dp-note { display: block; margin-top: 4px; }
+.dp-kv dd s { color: var(--mut); text-decoration-thickness: 1px; }
+.dp-kv dd .to { color: var(--mut); padding: 0 4px; }
 .dp-cost { display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; border-radius: 14px; background: var(--soft); }
 .dp-cost b { font-size: 20px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; flex: none; }
 .dp-cost span { font-size: 12.5px; color: var(--mut); }
@@ -405,6 +407,16 @@ h1, h2, h3, p { margin: 0; }
 .ag .fld > label, .ag .fld > .lbl { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--mut); }
 .ag .fld textarea, .ag .fld select, .ag input[type=time], .ag input[type=number] { font: inherit; font-size: 14px; color: var(--ink); background: var(--card); border: 1px solid var(--bd); border-radius: 12px; padding: 10px 12px; }
 .ag .fld textarea { min-height: 84px; resize: vertical; line-height: 1.5; }
+.ag-more { border-top: 1px solid var(--bd); padding-top: 10px; }
+.ag-more > summary { cursor: pointer; list-style: none; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--mut); display: flex; align-items: center; gap: 6px; }
+.ag-more > summary::-webkit-details-marker { display: none; }
+.ag-more > summary::after { content: "+"; margin-left: auto; font-size: 15px; }
+.ag-more[open] > summary::after { content: "–"; }
+.ag-more-b { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
+.ag .dp-chip .rm { width: 18px; height: 18px; margin: 0 -4px 0 4px; font-size: 10px; }
+.ag .ag-link { gap: 6px; padding: 8px; }
+.ag .ag-link input { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--card); border: 1px solid var(--bd); border-radius: 10px; padding: 8px 10px; }
+.ag .ag-link .dp-btn { align-self: flex-start; }
 .ag .days { display: flex; gap: 5px; flex-wrap: wrap; }
 .ag .days button { width: 36px; height: 36px; border-radius: 99px; border: 1px solid var(--bd); background: var(--card); font: inherit; font-size: 12px; font-weight: 700; color: var(--mut); cursor: pointer; }
 .ag .days button[aria-pressed="true"] { background: var(--gdark); color: var(--on-gdark); border-color: transparent; }

@@ -62,7 +62,7 @@ assert.equal(usd(5.375), "$5.38");
 
 // one formula: the builder, the roster, proposals and plans read core/cost-rules.ts, and the old ones are gone
 const read = (f: string) => readFileSync(f, "utf8");
-assert.doesNotMatch(read("dashboard/flowSteps.ts"), /2500 \+ 1200/, "the builder's estimate comes from core/cost-rules.ts");
+assert.match(read("dashboard/agentMap.ts"), /estimateRun\(/, "the agent map's estimate comes from core/cost-rules.ts");
 assert.doesNotMatch(read("dashboard/roster.ts"), /avgCostOf/, "the roster's average comes from realCost");
 for (const f of ["dashboard/orgDay.ts", "dashboard/orgPlan.ts"]) assert.doesNotMatch(read(f), /capPerRun \?\?/, `${f} doesn't plan with the cap as a run's cost`);
 assert.match(read("app/(room)/proposals/[id]/page.tsx"), /hireCost\(p, bill\)/, "a hire proposal shows its month, for the business's billing");

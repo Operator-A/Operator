@@ -6,7 +6,7 @@ import { hireHref } from "@/dashboard/dept-rules";
 import { loadCaps } from "@/core/gateway";
 import { CAPS } from "@/core/gateway/policy";
 import { departmentRules } from "@/core/memory";
-import { agentNames, companySeat, deptSpent, headOf, childrenOf, liveAgentIds, monthSpendByAgent, orgProblems, reportsTo, seatOf, seatPath, seatTeam, seatToolBlocks, type Org, type Seat, type SeatBlocks } from "@/core/org";
+import { agentNames, companySeat, deptSpent, headOf, childrenOf, liveAgentIds, monthSpendByAgent, orgProblems, reportsTo, seatOf, seatPath, seatTeam, type Org, type Seat } from "@/core/org";
 import type { MapOrg } from "./agentMap";
 import type { Floor } from "./data";
 import { hm, md, when } from "./format";
@@ -139,14 +139,6 @@ export function canvasData(f: Floor, v: OrgView, chains: readonly Chain[]): Canv
   return { company, depts, handoffs: handoffsOf(chains, seatOfAgent), runs };
 }
 
-/** For the builder's step 1: every seat as a path, and whether it's free for this agent. */
-export function seatChoices(org: Org, agentId: string | null): { id: string; label: string; free: boolean }[] {
-  return org.seats
-    .filter((s) => s.departmentId != null || s.holder === "open" || s.agentId === agentId)
-    .map((s) => ({ id: s.id, label: seatPath(org, s), free: s.holder === "open" || (s.holder === "agent" && s.agentId === agentId) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
-
 /** Spend this month, department rules and the company email cap for the department cards. Each part reads as empty when it can't be loaded. */
 export async function deptExtras(org: Org): Promise<DeptExtras> {
   const ids = [...new Set(org.seats.filter((s) => s.holder === "agent" && s.agentId && s.departmentId).map((s) => s.agentId as string))];
@@ -160,15 +152,6 @@ export async function deptExtras(org: Org): Promise<DeptExtras> {
     rules: rules.map((r) => ({ id: r.id, departmentId: r.department_id as string, text: r.text })),
     companyEmails: caps?.max_emails_per_day.value ?? CAPS.max_emails_per_day.start,
   };
-}
-
-/** For the builder's step 2: why Your team and Department reports are off, for each seat and for no seat (""). Empty before the org chart migration. */
-export async function seatToolChoices(org: Org | null): Promise<Record<string, SeatBlocks>> {
-  if (!org) return {};
-  const live = await liveAgentIds().catch(() => new Set<string>());
-  const out: Record<string, SeatBlocks> = { "": seatToolBlocks(org, null, live) };
-  for (const s of org.seats) out[s.id] = seatToolBlocks(org, s.id, live);
-  return out;
 }
 
 /** An agent's place for its map: who its result goes up to, and the live agents under it. Null before the org chart migration. */

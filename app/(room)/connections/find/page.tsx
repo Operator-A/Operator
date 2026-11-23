@@ -15,10 +15,10 @@ import { Icon } from "@/dashboard/components/Icon";
 import { when } from "@/dashboard/format";
 
 // Find a tool (docs/custom-servers.md, slice 3). When an agent needs something no connection has:
-// use one you have (granted on the builder's Tools step), add a server by its address (from the
+// use one you have (granted under Reads in the agent's sheet), add a server by its address (from the
 // known list in code, never an address an agent or a page wrote), or ask for a built-in connector.
 // Asks are counted per service, each with a Build Board card. Opened from a yes on a new-tool
-// proposal (?for=), from the builder's Tools step and from Try it (?agent=).
+// proposal (?for=), from an agent's sheet (?agent=).
 
 const pill = (bg: string, fg: string) => ({ background: bg, color: fg });
 
@@ -34,7 +34,7 @@ export default async function FindATool({ searchParams }: { searchParams: Promis
   const exportKeys = new Set((exports ?? []).filter((e) => e.state === "active").map((e) => e.service_key));
   const forWhat = proposal?.payload.kind === "new_tool" ? proposal.payload.what : null;
   const agent = sp.agent && f.agents[sp.agent] ? f.agents[sp.agent] : null;
-  const toolsStep = agent ? `/build/${agent.id}?edit=1&step=connections` : null;
+  const toolsStep = agent ? `/agents/${agent.id}?edit=1` : null;
 
   const builtIns = CONNECTIONS.filter((c) => !c.builtIn);
   const ready = builtIns.filter((c) => isSetUp(c, f.health));
@@ -49,14 +49,14 @@ export default async function FindATool({ searchParams }: { searchParams: Promis
       <div className="stack" style={{ gap: 8 }}>
         <span className="sub"><Link href="/connections">Connections</Link> › Find a tool</span>
         <h1 className="h1">Find a tool</h1>
-        <span className="sub">Ways to get an agent something to read: a connection you already have, a server you add by its address, an ask for a built-in connector, or an export you upload until it’s connected. Nothing here gives a tool to an agent: you do that on the builder’s Tools step.</span>
+        <span className="sub">Ways to get an agent something to read: a connection you already have, a server you add by its address, an ask for a built-in connector, or an export you upload until it’s connected. Nothing here gives a tool to an agent: you do that under Reads in the agent’s sheet.</span>
       </div>
 
       {(forWhat || agent) && (
         <div className="card" style={{ gap: 6, borderLeft: "4px solid var(--acc)" }}>
           <span className="ted-k">{forWhat ? `For the proposal you said yes to${proposal?.from_agent ? `, from ${f.agents[proposal.from_agent]?.name ?? proposal.from_agent}` : ""}` : `For ${agent!.name}`}</span>
           {forWhat && <span style={{ fontSize: 14.5, lineHeight: 1.55 }}>{forWhat}</span>}
-          {toolsStep && <Link href={toolsStep} style={{ fontSize: 13 }}>Back to {agent!.name}’s Tools step ›</Link>}
+          {toolsStep && <Link href={toolsStep} style={{ fontSize: 13 }}>Back to {agent!.name}’s sheet ›</Link>}
         </div>
       )}
 
@@ -85,7 +85,7 @@ export default async function FindATool({ searchParams }: { searchParams: Promis
           </Link>
         ))}
         {notReady.length > 0 && <span className="muted" style={{ fontSize: 12.5 }}>Built in but not set up: {notReady.map((c, i) => <span key={c.id}>{i ? ", " : ""}<Link href={`/connections?c=${c.id}`}>{c.name}</Link></span>)}.</span>}
-        <span className="sub">{toolsStep ? <>Give one to {agent!.name} on its <Link href={toolsStep}>Tools step</Link>.</> : "Give one to an agent on its builder’s Tools step."}</span>
+        <span className="sub">{toolsStep ? <>Give one to {agent!.name} under Reads in <Link href={toolsStep}>its sheet</Link>.</> : "Give one to an agent under Reads in its sheet."}</span>
       </div>
 
       <span className="card-t">2 · Add a server by its address</span>
@@ -114,7 +114,7 @@ export default async function FindATool({ searchParams }: { searchParams: Promis
 
       <span className="card-t" id="exports">4 · Upload an export until it’s connected</span>
       <div className="card" style={{ gap: 10 }}>
-        <span className="sub">No connection yet? Export a CSV from the tool (or the spreadsheet you keep) and upload it here. Agents you give Uploaded export on the Tools step read it; numbers are worked out in code, and the rows never choose who to email, a link, a product or a category. Uploading again replaces the rows. Once the tool is connected, uploads stop.</span>
+        <span className="sub">No connection yet? Export a CSV from the tool (or the spreadsheet you keep) and upload it here. Agents you give Uploaded export under Reads in their sheet read it; numbers are worked out in code, and the rows never choose who to email, a link, a product or a category. Uploading again replaces the rows. Once the tool is connected, uploads stop.</span>
         {exports ? <ExportForm upload={exportUpload} maxMb={EXPORT_LIMITS.bytes / 1_000_000} /> : <span className="soft-box" style={{ fontSize: 12.5 }}>{EXPORTS_MISSING}</span>}
         {(exports ?? []).map((e) => (
           <div key={e.id} className="row wrap rule" style={{ gap: 10, padding: "8px 0", alignItems: "center" }}>

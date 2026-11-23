@@ -9,6 +9,7 @@ import { useEffect, useState, useTransition } from "react";
 import type { SheetData } from "@/dashboard/agentSheet";
 import { clock, dayLabel, initialsOf, runFoot, runState, runTitle } from "@/dashboard/dept-feed";
 import { daysOf, type AgentTime } from "@/core/flow-rules";
+import { notionId } from "@/core/settings-rules";
 
 type Result = { ok: boolean; text: string };
 export interface SheetActions {
@@ -32,10 +33,10 @@ const X = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="cu
 const CLOCK = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
 const asksConfirm = (r: Result) => !r.ok && /^Confirm first/.test(r.text);
 
-export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetData; closeHref: string; tz: string; now: number; controls: boolean; act: SheetActions }) {
+export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false }: { d: SheetData; closeHref: string; tz: string; now: number; controls: boolean; act: SheetActions; edit?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"runs" | "edit">("runs");
+  const [tab, setTab] = useState<"runs" | "edit">(edit ? "edit" : "runs");
   const [opened, setOpened] = useState<string | null>(d.runs[0]?.id ?? null);
   const [toast, setToast] = useState<string | null>(null);
   const [busy, start] = useTransition();
@@ -44,11 +45,17 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
   const init = () => ({
     job: d.spec?.directive ?? "", model: d.spec?.model ?? "", tools: [...(d.spec?.tools ?? [])],
     days: d.days, time: d.time, manual: d.manual, budget: d.budget.toFixed(2),
+    // more detail (slice 6): what the step editor held
+    good: d.spec?.goodResult ?? "", cap: (d.spec?.limits.maxCostUsd ?? 0).toFixed(2), steps: String(d.spec?.limits.maxSteps ?? 0),
+    pages: [...(d.spec?.notionPages ?? [])], from: [...(d.spec?.readsFrom ?? [])], reportPage: d.spec?.reportPage ?? null,
   });
   const [f, setF] = useState(init);
   const [drawn, setDrawn] = useState(d);
   if (drawn !== d) { setDrawn(d); setF(init()); setConfirm(null); }
   const [addReads, setAddReads] = useState(false);
+  const [addPage, setAddPage] = useState<"read" | "report" | null>(null);
+  const [link, setLink] = useState(""), [linkLabel, setLinkLabel] = useState("");
+  const [addFrom, setAddFrom] = useState(false), [addReport, setAddReport] = useState(false);
   const [pick, setPick] = useState(false);
 
   useEffect(() => {
@@ -64,7 +71,18 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
   const say = (r: Result) => setToast(r.text);
   const go = (fn: () => Promise<Result>) => start(async () => { try { say(await fn()); } catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong."); } });
 
-  const specChanged = !!d.spec && (f.job.trim() !== d.spec.directive.trim() || f.model !== d.spec.model || f.tools.slice().sort().join() !== d.spec.tools.slice().sort().join());
+  const capN = Number(f.cap), stepsN = Number(f.steps);
+  const moreChanged = !!d.spec && (f.good.trim() !== d.spec.goodResult.trim() || Math.round(capN * 100) !== Math.round(d.spec.limits.maxCostUsd * 100) || stepsN !== d.spec.limits.maxSteps
+    || JSON.stringify(f.pages) !== JSON.stringify(d.spec.notionPages) || JSON.stringify(f.from) !== JSON.stringify(d.spec.readsFrom) || JSON.stringify(f.reportPage) !== JSON.stringify(d.spec.reportPage));
+  const specChanged = !!d.spec && (moreChanged || f.job.trim() !== d.spec.directive.trim() || f.model !== d.spec.model || f.tools.slice().sort().join() !== d.spec.tools.slice().sort().join());
+  const usePage = () => {
+    const id = notionId(link);
+    if (!id) { setToast("That doesn’t look like a Notion page link. In Notion use Share, then Copy link."); return; }
+    const page = { id, label: linkLabel.trim().slice(0, 60) || "Notion page" };
+    if (addPage === "read") { if (!f.pages.some((x) => x.id === id)) set({ pages: [...f.pages, page].slice(0, 10) }); }
+    else set({ reportPage: page });
+    setLink(""); setLinkLabel(""); setAddPage(null);
+  };
   const dayChoice = daysOf(f.days);
   const timeChanged = f.manual !== d.manual || (!f.manual && (f.time !== d.time || f.days.slice().sort().join() !== d.days.slice().sort().join()));
   const budgetN = Number(f.budget);
@@ -85,7 +103,11 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
         }
         if (budgetChanged) { const r = await act.budget(budgetN); if (!r.ok) { setToast(r.text); return; } said.push(r.text); }
         if (specChanged && d.spec) {
-          const r = await act.save({ ...d.spec, directive: f.job.trim(), model: f.model, tools: f.tools }, "Edited in the agent sheet");
+          const r = await act.save({
+            ...d.spec, directive: f.job.trim(), model: f.model, tools: f.tools, goodResult: f.good.trim(),
+            limits: { maxCostUsd: Number.isFinite(capN) ? capN : d.spec.limits.maxCostUsd, maxSteps: Number.isFinite(stepsN) ? Math.round(stepsN) : d.spec.limits.maxSteps },
+            notionPages: f.pages, readsFrom: f.from, reportPage: f.reportPage,
+          }, "Edited in the agent sheet");
           if (!r.ok) { setToast(r.text); return; }
           said.push(r.text);
         }
@@ -209,8 +231,56 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
             )}
             <div className="fld"><label htmlFor="ag-budget">Daily AI budget</label>
               <div className="row2"><span>$</span><input type="number" id="ag-budget" min={0} max={d.ceiling} step={0.05} value={f.budget} onChange={(e) => set({ budget: e.target.value })} style={{ width: 110 }} /><span className="dp-note">${d.monthAtPace.toFixed(2)} in the last 30 days</span></div></div>
-            {d.spec && <Link href={`/build/${d.id}?edit=1`} className="dp-note" style={{ textDecoration: "underline" }}>More detail, step by step: what a good result looks like, run limits, pages and other agents it reads</Link>}
             <div className="fld"><span className="lbl">Reports to</span><span style={{ fontSize: 14 }}>{d.boss ?? "No one yet"}</span></div>
+            {d.spec && (
+              <details className="ag-more">
+                <summary>More detail</summary>
+                <div className="ag-more-b">
+                  <div className="fld"><label htmlFor="ag-good">What a good result looks like</label>
+                    <textarea id="ag-good" maxLength={1000} value={f.good} onChange={(e) => set({ good: e.target.value })} /></div>
+                  <div className="fld"><span className="lbl">Each run stops at</span>
+                    <div className="row2"><span>$</span><input type="number" aria-label="Cost cap a run, in dollars" min={d.limits.maxCostUsd.min} max={d.limits.maxCostUsd.max} step={0.05} value={f.cap} onChange={(e) => set({ cap: e.target.value })} style={{ width: 96 }} />
+                      <span className="dp-note">or</span><input type="number" aria-label="Step limit a run" min={d.limits.maxSteps.min} max={d.limits.maxSteps.max} step={1} value={f.steps} onChange={(e) => set({ steps: e.target.value })} style={{ width: 80 }} /><span className="dp-note">steps</span></div></div>
+                  <div className="fld"><span className="lbl">Notion pages it reads</span>
+                    <div className="dp-chipset">
+                      {f.pages.length ? f.pages.map((p) => <span key={p.id} className="dp-chip">{p.label}<button type="button" className="rm" aria-label={`Stop reading ${p.label}`} onClick={() => set({ pages: f.pages.filter((x) => x.id !== p.id) })}>✕</button></span>) : <span className="dp-note">None yet.</span>}
+                      <button type="button" className="dp-chip addtrig" aria-expanded={addPage === "read"} onClick={() => setAddPage((x) => (x === "read" ? null : "read"))}>+ Add a page link</button>
+                    </div></div>
+                  {addPage && (
+                    <div className="picker ag-link">
+                      <input aria-label="Notion page link" placeholder="Paste a Notion page link" value={link} onChange={(e) => setLink(e.target.value)} />
+                      <input aria-label="What to call it" placeholder="What to call it" maxLength={60} value={linkLabel} onChange={(e) => setLinkLabel(e.target.value)} />
+                      <button type="button" className="dp-btn" onClick={usePage}>{addPage === "read" ? "Add" : "Use this page"}</button>
+                    </div>
+                  )}
+                  <div className="fld"><span className="lbl">Other agents’ results it reads</span>
+                    <div className="dp-chipset">
+                      {f.from.length ? f.from.map((x) => <span key={x.agentId} className="dp-chip">{x.label}<button type="button" className="rm" aria-label={`Stop reading ${x.label}`} onClick={() => set({ from: f.from.filter((y) => y.agentId !== x.agentId) })}>✕</button></span>) : <span className="dp-note">None yet.</span>}
+                      {d.others.length > 0 && <button type="button" className="dp-chip addtrig" aria-expanded={addFrom} onClick={() => setAddFrom((x) => !x)}>{addFrom ? "Done" : "+ Add"}</button>}
+                    </div>
+                    {addFrom && (
+                      <div className="picker">
+                        {d.others.map((o) => { const on = f.from.some((x) => x.agentId === o.id); return (
+                          <button key={o.id} type="button" aria-pressed={on} onClick={() => set({ from: on ? f.from.filter((x) => x.agentId !== o.id) : [...f.from, { agentId: o.id, label: `${o.name}: ${o.outputName}` }].slice(0, 10) })}>{on ? "✓ " : ""}{o.name}<small>{o.outputName}</small></button>
+                        ); })}
+                      </div>
+                    )}</div>
+                  <div className="fld"><span className="lbl">Saves its result to</span>
+                    <div className="dp-chipset">
+                      {d.reports.filter((r) => f.tools.includes(r.id)).map((r) => <span key={r.id} className="dp-chip">{r.id === "report_notion_page" && f.reportPage ? `${f.reportPage.label} (Notion)` : r.label}</span>)}
+                      {!d.reports.some((r) => f.tools.includes(r.id)) && <span className="dp-note">Only its run history.</span>}
+                      {d.reports.length > 0 && <button type="button" className="dp-chip addtrig" aria-expanded={addReport} onClick={() => setAddReport((x) => !x)}>{addReport ? "Done" : "Change"}</button>}
+                    </div>
+                    {addReport && (
+                      <div className="picker">
+                        {d.reports.map((r) => <button key={r.id} type="button" disabled={!r.ready && !f.tools.includes(r.id)} aria-pressed={f.tools.includes(r.id)} onClick={() => toggleTool(r.id)}>{f.tools.includes(r.id) ? "✓ " : ""}{r.label}{r.why && <small>{r.why}</small>}</button>)}
+                        {f.tools.includes("report_notion_page") && <button type="button" onClick={() => setAddPage("report")}>Page it writes under<small>{f.reportPage?.label ?? "Pick one"}</small></button>}
+                      </div>
+                    )}</div>
+                  <span className="dp-note">Changes here, like a new job, save a draft version. It runs after one clean try.</span>
+                </div>
+              </details>
+            )}
             {d.lessons.length > 0 && (
               <div className="fld"><span className="lbl">Lessons to review</span>
                 {d.lessons.map((m) => (
@@ -243,7 +313,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
 
         {tab === "edit" && (
           <div className="ag-foot">
-            <span className="dp-note note">{confirm ?? (specChanged ? "A new job, model, reads or can do saves as a draft you try, then go live." : d.head ? `Or tell ${d.head} in the chat what to change.` : "Changes apply through the same checks as before.")}</span>
+            <span className="dp-note note">{confirm ?? (specChanged ? "A new job, model, reads, can do or more detail saves as a draft you try, then go live." : d.head ? `Or tell ${d.head} in the chat what to change.` : "Changes apply through the same checks as before.")}</span>
             <button type="button" className="dp-btn" disabled={busy || !dirty} onClick={() => { setF(init()); setConfirm(null); }}>Cancel</button>
             <button type="button" className="dp-btn dark" disabled={busy || !dirty} onClick={() => save(!!confirm)}>{confirm ? "Confirm and save" : "Save changes"}</button>
           </div>

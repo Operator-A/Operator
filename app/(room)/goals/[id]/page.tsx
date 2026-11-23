@@ -4,9 +4,9 @@ import { localDate } from "@/core/time";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/dashboard/data";
 import { goalView } from "@/dashboard/goals";
-import { goalEdit, goalSetState, planJobDone } from "@/dashboard/goalActions";
+import { planJobDone } from "@/dashboard/goalActions";
+import { goalHref } from "@/dashboard/dept-rules";
 import { GOAL_LOOK } from "@/dashboard/components/goals";
-import { GoalForm } from "@/dashboard/components/GoalForm";
 import { ActionButton } from "@/dashboard/components/client";
 import { Pill } from "@/dashboard/components/ui";
 import { getGoal, goalsNow, ownMeasureDefs, ownerOf } from "@/core/goals";
@@ -22,7 +22,8 @@ import { TOOLS } from "@/core/tools/catalog";
 
 // A goal's page (docs/company-mode.md, slices 2 and 4): where it stands, counted in code, its pace,
 // the detail behind the number, the head's plan for the week and its latest review, how the head
-// works, what the department spends on AI, and Change / Pause / Done / Remove.
+// works and what the department spends on AI. Read only since department pages slice 6: a change, pause,
+// done or drop is asked for in the department's chat and comes back as a change card.
 
 // a measure reads Shopify or Mercury when the page opens
 export const maxDuration = 120;
@@ -57,7 +58,6 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
   const v = goalView(now, org, names, own);
   const dept = org.departments.find((d) => d.id === g.department_id);
   const spent = deptSpent(org, g.department_id, spend);
-  const form = { title: g.title, measure: g.measure ?? "", target: g.target == null ? "" : String(g.target), dueOn: g.due_on ?? "" };
   const d = v.detail;
 
   return (
@@ -98,16 +98,10 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="home-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))" }}>
-        <div className="card" style={{ gap: 12 }}>
+        <div className="card" style={{ gap: 10 }}>
           <span className="card-t">Change the goal</span>
-          <GoalForm initial={form} own={own} save={goalEdit.bind(null, g.id)} />
-          <div className="row wrap rule" style={{ gap: 8, paddingTop: 12 }}>
-            {g.state === "active" && <ActionButton className="btn outline sm" action={goalSetState.bind(null, g.id, "paused")}>Pause it</ActionButton>}
-            {g.state === "paused" && <ActionButton className="btn outline sm" action={goalSetState.bind(null, g.id, "active")}>Turn it back on</ActionButton>}
-            {g.state !== "done" && <ActionButton className="btn outline sm" action={goalSetState.bind(null, g.id, "done")}>Mark done</ActionButton>}
-            {g.state === "done" && <ActionButton className="btn outline sm" action={goalSetState.bind(null, g.id, "active")}>Reopen</ActionButton>}
-            <ActionButton className="btn ghost sm" action={goalSetState.bind(null, g.id, "dropped")} confirm={{ title: "Remove this goal?", body: "It leaves Crew and the heads stop reading it. Nothing else changes.", lines: [{ k: "Goal", v: g.title }], confirmLabel: "Remove it", kind: "dark" }}>Remove</ActionButton>
-          </div>
+          <span className="ink2" style={{ fontSize: 14, lineHeight: 1.5 }}>Tell {headName ?? "the head"} in {v.deptName}’s chat: a new target or date, pause it, mark it done or drop it. It comes back as a card for your OK.</span>
+          <Link href={goalHref(g.department_id, g.title)} className="btn outline sm" style={{ alignSelf: "flex-start" }}>Open {v.deptName}’s chat</Link>
         </div>
         <div className="card" style={{ gap: 10 }}>
           <span className="card-t">What {v.deptName} costs AI this month</span>

@@ -7,7 +7,14 @@ import type { AgentSpec } from "@/core/agent-spec";
 import type { Run, RunStatus } from "./data";
 import { when } from "./format";
 import type { BuilderMenu } from "./builder";
-import { estimate, money, type StepKey } from "./flowSteps";
+import { estimateRun } from "@/core/cost-rules";
+
+const money = (v: number) => (v < 0.01 ? `$${v.toFixed(3)}` : `$${v.toFixed(2)}`);
+/** One run's estimate (core/cost-rules.ts), from the model's price on the builder's list. */
+function estimate(spec: Pick<AgentSpec, "model" | "effort" | "tools" | "limits">, models: BuilderMenu["models"]): number | null {
+  const m = models.find((x) => x.id === spec.model);
+  return estimateRun(spec, m ? { in: m.in, out: m.out } : null);
+}
 
 export type ColKey = "when" | "reads" | "thinks" | "hands" | "usedBy" | "reportsTo";
 /** The columns, left to right. "Reports to" shows only where the org chart is loaded (docs/org-chart.md, slice 3). */
@@ -51,8 +58,6 @@ export interface MapInput {
   schedule: string | null;
   chain: string | null;
   usedBy: { id: string; name: string }[];
-  /** The flow's edit link (`/build/<id>?edit=1`), so each box opens its step; null where the map is read-only. */
-  edit: string | null;
   run?: MapRun | null;
   /** Its place on the org chart; leave it out and the map has no "Reports to" column. */
   org?: MapOrg | null;
@@ -68,7 +73,6 @@ export function mapOf(x: MapInput): AgentMapModel {
   const stepped = !!run && run.steps.length > 0;
   // a try sends, queues and saves nothing by design, so those boxes say so instead of "not used"
   const isTry = run?.trigger === "preview";
-  const step = (k: StepKey) => (x.edit ? `${x.edit}&step=${k}` : null);
   const connName = (id: string) => menu.conns.find((c) => c.id === id)?.name ?? id;
   const tools = spec.tools.map((id) => menu.tools.find((t) => t.id === id)).filter((t): t is BuilderMenu["tools"][number] => !!t);
 
@@ -93,15 +97,15 @@ export function mapOf(x: MapInput): AgentMapModel {
   }];
   for (const t of tools.filter((t) => t.kind === "read" || t.kind === "calculate")) {
     if (t.id === "agent_output") {
-      for (const r of spec.readsFrom) reads.push({ id: `from:${r.agentId}`, kicker: "Another agent", title: r.label, ...did(t.id, "Its latest finished result"), href: `/build/${r.agentId}`, look: "plain" });
+      for (const r of spec.readsFrom) reads.push({ id: `from:${r.agentId}`, kicker: "Another agent", title: r.label, ...did(t.id, "Its latest finished result"), href: `/agents/${r.agentId}`, look: "plain" });
       continue;
     }
     if (t.id === "team_report" && x.org?.team.length) {
-      for (const a of x.org.team) reads.push({ id: `team:${a.id}`, kicker: "Your team", title: a.name, ...did(t.id, "Its latest result and how its runs went"), href: `/build/${a.id}`, look: "plain" });
+      for (const a of x.org.team) reads.push({ id: `team:${a.id}`, kicker: "Your team", title: a.name, ...did(t.id, "Its latest result and how its runs went"), href: `/agents/${a.id}`, look: "plain" });
       continue;
     }
     const sub = t.id === "notion_read_page" && spec.notionPages.length ? spec.notionPages.map((p) => p.label).join(", ") : t.detail;
-    reads.push({ id: `t:${t.id}`, kicker: t.kind === "calculate" ? "Math in code" : connName(t.conn), title: t.label, ...did(t.id, clip(sub, 90)), href: step("connections"), look: "plain" });
+    reads.push({ id: `t:${t.id}`, kicker: t.kind === "calculate" ? "Math in code" : connName(t.conn), title: t.label, ...did(t.id, clip(sub, 90)), href: null, look: "plain" });
   }
 
   const est = estimate(spec, menu.models);
@@ -112,23 +116,23 @@ export function mapOf(x: MapInput): AgentMapModel {
       ? run.status === "running" ? "Working now" : run.status === "skipped" ? "Skipped: off duty or over budget" : `${run.tokensIn.toLocaleString("en-US")} in · ${run.tokensOut.toLocaleString("en-US")} out`
       : clip(spec.mandate, 110),
     foot: run ? (run.status === "skipped" ? undefined : `${money(run.costUsd)}${run.status === "running" ? " so far" : ""} · stops at ${money(spec.limits.maxCostUsd)}`) : `${est != null ? `≈ ${money(est)} a run · ` : ""}stops at ${money(spec.limits.maxCostUsd)}`,
-    href: step("brain"), look: "brain",
+    href: null, look: "brain",
     state: run ? (run.status === "running" ? "live" : run.status === "failed" ? "failed" : run.status === "ok" ? "ok" : null) : null,
   };
 
   const hands: MapNode[] = [];
   for (const t of tools.filter((t) => t.kind === "report")) {
     const sub = t.id === "report_notion_page" && spec.reportPage ? `Under ${spec.reportPage.label}` : clip(t.detail, 90);
-    hands.push({ id: `t:${t.id}`, kicker: connName(t.conn), title: t.label, ...(isTry ? { state: "unused" as const, sub: "Not sent in a try" } : did(t.id, sub)), href: step("hands"), look: "plain" });
+    hands.push({ id: `t:${t.id}`, kicker: connName(t.conn), title: t.label, ...(isTry ? { state: "unused" as const, sub: "Not sent in a try" } : did(t.id, sub)), href: null, look: "plain" });
   }
   for (const t of tools.filter((t) => t.kind === "action")) {
-    hands.push({ id: `t:${t.id}`, kicker: `${connName(t.conn)} · asks you first`, title: t.label, ...(isTry ? { state: "unused" as const, sub: "Not queued in a try" } : did(t.id, "An approval card you tap")), href: step("connections"), look: "do" });
+    hands.push({ id: `t:${t.id}`, kicker: `${connName(t.conn)} · asks you first`, title: t.label, ...(isTry ? { state: "unused" as const, sub: "Not queued in a try" } : did(t.id, "An approval card you tap")), href: null, look: "do" });
   }
-  hands.push({ id: "out", kicker: "Saves", title: `“${spec.outputName}”`, sub: isTry ? "Not saved in a try" : "Other agents can read it", href: step("hands"), look: "out", state: isTry ? "unused" : null });
+  hands.push({ id: "out", kicker: "Saves", title: `“${spec.outputName}”`, sub: isTry ? "Not saved in a try" : "Other agents can read it", href: null, look: "out", state: isTry ? "unused" : null });
 
   const usedBy: MapNode[] = x.usedBy.length
-    ? x.usedBy.map((u) => ({ id: `by:${u.id}`, kicker: "Reads its result", title: u.name, sub: "Picked in its Connections step", href: `/build/${u.id}`, look: "plain" as const, state: null }))
-    : [{ id: "by:none", kicker: "Nobody yet", title: "", sub: "Pick it in another agent's Connections step", href: null, look: "dashed", state: null }];
+    ? x.usedBy.map((u) => ({ id: `by:${u.id}`, kicker: "Reads its result", title: u.name, sub: "Picked in its sheet", href: `/agents/${u.id}`, look: "plain" as const, state: null }))
+    : [{ id: "by:none", kicker: "Nobody yet", title: "", sub: "Pick it in another agent's sheet, under More detail", href: null, look: "dashed", state: null }];
 
   const cap = (nodes: MapNode[], col: ColKey): MapNode[] => nodes.length <= MAX_PER_COL ? nodes
     : [...nodes.slice(0, MAX_PER_COL - 1), { id: `${col}:more`, kicker: "", title: `+${nodes.length - MAX_PER_COL + 1} more`, sub: nodes.slice(MAX_PER_COL - 1).map((n) => n.title).join(", "), href: nodes[MAX_PER_COL - 1].href, look: "dashed", state: null }];
@@ -136,8 +140,8 @@ export function mapOf(x: MapInput): AgentMapModel {
   // its saved result goes up the chart: the head or lead above reads it with Your team, Avery with Department reports
   const up = x.org?.reportsTo ?? null;
   const reportsTo: MapNode[] = x.org == null ? []
-    : !up ? [{ id: "up:none", kicker: "Not on the org chart", title: "", sub: "Pick a seat in step 1 so its result reaches a head", href: step("job"), look: "dashed", state: null }]
-    : [{ id: "up", kicker: up.open ? "Open seat" : "Reads it", title: up.title, sub: up.sub, href: up.agentId ? `/build/${up.agentId}` : "/crew", look: up.open ? "dashed" : "plain", state: null }];
+    : !up ? [{ id: "up:none", kicker: "Not on the org chart", title: "", sub: "Seat it on Crew so its result reaches a head", href: null, look: "dashed", state: null }]
+    : [{ id: "up", kicker: up.open ? "Open seat" : "Reads it", title: up.title, sub: up.sub, href: up.agentId ? `/agents/${up.agentId}` : "/crew", look: up.open ? "dashed" : "plain", state: null }];
 
   const byCol: Record<ColKey, MapNode[]> = { when: [when], reads: cap(reads, "reads"), thinks: [brain], hands: cap(hands, "hands"), usedBy: cap(usedBy, "usedBy"), reportsTo };
   const cols = MAP_COLS.filter((c) => byCol[c.key].length).map((c) => ({ ...c, nodes: byCol[c.key] }));

@@ -22,7 +22,7 @@ back to an approval card on a "wrong" rejection, a cap breach or a breaker trip 
 - **Only the gateway writes.** `callWriteTool("shopify", …)` is called only from `core/gateway`, after
   the approval (or the trust level) allows it. Every apply re-checks the allow-list, the app's live
   scopes and the record's live state, and stores before, after and what to put back (`undo_json`).
-- **Granted per agent by an approver**, on the builder's Tools step. A head's proposal or Avery's
+- **Granted per agent by an approver**, on the Can do toggles of the agent sheet. A head's proposal or Avery's
   design can never hand out a store action.
 
 ## Action types
@@ -136,7 +136,7 @@ action causes, and it is Shopify's template, not text a model wrote.
 - **Card**: the order, how many items, the carrier and tracking number, and a line saying Shopify will
   email the customer.
 - **Draft only, never promoted** (decided 2026-11-22): it emails a customer, and a wrong tracking
-  number can't be unsent. Granted only by an approver on the Tools step ("Mark an order shipped").
+  number can't be unsent. Granted only by an approver on the agent sheet's Can do toggles ("Mark an order shipped").
 - Not in this slice: shipping part of an order, more than one location, a custom carrier or link,
   editing or cancelling a fulfillment, and orders a fulfillment app handles.
 
@@ -173,8 +173,7 @@ custom amount, gift card or store credit can be sent.
   is null.
 - **Card**: the order, the whole order or each item and quantity, the amount, what it had refunded before,
   and a line saying the customer gets the money and Shopify's email.
-- **Draft only, never promoted** (decided 2026-11-22): it moves money. Granted only by an approver on the
-  Tools step ("Refund an order").
+- **Draft only, never promoted** (decided 2026-11-22): it moves money. Granted only by an approver on the agent sheet's Can do toggles ("Refund an order").
 - Not in this slice: a custom amount, refunding shipping alone, restocking, store credit or gift cards,
   orders in other currencies or older than 60 days, and returns.
 
@@ -204,7 +203,7 @@ list can be sent.
   early by deactivating it in Shopify, and nothing deletes a code.
 - **Card**: the code, percent off, uses, dates and name, and a line saying anyone with the code can use it.
 - **Draft only, never promoted** (decided 2026-11-22): money off every order that uses it. Granted only by
-  an approver on the Tools step ("Create a discount code").
+  an approver on the agent sheet's Can do toggles ("Create a discount code").
 - Not in this slice: fixed-amount, free-shipping and buy X get Y codes, codes for some products or some
   customers, minimum order amounts, editing or ending a code.
 

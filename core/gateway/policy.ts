@@ -246,7 +246,7 @@ export type ToolName = keyof typeof TOOLS;
 export function refuseAgent(def: ActionDef, tool: string, agentId: string, grants: readonly string[] | null): string | null {
   if (def.agents === "granted") {
     if (!def.grant) return `${tool} names no tool to grant.`;
-    return grants?.includes(def.grant) ? null : `${agentId} hasn't been given ${def.grant} on the builder's Tools step.`;
+    return grants?.includes(def.grant) ? null : `${agentId} hasn't been given ${def.grant} on its Can do toggles.`;
   }
   return def.agents.includes(agentId) ? null : `${agentId} may not use ${tool}.`;
 }

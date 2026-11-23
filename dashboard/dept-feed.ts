@@ -33,8 +33,8 @@ export function checklist(steps: readonly StepRow[], label: (tool: string) => st
 }
 
 /** What the run card is called, from how it started. */
-export function runTitle(trigger: string): string {
-  return trigger === "manual" ? "Run now" : trigger === "preview" ? "First try" : trigger === "chain" || trigger === "schedule" ? "Scheduled run" : trigger === "event" ? "Started by an event" : "Run";
+export function runTitle(trigger: string, version: number | null = null): string {
+  return trigger === "manual" ? "Run now" : trigger === "preview" ? (version && version > 1 ? `Try of v${version}` : "First try") : trigger === "chain" || trigger === "schedule" ? "Scheduled run" : trigger === "event" ? "Started by an event" : "Run";
 }
 
 /** The status pill on a run card. */
@@ -61,6 +61,8 @@ export const initialsOf = (name: string) => name.replace(/[^A-Za-z ]/g, "").trim
 export interface FeedRun {
   id: string; agentId: string; name: string; role: string; at: string; endedAt: string | null; trigger: string; status: RunStatus;
   lines: CheckLine[]; steps: number; costUsd: number; result: string; drafts: string[];
+  /** The version a try ran (a change card's draft shows "Try of v4"). */
+  version?: number | null;
 }
 export interface FeedTalk { id: string; role: "owner" | "head"; text: string; notes: string[]; runId: string | null; at: string }
 export type FeedItem = ({ kind: "talk" } & FeedTalk) | ({ kind: "run" } & FeedRun);

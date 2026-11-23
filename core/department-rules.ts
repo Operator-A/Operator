@@ -75,7 +75,7 @@ export function checkPerson(input: Record<string, unknown>, ctx: DraftCtx, role:
   if (tools.length > MAX_PERSON_TOOLS) return { problem: `at most ${MAX_PERSON_TOOLS} tools` };
   for (const id of tools) {
     const t = ctx.tools[id];
-    if (!t && ctx.isCustom(id)) return { problem: `${id} is on a server the founder added: they grant it on the builder's Tools step after the department is approved` };
+    if (!t && ctx.isCustom(id)) return { problem: `${id} is on a server the founder added: they grant it in the agent's sheet after the department is approved` };
     if (!t) return { problem: `${id} isn't on the tool list` };
     if (t.kind === "action") return { problem: `${t.label} is an action: a proposal can't hand out actions, only code can` };
     if (t.kind === "report") return { problem: `${t.label} is a report: name the read tools it uses` };
