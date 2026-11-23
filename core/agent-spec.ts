@@ -42,8 +42,8 @@ export interface AgentSpec {
 
 export const MAX_DIRECTIVE = 4000;
 
-/** Claude models only (owner's call, Nov 12): no AI Gateway route for a built agent. */
-export const specModelOk = (id: string) => modelDef(id)?.route === "anthropic";
+/** A model on the list whose provider is connected. Only Claude is, until provider keys land (docs/agent-setup.md). */
+export const specModelOk = (id: string) => modelDef(id)?.provider === "Anthropic";
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const NOTION_ID = /^[0-9a-f]{32}$/;

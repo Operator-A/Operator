@@ -78,7 +78,7 @@ export function builderMenu(crew: readonly { id: string; name: string }[] = [], 
   return {
     tools: [...TOOL_LIST.map((t): BuildTool => ({ id: t.id, label: t.label, detail: t.detail, kind: t.kind, group: t.group, conn: connOf(t), trusted: t.trusted, needs: [...t.needs], connected: t.needs.every((k) => !!SETTING[k]), grantable: GRANTABLE.has(t.kind), agents: t.agents === "granted" ? "granted" : t.agents ? [...t.agents] : null, seat: t.seat ?? null })), ...custom.tools],
     agentNames: Object.fromEntries(crew.map((a) => [a.id, `${a.name} (${a.id})`])) as Record<string, string>,
-    models: MODEL_LIST.filter((m) => m.route === "anthropic").map((m): BuildModel => ({ id: m.id, label: m.label, in: m.in, out: m.out })),
+    models: MODEL_LIST.filter((m) => m.provider === "Anthropic").map((m): BuildModel => ({ id: m.id, label: m.label, in: m.in, out: m.out })),
     efforts: [...EFFORTS],
     limits: RUN_LIMITS,
     budgetCeiling: BUDGET_CEILING,

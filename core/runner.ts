@@ -29,7 +29,8 @@ import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, businessLines, ownerWord, type Business } from "@/core/business-rules";
 import { localDate, dayTitle } from "@/core/time";
 import type { RunResult } from "@/core/runs";
-import { Anthropic, claude, cacheTokens, costUsd, inputTokens, isModel } from "@/integrations/anthropic";
+import { Anthropic, costUsd, isModel } from "@/integrations/anthropic";
+import { modelClient, type ModelClient } from "@/integrations/llm";
 import { TOOLS } from "@/core/tools/catalog";
 import { callTool, hostFor } from "@/core/tools/call";
 import { actionOpenTo, actionWho, checkInput, inputSchema, paramsOf, type Pick, type PickRef, type Staged, type ToolCtx, type ToolDef } from "@/core/tools/types";
@@ -195,13 +196,15 @@ export interface ExploreOpts {
   customTools?: (granted: readonly string[]) => Promise<{ tools: Record<string, ToolDef>; notes: string[] }>;
   /** Who the agent works for; read from the org's row when not given (tests pass one). */
   business?: Business;
-  /** Tests only (scripts/check-runner.ts): a stand-in for the Claude client. */
-  client?: { beta: { messages: { create: (body: Anthropic.Beta.MessageCreateParamsNonStreaming) => Promise<Anthropic.Beta.BetaMessage> } } };
+  /** Tests only (scripts/check-runner.ts): a stand-in for the model client (integrations/llm.ts). */
+  client?: ModelClient;
 }
 
 /** One explore run. Throws only when the model can't be used at all; limits end the run with a summary that says so. */
 export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<RunResult & { steps: Step[]; finished: boolean; result: string | null; output: OutputNumber[]; mode: RunMode; fellBack: string | null; actions: StagedAction[]; reports: { tool: string; ok: boolean; note: string }[] }> {
   if (!isModel(spec.model)) throw new Error(`No price for ${spec.model}, so its cost can't be computed`);
+  // the provider's client, picked before anything runs: a model whose provider isn't connected stops here
+  const llm = opts.client ?? modelClient(spec.model);
   const ctx: ToolCtx = { agentId: opts.agentId, notionPages: spec.notionPages, outputSources: spec.readsFrom, reportPage: spec.reportPage, runId: opts.runId ?? null, granted: spec.tools };
   // tools from servers the owner added, built for this run after each server's tool check passes
   const customIds = spec.tools.filter(isCustomToolId);
@@ -404,23 +407,15 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
       if (spent + worst > spec.limits.maxCostUsd) { stopped = `the $${spec.limits.maxCostUsd.toFixed(2)} cost limit`; break; }
       const t0 = Date.now();
       const { res, tin, tout, c } = await span("model_call", { "operator.agent": opts.agentId, "operator.run": opts.runId, "operator.model": spec.model }, async (set) => {
-        const res = await (opts.client ?? (await claude())).beta.messages.create({
-          model: spec.model, max_tokens: maxOut,
-          // prompt caching (card 200): each turn re-sends the whole prompt, so later turns read it from the cache
-          cache_control: { type: "ephemeral" },
-          betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
-          output_config: { effort: spec.effort },
-          system, tools, messages,
-        });
-        const tin = inputTokens(res.usage), tout = res.usage.output_tokens;
-        const searches = res.usage.server_tool_use?.web_search_requests ?? 0;
-        // a refusal may be answered by another Claude model; bill whichever model served it
+        const res = await llm.turn({ model: spec.model, maxOut, effort: spec.effort, system, tools, messages });
+        const tin = res.usage.tokensIn, tout = res.usage.tokensOut;
+        // a refusal may be answered by another model; bill whichever model served it
         const billed = isModel(res.model) ? res.model : spec.model;
-        const c = costUsd(billed, tin, tout, searches, cacheTokens(res.usage));
-        set({ "operator.model": billed, "operator.tokens_in": tin, "operator.tokens_out": tout, "operator.cost_usd": c, "operator.status": res.stop_reason ?? "unknown" });
+        const c = costUsd(billed, tin, tout, res.usage.searches, { write: res.usage.cacheWrite, read: res.usage.cacheRead });
+        set({ "operator.model": billed, "operator.tokens_in": tin, "operator.tokens_out": tout, "operator.cost_usd": c, "operator.status": res.stopReason ?? "unknown" });
         return { res, tin, tout, c };
       });
-      tokensIn += tin; tokensOut += tout; spent += c; lastIn = tin; lastOut = tout; lastCached = (res.usage.cache_read_input_tokens ?? 0) + (res.usage.cache_creation_input_tokens ?? 0) > 0;
+      tokensIn += tin; tokensOut += tout; spent += c; lastIn = tin; lastOut = tout; lastCached = res.usage.cacheRead + res.usage.cacheWrite > 0;
       const text = res.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n").trim();
       step({ kind: "model", output: text || undefined, ok: true, tokensIn: tin, tokensOut: tout, costUsd: c, ms: Date.now() - t0 });
       // web search and fetch ran on Claude's side inside that turn: one step each for Replay, counted against the per-run cap
@@ -429,7 +424,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
         serverUsed[b.name] = (serverUsed[b.name] ?? 0) + 1;
         step({ kind: "tool", tool: b.name, input: b.input, output: "Ran on Claude's side. What came back is web pages: untrusted data.", ok: true, ms: 0 });
       }
-      if (res.stop_reason === "refusal") throw new Error("The model declined the request");
+      if (res.stopReason === "refusal") throw new Error("The model declined the request");
       // a server tool at its per-run cap: say so once; searching again after that ends the run at the next turn
       const capNotes: string[] = [];
       let overCap = false;
@@ -450,7 +445,7 @@ export async function runExplore(spec: AgentSpec, opts: ExploreOpts): Promise<Ru
       if (wrapUp) { stopped = capStop ? "the web limit" : `the ${spec.limits.maxSteps}-step limit`; break; }
       if (overCap) { wrapUp = true; capStop = true; }
       if (!calls.length) {
-        if (res.stop_reason === "pause_turn") continue;
+        if (res.stopReason === "pause_turn") continue;
         if (text && nudged) { result = text.slice(0, 3000); break; }
         nudged = true;
         capped.forEach((id) => capNoted.add(id));

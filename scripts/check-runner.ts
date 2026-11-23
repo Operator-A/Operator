@@ -8,6 +8,8 @@ import { readSpec, specLooser } from "../core/agent-spec";
 import { draftSteps, sameSteps, stepChanges } from "../core/playbook";
 import { runExplore, traceNumbers, type Step } from "../core/runner";
 import { TOOLS } from "../core/tools/catalog";
+import { claudeClient, modelClient } from "../integrations/llm";
+import { MODEL_LIST } from "../integrations/models";
 import type { ToolDef } from "../core/tools/types";
 
 type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: unknown };
@@ -16,7 +18,7 @@ const reply = (content: Block[], stop = "tool_use") => ({ id: `m${++n}`, type: "
 const fake = (script: (turn: number, body: { messages: unknown[]; tools: { name: string }[] }) => ReturnType<typeof reply>) => {
   let turn = 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { beta: { messages: { create: async (body: any) => script(turn++, body) as any } } };
+  return claudeClient({ beta: { messages: { create: async (body: any) => script(turn++, body) as any } } });
 };
 
 async function main() {
@@ -41,6 +43,23 @@ async function main() {
   assert.equal(specLooser(spec, { ...spec, limits: { maxSteps: 3, maxCostUsd: 0.6 } }).length, 1);
   assert.equal(specLooser(spec, { ...spec, limits: { maxSteps: 9, maxCostUsd: 2 } }).length, 2);
   assert.deepEqual(specLooser(null, spec), []);
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  // one model interface (integrations/llm.ts): every listed model has a client; the Claude client keeps caching,
+  // effort and the refusal fallback, and hands back usage in one shape with cache reads and writes split out
+  for (const m of MODEL_LIST) assert.ok(modelClient(m.id), `${m.id} has a client`);
+  assert.throws(() => modelClient("openai/gpt-x"), /No price/);
+  let llmBody: any = null;
+  const turn = await claudeClient({ beta: { messages: { create: async (body: any) => { llmBody = body; return { ...reply([{ type: "text", text: "hi" }], "end_turn"), model: "claude-sonnet-5-5", usage: { input_tokens: 100, cache_read_input_tokens: 900, cache_creation_input_tokens: 50, output_tokens: 20, server_tool_use: { web_search_requests: 2 } } } as any; } } } })
+    .turn({ model: "claude-haiku-5-5", maxOut: 1000, effort: "medium", system: [{ type: "text", text: "s" }], tools: [], messages: [{ role: "user", content: "x" }] });
+  assert.deepEqual(llmBody.cache_control, { type: "ephemeral" });
+  assert.equal(llmBody.output_config.effort, "medium");
+  assert.equal(llmBody.fallbacks, "default");
+  assert.equal(llmBody.max_tokens, 1000);
+  assert.deepEqual(turn.usage, { tokensIn: 1050, tokensOut: 20, cacheWrite: 50, cacheRead: 900, searches: 2 });
+  assert.equal(turn.model, "claude-sonnet-5-5", "the model that served the turn, for billing");
+  assert.equal(turn.stopReason, "end_turn");
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // finishes: a tool the agent doesn't have is refused, then finish ends the run
   const r1 = await runExplore(spec, { agentId: "scratch", client: fake((t, body) => {

@@ -58,11 +58,12 @@ assert.ok(!/https?:|Shopify|Klaviyo|Mercury/.test(SETUP_HANDOFF) && SETUP_HANDOF
   assert.equal(costUsd(SETUP_MODEL, 10000, 0, 0, { write: 10000 }), Number((10000 * 1.25 * m.in).toFixed(4)));
   assert.ok(costUsd(SETUP_MODEL, 18000, 1600, 0, { read: 16000 }) < costUsd(SETUP_MODEL, 18000, 1600) / 2, "a cached turn costs less than half");
   assert.ok(SETUP_MAX_OUT >= 4000 && SETUP_MAX_OUT < 8000, "room for thinking and a long design call, below the runner's 8000");
-  const runner = read("core/runner.ts"), setup = read("core/setup.ts");
-  assert.match(runner, /cache_control: \{ type: "ephemeral" \}/);
+  const runner = read("core/runner.ts"), setup = read("core/setup.ts"), llm = read("integrations/llm.ts");
+  assert.match(llm, /cache_control: \{ type: "ephemeral" \}/);
+  assert.match(llm, /max_tokens: req\.maxOut,/);
   assert.match(runner, /const worst = lastCached \? costUsd\(spec\.model, lastIn \+ added, maxOut, 0, \{ read: lastIn, write: added \}\) : costUsd\(spec\.model, lastIn \+ 3000, maxOut\)/, "the cost check uses the same output limit as the call");
-  assert.match(runner, /max_tokens: maxOut,/);
-  assert.match(runner, /costUsd\(billed, tin, tout, searches, cacheTokens\(res\.usage\)\)/);
+  assert.match(runner, /llm\.turn\(\{ model: spec\.model, maxOut,/, "the call uses the same output limit as the cost check");
+  assert.match(runner, /costUsd\(billed, tin, tout, res\.usage\.searches, \{ write: res\.usage\.cacheWrite, read: res\.usage\.cacheRead \}\)/);
   assert.match(setup, /maxOut: SETUP_MAX_OUT/);
   assert.match(setup, /const upFront = ready \? await similarUpFront\("starting"\)/);
   assert.match(setup, /\[ready \? null : similarTool\(heldSimilar\), kindTool\(heldKind\)\]/, "no tool turn for the brain once she can sketch");
