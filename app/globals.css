@@ -442,6 +442,16 @@ h1, h2, h3, p { margin: 0; }
 .ag-mem small { font-size: 11px; color: var(--mut); font-weight: 600; }
 .ag-foot { padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--bd); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .ag-foot .note { flex: 1 1 160px; }
+/* department settings (slice 7): the gear on the header, and the sheet's own bits */
+.dp-gear { width: 30px; height: 30px; border-radius: 99px; border: 1px solid var(--bd); background: var(--card); color: var(--ink2); display: grid; place-items: center; }
+.dp-gear:hover { color: var(--ink); text-decoration: none; }
+.ds-h .dp-icon { width: 40px; height: 40px; border-radius: 13px; flex: none; }
+.ag input[type=text] { font: inherit; font-size: 14px; color: var(--ink); background: var(--card); border: 1px solid var(--bd); border-radius: 12px; padding: 10px 12px; }
+.ds-meter { height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--mut) 18%, transparent); overflow: hidden; }
+.ds-meter i { display: block; height: 100%; border-radius: inherit; background: var(--hue, var(--acc)); }
+.ds-danger { align-self: flex-start; border: 0; background: none; padding: 0; font: inherit; font-size: 13px; font-weight: 600; color: var(--red-ink); cursor: pointer; }
+.ds-danger:disabled { opacity: .5; cursor: not-allowed; }
+.ds-danger-btn { color: var(--red-ink); border-color: var(--red-ink); }
 .ag-toast { position: fixed; z-index: 70; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; background: var(--gdark); color: var(--on-gdark); padding: 10px 16px; border-radius: 99px; font-size: 13px; font-weight: 600; transition: all .35s; pointer-events: none; max-width: calc(100vw - 32px); text-align: center; }
 .ag-toast.on { opacity: 1; transform: translate(-50%, 0); }
 @media (max-width: 760px) {

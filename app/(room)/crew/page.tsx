@@ -11,7 +11,7 @@ import { OrgSwitch } from "@/dashboard/components/OrgSwitch";
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
 import { canvasData, deptExtras, orgView } from "@/dashboard/org";
 import { listProposals, proposalsBySeat } from "@/core/proposals";
-import { orgAddDepartment, orgAddDeptRule, orgAddSeat, orgEditDeptRule, orgEditSeat, orgForgetDeptRule, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetDeptBudget, orgSetDeptEmails, orgSetHolder, orgSetLeadChecks } from "@/dashboard/orgActions";
+import { orgAddDepartment, orgAddSeat, orgEditSeat, orgRemoveSeat, orgSetHolder } from "@/dashboard/orgActions";
 import { controlsOn } from "@/dashboard/session";
 import { loadFlow } from "@/core/flow";
 import { AgentCard } from "@/dashboard/components/orgBits";
@@ -68,10 +68,8 @@ async function Chart({ f, edit }: { f: Awaited<ReturnType<typeof getFloor>>; edi
   if (edit) return (
     <OrgChart
       v={v}
-      controls={controlsOn()}
       actions={{
-        addDept: orgAddDepartment, renameDept: orgRenameDepartment, removeDept: orgRemoveDepartment, addSeat: orgAddSeat, editSeat: orgEditSeat, removeSeat: orgRemoveSeat, setHolder: orgSetHolder,
-        setBudget: orgSetDeptBudget, setEmails: orgSetDeptEmails, addRule: orgAddDeptRule, editRule: orgEditDeptRule, forgetRule: orgForgetDeptRule, setLeadChecks: orgSetLeadChecks,
+        addDept: orgAddDepartment, addSeat: orgAddSeat, editSeat: orgEditSeat, removeSeat: orgRemoveSeat, setHolder: orgSetHolder,
       }}
     />
   );

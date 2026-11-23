@@ -18,6 +18,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | 4 | The agent sheet: Runs and Edit (model, schedule, reads, grants, budget, triggers inside OPERATOR) | `/agents/[id]` and `/build/[id]` |
 | 5 | Hire in the chat: a draft card with grant toggles and cost in code; Hire runs a first try | `/build/new` step screens |
 | 6 | Change agents and goals by asking (change cards); the agent sheet's More detail | The step editor (`/build/[id]?edit`) and the Set a goal form |
+| 7 | Department settings on its page: name, monthly AI budget, emails a day, head checks drafts, rules, remove | Crew's department editor |
 
 ## Slice 1: the page
 
@@ -207,4 +208,23 @@ budget inside code's limits; goal pause, turn back on and done carry no fields),
 New lines, card stages, a replaced card leaves the chat, Approve is the owner's and goes through the
 proposal's own path, a change saves a draft and never goes live by itself, only the head's own department,
 the deleted files and links are gone, the sheet's More detail fields), `npm run check:interrupts` and
+`npm run check:audit`.
+
+## Slice 7: department settings on its page
+
+- **Where.** A gear at the right of the department header opens its settings, a sheet like the agent sheet
+  (`?settings=1`, `settingsHref`, so back closes it). On a phone the title pill opens it. Settings on Crew's Edit
+  chart opens the same page.
+- **What.** The department's name, its monthly AI budget (with this month's spend and a bar), emails a day
+  (never over the company cap; blank uses it), the head checking drafts first (`LEAD_REVIEW_HOURS`), the rules
+  every agent in it follows (add and remove; asking the head in the chat still works), and Remove (only when
+  every seat is open).
+- **How.** `DeptSettingsFor` (`dashboard/components/deptSettingsFor.tsx`) reads the department and binds the
+  owner-only actions Crew's editor used: `orgRenameDepartment`, `orgSetDeptBudget`, `orgSetDeptEmails`,
+  `orgSetLeadChecks`, `orgAddDeptRule`, `orgForgetDeptRule`, `orgRemoveDepartment`. A raised budget or email cap
+  comes back as "Confirm first" from the server; the sheet shows it and saves again only on Confirm and save.
+- **Deletes.** Crew's department editor (`DeptEditor`, `LimitForm`) and `orgEditDeptRule`.
+
+Tests: `npm run check:dept` (the settings address, the sheet uses those owner-only actions, a raise stops for a
+confirm, emails stay under the company cap, the sheet never writes the database, Crew's editor is gone) and
 `npm run check:audit`.

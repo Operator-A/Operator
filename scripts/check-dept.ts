@@ -2,7 +2,7 @@
 // who works in a department, on a small chart. No database, no network. Run: npm run check:dept
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { DEPT_TABS, agentHref, goalHref, hireHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
+import { DEPT_TABS, agentHref, goalHref, hireHref, settingsHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
 import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from "../core/flow-rules";
 import { deptReach, headDirective } from "../core/head-chat-rules";
 import { resolveRuleWho, deptNamed } from "../core/chat-rules";
@@ -262,5 +262,22 @@ for (const f of appFiles) assert.ok(!/\/build\/\$\{|\/build\/[a-z]|goals\/new/.t
 const sheetSrc = read("dashboard/components/agentSheet.tsx");
 assert.ok(/More detail/.test(sheetSrc) && /goodResult/.test(sheetSrc) && /maxCostUsd/.test(sheetSrc) && /notionPages/.test(sheetSrc) && /readsFrom/.test(sheetSrc) && /reportPage/.test(sheetSrc), "the sheet's More detail holds good result, limits, pages, other agents' results and where it saves");
 assert.ok(/ask at most two short questions/.test(headDirective({ name: "Morgan", title: "CFO", dept: "Finance", business: "Shop", agents: [] })), "the head asks at most two questions before it files a hire");
+
+// slice 7: a department's settings on its own page, through the same owner-only actions Crew's editor used
+assert.equal(settingsHref("finance", "chat"), "/dept/finance?settings=1");
+assert.equal(settingsHref("finance", "goals"), "/dept/finance?tab=goals&settings=1");
+const dsFor = read("dashboard/components/deptSettingsFor.tsx"), ds = read("dashboard/components/deptSettings.tsx"), orgActs = read("dashboard/orgActions.ts");
+for (const a of ["orgRenameDepartment", "orgSetDeptBudget", "orgSetDeptEmails", "orgSetLeadChecks", "orgAddDeptRule", "orgForgetDeptRule", "orgRemoveDepartment"]) {
+  assert.ok(dsFor.includes(a), `the settings sheet uses ${a}`);
+  assert.ok(new RegExp(`export async function ${a}\\([^)]*\\)[^{]*\\{\\s*const \\{ (me, )?no \\} = await asRole\\("owner"\\)`).test(orgActs), `${a} is the owner's only`);
+}
+assert.ok(/export async function orgSetDeptBudget[\s\S]*?if \(ch\.looser && !confirmed\) return \{ ok: false, text: `Confirm first/.test(orgActs), "a raised budget asks to confirm on the server");
+assert.ok(/deptEmailChange\(d\.maxEmailsPerDay, next, company\)/.test(orgActs), "emails stay under the company cap, checked on the server");
+assert.ok(/asksConfirm\(r\)\) \{ setConfirm\(r\.text\)/.test(ds) && /Confirm and save/.test(ds), "the sheet stops for that confirm and saves again only on a second tap");
+assert.ok(!/db\(\)|agent_memory|departments/.test(ds.replace(/^\s*(\/\/|\*).*$/gm, "")), "the sheet never writes the database itself");
+assert.ok(/<DeptSettingsFor chart=\{chart\} id=\{id\}/.test(page) && /className="dp-gear"/.test(page), "the gear on the header opens the settings");
+const chartSrc = read("dashboard/components/OrgChart.tsx");
+assert.ok(!/DeptEditor|LimitForm|setBudget|setLeadChecks|addRule/.test(chartSrc) && /\/dept\/\$\{d\.id\}\?settings=1/.test(chartSrc), "Crew's department editor is gone; its Settings opens the department's page");
+assert.ok(!/orgEditDeptRule/.test(orgActs), "the rule editor went with it");
 
 console.log("check:dept ok");

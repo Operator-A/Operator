@@ -24,6 +24,8 @@ export const goalHref = (deptId: string, goal?: string | null) =>
 export const hireHref = (deptId: string, seat?: { title: string; sub?: string | null } | null) =>
   `/dept/${deptId}?say=${encodeURIComponent(seat ? `Hire an agent for the ${seat.title} seat${seat.sub ? `: ${seat.sub}` : ""}.` : "I want to hire an agent to ")}`;
 /** A tab with an agent's sheet open over it (slice 4): the sheet is in the address, so back closes it. */
+/** A tab with the department's settings open over it (slice 7): in the address, so back closes it. */
+export const settingsHref = (deptId: string, t: DeptTab) => `${tabHref(deptId, t)}${t === "chat" ? "?" : "&"}settings=1`;
 export const sheetHref = (deptId: string, t: DeptTab, agentId: string) => `${tabHref(deptId, t)}${t === "chat" ? "?" : "&"}agent=${encodeURIComponent(agentId)}`;
 
 /**
