@@ -6,6 +6,8 @@
 //    say so on the same line: `// refresh-ok: <reason>`.
 // 3. The Control Room has a loading frame (app/(room)/loading.tsx): a click shows it at once, and Next.js
 //    pre-loads dynamic pages up to it.
+// 4-6. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
+//    starts loading on hover, touch or focus (IntentLink). Each rule is below, where it is checked.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -73,6 +75,39 @@ for (const f of ["dashboard/data.ts", "dashboard/toolsStep.ts"]) if (/\bawait mc
 if (!/mcpStatuses\(\)/.test(read("dashboard/data.ts"))) problems.push("dashboard/data.ts: getHealth should read every connection with mcpStatuses() (card 202).");
 
 if (!existsSync("app/(room)/loading.tsx")) problems.push("app/(room)/loading.tsx is missing: Control Room clicks would wait on a blank pause.");
+
+// 5. Pages you just saw come back at once (card 301): the browser keeps a page 1 to 60 s (longer would show
+//    old numbers after an agent finishes; 0, the Next 16 default, makes every back-and-forth wait on the server).
+export function staleSeconds(config: string): { dynamic: number | null; static: number | null } {
+  const block = config.match(/staleTimes:\s*\{([^}]*)\}/)?.[1] ?? "";
+  const n = (k: string) => { const m = block.match(new RegExp(`\\b${k}:\\s*(\\d+)`)); return m ? Number(m[1]) : null; };
+  return { dynamic: n("dynamic"), static: n("static") };
+}
+assert.deepEqual(staleSeconds(`experimental: { staleTimes: { dynamic: 30, static: 45 } }`), { dynamic: 30, static: 45 });
+assert.deepEqual(staleSeconds(`experimental: {}`), { dynamic: null, static: null });
+const stale = staleSeconds(read("next.config.ts"));
+for (const k of ["dynamic", "static"] as const) {
+  const v = stale[k];
+  if (v === null || v < 1 || v > 60) problems.push(`next.config.ts: experimental.staleTimes.${k} should be 1 to 60 seconds (is ${v ?? "unset"}), so pages just seen come back at once without showing old numbers (card 301).`);
+}
+// 6. Navigation starts loading on intent (card 301): the sidebar, crew chips, agent tabs, Crew views and Settings
+//    sections use IntentLink, which loads the whole page on hover, touch or focus. A plain Link there waits for the click.
+export function plainLinks(src: string): number[] {
+  return src.split("\n").flatMap((line, i) => (/<Link\b/.test(line) ? [i + 1] : []));
+}
+assert.deepEqual(plainLinks(`<IntentLink href="/">\n<Link href="/x">`), [2]);
+const NAV: [string, RegExp][] = [
+  ["dashboard/components/client.tsx", /export function (SideLink|RailLink)\b[\s\S]*?\n\}/g],
+  ["dashboard/components/ui.tsx", /export function AgentTabs\b[\s\S]*?\n\}/g],
+  ["dashboard/components/settingsNav.tsx", /export function SettingsNav\b[\s\S]*?\n\}/g],
+  ["app/(room)/crew/page.tsx", /<nav className="seg" aria-label="Crew view">[\s\S]*?<\/nav>/g],
+];
+for (const [f, part] of NAV) {
+  const parts = [...read(f).matchAll(part)].map((m) => m[0]);
+  if (!parts.length) problems.push(`${f}: navigation not found for check:speed rule 6; update NAV in scripts/check-speed.ts.`);
+  for (const p of parts) if (plainLinks(p).length || !/<IntentLink\b/.test(p)) problems.push(`${f}: navigation should use IntentLink (loads on hover, touch or focus), not a plain Link (card 301).`);
+}
+if (!/prefetch=\{warm \? true : null\}/.test(read("dashboard/components/intentLink.tsx"))) problems.push("dashboard/components/intentLink.tsx: IntentLink should pre-load the full page once warm and only to the loading frame before (card 301).");
 
 if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
 console.log("check:speed ok");

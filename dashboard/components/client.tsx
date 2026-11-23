@@ -6,6 +6,7 @@ import { useEffect, useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { SEEN_COOKIE, parseSeen } from "../seen";
 import { Icon } from "./Icon";
+import { IntentLink } from "./intentLink";
 
 export function ThemeToggle({ initial, wide }: { initial: "light" | "dark"; wide?: boolean }) {
   const [theme, setTheme] = useState(initial);
@@ -43,12 +44,12 @@ export function SideLink({ href, match, icon, label, note, noteColor, count }: {
   const path = usePathname();
   const active = (Array.isArray(match) ? match : [match]).some((m) => (m.endsWith("*") ? path.startsWith(m.slice(0, -1)) : path === m));
   return (
-    <Link href={href} className={"side-item" + (active ? " active" : "")} aria-current={active ? "page" : undefined}>
+    <IntentLink href={href} className={"side-item" + (active ? " active" : "")} aria-current={active ? "page" : undefined}>
       <Icon name={icon} size={17} />
       <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap" }}>{label}</span>
       {note && <span className="side-note" style={{ color: noteColor }}>{note}</span>}
       {count && <span className="count">{count}</span>}
-    </Link>
+    </IntentLink>
   );
 }
 
@@ -60,14 +61,14 @@ export function RailLink({ id, name, title, icon, running, badge }: { id: string
   // switching agents keeps the tab the owner is on (Memory to Memory)
   const href = path.startsWith("/build/") && !path.startsWith("/build/new") ? `/build/${id}` : `/agents/${id}${tab && path.startsWith("/agents/") ? `?tab=${tab}` : ""}`;
   return (
-    <Link href={href} title={title} className={"rail-item" + (sel ? " sel" : "")} aria-current={sel ? "page" : undefined}>
+    <IntentLink href={href} title={title} className={"rail-item" + (sel ? " sel" : "")} aria-current={sel ? "page" : undefined}>
       <span className={"rail-av" + (sel ? " sel" : "") + (running ? " running" : "")}>
         <Icon name={icon} size={20} />
       </span>
       <span className="rail-name">{name}</span>
       <span className={"rail-dot" + (sel ? " sel" : "")} />
       {!!badge && <span className="badge">{badge}</span>}
-    </Link>
+    </IntentLink>
   );
 }
 
