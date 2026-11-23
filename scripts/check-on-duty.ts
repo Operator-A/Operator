@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { onDutyProblem } from "../core/on-duty-rules";
+import { linkedOnDutyProblem, onDutyProblem } from "../core/on-duty-rules";
 
 assert.equal(onDutyProblem("Morgan", [{ status: "approved" }]), null);
 assert.equal(onDutyProblem("Morgan", [{ status: "proposed" }, { status: "approved" }]), null);
@@ -29,4 +29,10 @@ assert.match(setEnabled, /onDutyProblem\(/, "setEnabled checks the playbook befo
 const first = actions.slice(actions.indexOf("export async function startFirstJob"), actions.indexOf("\n}\n", actions.indexOf("export async function startFirstJob")));
 assert.ok(first.indexOf("approvePlaybook(") > 0 && first.indexOf("approvePlaybook(") < first.indexOf("enabled: true"), "the first job approves the playbook before the agent goes on duty");
 assert.doesNotMatch(actions, /export async function turnOnOrg/, "the bulk turn-on is gone");
+// live events slice 2: an agent that runs in Claude goes on duty only with its routine connected and not paused
+assert.equal(linkedOnDutyProblem("Drew", { connected: true, paused: null }), null);
+assert.match(linkedOnDutyProblem("Drew", { connected: false, paused: null })!, /paste its routine id and token/);
+assert.match(linkedOnDutyProblem("Drew", { connected: true, paused: "refused" })!, /paused/);
+assert.match(linkedOnDutyProblem("Drew", null)!, /can't be read/);
+assert.match(setEnabled, /linkedOnDutyProblem\(who\.name, await routineState\(agentId\)\.catch\(\(\) => null\)\)/, "setEnabled checks the routine of an agent that runs in Claude");
 console.log("check:on-duty ok");

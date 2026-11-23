@@ -1,7 +1,7 @@
 "use server";
 // Control Room actions. Each one checks the signed-in member's role first (asRole, docs/tenancy.md). Anything that can spend money
 // or wake an agent also needs DASHBOARD_CONTROLS=on; stopping things never does.
-import { onDutyProblem } from "@/core/on-duty-rules";
+import { linkedOnDutyProblem, onDutyProblem } from "@/core/on-duty-rules";
 import { zoneLabel } from "@/core/time";
 import { audit } from "@/core/audit";
 import { headers } from "next/headers";
@@ -25,7 +25,8 @@ import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, sav
 import { ANNOTATE } from "@/core/gateway";
 import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { modelDef } from "@/integrations/models";
-import { modelKeysReady } from "@/integrations/mcp";
+import { modelKeysReady, removeRoutine, routineState, saveRoutine } from "@/integrations/mcp";
+import { moveIntoOperator as moveAgentIntoOperator, runsOn } from "@/core/claude-agents";
 import { customMenu } from "@/core/tools/custom";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { lastTry } from "./builder";
@@ -104,8 +105,10 @@ export async function setEnabled(agentId: string, on: boolean): Promise<ActionRe
   if (!who) return { ok: false, text: "Unknown agent." };
   if (on && !controlsOn()) return { ok: false, text: CONTROLS_OFF };
   if (on) {
-    // only with an approved playbook (card 188): no path puts an agent on duty without one
-    const problem = onDutyProblem(who.name, await listPlaybooks(agentId).catch(() => null));
+    // only with an approved playbook (card 188): no path puts an agent on duty without one; an agent that
+    // runs in Claude has no playbook, so it needs its routine connected instead (live events slice 2)
+    const linked = (await runsOn(agentId)).on === "claude";
+    const problem = linked ? linkedOnDutyProblem(who.name, await routineState(agentId).catch(() => null)) : onDutyProblem(who.name, await listPlaybooks(agentId).catch(() => null));
     if (problem) return { ok: false, text: problem };
     const plan = await planBlock({ kind: "agent_on", agentIds: [agentId] }); if (plan) return { ok: false, text: plan };
   }
@@ -778,4 +781,52 @@ export async function cancelAction(actionId: string, kind: string): Promise<Acti
     await audit(me, "cancel_action", actionId, { kind });
     return { ok: true, text };
   } catch (e) { return fail(e); }
+}
+
+// ---- Agents that run in Claude (docs/live-events.md, slice 2): the routine a linked agent fires, and moving it in
+
+/** Seals a linked agent's routine id and token. Owner only: it lets OPERATOR start sessions on the owner's Claude account. */
+export async function routineSave(agentId: string, routine: string, token: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const who = await crewAgent(agentId);
+  if (!who) return { ok: false, text: "Unknown agent." };
+  if ((await runsOn(agentId)).on !== "claude") return { ok: false, text: `${who.name} runs in OPERATOR, so it has no Claude routine.` };
+  try { await saveRoutine(agentId, routine, token); } catch (e) { return fail(e); }
+  await audit(me, "routine_save", agentId);
+  revalidatePath("/", "layout");
+  return { ok: true, text: `Saved. Each run of ${who.name} now fires that routine. The token is locked away and isn't shown again.` };
+}
+
+/** Forgets a linked agent's routine token and takes it off duty, since it can't fire any more. Approvers may: it only stops things. */
+export async function routineRemove(agentId: string): Promise<ActionResult> {
+  const { me, no } = await asRole("approver"); if (no) return no;
+  const who = await crewAgent(agentId);
+  if (!who) return { ok: false, text: "Unknown agent." };
+  try {
+    await removeRoutine(agentId);
+    const { error } = await db().from("agents").update({ enabled: false }).eq("id", agentId);
+    if (error) throw new Error(error.message);
+  } catch (e) { return fail(e); }
+  await audit(me, "routine_remove", agentId);
+  revalidatePath("/", "layout");
+  return { ok: true, text: `${who.name}'s routine token is forgotten and ${who.name} is off duty. To revoke it at Claude too, delete the token on the routine at claude.ai.` };
+}
+
+/**
+ * Move into OPERATOR: the same agent runs on the runner from now on, keeping its runs and history, once its
+ * reads are connected here. It goes off duty: it needs a try and an approved playbook like any agent.
+ */
+export async function moveIntoOperator(agentId: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const who = await crewAgent(agentId);
+  if (!who) return { ok: false, text: "Unknown agent." };
+  if ((await runsOn(agentId)).on !== "claude") return { ok: false, text: `${who.name} already runs in OPERATOR.` };
+  try {
+    const { error } = await db().from("agents").update({ enabled: false }).eq("id", agentId);
+    if (error) throw new Error(error.message);
+    await moveAgentIntoOperator(agentId);
+  } catch (e) { return fail(e); }
+  await audit(me, "move_into_operator", agentId);
+  revalidatePath("/", "layout");
+  return { ok: true, text: `${who.name} now runs in OPERATOR, off duty. Give it the reads its job needs, try it, and go live.` };
 }

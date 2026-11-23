@@ -204,7 +204,7 @@ async function saveFixRun(tile: CheckTile, index: number, run: FixRun): Promise<
 
 /**
  * Fix it for me: who would run it. An agent that already holds the fix's action and reads; otherwise
- * where to grant it (the builder's Tools step of an agent that holds one of the reads, else the Crew).
+ * where to grant it (the agent sheet's Can do toggles of an agent that holds one of the reads, else the Crew).
  */
 export async function claimFix(tile: CheckTile, index: number): Promise<{ agentId: string; name: string; fix: FixType; finding: Finding } | { problem: string; href?: string }> {
   const now = await setupCheck(tile);

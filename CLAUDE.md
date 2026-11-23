@@ -94,6 +94,16 @@ shipping and refund confirmations.
   worked out in code, free text cut and untrusted. An event only starts chains the owner saved with that event
   as their start, while the org and the chain are on, at most `EVENT_CAPS` times an hour and a day per chain
   (start 10 and 50), each run through `withRun`; it never picks an agent, recipient, URL, product or category.
+- Agents that run in Claude (`docs/live-events.md`, slice 2): an agent with `runs_on = 'claude'` is shown in
+  OPERATOR, but each of its runs, still through `withRun`, fires one of the owner's Claude routines instead of
+  the runner. Code writes the fire's note, never a model; the hand-off in it is marked as data. The routine's
+  token is sealed in the vault for that one agent and opened only by `integrations/mcp.ts` (`fireRoutine`),
+  and only `integrations/claude-routine.ts` calls the fire endpoint (lint and `check:claude-agents` enforce
+  both). At most `ROUTINE_CAPS` fires an hour per agent and per business (start 25 and 90); only a 429 or 503
+  is retried, once; a refused token pauses the routine. It goes on duty only with its routine connected. Its
+  Claude connectors are labels, never granted in OPERATOR. What the session does with them is outside
+  OPERATOR's gateway, and the agent's sheet says so; the session is asked to send anything outward through
+  `propose`.
 - Every integration is an MCP server with a profile. A built-in server's profile is in
   `core/mcp-rules.ts`: its sign-in kind, the exact scopes asked for, its read tools, report tools
   and write tools, each named in code; a tool it adds later does nothing until a pull request names
@@ -129,7 +139,8 @@ shipping and refund confirmations.
   OAuth (PKCE, only token hashes stored, Settings > Connected apps to disconnect); every call runs in that
   business through `withOrg` and reads the member and their role again. Tools that change anything only
   make drafts or proposals through the builder's and proposals' own code (an agent made there starts off
-  duty with no actions). No tool approves or rejects a card, puts an agent on duty, turns the org on,
+  duty with no actions), except `finish_run`, which only saves a Claude session's result onto the run of an
+  agent that runs in Claude that started it, once, labelled as the session's words. No tool approves or rejects a card, puts an agent on duty, turns the org on,
   grants an action or a custom tool, or changes a cap, budget, schedule, vendor, connection or member.
   What a tool returns is scrubbed (`scrubSecrets`) and agent-written text in it is labelled as such.
 - One credential store: every sign-in and service key, including a business's own Claude key and its keys for

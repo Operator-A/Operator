@@ -63,6 +63,15 @@ export interface FeedRun {
   lines: CheckLine[]; steps: number; costUsd: number; result: string; drafts: string[];
   /** The version a try ran (a change card's draft shows "Try of v4"). */
   version?: number | null;
+  /** For an agent that runs in Claude: the session the run started (live events slice 2). */
+  session?: string | null;
+}
+
+/** The Claude session link saved on a run, when it is one of claude.ai's. */
+export function sessionUrl(s: unknown): string | null {
+  const url = (s as { url?: unknown } | null)?.url;
+  if (typeof url !== "string") return null;
+  try { const u = new URL(url); return u.protocol === "https:" && (u.hostname === "claude.ai" || u.hostname.endsWith(".claude.ai")) ? u.toString() : null; } catch { return null; }
 }
 export interface FeedTalk { id: string; role: "owner" | "head"; text: string; notes: string[]; runId: string | null; at: string }
 export type FeedItem = ({ kind: "talk" } & FeedTalk) | ({ kind: "run" } & FeedRun);

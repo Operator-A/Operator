@@ -179,3 +179,11 @@ never acts, goes live or puts an agent on duty. `check:first-job` reads the try 
 ### Rolling it out
 
 No migration and no new settings. Merge; an owner's Claude sees `try_agent` and `get_run` on its next list.
+
+## Live events slice 2: agents that run in Claude
+
+`create_agent` takes `runs_on: "claude"` and `claude_tools` for an agent whose connectors only the owner's
+Claude account has: it lands off duty with no OPERATOR tools, and the answer carries the line to paste into
+the routine's prompt. `finish_run` (owner only, kind `finish`) lets the routine's session post its result
+onto the run OPERATOR started: once per run, within 24 hours, and only on a run that fired a session. See
+`docs/live-events.md`, slice 2.

@@ -4,6 +4,7 @@ import "server-only";
 // and its spec version, so it counts against the agent's daily budget like any run, and runs while the
 // agent is off duty. It sends nothing, queues nothing and saves no output for other agents; afterwards
 // code drafts or updates the routine (core/playbook.ts), which Go live approves in OPERATOR.
+import { runsOn } from "@/core/claude-agents";
 import { after } from "next/server";
 import { db } from "@/core/db";
 import { orgId, withOrg } from "@/core/tenancy";
@@ -19,6 +20,7 @@ export async function tryTarget(agentId: string) {
   const { data, error } = await db().from("agent_defs").select("version").eq("agent_id", agentId).limit(1);
   if (error) throw new Error(error.message);
   if (!data?.length) return "That agent wasn’t built in the app, so it can’t be tried here.";
+  if ((await runsOn(agentId)).on === "claude") return "That agent runs in Claude, so there is nothing to try here: Run fires its Claude routine.";
   const versions = await listSpecVersions(agentId);
   const target = draftOf(versions) ?? versions.find((v) => v.active);
   if (!target) return "That agent has no saved version.";

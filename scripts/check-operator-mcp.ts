@@ -17,8 +17,12 @@ const ORG = "0e1a7c4e-0002-4000-8000-000000000002", GRANT = "0e1a7c4e-00aa-4000-
 
 const run = async () => {
   // ---- the tool list: reads for every member, draft writes for owners only
-  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains", "get_run"], DRAFTS = ["create_agent", "update_agent", "propose"], TRIES = ["try_agent"];
-  assert.deepEqual(OP_TOOLS.map((t) => t.name), [...READS, ...DRAFTS, ...TRIES]);
+  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains", "get_run"], DRAFTS = ["create_agent", "update_agent", "propose"], FINISHES = ["finish_run"], TRIES = ["try_agent"];
+  assert.deepEqual(OP_TOOLS.map((t) => t.name), [...READS, ...DRAFTS, ...FINISHES, ...TRIES]);
+  // live events slice 2: a Claude session posts its result onto the run OPERATOR started, owners only
+  assert.ok(OP_TOOLS.filter((t) => FINISHES.includes(t.name)).every((t) => t.kind === "finish" && t.min === "owner"), "finishing a run is for owners only");
+  assert.deepEqual(TOOL_BY_NAME.finish_run.inputSchema.required, ["run", "status", "result"]);
+  assert.deepEqual(TOOL_BY_NAME.create_agent.inputSchema.properties.runs_on, { type: "string", enum: ["operator", "claude"], description: (TOOL_BY_NAME.create_agent.inputSchema.properties.runs_on as { description: string }).description });
   assert.ok(OP_TOOLS.filter((t) => TRIES.includes(t.name)).every((t) => t.kind === "try" && t.min === "owner"), "a try is for owners only");
   assert.deepEqual(TOOL_BY_NAME.try_agent.inputSchema.required, ["agent", "based_on_version"], "a try names the version it was read at");
   assert.match(TOOL_BY_NAME.try_agent.description, /sends nothing/);
@@ -191,7 +195,9 @@ const run = async () => {
   // ---- the source: one business per call, drafts only through the builder's and proposals' code
   const store = read("core/operator-mcp.ts");
   for (const w of ["activateSpecVersion", "acceptProposal", "declineProposal", "callWriteTool", "@/core/gateway", "withRun", "setEnabled", "enabled: true", "@/dashboard/"]) assert.ok(!store.includes(w), `core/operator-mcp.ts never uses ${w}: no going live, deciding, acting, duty or budgets`);
-  assert.match(store, /await createBuiltAgent\(got\.spec, byOf\(caller\), "Created from Claude"\)/, "a new agent is made by the builder's own code (off duty)");
+  assert.match(store, /await createBuiltAgent\(got\.spec, byOf\(caller\), linked \? "Created from Claude, runs in Claude" : "Created from Claude"\)/, "a new agent is made by the builder's own code (off duty)");
+  assert.match(store, /if \(toolList\(args\.tools\)\.length\) return no\("Not created: an agent that runs in Claude has no OPERATOR tools/, "an agent that runs in Claude gets no OPERATOR tools");
+  assert.match(read("core/claude-agents.ts"), /\.is\("claude_session->>finished_at", null\)/, "a run takes its result once");
   assert.match(store, /await saveSpecVersion\(id, got\.spec,/, "a change is saved as a draft version");
   assert.match(store, /fileProposal\(input, \{ agentId: null, source: "claude", deptId \}\)/, "a proposal is filed as from Claude");
   assert.match(store, /const looser = specLooser\(base\.spec, got\.spec\);/, "a change never lets a run reach or spend more");

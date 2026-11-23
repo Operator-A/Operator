@@ -33,8 +33,8 @@ Each entry in `TOOLS` says who may propose it (`agents`):
 - **A list of agent ids**: only those agents. Today's three action types work this way, and Mercury
   writes stay CFO and Bookkeeper only by hard rule.
 - **`"granted"`**, with `grant` naming the action's catalog tool: any agent whose active saved spec
-  holds that tool. Only an approver gives it, on the builder's Tools step (`createBuilt` and
-  `saveSpec`). A template (`crewProblems`), a proposal (`grant_tool`, `hire`) and a department Avery
+  holds that tool. Only an approver gives it, on the Can do toggles of the agent sheet or a hire card (`saveSpec`,
+  `hireInChat`). A template (`crewProblems`), a proposal (`grant_tool`, `hire`) and a department Avery
   designs (`departmentProblems`) can't hand one out.
 
 The gateway checks a granted action twice: `propose` reads the agent's active spec (`refuseAgent`),
@@ -157,7 +157,7 @@ Mercury endpoints used (the only writes in the repo): `PATCH /api/v1/transaction
 ## `shopify.add_tags` (docs/shopify-actions.md)
 
 Tags added to one Shopify order or customer. Any agent an approver grants "Tag an order or customer"
-on the Tools step. Draft tier, `promotable: true` (a label on the business's own records, fully undoable).
+on the agent sheet's Can do toggles. Draft tier, `promotable: true` (a label on the business's own records, fully undoable).
 
 - The target is a Shopify order or customer id, a pick from a Recent orders result. The proposal holds
   only `tags` (1 to 5, short, plain: `refuseTags` in `core/shopify-actions.ts`).
@@ -170,7 +170,7 @@ on the Tools step. Draft tier, `promotable: true` (a label on the business's own
 ## `shopify.set_stock` (docs/shopify-actions.md)
 
 The available count of one Shopify item at one location. Any agent an approver grants "Set stock at a
-location" on the Tools step. Draft tier, `promotable: false` (the number comes from the agent, and
+location" on the agent sheet's Can do toggles. Draft tier, `promotable: false` (the number comes from the agent, and
 numbers come from code: it always waits for an approver).
 
 - The target is `<inventory item>@<location>`, a pick from a Stock levels result, which also carries the
@@ -185,7 +185,7 @@ numbers come from code: it always waits for an approver).
 ## `shopify.update_copy` (docs/shopify-actions.md)
 
 A new description and/or SEO title and description on one Shopify product. Any agent an approver grants
-"Rewrite product copy" on the Tools step. Draft tier, promotable (public text on the business's own
+"Rewrite product copy" on the agent sheet's Can do toggles. Draft tier, promotable (public text on the business's own
 store, like a post; the facts checks run on every write).
 
 - The target is a product gid, a pick from a Product copy result, which also carries the fingerprint of
@@ -202,7 +202,7 @@ store, like a post; the facts checks run on every write).
 ## `shopify.mark_shipped` (docs/shopify-actions.md)
 
 Every remaining item on one Shopify order marked shipped, with a carrier and tracking number. Any agent
-an approver grants "Mark an order shipped" on the Tools step. Draft only and never promoted (decided
+an approver grants "Mark an order shipped" on the agent sheet's Can do toggles. Draft only and never promoted (decided
 2026-11-22): Shopify emails the customer its own shipping confirmation, which can't be unsent.
 
 - The target is an order gid, a pick from an Orders to ship result, which also carries the order's open
@@ -217,7 +217,7 @@ an approver grants "Mark an order shipped" on the Tools step. Draft only and nev
 ## `shopify.refund` (docs/shopify-actions.md)
 
 A refund of one Shopify order, the whole order or some items, back to its original payment. Any agent an
-approver grants "Refund an order" on the Tools step. Draft only and never promoted (decided 2026-11-22):
+approver grants "Refund an order" on the agent sheet's Can do toggles. Draft only and never promoted (decided 2026-11-22):
 it moves money, and Shopify emails the customer its refund confirmation.
 
 - The target is an order gid, a pick from an Orders to refund result. The proposal holds exactly `whole`,
@@ -234,7 +234,7 @@ it moves money, and Shopify emails the customer its refund confirmation.
 ## `shopify.create_discount` (docs/shopify-actions.md)
 
 One percent-off discount code on every product, once per customer, not combined with other discounts.
-Any agent an approver grants "Create a discount code" on the Tools step. Draft only and never promoted
+Any agent an approver grants "Create a discount code" on the agent sheet's Can do toggles. Draft only and never promoted
 (decided 2026-11-22).
 
 - The target is `code:<CODE>`. The proposal holds exactly `title`, `percent`, `uses`, `starts` and `ends`

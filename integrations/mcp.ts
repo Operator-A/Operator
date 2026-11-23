@@ -23,6 +23,8 @@ import { orgId } from "@/core/tenancy";
 import { MODEL_PROVIDERS, PROVIDER_BY_ID, checkAnswer, readModelKey, type ModelProvider } from "@/core/model-key-rules";
 import { HOOK_ID, SOURCES, SOURCE_BY_ID, readSigningSecret, type EventSource } from "@/core/event-rules";
 import { sameId, shopifySigned, stripeSigned } from "@/core/event-signature";
+import { afterFire, readRoutine, routineVaultId } from "@/core/routine-rules";
+import { postFire } from "./claude-routine";
 import { looksLikeNotionKey } from "@/core/notion-blocks";
 import { checkNotionKey, notionServer } from "./notion-server";
 import { checkShopifyKey, shopifyServer } from "./shopify-server";
@@ -1359,4 +1361,60 @@ export async function checkHook(source: EventSource, hook: string, raw: string, 
   if (!s?.key) return { ok: false, status: 503, why: "The signing secret can’t be opened; paste it again on Connections." };
   const good = source === "shopify" ? shopifySigned(raw, headers["x-shopify-hmac-sha256"] ?? null, s.key) : stripeSigned(raw, headers["stripe-signature"] ?? null, s.key, nowS);
   return good ? { ok: true } : { ok: false, status: 400, why: "Bad signature." };
+}
+
+// ---- Agents that run in Claude (docs/live-events.md, slice 2): one routine per linked agent
+
+export interface RoutineState { connected: boolean; routine: string | null; paused: string | null; connectedAt: string | null }
+
+/** Seals a linked agent's routine token, with its routine id, after the shape check. Anthropic is asked on the first fire. */
+export async function saveRoutine(agentId: string, routine: unknown, token: unknown): Promise<void> {
+  if (!keys().current) throw new Error(VAULT_MISSING);
+  const read = readRoutine(routine, token);
+  if ("problem" in read) throw new Error(read.problem);
+  const id = routineVaultId(agentId);
+  const now = new Date().toISOString();
+  const { error } = await db().from("mcp_connections").upsert({ id, secret: await sealSecret({ key: read.token } satisfies KeySecret), settings: { agent: agentId, routine: read.routine }, connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
+  if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
+  await logEvent(id, "connected", `Claude routine ${read.routine}`, [read.token]);
+}
+
+/** Forgets a linked agent's routine token. OPERATOR can't fire it from now on. */
+export async function removeRoutine(agentId: string): Promise<void> {
+  const id = routineVaultId(agentId);
+  const { error } = await db().from("mcp_connections").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  await logEvent(id, "disconnected");
+}
+
+/** A linked agent's routine, read without opening the token. */
+export async function routineState(agentId: string): Promise<RoutineState> {
+  const r = await row(routineVaultId(agentId)).catch(() => null);
+  if (!r?.secret || r.settings?.agent !== agentId) return { connected: false, routine: null, paused: null, connectedAt: null };
+  return { connected: true, routine: r.settings?.routine ?? null, paused: r.paused_at ? (r.last_error ?? "Paused.") : null, connectedAt: r.connected_at };
+}
+
+/**
+ * Fires a linked agent's routine with a note written in code (core/routine-rules.ts fireNote). Retries only
+ * what afterFire allows (a 429 with a short Retry-After, a 503, once); a refused token pauses the routine
+ * until the owner pastes a new one. Returns the session, or why there is none, in words that name no secret.
+ */
+export async function fireRoutine(agentId: string, text: string): Promise<{ session: { id: string; url: string } } | { problem: string; mayHaveStarted?: boolean }> {
+  const id = routineVaultId(agentId);
+  const r = await row(id);
+  if (!r?.secret || r.settings?.agent !== agentId || !r.settings?.routine) return { problem: "Its Claude routine isn’t connected: paste the routine id and token on its sheet." };
+  if (r.paused_at) return { problem: `Its Claude routine is paused: ${r.last_error ?? "paste a new token on its sheet"}.` };
+  const s = await readSecret<KeySecret>(id, r);
+  if (!s?.key) return { problem: "The routine token can’t be opened; paste it again on the agent’s sheet." };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let a: Awaited<ReturnType<typeof postFire>>;
+    try { a = await postFire(r.settings.routine, s.key, text); }
+    catch (e) { return { problem: `Claude couldn’t be reached: ${scrubSecrets(e instanceof Error ? e.message : String(e), [s.key]).slice(0, 160)}. The session may have started.`, mayHaveStarted: true }; }
+    const next = afterFire(a.status, a.retryAfter, attempt);
+    if (next.kind === "ok") return a.session ? { session: a.session } : { problem: "Claude started a session but its answer didn’t name it.", mayHaveStarted: true };
+    if (next.kind === "refused") { await pause(id, "Claude refused the routine token. Generate a new one on claude.ai and paste it on the agent’s sheet.", "refused", [s.key]); return { problem: "Claude refused the routine token; the routine is paused until a new one is pasted." }; }
+    if (next.kind === "fail") return { problem: next.why, mayHaveStarted: a.status >= 500 };
+    await new Promise((res) => setTimeout(res, next.waitMs));
+  }
+  return { problem: "Claude was busy twice in a row. Try again later." };
 }
