@@ -135,6 +135,16 @@ for (const f of ["app/(room)/layout.tsx", "app/(room)/page.tsx", "app/(room)/cre
 for (const f of ["app"].filter(existsSync).flatMap(walk).filter((x) => x.startsWith(join("app", "(room)")))) {
   for (const n of chainedLoads(readFileSync(f, "utf8"))) problems.push(`${f}:${n}: loads awaited one after another; start them together with Promise.all (card 302).`);
 }
+// 8. The page frame draws first (card 303): what calls the business's tools (goal numbers, a connection's account
+//    details, how agents think) streams in behind <Suspense>, so the title, tabs and fast cards don't wait for it.
+const SUSPENDED = (inner: string) => new RegExp(`<Suspense(?: key=\\{\\w+\\})? fallback=\\{<\\w+[^}]*\\}>${inner}`);
+assert.ok(SUSPENDED("<DeskGoals\\b").test(`<Suspense fallback={<SkelTiles />}><DeskGoals goalsP={goalsP} />`));
+assert.ok(!SUSPENDED("<DeskGoals\\b").test(`<section><DeskGoals goalsP={goalsP} />`));
+const desk = read("app/(room)/page.tsx");
+if (/await goalsByDept\(/.test(desk) || !SUSPENDED("<DeskGoals\\b").test(desk) || !SUSPENDED("<DeskLine\\b").test(desk)) problems.push("app/(room)/page.tsx: the Desk's goals (read from the tools) should stream in behind <Suspense> (DeskGoals, DeskLine), not hold up the page (card 303).");
+const conn = read("app/(room)/connections/page.tsx");
+if (!SUSPENDED("<SelDetail\\b").test(conn) || !SUSPENDED("<ClaudeCard\\b").test(conn)) problems.push("app/(room)/connections/page.tsx: a connection's detail (SelDetail) and ClaudeCard call services; each should sit in <Suspense> (card 303).");
+if (!SUSPENDED("\\{view === \"schedule\" \\? <Schedule\\b").test(read("app/(room)/crew/page.tsx"))) problems.push("app/(room)/crew/page.tsx: the chart (goal numbers from the tools) should stream in behind <Suspense> under the title and views (card 303).");
 if (!/prefetch=\{warm \? true : null\}/.test(read("dashboard/components/intentLink.tsx"))) problems.push("dashboard/components/intentLink.tsx: IntentLink should pre-load the full page once warm and only to the loading frame before (card 301).");
 
 if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
