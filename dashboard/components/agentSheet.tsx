@@ -217,7 +217,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act }: { d: SheetD
                   <button type="button" disabled={!f.manual} onClick={() => { set({ manual: false }); setPick(false); }}>On a schedule{!f.manual && <small>Set</small>}</button>
                   <Link href="/crew?view=schedule">After another agent finishes<small>Crew &gt; Schedule</small></Link>
                   <Link href="/crew?view=schedule">When you approve a draft<small>Crew &gt; Schedule</small></Link>
-                  <button type="button" disabled>From a connected tool, like a new order<small>Soon</small></button>
+                  <Link href="/crew?view=schedule">When a live event comes in, like a new order<small>Crew &gt; Schedule</small></Link>
                 </div>
               )}
               <span className="dp-tog on" style={{ alignSelf: "flex-start" }}><i />Also when I ask (Run now)</span>
