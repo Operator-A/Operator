@@ -6,18 +6,32 @@ import "server-only";
 // (analytics.readonly only). Each tool runs one fixed report (core/ga4-rules.ts) on the property the
 // owner picked, which comes from the connection's settings, never from a tool's input.
 import { MCP_PROTOCOL, checkedTools, type McpId } from "@/core/mcp-rules";
-import { checkGa4Args, readChannels, readOverview, readProperties, readTopPages, reportBodies } from "@/core/ga4-rules";
-import { accountSummaries, runReport } from "./ga4-api";
+import { checkGa4Args, readChannels, readOverview, readProperties, readSetup, readTopPages, reportBodies, setupReportBodies } from "@/core/ga4-rules";
+import { accountSummaries, adminRead, runReport } from "./ga4-api";
 
 const DESCRIPTIONS: Record<string, string> = {
   ga4_properties: "The Google Analytics properties this sign-in can see.",
   ga4_overview: "Sessions, users, page views and key events for a period, in total and by day.",
   ga4_top_pages: "The most viewed page paths in a period, with views and sessions.",
   ga4_channels: "Sessions and key events by Google's default channel group in a period.",
+  ga4_setup: "How the property is set up: time zone, currency, data retention, key events, streams, Google Ads links, and the last 30 days of purchases by source.",
 };
 
 /** The properties a sign-in can see, checked after Connect. */
 export const ga4Properties = async (token: string) => readProperties(await accountSummaries(token));
+
+/** The setup check's settings read (card 281): five fixed Admin reads and two reports; a part Google refuses is left unread, not a failure. */
+async function ga4Setup(token: string, propertyId: string) {
+  const soft = (p: Promise<unknown>) => p.catch(() => null);
+  const [rep1, rep2] = setupReportBodies();
+  const [property, retention, keyEvents, streams, adsLinks, totals, sources] = await Promise.all([
+    soft(adminRead(token, propertyId, "")), soft(adminRead(token, propertyId, "/dataRetentionSettings")), soft(adminRead(token, propertyId, "/keyEvents?pageSize=50")),
+    soft(adminRead(token, propertyId, "/dataStreams?pageSize=50")), soft(adminRead(token, propertyId, "/googleAdsLinks?pageSize=20")),
+    soft(runReport(token, propertyId, rep1)), soft(runReport(token, propertyId, rep2)),
+  ]);
+  if (!property && !totals) throw new Error("Google Analytics answered none of the setup reads. Check the sign-in on Connections.");
+  return readSetup({ property, retention, keyEvents, streams, adsLinks, totals, sources });
+}
 
 /** A JSON-RPC handler for one call, serving only `profile`'s tools, on the picked property. */
 export function ga4Server(profile: McpId, token: string, propertyId: string | null) {
@@ -43,6 +57,10 @@ export function ga4Server(profile: McpId, token: string, propertyId: string | nu
           if (a.tool === "ga4_properties") result = await ga4Properties(token);
           else {
             if (!propertyId) return toolError(id, "No Google Analytics property is picked yet. Pick one on Connections.");
+            if (a.tool === "ga4_setup") {
+              result = await ga4Setup(token, propertyId);
+              return reply(id, { structuredContent: { result }, content: [{ type: "text", text: "ok" }] });
+            }
             const reports = await Promise.all(reportBodies(a).map((b) => runReport(token, propertyId, b)));
             result = a.tool === "ga4_overview" ? readOverview(reports[0], reports[1]) : a.tool === "ga4_top_pages" ? readTopPages(reports[0]) : readChannels(reports[0]);
           }

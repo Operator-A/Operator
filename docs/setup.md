@@ -45,7 +45,7 @@ free setup used up with no credits. The cloud edition offers two options, OPERAT
 - **Use your own Claude key.** Paste a key from the Claude Console; Anthropic bills it directly.
 
 **Free setup** (decided 2026-11-20). On OPERATOR's Claude, setup messages (trigger `setup`) are free up
-to `SETUP_FREE_USD` ($2 of model cost at list price) while the business is still in setup, so a new
+to `SETUP_FREE_USD` ($3 of model cost, raised from $2 on 2026-11-22, at list price) while the business is still in setup, so a new
 founder talks to Avery right away with no credits. The allowance is counted in code from `agent_runs`
 (`setupFree` in `ee/credits.ts`); a setup message is charged only for any cost past what was left.
 It never pays for any other run, and once setup is done it is gone: step 4 and the side panel say

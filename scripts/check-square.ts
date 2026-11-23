@@ -53,7 +53,8 @@ const all = ["core", "agents", "templates", "dashboard", "app", "integrations"].
 const importers = (mod: string) => all.filter((f) => new RegExp(`from "[^"]*/${mod}"`).test(readFileSync(f, "utf8")));
 assert.deepEqual(importers("square-api"), ["integrations/square-server.ts"]);
 assert.deepEqual(importers("square-server"), ["integrations/mcp.ts"]);
-const callers = all.filter((f) => f !== "core/square-rules.ts" && /squareup(sandbox)?\.com/.test(readFileSync(f, "utf8")));
+// the setup check (card 281) names Square's help site as a domain its web reads may use, never an API address
+const callers = all.filter((f) => f !== "core/square-rules.ts" && /squareup(sandbox)?\.com/.test(readFileSync(f, "utf8").replace(/square: "squareup\.com"/, "")));
 assert.deepEqual(callers, [], "Square's address lives only in the rules");
 const server = (readFileSync("integrations/square-server.ts", "utf8") + readFileSync("integrations/square-api.ts", "utf8")).replace(/^\s*(\/\/|\*).*$/gm, "");
 assert.doesNotMatch(server, /\/publish|\/cancel|"refunds|refunds\/|"DELETE"|"PUT"|squareRequest\.(?!merchant|locations|location|payments|invoices|customers|customer|invoice|bookings|createOrder|createInvoice)\w+/, "no publish, cancel, delete, refund or update call");

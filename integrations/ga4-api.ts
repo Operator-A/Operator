@@ -1,10 +1,11 @@
 import "server-only";
-// Google Analytics' APIs for our own GA4 MCP server (card 152b, docs/mcp-everywhere.md). Two calls
-// only: the properties a sign-in can see (Admin API, accountSummaries) and a report on one property
-// (Data API, runReport). Both are reads; the sign-in is granted analytics.readonly alone, so Google
+// Google Analytics' APIs for our own GA4 MCP server (card 152b, docs/mcp-everywhere.md). Three calls
+// only: the properties a sign-in can see (Admin API, accountSummaries), a report on one property (Data
+// API, runReport), and the setup check's fixed Admin reads of one property (card 281, GET only, paths
+// from core/ga4-rules.ts SETUP_ADMIN_PATHS). All are reads; the sign-in is granted analytics.readonly alone, so Google
 // refuses it anything else. Every function takes an access token: integrations/mcp.ts opens the
 // sign-in from the vault. Only integrations/ga4-server.ts imports this (lint enforces it).
-import { PROPERTY_ID } from "@/core/ga4-rules";
+import { PROPERTY_ID, SETUP_ADMIN_PATHS, type SetupAdminPath } from "@/core/ga4-rules";
 
 const ADMIN = "https://analyticsadmin.googleapis.com/v1beta";
 const DATA = "https://analyticsdata.googleapis.com/v1beta";
@@ -27,4 +28,11 @@ export const accountSummaries = (token: string) => ga<unknown>(token, `${ADMIN}/
 export function runReport(token: string, propertyId: string, body: Record<string, unknown>): Promise<unknown> {
   if (!PROPERTY_ID.test(propertyId)) throw new Error("not a Google Analytics property id");
   return ga<unknown>(token, `${DATA}/properties/${propertyId}:runReport`, body);
+}
+
+/** One of the setup check's fixed Admin reads of one property (card 281). A GET on a path from SETUP_ADMIN_PATHS only. */
+export function adminRead(token: string, propertyId: string, path: SetupAdminPath): Promise<unknown> {
+  if (!PROPERTY_ID.test(propertyId)) throw new Error("not a Google Analytics property id");
+  if (!(SETUP_ADMIN_PATHS as readonly string[]).includes(path)) throw new Error("not a setup read");
+  return ga<unknown>(token, `${ADMIN}/properties/${propertyId}${path}`);
 }

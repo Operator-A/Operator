@@ -3,7 +3,7 @@ import "server-only";
 // integrations/mcp.ts on the "Google Analytics" sign-in, granted analytics.readonly alone. Each call
 // runs one fixed report on the property the owner picked on Connections.
 import { callMcpTool } from "./mcp";
-import type { Ga4Period, Overview } from "@/core/ga4-rules";
+import type { Ga4Period, Ga4Setup, Overview } from "@/core/ga4-rules";
 
 export type { Overview } from "@/core/ga4-rules";
 
@@ -17,3 +17,6 @@ export const ga4TopPages = async (period: Ga4Period, limit: number) =>
 
 export const ga4Channels = async (period: Ga4Period, limit: number) =>
   (await callMcpTool("ga4", "ga4_channels", { period, limit })) as { channels: { channel: string; sessions: number; key_events: number; key_events_per_100_sessions: number }[]; sessions_listed: number };
+
+/** How the property is set up, for the setup check (card 281). */
+export const ga4Setup = async () => (await callMcpTool("ga4", "ga4_setup", {})) as Ga4Setup;

@@ -70,7 +70,7 @@ const run = async () => {
   assert.ok(!/^"use server"/.test(readFileSync("dashboard/signin.ts", "utf8")) && readFileSync("dashboard/signin.ts", "utf8").startsWith('import "server-only";'));
 
   // every server action checks a role; sign-in is the only exception
-  const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", ...["ee/billing-actions.ts", "ee/signup-actions.ts", "ee/brain-actions.ts", "ee/playbook-actions.ts"].filter((f) => existsSync(f))];
+  const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupCheckActions.ts", ...["ee/billing-actions.ts", "ee/signup-actions.ts", "ee/brain-actions.ts", "ee/playbook-actions.ts"].filter((f) => existsSync(f))];
   // sign-up comes before there is a member, like signing in: the sign-up code is its check
   const NO_MEMBER_YET: Record<string, string> = { "ee/signup-actions.ts": "signUp" };
   let n = 0;

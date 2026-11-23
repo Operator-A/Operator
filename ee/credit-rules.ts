@@ -44,7 +44,7 @@ const THINKS = new Set(["cron", "manual", "chain", "setup", "preview"]);
  * before buying credits. Only setup messages (trigger "setup") and only while the business is still
  * in setup; once setup is done every run needs credits.
  */
-export const SETUP_FREE_USD = 2;
+export const SETUP_FREE_USD = 3;
 
 /** What is left of the free setup allowance: nothing once setup is done. */
 export const setupFreeLeft = (o: { inSetup: boolean; setupSpentUsd: number }): number =>

@@ -9,6 +9,9 @@ import { FACTS_MISSING, inSetup, listFacts, setupState } from "@/core/setup";
 import { SETUP_AGENT, STAGES, STAGE_WORDS, nextStage, prevStage, shownStage, stageProgress, wrapScreen, type Stage } from "@/core/setup-rules";
 import { AutoSnapshot, SetupChat, Coverage, FactsPanel, StageNav, StoreForm, UnlistedTool, CompanyChart } from "@/dashboard/components/setup";
 import { hasSnapshot, snapshotPrefix } from "@/core/snapshot-rules";
+import { setupChecks, type SetupCheck } from "@/core/setup-check";
+import { autoInSetup, hasCheck } from "@/core/setup-check-rules";
+import { SetupCheckCard } from "@/dashboard/components/setupCheck";
 import type { Fact } from "@/core/setup-rules";
 import { SignOutButton } from "@/dashboard/components/signOut";
 import { toolsStep, type TileView } from "@/dashboard/toolsStep";
@@ -34,7 +37,7 @@ import { settings } from "@/core/settings";
 // (card 181): one step on screen at a time, the step kept in the setup state. The conversation with
 // Avery (card 151), where she asks about tools by part and code draws the card (card 195), the company
 // she proposes (card 153), then the first job (card 154).
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 // where the soft light sits behind each step, so it drifts as the founder moves on
 const LIGHT: Record<Stage, [string, string, string]> = {
@@ -47,7 +50,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const sp = await searchParams;
   const me = await requireSession();
   // one round for everything the step shows (card 202, docs/speed.md); setup needs which tools are set up, not the Desk's floor
-  const [setup, health, facts, state, history, biz, claude, bill, own] = await Promise.all([inSetup(), getHealth(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), claudeState(), billing(), settings().catch(() => null)]);
+  const [setup, health, facts, state, history, biz, claude, bill, own, checks] = await Promise.all([inSetup(), getHealth(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), claudeState(), billing(), settings().catch(() => null), setupChecks().catch(() => null)]);
   // card 186: after Start this company, setup counts as done but /start keeps the wrap-up (credits, then the first job)
   if (!setup && !state.wrapUp) redirect("/");
   const owner = atLeast(me.role, "owner");
@@ -81,7 +84,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const nextLabel = stage === "business" ? (talked ? "Show me my company" : "Skip to my company") : "Next: your first job";
   const card = cat && (
     <ToolCard key={`${cat.id}-${open?.tile.id ?? ""}`} c={cat} state={categoryState(cat, connected, state.skipped, state.plans)} plan={state.plans[cat.id] ?? null}
-      tiles={tiles} open={open && cat.tiles.includes(open.tile.id) ? open : null} owner={owner} shopifyDomain={shopifyDomain} tapped={!!tapped} note={note} facts={facts ?? []} />
+      tiles={tiles} open={open && cat.tiles.includes(open.tile.id) ? open : null} owner={owner} shopifyDomain={shopifyDomain} tapped={!!tapped} note={note} facts={facts ?? []} checks={checks} />
   );
 
   return (
@@ -231,7 +234,7 @@ function YourTools({ parts, tiles, asking }: { parts: { c: ToolCategory; state: 
  * A part's card in the chat (card 195), drawn from code's list: the common tools, Something else,
  * None yet and Skip. A tool with a tile opens its connect steps here; any other is saved as the answer.
  */
-function ToolCard({ c, state, plan, tiles, open, owner, shopifyDomain, tapped, note, facts }: { c: ToolCategory; state: CategoryState; plan: CategoryPlan | null; tiles: TileView[]; open: TileView | null; owner: boolean; shopifyDomain: string; tapped: boolean; note: { ok: boolean; text: string } | null; facts: Fact[] }) {
+function ToolCard({ c, state, plan, tiles, open, owner, shopifyDomain, tapped, note, facts, checks }: { c: ToolCategory; state: CategoryState; plan: CategoryPlan | null; tiles: TileView[]; open: TileView | null; owner: boolean; shopifyDomain: string; tapped: boolean; note: { ok: boolean; text: string } | null; facts: Fact[]; checks: SetupCheck[] | null }) {
   const on = state === "connected" ? tiles.find((t) => c.tiles.includes(t.tile.id) && t.state === "connected") ?? null : null;
   // card 195 slice B: the numbers code read from it, saved as facts that start "From <tool>: "
   const prefix = on ? snapshotPrefix(on.tile.name) : null;
@@ -254,6 +257,10 @@ function ToolCard({ c, state, plan, tiles, open, owner, shopifyDomain, tapped, n
               <span className="ink2" style={{ fontSize: 12.5 }}>Counted in code from your {on.tile.name} and saved to what Avery knows. Nothing was changed in {on.tile.name}.</span>
             </div>
           ) : owner && hasSnapshot(on.tile.id) ? <AutoSnapshot take={setupSnapshot.bind(null, on.tile.id)} name={on.tile.name} /> : null}
+          {/* card 281: the setup check; on its own for the first few tools in free setup, else a button. Not until the snapshot is saved. */}
+          {hasCheck(on.tile.id) && checks && (snap.length > 0 || !hasSnapshot(on.tile.id)) && (
+            <SetupCheckCard tile={on.tile.id} name={on.tile.name} initial={checks.find((k) => k.tile === on.tile.id) ?? null} owner={owner} approver={owner} auto={autoInSetup(checks.length)} />
+          )}
           {on.tile.also && on.also && !on.also.connected && (
             <div className="stack rule" style={{ gap: 6, paddingTop: 10 }}>
               <b style={{ fontSize: 14 }}>{on.tile.also.label}{on.neededBy.length ? ` (needed for ${on.neededBy.join(", ")})` : ""}</b>
