@@ -33,7 +33,7 @@ export interface ChangeCardView {
   /** "c:<proposal id>". */
   key: string;
   proposalId: string;
-  kind: "agent" | "goal";
+  kind: "agent" | "goal" | "move";
   agentId: string | null;
   /** "Change to Quinn · needs your OK" */
   kicker: string;
@@ -71,6 +71,19 @@ export function changeRows(p: AgentChange, labelOf: (id: string) => string, now:
   }
   if (p.costCap != null) rows.push({ k: "Cost cap a run", from: now ? dollars(now.costCap) : null, to: dollars(p.costCap) });
   return rows;
+}
+
+/** Card 370: where an agent sits, as a move card shows it. Null parts read as none. */
+export interface Place { dept: string | null; seat: string | null; boss: string | null }
+
+/** The lines of a move card (move_agent): department, seat and who it reports to, Now → New. Without `now`, only the New side. */
+export function moveRows(to: Place, now: Place | null): ChangeRow[] {
+  const none = (v: string | null, w: string) => v ?? w;
+  return [
+    { k: "Department", from: now ? none(now.dept, "None") : null, to: none(to.dept, "None") },
+    ...(to.seat ? [{ k: "Seat", from: now ? none(now.seat, "None") : null, to: to.seat }] : []),
+    ...(to.boss ? [{ k: "Reports to", from: now ? none(now.boss, "Nobody yet") : null, to: to.boss }] : []),
+  ];
 }
 
 /** What the goal is now, for the Now side. */

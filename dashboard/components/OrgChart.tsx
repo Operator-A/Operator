@@ -10,7 +10,7 @@ import type { ActionResult } from "../actions";
 import type { DeptView, OrgView, SeatView } from "../org";
 import { Toast } from "./client";
 import { Icon } from "./Icon";
-import { AgentCard, DeptLimits, Face } from "./orgBits";
+import { DeptLimits, Face } from "./orgBits";
 
 type Act<T extends unknown[]> = (...a: T) => Promise<ActionResult>;
 export interface OrgActions {
@@ -23,7 +23,7 @@ export interface OrgActions {
 
 type Open = { kind: "seat"; seat: SeatView; head: boolean; company: boolean } | null;
 
-export function OrgChart({ v, actions }: { v: OrgView; actions: OrgActions }) {
+export function OrgChart({ v, actions, notInDept }: { v: OrgView; actions: OrgActions; notInDept?: React.ReactNode }) {
   const [open, setOpen] = useState<Open>(null);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
@@ -81,13 +81,7 @@ export function OrgChart({ v, actions }: { v: OrgView; actions: OrgActions }) {
         </section>
       </div>
 
-      {v.offChart.length > 0 && (
-        <div className="stack" style={{ gap: 10 }}>
-          <span className="card-t">Not on the chart yet</span>
-          <span className="ink2" style={{ fontSize: 13 }}>Click a seat above and pick one of these to sit there, or do it from step 1 when you edit the agent.</span>
-          <div className="crew-grid">{v.offChart.map((a) => <AgentCard key={a.id} a={a} />)}</div>
-        </div>
-      )}
+      {notInDept}
 
       {open?.kind === "seat" && <SeatEditor o={open} v={v} busy={busy} run={run} actions={actions} close={() => setOpen(null)} />}
       <Toast t={toast} onDone={() => setToast(null)} />

@@ -6,7 +6,7 @@ import { hireHref } from "@/dashboard/dept-rules";
 import { loadCaps } from "@/core/gateway";
 import { CAPS } from "@/core/gateway/policy";
 import { departmentRules } from "@/core/memory";
-import { agentNames, companySeat, deptSpent, headOf, childrenOf, liveAgentIds, monthSpendByAgent, orgProblems, reportsTo, seatOf, seatPath, seatTeam, type Org, type Seat } from "@/core/org";
+import { agentNames, placeSpots, type PlaceSpot, companySeat, deptSpent, headOf, childrenOf, liveAgentIds, monthSpendByAgent, orgProblems, reportsTo, seatOf, seatPath, seatTeam, type Org, type Seat } from "@/core/org";
 import type { MapOrg } from "./agentMap";
 import type { Floor } from "./data";
 import { hm, md, when } from "./format";
@@ -55,7 +55,7 @@ export interface DeptExtras { spend: Record<string, number>; rules: { id: string
 export interface OrgView {
   company: SeatView | null;
   departments: DeptView[];
-  /** Agents not in any seat: they can be put in one with Edit chart, or from step 1 of the builder. */
+  /** Agents not in any seat: Crew's Not in a department yet adds each one to a department (card 370). */
   offChart: SeatAgent[];
   /** Every agent a seat can hold, for the picker. */
   choices: { id: string; label: string; seat: string | null }[];
@@ -171,3 +171,7 @@ export async function mapOrgOf(org: Org | null, agentId: string): Promise<MapOrg
     : { title: up.title, sub: "No one sits here yet, so its result waits", agentId: null, open: true };
   return { reportsTo: box, team: team.map((id) => ({ id, name: name(id) })) };
 }
+
+export interface PlaceDept { id: string; name: string; spots: PlaceSpot[] }
+/** Card 370: each department and the places an agent can go in it, for Crew's Not in a department yet. */
+export const placeDepts = (org: Org): PlaceDept[] => org.departments.map((d) => ({ id: d.id, name: d.name, spots: placeSpots(org, d.id) }));
