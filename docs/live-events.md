@@ -53,3 +53,68 @@ it until the production domain is reachable without it (the same as `/api/mcp`).
 `npm run check:events`: readers (named fields only, no addresses), signatures (tampered body, wrong
 secret, Stripe replay), signing secret shapes, starts and caps, the flow's event start, the job payload,
 and source rules (signature before reading, chains start after the answer, no cross-business read).
+
+## Slice 2: agents that run in Claude
+
+Decided 2026-11-23: when Claude drafts an agent through OPERATOR's own MCP server and the agent needs a
+connector OPERATOR doesn't have but the owner's Claude account does, OPERATOR still gets the agent: a linked
+agent that shows on its department page and sheet with "Runs in Claude", whose runs happen in one of the
+owner's Claude routines and link to the Claude session. It can also be run by hand from OPERATOR.
+
+### Making one
+
+- `create_agent` takes `runs_on: "claude"` and `claude_tools` (the Claude connectors it uses, labels only, at
+  most 8). It gets no OPERATOR tools. It lands off duty like every agent made from Claude, and the answer
+  carries the line to paste into the routine's prompt.
+- The owner makes a routine on claude.ai with those connectors and that line, adds an API trigger,
+  generates its token, and pastes the routine id (`trig_…`) and token on the agent's sheet (Edit tab). The
+  token is sealed in the vault on its own row (`routineVaultId`), bound to that agent; only
+  `integrations/mcp.ts` opens it. Anthropic has no API to make a routine or its token, so this is by hand.
+- It goes on duty only once its routine is connected and not paused (`linkedOnDutyProblem`), instead of
+  needing an approved playbook.
+
+### A run
+
+Every start works as before, because the run is still `jobOf` inside `withRun` (on duty, daily budget,
+plan, the run log): its schedule, a chain step, a live event, an approval, and Run now on its sheet or the
+Crew canvas. `runBuilt` sees `runs_on = 'claude'` and, instead of the runner:
+
+1. checks OPERATOR's caps: at most 25 fires an hour per linked agent and 90 per business (`ROUTINE_CAPS`,
+   under Anthropic's 30 per routine and 100 per account);
+2. writes the note in code (`fireNote`): the agent, the run id and its link, what started it, the job as
+   saved, and the step before's or the event's facts, marked as data;
+3. fires the routine (`integrations/claude-routine.ts`, the only file that calls the endpoint, reached only
+   through `integrations/mcp.ts` `fireRoutine`). No redirect is followed. There is no idempotency key, so only
+   a 429 with a short Retry-After and a 503 are retried, once; a 500 or a timeout is "may have started" and
+   never retried. A 401 or 403 pauses the routine until a new token is pasted;
+4. saves the session on the run (`agent_runs.claude_session`), so the run row and the sheet's Runs tab link
+   to it ("Open in Claude").
+
+The session posts its result with `finish_run` on OPERATOR's MCP server: once per run, within 24 hours, only
+on a run that started a session. The result is saved as the run's summary, labelled as the session's words.
+Anything outward the session wants goes through `propose`, so a person decides it in OPERATOR. What the
+session does with its own Claude connectors is outside OPERATOR's gateway; the sheet says so.
+
+### Moving it in
+
+When OPERATOR gains the connector, Move into OPERATOR on the sheet makes the same agent run on the runner,
+keeping its runs and history. Its routine token is forgotten and it goes off duty until it has reads, a
+clean try and an approved playbook, like any agent. Forget token takes it off duty too.
+
+### Database (`20270106090000_claude_agents.sql`)
+
+`agents.runs_on` (`operator` or `claude`), `agents.claude_tools` (labels), `agent_runs.claude_session` (the
+session id and link, when it was fired, and once finished, its status and result).
+
+### Tests
+
+`npm run check:claude-agents`: routine id and token shapes, connector labels, the vault row id, caps, retry
+rules, the session link (claude.ai only), the note (hand-off marked as data, cut), finish_run's input and
+once-only rule, and source rules (one file fires, only `integrations/mcp.ts` reaches it, no redirect, a
+refused token pauses, the caps are checked before every fire). `check:operator-mcp` covers `finish_run` and
+`runs_on`; `check:on-duty` the routine check before duty.
+
+### Rolling it out
+
+Apply the migration, then merge. Nothing changes for existing agents (they all run in OPERATOR). The first
+linked agent needs its routine made on claude.ai, as above.
