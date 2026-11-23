@@ -18,7 +18,7 @@ for (const f of FILES) {
 
 export const TEMPLATES: readonly Template[] = FILES as Template[];
 
-/** The templates for the Desk's picker. */
+/** The templates for the Company page's picker. */
 export const templateList = () => TEMPLATES.map((t) => ({ id: t.id, name: t.name, about: t.about }));
 
 /** The picked templates, in install order; unknown ids are refused. */

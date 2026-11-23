@@ -31,7 +31,7 @@ export function OrgSwitch({ org, plan, controls, turnOn, turnOff, tz }: { tz: st
               ? `${n} agent${n === 1 ? "" : "s"} in the org, ${scheduled.length} on a schedule${first ? `. Next: ${first.name}, ${when(first.firstRun!, tz)} ${zoneLabel(tz, first.firstRun!)}` : ""}. ${total[0].toUpperCase()}${total.slice(1)}.`
               : org.at
                 ? "Nothing runs on its own. Turn it back on, then put each agent on duty from its page once its playbook is approved."
-                : "Nothing runs on its own. The org comes on with your first job, on the Desk; then each agent goes on duty once you approve its playbook."}
+                : "Nothing runs on its own. The org comes on with your first job, on the Company page; then each agent goes on duty once you approve its playbook."}
           </span>
         </div>
       </div>

@@ -19,6 +19,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | 5 | Hire in the chat: a draft card with grant toggles and cost in code; Hire runs a first try | `/build/new` step screens |
 | 6 | Change agents and goals by asking (change cards); the agent sheet's More detail | The step editor (`/build/[id]?edit`) and the Set a goal form |
 | 7 | Department settings on its page: name, monthly AI budget, emails a day, head checks drafts, rules, remove | Crew's department editor |
+| 8 | Avery's Company page: home, with Chat (Avery), Departments, Goals and Approvals | The Desk and the floating Avery panel |
 
 ## Slice 1: the page
 
@@ -228,3 +229,26 @@ the deleted files and links are gone, the sheet's More detail fields), `npm run 
 Tests: `npm run check:dept` (the settings address, the sheet uses those owner-only actions, a raise stops for a
 confirm, emails stay under the company cap, the sheet never writes the database, Crew's editor is gone) and
 `npm run check:audit`.
+
+## Slice 8: Avery's Company page
+
+- **Where.** Home (`/`), "Company" in the menu, in place of the Desk. The same shape as a department page:
+  a short header (the business, Avery as chief of staff, the month's AI spend, what needs you, a gear to
+  Settings; on a phone the title pill) and four tabs in the address (`?tab=`, `dashboard/company-rules.ts`).
+- **Chat.** Avery's chat, in the same glass room as a head's (`HeadChat`, with `send={sendToAvery}`, the
+  `avery_chat` table and no live poll). Avery's runs post there with their checklists. Pinned at the end:
+  the department Avery is drafting (card 156), the first job, what setup left to finish, skipped findings,
+  then the day's line (`deskGreeting`, `deskLine`, streamed behind Suspense), a Needs you card with only the
+  four kinds that interrupt (card 158), and what can wait for her summary. Add a department (in the menu
+  and on Departments) types "Add a department for " into her chat.
+- **Departments.** One card per department: head, agents on duty, what needs you (`needsByDept`), goals
+  (`goalsWord`, counted in code), AI spend against the budget, the head's latest line. Each opens the page.
+- **Goals.** Every goal by department, the same `GoalTiles` as a department's Goals tab.
+- **Approvals.** Every waiting draft as the same `ApprovalCard`, plus the proposals that interrupt.
+- **Counts.** The header's "need you" is `interruptCount`, the same as the menu's Approvals and the bell.
+- **Deletes.** The Desk page and the floating Avery panel (`dashboard/components/avery.tsx`, its CSS and the
+  panel width code in `dashboard/chat-ui.ts`). Words that pointed at the Desk now say the Company page.
+
+Tests: `npm run check:dept` (the tabs and addresses, Avery's chat through `sendToAvery` and its checks, her
+runs in the chat, the shared counts, cards and tiles, setup still first, no Desk or floating panel left),
+`check:chat-ui`, `check:interrupts`, `check:speed` (the tabs and the day line stream behind Suspense).

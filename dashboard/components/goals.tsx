@@ -20,7 +20,7 @@ export const GOAL_LOOK: Record<GoalStatus, Look> = {
 const BAR: Partial<Record<GoalStatus, string>> = { on_track: "var(--mint)", reached: "var(--mint)", done: "var(--mint)", behind: "var(--yel)", missed: "var(--red)" };
 
 /** One goal: its words, status, what code counted, and a bar. Links to the goal page. */
-/** quote: the head's latest word on the Desk (its own report, so its words, not code's). */
+/** quote: the head's latest word on the Company page (its own report, so its words, not code's). */
 export function GoalTile({ g, showDept, quote }: { g: GoalView; showDept?: boolean; quote?: { who: string; text: string } | null }) {
   return (
     <Link href={`/goals/${g.id}`} className="goal-tile" style={g.paused ? { opacity: 0.7 } : undefined}>

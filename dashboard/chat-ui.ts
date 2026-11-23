@@ -1,6 +1,6 @@
-// Avery's chat panel, the parts that are plain code (card 290; dashboard/components/avery.tsx draws them):
-// how a reply's light formatting is read, how wide the panel may be dragged, and what each close does.
-// No React and no browser here, so scripts/check-chat-ui.ts can test it.
+// How a chat reply's light formatting is read (card 290; dashboard/components/chatReply.tsx draws it), for
+// Avery's chat on the Company page and every head's chat. No React and no browser here, so
+// scripts/check-chat-ui.ts can test it.
 
 /** A run of text inside a line. Never HTML and never a link: model text must not choose a URL. */
 export type Inline = { kind: "text" | "b" | "i" | "code"; text: string };
@@ -60,34 +60,4 @@ export function parseReply(text: string): Block[] {
     para.push(inline(line));
   }
   return blocks;
-}
-
-// the panel's width on a wide screen: dragged by its left edge, kept in this browser only
-export const WIDTH = { min: 320, max: 720, def: 380, step: 24, ofWindow: 0.6 } as const;
-
-/** Where the panel starts before it is dragged: narrower on a smaller screen, so the page keeps its room. */
-export function defaultWidth(windowWidth: number): number {
-  return windowWidth <= 1100 ? WIDTH.min : WIDTH.def;
-}
-
-/** A width the panel may take in a window this wide: never under the minimum, never over 60% of the window. */
-export function clampWidth(w: number, windowWidth: number): number {
-  const most = Math.max(WIDTH.min, Math.min(WIDTH.max, Math.floor(windowWidth * WIDTH.ofWindow)));
-  if (!Number.isFinite(w)) return Math.min(defaultWidth(windowWidth), most);
-  return Math.round(Math.min(most, Math.max(WIDTH.min, w)));
-}
-
-/** A stored width read back, or the default when there is none or it is not a number. */
-export function storedWidth(raw: string | null, windowWidth: number): number {
-  const n = raw == null ? NaN : Number(raw);
-  return clampWidth(Number.isFinite(n) ? n : defaultWidth(windowWidth), windowWidth);
-}
-
-/**
- * What a close does. The phone sheet closes only itself; only closing the side panel on a wide screen
- * changes what this browser remembers (and never on the Desk, where the panel always starts open).
- */
-export function closeEffect(sheetOpen: boolean, path: string): { sheet: "close" | "keep"; panel: "close" | "keep"; remember: "closed" | null } {
-  if (sheetOpen) return { sheet: "close", panel: "keep", remember: null };
-  return { sheet: "keep", panel: "close", remember: path === "/" ? null : "closed" };
 }

@@ -329,7 +329,6 @@ h1, h2, h3, p { margin: 0; }
   :root[data-theme="dark"] .ws:has(.dp) .topbar .round, :root[data-theme="dark"] .ws:has(.dp) .topbar .menu-btn { background: rgba(30,30,44,.7); border-color: rgba(255,255,255,.08); }
   .ws:has(.dp) .topbar .top-right > .round:not(.menu-btn) { margin-left: auto; }
   .ws:has(.dp) .main { padding: 0; }
-  body:has(.dp) .avery-bar { display: none; }
   .dp { gap: 0; }
   .dp-head { display: none; }
   .dp-ttl { display: flex; position: fixed; z-index: 41; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 62px; right: 62px; height: 44px; padding: 0 16px; border-radius: 99px; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
@@ -444,6 +443,38 @@ h1, h2, h3, p { margin: 0; }
 .ag-foot .note { flex: 1 1 160px; }
 /* department settings (slice 7): the gear on the header, and the sheet's own bits */
 .dp-gear { width: 30px; height: 30px; border-radius: 99px; border: 1px solid var(--bd); background: var(--card); color: var(--ink2); display: grid; place-items: center; }
+/* The Company page (docs/department-pages.md, slice 8): department cards, goals by department, Needs you pinned in Avery's chat */
+.co-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.co-card { background: var(--card); border: 1px solid var(--bd); border-radius: 22px; padding: 16px; display: flex; flex-direction: column; gap: 10px; color: var(--ink); text-decoration: none; transition: transform .25s, box-shadow .25s; }
+.co-card:hover { transform: translateY(-2px); box-shadow: var(--gsh); text-decoration: none; }
+.co-card-h { display: flex; align-items: center; gap: 10px; }
+.co-card-h i { width: 12px; height: 12px; border-radius: 99px; background: var(--hue); box-shadow: 0 0 0 5px color-mix(in srgb, var(--hue) 25%, transparent); flex: none; }
+.co-card-h b { font-size: 16px; letter-spacing: -.02em; }
+.co-chip { margin-left: auto; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.co-chip.warn { background: var(--yel-soft); color: var(--yel-ink); }
+.co-chip.ok { background: var(--mint-soft); color: var(--mint-ink); }
+.co-led { font-size: 12.5px; color: var(--mut); }
+.co-goal { font-size: 13px; color: var(--ink2); line-height: 1.45; }
+.co-goal b { color: var(--ink); }
+.co-spend { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--mut); }
+.co-word { font-size: 12.5px; color: var(--ink2); line-height: 1.45; border-top: 1px solid var(--bd); padding-top: 10px; }
+.co-gsec { display: flex; flex-direction: column; gap: 10px; }
+.co-gsec > header { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+.co-gsec > header i { width: 9px; height: 9px; border-radius: 99px; background: var(--hue); }
+.co-gsec > header .dp-btn { margin-left: auto; }
+.co-pin { display: flex; flex-direction: column; gap: 14px; }
+.co-wide { max-width: 720px; }
+.co-needs { display: flex; flex-direction: column; gap: 8px; }
+.co-need { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 14px; background: var(--soft); font-size: 13px; line-height: 1.45; }
+.co-need > span:not(.co-kind) { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.co-need small { color: var(--mut); font-size: 12px; }
+.co-kind { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; flex: none; }
+.co-later { display: flex; flex-direction: column; gap: 2px; }
+.co-later small { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--mut); }
+.co-later ul { margin: 0; padding-left: 18px; }
+.co-later a { color: inherit; }
+/* five words wide on a phone: the tabs drop their grey counts and some padding so Departments fits */
+@media (max-width: 760px) { .dp.co .dp-tabs { grid-template-columns: .7fr 1.45fr .8fr 1.25fr; } .dp.co .dp-tabs a .c:not(.red) { display: none; } }
 .dp-gear:hover { color: var(--ink); text-decoration: none; }
 .ds-h .dp-icon { width: 40px; height: 40px; border-radius: 13px; flex: none; }
 .ag input[type=text] { font: inherit; font-size: 14px; color: var(--ink); background: var(--card); border: 1px solid var(--bd); border-radius: 12px; padding: 10px 12px; }
@@ -1011,23 +1042,7 @@ a.goal-add:hover { text-decoration: none; color: var(--ink); }
 .funnel b { font-size: 20px; font-weight: 600; color: var(--ink); letter-spacing: -.02em; }
 @media (max-width: 760px) { .funnel { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
-/* Avery's chat (docs/company-mode.md, slice 5): a side panel on a wide screen, a bar and a sheet on a phone */
-.avery-av { width: 30px; height: 30px; flex: none; border-radius: 999px; background: var(--acc); color: #111114; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
-.avery-av.lg { width: 36px; height: 36px; font-size: 15px; }
-/* card 290: the panel stays mounted and slides; its width is dragged by the left edge (dashboard/chat-ui.ts).
-   The outer box animates its width and clips; the dark card inside keeps its width pinned right, so it slides
-   rather than squeezing. Motion only after the owner's first open or close (.anim), never on a page load. */
-.avery { display: flex; justify-content: flex-end; flex: none; position: sticky; top: 12px; align-self: flex-start; width: var(--avery-w, 380px); height: calc(100vh - 120px); min-height: 420px; overflow: hidden; border-radius: 24px; }
-.avery:not(.d-open) { width: 0; margin-left: -8px; opacity: 0; transform: translateX(24px); pointer-events: none; }
-.avery.anim { transition: width .38s cubic-bezier(.4, 0, .2, 1), margin-left .38s cubic-bezier(.4, 0, .2, 1), transform .38s cubic-bezier(.4, 0, .2, 1), opacity .3s ease; }
-.avery.dragging { transition: none; user-select: none; }
-.avery-in { width: var(--avery-w, 380px); flex: none; height: 100%; display: flex; flex-direction: column; gap: 10px; background: var(--dark2); color: #F4F3EE; border-radius: 24px; padding: 16px; box-sizing: border-box; }
-.avery-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 14px; z-index: 2; cursor: col-resize; touch-action: none; outline: none; }
-.avery-grip::after { content: ""; position: absolute; left: 5px; top: 50%; width: 4px; height: 44px; margin-top: -22px; border-radius: 4px; background: rgba(244, 243, 238, .16); transition: background .2s ease, height .2s ease, margin-top .2s ease; }
-.avery-grip:hover::after, .avery-grip:focus-visible::after, .avery.dragging .avery-grip::after { background: var(--acc); height: 64px; margin-top: -32px; }
-.avery-tab { animation: avery-fade .3s ease both; }
-@keyframes avery-fade { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
-/* her reply's light formatting (dashboard/chat-ui.ts parseReply): paragraphs, lists, short headings */
+/* A chat reply's light formatting (dashboard/components/chatReply.tsx) */
 .avery-md { display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
 .avery-md p { margin: 0; }
 .avery-md ul, .avery-md ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
@@ -1035,53 +1050,6 @@ a.goal-add:hover { text-decoration: none; color: var(--ink); }
 .avery-md b { font-weight: 650; color: #fff; }
 .avery-md-h { font-size: 14.5px; }
 .avery-md code { font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: #1A1A1F; border: 1px solid #3A3A40; border-radius: 6px; padding: 1px 5px; }
-/* the department draft (card 290): a one-line strip; tapping it shows the card in place of the messages */
-.avery-draft { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); background: #2C2C31; color: #F4F3EE; border-radius: 14px; padding: 9px 12px; font: inherit; text-align: left; cursor: pointer; transition: background .2s ease, border-color .2s ease; }
-.avery-draft:hover, .avery-draft.on { background: #34343A; border-color: var(--acc); }
-.avery-draft-k { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--acc); }
-.avery-draft-t { flex: 1; min-width: 0; font-size: 13px; color: #B5B4AD; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.avery-draft-t b { color: #F4F3EE; font-weight: 600; }
-.avery-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: #B5B4AD; font: inherit; font-size: 13px; padding: 4px 2px; cursor: pointer; }
-.avery-back:hover { color: #F4F3EE; }
-.avery-draft-card .card { color: var(--ink); }
-.avery-draft-card { animation: avery-rise .28s cubic-bezier(.22, .8, .24, 1) both; }
-@keyframes avery-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.avery-head { display: flex; align-items: center; gap: 10px; }
-.avery-sub { font-size: 12px; color: #B5B4AD; }
-.avery-x { width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: #F4F3EE; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-.avery-x:hover { background: #2C2C31; }
-.avery-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; }
-.avery-me { align-self: flex-end; max-width: 85%; background: var(--acc); color: #111114; border-radius: 16px 16px 4px 16px; padding: 10px 14px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; }
-.avery-her { align-self: flex-start; max-width: 92%; background: #2C2C31; border-radius: 16px 16px 16px 4px; padding: 12px 14px; font-size: 14px; line-height: 1.5; display: flex; flex-direction: column; gap: 8px; }
-.avery-note { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; color: #CFEFDD; }
-.avery-note svg { flex: none; margin-top: 2px; }
-.avery-run { font-size: 12px; color: #F7B48A; }
-.avery-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.avery-chip { border: 1px solid #55554F; background: transparent; color: #F4F3EE; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12.5px; cursor: pointer; min-height: 32px; }
-.avery-chip:hover:not(:disabled) { background: #2C2C31; }
-.avery-form { display: flex; flex-direction: column; gap: 6px; }
-.avery-input { flex: 1; min-width: 0; resize: none; font: inherit; font-size: 14px; background: #2C2C31; color: #fff; border: 1px solid #55554F; border-radius: 14px; padding: 10px 12px; }
-.avery-input::placeholder { color: #8D8D96; }
-.avery-send { width: 44px; height: 44px; flex: none; border: 0; border-radius: 14px; background: var(--acc); color: #111114; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; align-self: flex-end; }
-.avery-send:disabled { opacity: .5; cursor: default; }
-.avery-tab { flex: none; align-self: flex-start; position: sticky; top: 12px; width: 56px; border: 1px solid var(--bd); background: var(--card); color: var(--ink); border-radius: 18px; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 10px; cursor: pointer; font: inherit; }
-.avery-tab-t { writing-mode: vertical-rl; font-size: 13px; font-weight: 600; }
-.avery-bar { display: none; }
-@media (max-width: 860px) {
-  .avery-tab { display: none; }
-  .avery-bar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; align-items: center; gap: 10px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: var(--dark2); color: #F4F3EE; border: 0; font: inherit; text-align: left; cursor: pointer; }
-  .avery-bar-t { flex: 1; min-width: 0; background: #2C2C31; border: 1px solid #55554F; border-radius: 14px; padding: 11px 14px; font-size: 14px; color: #B5B4AD; }
-  .main { padding-bottom: 96px; }
-  /* the phone sheet slides up from the bottom and back down; closed, it is hidden and inert */
-  .avery, .avery:not(.d-open) { position: fixed; inset: 0; z-index: 60; width: 100%; height: 100dvh; min-height: 0; margin: 0; opacity: 1; border-radius: 0; transform: translateY(100%); visibility: hidden; pointer-events: none; }
-  .avery.m-open { transform: none; visibility: visible; pointer-events: auto; }
-  .avery.anim { transition: transform .38s cubic-bezier(.22, .8, .24, 1), visibility 0s linear .38s; }
-  .avery.m-open.anim { transition: transform .38s cubic-bezier(.22, .8, .24, 1), visibility 0s; }
-  .avery-in { width: 100%; border-radius: 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
-  .avery-grip { display: none; }
-}
-@media (prefers-reduced-motion: reduce) { .avery.anim, .avery.m-open.anim, .avery-grip::after, .avery-draft { transition: none; } .avery-tab, .avery-draft-card .card { color: var(--ink); }
-.avery-draft-card { animation: none; } }
 
 /* Crew > Schedule: the org's day and the cost table (dashboard/components/OrgDay.tsx). On a phone the
    timeline drops its name column (the name sits above each track) and the cost table becomes one

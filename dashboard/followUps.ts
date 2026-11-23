@@ -16,7 +16,7 @@ export async function followUpsView(f: Floor): Promise<FollowUp[]> {
   return followUps(st.plans, connected, new Set((exports ?? []).map((e) => e.service_key)));
 }
 
-/** Setup check findings the founder skipped (card 281): they wait on the Desk with their steps until opened again. */
+/** Setup check findings the founder skipped (card 281): they wait on the Company page with their steps until opened again. */
 export interface SkippedFinding { tile: CheckTile; name: string; index: number; finding: Finding }
 export async function skippedFindings(): Promise<SkippedFinding[]> {
   const checks = (await setupChecks()) ?? [];

@@ -388,7 +388,7 @@ export function planKinds(plans: Plans): Record<string, "guide" | "export"> {
 }
 
 /**
- * What is left to finish after setup, for the Desk: a guided part until its tool is connected, an export
+ * What is left to finish after setup, for the Company page: a guided part until its tool is connected, an export
  * part until a file with that tool's name is uploaded. `exportKeys` are the service keys of uploaded exports.
  */
 export type FollowUp =

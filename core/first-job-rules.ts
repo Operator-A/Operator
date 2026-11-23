@@ -1,5 +1,5 @@
 // Setup step 4, "First job" (card 154, docs/setup.md): which agent starts first, what the other
-// departments wait on, and what the Desk shows over time. Picked in code from the installed templates,
+// departments wait on, and what the Company page shows over time. Picked in code from the installed templates,
 // the connected tools and the playbooks waiting for approval; the model never chooses. Pure, so
 // check:first-job can test it.
 import type { Template } from "@/core/template-rules";
@@ -146,7 +146,7 @@ export function deptWaits(templates: readonly Template[], p: Pick<PickInput, "se
   })];
 }
 
-/** How long the Desk keeps the first job's result up after its run ends. */
+/** How long the Company page keeps the first job's result up after its run ends. */
 export const DONE_FOR_MS = 24 * 3600e3;
 
 export interface JobRun { agent_id: string; trigger: string; started_at: string; ended_at: string | null; status: string }
@@ -157,7 +157,7 @@ export type FirstJobPhase<R extends JobRun = JobRun> =
   | null;
 
 /**
- * What the Desk shows: the offer until the first job starts, then its run while it goes, then its
+ * What the Company page shows: the offer until the first job starts, then its run while it goes, then its
  * result for a day. A first try (card 194) follows its try, which is a preview run; a first playbook job
  * never counts a preview. Null for a business that wasn't offered one (started empty, or never went through setup).
  */
@@ -177,7 +177,7 @@ export function readFirstJobTap(agentId: unknown, s: { offer: boolean; firstJob:
   if (!s.offer) return { problem: "This business wasn’t set up with a first job. Approve playbooks on Crew instead." };
   if (s.firstJob) return { problem: "The first job already started." };
   if (!pick) return { problem: "No agent is ready yet: connect the tool its department needs first." };
-  if (String(agentId ?? "") !== pick.agentId) return { problem: "The first job changed (a tool was connected or a playbook approved). Reload the Desk and tap again." };
+  if (String(agentId ?? "") !== pick.agentId) return { problem: "The first job changed (a tool was connected or a playbook approved). Reload the Company page and tap again." };
   return { agentId: pick.agentId };
 }
 

@@ -103,7 +103,7 @@ export function SetupCheckCard({ tile, name, initial, owner, approver, auto }: {
         <>
           {c.summary && <span style={{ fontSize: 14 }}>{c.summary}</span>}
           {shown.length > 0 && <ul className="stack" style={{ gap: 0, margin: 0, padding: 0 }}>{shown.map(({ f, i }) => <FindingRow key={i} f={f} i={i} tile={tile} canEdit={approver} owner={owner} onChange={setC} />)}</ul>}
-          {skipped > 0 && <span className="ink2" style={{ fontSize: 12.5 }}>{skipped} skipped. They wait on your Desk.</span>}
+          {skipped > 0 && <span className="ink2" style={{ fontSize: 12.5 }}>{skipped} skipped. They wait on your Company page.</span>}
           <span className="ink2" style={{ fontSize: 12.5 }}>The check changed nothing in {name}{c.findings.some((f) => f.fix) ? "; Fix it for me only stages changes for you to approve" : ""}. This check cost {usd(c.costUsd)}.</span>
         </>
       )}

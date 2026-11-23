@@ -46,14 +46,14 @@ async function saveSetupState(s: SetupState): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Whether the current business goes to setup instead of the Desk. */
+/** Whether the current business goes to setup instead of the Company page. */
 export async function inSetup(): Promise<boolean> {
   const [s, agents, depts] = await Promise.all([setupState(), db().from("agents").select("id"), db().from("departments").select("id", { count: "exact", head: true })]);
   if (agents.error || depts.error) return false;
   return needsSetup({ done: s.done, departments: depts.count ?? 0, agentIds: (agents.data ?? []).map((a) => String(a.id)) });
 }
 
-/** Setup is over: the founder installed departments (`offer`: the Desk offers a first job, card 154) or chose to start empty. */
+/** Setup is over: the founder installed departments (`offer`: the Company page offers a first job, card 154) or chose to start empty. */
 /**
  * Start this company (card 193): the picked kits install from their templates (renamed to Avery's
  * names), then each picked bespoke department is built from its checked draft, everyone off duty.
@@ -91,11 +91,11 @@ export async function finishSetup(offer = false): Promise<void> {
   const was = await setupState();
   // with departments installed, /start keeps the founder for the wrap-up: credits, then the first job (card 186)
   await saveSetupState({ ...was, done: true, offer, wrapUp: offer, ...(offer ? { stage: "first" as const } : {}) });
-  // card 197: the interview's last question would stay as Avery's latest message on the Desk; code's own hand-off line closes it, once
+  // card 197: the interview's last question would stay as Avery's latest message on the Company page; code's own hand-off line closes it, once
   if (!was.done) await keepChat({ role: "avery", text: SETUP_HANDOFF }).catch(() => false);
 }
 
-/** Go to your Desk (card 186): the wrap-up ends, and /start sends the founder to the Desk from now on. */
+/** Go to your Company page (card 186): the wrap-up ends, and /start sends the founder to the Company page from now on. */
 export async function endWrapUp(): Promise<void> {
   await saveSetupState({ ...(await setupState()), wrapUp: false });
 }

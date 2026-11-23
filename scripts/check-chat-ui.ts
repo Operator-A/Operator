@@ -1,10 +1,10 @@
-// Checks Avery's chat panel (card 290, dashboard/chat-ui.ts): how a reply's light formatting is read,
-// how wide the panel may be dragged, and that closing the phone sheet never changes the wide-screen panel.
+// Checks how a chat reply's light formatting is read (card 290, dashboard/chat-ui.ts), for Avery's chat on the
+// Company page and every head's chat, and that the chat never sets raw HTML or makes reply text a link.
 // No database, no network, no browser. Run: npm run check:chat-ui
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
-import { WIDTH, clampWidth, closeEffect, defaultWidth, inline, parseReply, storedWidth } from "../dashboard/chat-ui";
+import { inline, parseReply } from "../dashboard/chat-ui";
 
 // plain text stays plain: one paragraph, its single line breaks kept
 assert.deepEqual(parseReply("Sales is fine.\nNothing needs you."), [
@@ -49,35 +49,13 @@ const flat = JSON.stringify(risky);
 assert.ok(risky.every((b) => b.kind === "p"));
 assert.ok(!/"kind":"(a|link|html)"/.test(flat), "no link or HTML kind exists");
 assert.ok(flat.includes("<img src=x onerror=alert(1)>"), "the tag is text, kept as typed");
-// and the panel never sets raw HTML
-const panel = readFileSync(new URL("../dashboard/components/avery.tsx", import.meta.url), "utf8");
-assert.ok(!panel.includes("dangerouslySetInnerHTML"), "the chat panel never sets raw HTML");
-assert.ok(!/<a\s|href=\{[^}]*\.text/.test(panel.replace(/<Link href=\{`\/runs\/\$\{m\.runId\}`\}/g, "")), "reply text never becomes a link");
-
-// the panel's width: between the minimum and the most this window allows (60% of it, at most 720)
-assert.equal(clampWidth(100, 1600), WIDTH.min);
-assert.equal(clampWidth(5000, 1600), WIDTH.max);
-assert.equal(clampWidth(700, 1000), 600, "never over 60% of the window");
-assert.equal(clampWidth(500, 400), WIDTH.min, "a tiny window still gets the minimum");
-assert.equal(clampWidth(Number.NaN, 1600), WIDTH.def);
-assert.equal(clampWidth(450.6, 1600), 451);
-assert.equal(defaultWidth(1000), WIDTH.min, "narrower by default on a smaller screen");
-assert.equal(defaultWidth(1440), WIDTH.def);
-assert.equal(storedWidth(null, 1440), WIDTH.def);
-assert.equal(storedWidth("abc", 1440), WIDTH.def);
-assert.equal(storedWidth("540", 1440), 540);
-assert.equal(storedWidth("900", 1000), 600, "a width saved on a big screen is cut down on a smaller one");
-
-// closing: the phone sheet closes only itself and never changes what this browser remembers
-assert.deepEqual(closeEffect(true, "/crew"), { sheet: "close", panel: "keep", remember: null });
-assert.deepEqual(closeEffect(true, "/"), { sheet: "close", panel: "keep", remember: null });
-// the wide-screen close is remembered, except on the Desk where the panel always starts open
-assert.deepEqual(closeEffect(false, "/crew"), { sheet: "keep", panel: "close", remember: "closed" });
-assert.deepEqual(closeEffect(false, "/"), { sheet: "keep", panel: "close", remember: null });
-
-// the panel stays mounted so it can slide, and is inert while closed
-assert.ok(/inert=\{!shown\}/.test(panel), "the closed panel is inert");
-assert.ok(!/\(open \|\| sheet\) && \(/.test(panel), "the panel is no longer mounted only while open");
-assert.ok(!panel.includes('maxHeight: "45%"'), "the old scrolling draft box is gone");
+// and the chat never sets raw HTML, and reply text never becomes a link
+for (const f of ["../dashboard/components/headChat.tsx", "../dashboard/components/chatReply.tsx"]) {
+  const src = readFileSync(new URL(f, import.meta.url), "utf8");
+  assert.ok(!src.includes("dangerouslySetInnerHTML"), `${f} never sets raw HTML`);
+  assert.ok(!/href=\{[^}]*\.text/.test(src), `${f}: reply text never becomes a link`);
+}
+// the floating Avery panel is gone (slice 8): Avery's chat is on the Company page
+assert.ok(!existsSync(new URL("../dashboard/components/avery.tsx", import.meta.url)), "the floating Avery panel is deleted");
 
 console.log("check:chat-ui ok");

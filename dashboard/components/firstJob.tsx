@@ -1,4 +1,4 @@
-// The Desk's first job card (card 154, docs/setup.md). Server-drawn; the one button is a client
+// The Company page's first job card (card 154, docs/setup.md). Server-drawn; the one button is a client
 // ActionButton bound to startFirstJob. Every line comes from code: the pick, the steps, the cost.
 import Link from "next/link";
 import { ActionButton } from "./client";

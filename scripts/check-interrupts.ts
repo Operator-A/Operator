@@ -66,7 +66,7 @@ no({ change: "new", title: "Grow orders", target: "100" }, /a target needs a mea
 no({ change: "new", title: "See https://evil.example" }, /link/);
 no({ change: "new", title: "Grow orders", due_on: "March" }, /due_on is a date/);
 
-// the wiring: the server's checks, the tool, the Desk and the badge
+// the wiring: the server's checks, the tool, the Company page and the badge
 const store = readFileSync("core/proposals.ts", "utf8");
 assert.match(store, /const dept = seat\?\.departmentId \?\? deptId;/, "a head reaches only its own department");
 assert.match(store, /open\.length >= MAX_GOALS_PER_DEPT/, "the 3-goal limit is checked when filed");
@@ -77,14 +77,15 @@ const propose = TOOLS.propose.params.find((p) => p.name === "kind");
 assert.ok(propose && propose.type === "enum" && propose.options.includes("goal"), "a head can propose a goal change");
 const migration = readFileSync("supabase/migrations/20261222090000_goal_proposals.sql", "utf8");
 assert.match(migration, /check \(kind in \('hire', 'grant_tool', 'new_tool', 'retire', 'department', 'goal'\)\)/);
-const desk = readFileSync("app/(room)/page.tsx", "utf8");
-assert.match(desk, /const \{ now: asks, later \} = split\(open\);/, "the Desk splits Needs you by interruptKind");
-assert.match(desk, /Waiting for \{chief\}’s summary/);
-assert.doesNotMatch(desk, /proposals from your heads|x\.href !== "\/proposals"/, "the old mixed list is gone");
+const home = readFileSync("app/(room)/page.tsx", "utf8");
+assert.match(home, /const \{ now: asks, later \} = split\(open\);/, "the Company page splits Needs you by interruptKind");
+assert.match(home, /These can wait; \{chief\} rolls them into the next summary/);
+assert.match(home, /const waiting = interruptCount\(open\);/, "the Company page's count is the same four as the bell and the menu");
+assert.doesNotMatch(home, /proposals from your heads|x\.href !== "\/proposals"/, "the old mixed list is gone");
 assert.match(readFileSync("app/(room)/layout.tsx", "utf8"), /const waiting = interruptCount\(open\);/, "the menu badge counts only the four");
 assert.doesNotMatch(readFileSync("dashboard/needs.ts", "utf8"), /Mercury change|from your heads/);
 
-// the Desk line counts the four, then what waits
+// the Company page's day line counts the four, then what waits
 assert.equal(deskLine(["on_track"], 2, 3, "Avery"), "One goal on track. Two things need you; three wait for Avery’s summary.");
 assert.equal(deskLine([], 0, 0), "No goals set yet. Nothing needs you.");
 

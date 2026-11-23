@@ -4,9 +4,8 @@ import { goLive, realRun, setEnabled, tryBuilt } from "@/dashboard/actions";
 import { changeInChat, hireInChat, proposalDecline } from "@/dashboard/proposalActions";
 import { deptHires } from "@/dashboard/hireCards";
 import { deptChanges } from "@/dashboard/changeCards";
-import { getApprovals, getCounts, getOrgSwitch, getReactRules, getRoster, getTz, type ApprovalItem, type ApprovalsView, type ReactRules } from "@/dashboard/data";
+import { getApprovals, getCounts, getOrgSwitch, getRoster, getTz, rulesFor, type ApprovalItem, type ApprovalsView } from "@/dashboard/data";
 import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, goalHref, headAgentId, hireHref, needsByDept, settingsHref, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
-import { goalNumber } from "@/dashboard/dept-feed";
 import { deptRuns } from "@/dashboard/deptFeed";
 import { HEAD_CHAT_MISSING, headHistory } from "@/core/head-chat";
 import { sendToHead } from "@/dashboard/chatActions";
@@ -26,6 +25,7 @@ import { ActionButton } from "@/dashboard/components/client";
 import { ApprovalCard } from "@/dashboard/components/approvalBits";
 import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
 import { DeptSettingsFor } from "@/dashboard/components/deptSettingsFor";
+import { GoalTiles } from "@/dashboard/components/goalTiles";
 
 const GEAR = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" /></svg>;
 
@@ -96,12 +96,6 @@ async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
   return <Agents {...p} />;
 }
 
-/** The rules each card's Not this offers, read once per agent on the cards. */
-async function rulesFor(items: ApprovalItem[]): Promise<Record<string, ReactRules>> {
-  const agents = [...new Set(items.map((i) => i.agent_id))];
-  return Object.fromEntries(await Promise.all(agents.map(async (a) => [a, await getReactRules(a)] as const)));
-}
-
 /** The chat: the conversation with the head and every run of the department, with its drafts as approval cards. */
 async function Chat({ id, name, title, roster, tz, say }: P) {
   const chart = roster.chart!;
@@ -121,7 +115,7 @@ async function Chat({ id, name, title, roster, tz, say }: P) {
   const talk = (history ?? []).map((r) => ({ id: r.id, role: r.role, text: r.text, notes: r.notes, runId: r.run_id, at: r.created_at }));
   const seat = headOf(chart, id);
   return (
-    <HeadChat deptId={id} dept={name} head={head?.name ?? null} title={title} tz={tz} talk={talk} runs={runs} cards={cards} send={sendToHead}
+    <HeadChat deptId={id} dept={name} head={head?.name ?? null} title={title} tz={tz} talk={talk} runs={runs} cards={cards} send={sendToHead.bind(null, id)}
       missing={head ? (history ? null : HEAD_CHAT_MISSING) : seat?.holder === "owner" ? `You lead ${name}, so there’s no head agent to talk to here. Ask Avery about this department instead.` : `${name} has no head yet. Fill its head seat on the Agents tab to talk to one.`}
       starters={[`How is ${name} doing?`, "What needs me here?", "Who is behind?"]}
       hires={hires.cards} hireActs={{ hire: hireInChat, tryIt: tryBuilt, goLive, duty: setEnabled }}
@@ -184,24 +178,8 @@ async function Goals({ id, name, roster, goals }: P) {
   const who = (headId && roster.byId[headId]?.name) || "the head";
   return (
     <div className="dp-scroll">
-      {mine.length > 0 && (
-        <div className="dp-goals">
-          {mine.map((g) => {
-            const n = goalNumber(g.line);
-            return (
-              <Link key={g.id} href={goalHref(id, g.title)} className="dp-goal">
-                <span className="k">Goal · {g.statusLabel}</span>
-                <h4>{g.title}</h4>
-                <div className="num">{n.big}{n.small && <> <small>{n.small}</small></>}</div>
-                {g.pct != null && <div className="dp-bar" role="img" aria-label={`${Math.round(g.pct)}% of the target`}><i style={{ width: `${Math.max(2, g.pct)}%` }} /></div>}
-                {word && <div className="by"><b>{word.who}:</b> {word.text}</div>}
-                <span className="src">{g.how ? `Measured in code: ${g.how}` : g.measure ? `Measured in code from ${g.measure}.` : "No measure yet: tracked in words."}</span>
-              </Link>
-            );
-          })}
-        </div>
-      )}
-      <Link href={goalHref(id)} className="dp-newline">{PLUS}<span><b>{mine.length ? `Set or change a goal by telling ${head ?? "the head"}.` : `${name} has no goals yet. Set one by telling ${who}.`}</b> A new or changed goal comes back as a card for your OK, because goals steer what the agents do.</span></Link>
+      {mine.length > 0 && <GoalTiles deptId={id} goals={mine} word={word} />}
+      <Link href={goalHref(id)} className="dp-newline">{PLUS}<span><b>{mine.length ? `Set or change a goal by telling ${who}.` : `${name} has no goals yet. Set one by telling ${who}.`}</b> A new or changed goal comes back as a card for your OK, because goals steer what the agents do.</span></Link>
     </div>
   );
 }

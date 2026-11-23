@@ -28,12 +28,12 @@ import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
 import { extensions } from "@/core/extensions";
 import { revealWhy } from "@/core/brain-tools";
 import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
-import { sendSetup, setupTimeZone, setupGo, setupAddFact, setupAnswerTool, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupOtherTool, setupPlanClear, setupSkipTool, setupSnapshot, setupStartEmpty, setupToDesk } from "@/dashboard/setupActions";
+import { sendSetup, setupTimeZone, setupGo, setupAddFact, setupAnswerTool, setupConfirmFact, setupEditFact, setupInstall, setupRemoveFact, setupShopifyStore, setupOtherTool, setupPlanClear, setupSkipTool, setupSnapshot, setupStartEmpty, setupToCompany } from "@/dashboard/setupActions";
 import { controlsOn } from "@/dashboard/session";
 import { billing } from "@/dashboard/cost";
 import { settings } from "@/core/settings";
 
-// First-run setup (docs/setup.md): a new business lands here instead of the Desk. One guided flow
+// First-run setup (docs/setup.md): a new business lands here instead of the Company page. One guided flow
 // (card 181): one step on screen at a time, the step kept in the setup state. The conversation with
 // Avery (card 151), where she asks about tools by part and code draws the card (card 195), the company
 // she proposes (card 153), then the first job (card 154).
@@ -49,7 +49,7 @@ const LIGHT: Record<Stage, [string, string, string]> = {
 export default async function Setup({ searchParams }: { searchParams: Promise<{ c?: string; q?: string; connected?: string; problem?: string; claude?: string; credits?: string; credits_problem?: string }> }) {
   const sp = await searchParams;
   const me = await requireSession();
-  // one round for everything the step shows (card 202, docs/speed.md); setup needs which tools are set up, not the Desk's floor
+  // one round for everything the step shows (card 202, docs/speed.md); setup needs which tools are set up, not the Company page's floor
   const [setup, health, facts, state, history, biz, claude, bill, own, checks] = await Promise.all([inSetup(), getHealth(), listFacts(), setupState(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), claudeState(), billing(), settings().catch(() => null), setupChecks().catch(() => null)]);
   // card 186: after Start this company, setup counts as done but /start keeps the wrap-up (credits, then the first job)
   if (!setup && !state.wrapUp) redirect("/");
@@ -165,7 +165,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
               <span className="wg-lead">
                 {wrap.screen === "credits" ? `Your crew’s work runs on credits.${wrap.job ? ` First up: ${wrap.job.name}, your ${wrap.job.role.toLowerCase()}, ${firstSentence(wrap.job.job, 140).replace(/^./, (c) => c.toLowerCase())}` : ""}`
                   : wrap.screen === "job" ? "One tap approves its playbook and starts it. Every other agent stays off duty until you approve its own."
-                  : wrap.screen === "waits" ? "No agent can start yet: each department waits on a tool. Connect one and the first job shows on your Desk."
+                  : wrap.screen === "waits" ? "No agent can start yet: each department waits on a tool. Connect one and the first job shows on your Company page."
                   : "Your first agent is on the job. Anything it wants to change comes to you as an approval card."}
               </span>
             </div>
@@ -183,7 +183,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
             )}
             {(wrap.screen === "working" || wrap.screen === "waits") && (
               <div className="row" style={{ justifyContent: "center" }}>
-                <ActionButton className="btn dark" action={setupToDesk} follow>Go to your Desk</ActionButton>
+                <ActionButton className="btn dark" action={setupToCompany} follow>Go to your Company page</ActionButton>
               </div>
             )}
           </section>

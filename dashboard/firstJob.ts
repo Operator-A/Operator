@@ -1,5 +1,5 @@
 import "server-only";
-// The Desk's first job (card 154, docs/setup.md): what the card shows, read for the current business.
+// The Company page's first job (card 154, docs/setup.md): what the card shows, read for the current business.
 // The pick and the phases are in core/first-job-rules.ts; this reads the setup row, the installed
 // agents, the playbooks waiting and the connected tools.
 import { orgTz } from "@/core/tz";
@@ -34,7 +34,7 @@ export interface FirstJobRunning { phase: "running" | "done"; kind: "playbook" |
 export type FirstJobView = FirstJobOffer | FirstJobRunning;
 
 /** The pick for the current business now, with what the tap needs. Also used by the action to check the tap. */
-/** What the first job reads from the floor. The Desk passes its floor; setup reads this much only (jobFloor), never getFloor. */
+/** What the first job reads from the floor. The Company page passes its floor; setup reads this much only (jobFloor), never getFloor. */
 export type JobFloor = Pick<Floor, "now" | "tz" | "agents" | "runs" | "health" | "approvalsPending">;
 
 /** A small floor for setup's wrap-up (card 186): the agents, the last two days of runs and the approvals waiting. */
@@ -103,7 +103,7 @@ export async function firstJobView(f: JobFloor): Promise<FirstJobView | null> {
   const [all, connected] = await Promise.all([listPlaybooks(agentId), connectedTiles(f.health)]);
   const built = builtCandidates(st.designs, Object.values(f.agents));
   const templateId = TEMPLATES.find((t) => t.agents.some((a) => a.id === agentId))?.id ?? built.find((b) => b.agentId === agentId)?.deptId ?? null;
-  // a try is a preview run, which the Desk's floor leaves out: read it here (card 194)
+  // a try is a preview run, which the Company page's floor leaves out: read it here (card 194)
   let run = ph.phase === "running" || ph.phase === "done" ? ph.run : null;
   if (kind === "try" && !run) {
     const { data } = await db().from("agent_runs").select(RUN_COLS).eq("agent_id", agentId).eq("trigger", "preview").gte("started_at", new Date(Date.parse(st.firstJob!.at) - 60e3).toISOString()).order("started_at", { ascending: true }).limit(1);

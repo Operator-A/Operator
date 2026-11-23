@@ -291,7 +291,7 @@ export const getRoster = cache(async (): Promise<Roster> => {
   return { ok: true, now, agents, runs, spentToday, grants, liveVersion, ...roster, palette, chart: org };
 });
 
-/** What waits on the owner (card 304): the counts behind the Desk's list and the Approvals badge. One round. */
+/** What waits on the owner (card 304): the counts behind the Company page's list and the Approvals badge. One round. */
 export const getCounts = cache(async (): Promise<Counts> => {
   await cookies();
   const none: Counts = { photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], approvalOwners: [], jobsForYou: [], lessonsWaiting: {} };
@@ -320,7 +320,7 @@ export const getCrewFloor = cache(async (): Promise<CrewFloor> => {
 });
 
 /**
- * Everything at once, for the pages that show all of it (the frame, the Desk, an agent, a run's replay, Crew):
+ * Everything at once, for the pages that show all of it (the frame, the Company page, an agent, a run's replay, Crew):
  * the pieces above in one round, each read once per request. A page that shows less asks for its pieces by
  * name instead (card 304, check:speed rule 9).
  */
@@ -381,6 +381,12 @@ export async function getReactRules(agentId: string): Promise<ReactRules> {
       crew: pick((r) => r.grp === "crew" && r.agent_id === null),
     };
   } catch { return empty; }
+}
+
+/** The rules each approval card's Not this offers, read once per agent on the cards (a department's tabs, the Company page). */
+export async function rulesFor(items: readonly { agent_id: string }[]): Promise<Record<string, ReactRules>> {
+  const agents = [...new Set(items.map((i) => i.agent_id))];
+  return Object.fromEntries(await Promise.all(agents.map(async (a) => [a, await getReactRules(a)] as const)));
 }
 
 /** The owner's reactions on one run, keyed by item id ("" for the run). */

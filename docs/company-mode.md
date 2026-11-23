@@ -297,6 +297,9 @@ has its own place.
 
 ## Slice 5: Avery, the front door, and the Desk
 
+Since department pages slice 8 (docs/department-pages.md), the Desk and the floating Avery panel are gone:
+home is the Company page, where Avery's chat, Needs you and the goals now live.
+
 **What the owner sees.**
 
 - **The Desk** is home (`/`, "Desk" in the sidebar). A greeting and one line counted in code ("Two

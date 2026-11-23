@@ -8,29 +8,20 @@ import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import { isLive, stateLook, stateOf } from "@/dashboard/status";
 import { LiveRefresher, MobileMenu, RailLink, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
-import { AveryChat } from "@/dashboard/components/avery";
 import { SignOutButton } from "@/dashboard/components/signOut";
-import { DraftCard } from "@/dashboard/components/department";
-import { currentDraftView } from "@/dashboard/department";
-import { atLeast } from "@/core/roles";
-import { sendToAvery } from "@/dashboard/chatActions";
-import { CHAT_MISSING, chatHistory } from "@/core/avery-chat";
-import { agentNames, companySeat, headOf } from "@/core/org";
+import { headOf } from "@/core/org";
 import { deptHue, headAgentId, needsByDept } from "@/dashboard/dept-rules";
 import { SideDept } from "@/dashboard/components/deptTabs";
+import { addDeptHref } from "@/dashboard/company-rules";
 import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 
-// a message to Avery is a run on the page the owner is on (docs/company-mode.md, slice 5)
+// a message to Avery (the Company page) or to a head (a department page) is a run on that page
 export const maxDuration = 120;
 
 export default async function RoomLayout({ children }: { children: React.ReactNode }) {
   // one round for everything the frame shows (card 202, docs/speed.md); a bad session still redirects before anything is drawn
-  const [floor, jar, history, biz, me, draft] = await Promise.all([
-    getFloor(), cookies(), chatHistory(30).catch(() => null), loadBusiness().catch(() => UNKNOWN_BUSINESS), requireSession(),
-    // card 156: the department draft Avery is filling in, at the top of her panel
-    currentDraftView().catch(() => null),
-  ]);
+  const [floor, jar, biz, me] = await Promise.all([getFloor(), cookies(), loadBusiness().catch(() => UNKNOWN_BUSINESS), requireSession()]);
   const org = floor.chart; // read once with the floor (card 302)
   const theme = jar.get("cr_theme")?.value === "dark" ? "dark" : "light";
   const open = needs(floor, floor.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
@@ -45,12 +36,9 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     .map((r) => ({ id: r.id, name: floor.byId[r.agent_id]?.name ?? r.agent_id, status: r.status, live: isLive(r, floor.now) }));
   // card 158: the badge counts only the four kinds that interrupt (dashboard/needs-rules.ts)
   const waiting = interruptCount(open);
-  // Avery's chat: whoever holds the company seat, with the conversation so far
-  const frontId = org ? companySeat(org)?.agentId ?? null : null;
-  const frontName = frontId ? floor.byId[frontId]?.name ?? (await agentNames([frontId]))[frontId] ?? "Avery" : "Avery";
   // six places (docs/builder-flow.md, slice 5): Settings sits apart at the bottom of the sidebar
   const nav = [
-    { href: "/", match: "/", icon: "layout-dashboard", label: "Desk" },
+    { href: "/", match: "/", icon: "layout-dashboard", label: "Company" },
     { href: "/approvals", match: ["/approvals", "/proposals*"], icon: "inbox", label: "Approvals", count: waiting ? String(waiting) : undefined },
     { href: "/crew", match: ["/crew", "/agents/*", "/build*"], icon: "users", label: "Crew", count: `${floor.crew.length}` },
     { href: "/runs", match: "/runs*", icon: "history", label: "Runs" },
@@ -63,7 +51,8 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     const who = head ? floor.byId[head]?.name : seat?.holder === "owner" ? "You" : null;
     return { href: `/dept/${d.id}`, name: d.name, sub: who ? `${who} · ${seat?.title ?? "Head"}` : "No head yet", hue: deptHue(i), count: deptNeeds[d.id] ?? 0 };
   });
-  const deptList = depts.length > 0 && <><span className="side-h6">Departments</span>{depts.map((it) => <SideDept key={it.href} {...it} />)}</>;
+  // Add a department is Avery's department interview, in her chat on the Company page (slice 8)
+  const deptList = <><span className="side-h6">Departments</span>{depts.map((it) => <SideDept key={it.href} {...it} />)}<SideLink href={addDeptHref()} match={[]} icon="plus" label="Add a department" /></>;
   const deptGroup = deptList && <div className="side-group">{deptList}</div>;
 
   return (
@@ -89,7 +78,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
               <div className="sheet-group">
                 {nav.map((it) => <SideLink key={it.label} {...it} />)}
               </div>
-              {deptList && <div className="sheet-group">{deptList}</div>}
+              <div className="sheet-group">{deptList}</div>
               <div className="sheet-group">
                 <SideLink href="/status" match="/status" icon="circle-alert" label="Status" />
                 <SideLink href="/settings" match="/settings*" icon="settings" label="Settings" />
@@ -111,9 +100,6 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             <SignOutButton />
           </aside>
           <main className="main">{children}</main>
-          <AveryChat name={frontName} send={sendToAvery} missing={history ? null : CHAT_MISSING} draft={draft ? <DraftCard v={draft} owner={atLeast(me.role, "owner")} /> : null}
-            draftSummary={draft ? { name: draft.draft.name, gaps: draft.gaps } : null}
-            initial={(history ?? []).map((h) => ({ id: h.id, role: h.role, text: h.text, runId: h.run_id, notes: h.notes }))} />
           <LiveRefresher runs={recent} />
         </div>
       </div>

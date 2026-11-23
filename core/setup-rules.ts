@@ -109,7 +109,7 @@ export const prevStage = (s: Stage): Stage | null => STAGES[STAGES.indexOf(s) - 
 /** How far along the progress line is, in percent: the end of the current step. */
 export const stageProgress = (s: Stage): number => Math.round(((STAGES.indexOf(s) + 1) / STAGES.length) * 100);
 
-/** The Desk offers Start with Avery once setup is done and the first job has started, until it is used (card 185). */
+/** The Company page offers Start with Avery once setup is done and the first job has started, until it is used (card 185). */
 /** What Start with Avery puts in the department draft: its name and purpose only, never people or tools. */
 
 /** The wrap-up's screen (card 186): credits while a run would be blocked for lack of them, then the first job, or what each department waits on, then the company at work. */
@@ -123,7 +123,7 @@ export function wrapScreen(p: { firstJob: unknown; needCredits: boolean; jobRead
 export const shownStage = (s: Pick<SetupState, "stage" | "wrapUp">): Stage => (s.wrapUp ? "first" : s.stage === "first" ? "company" : s.stage);
 
 /**
- * The setup state kept in policies (key "setup"). `offer`: setup installed departments, so the Desk offers
+ * The setup state kept in policies (key "setup"). `offer`: setup installed departments, so the Company page offers
  * a first job (card 154); `firstJob`: which agent started it and when.
  */
 export interface SetupState { done: boolean; stage: Stage; skipped: CategoryId[]; plans: Plans; designs: Design[];
@@ -131,7 +131,7 @@ export interface SetupState { done: boolean; stage: Stage; skipped: CategoryId[]
   asked: CategoryId[];
   /** The kits in Avery’s sketch, as the chart reads them; worked out from designs, never stored. */
   leaning: Leaning[]; offer: boolean; firstJob: { agentId: string; at: string; kind: "playbook" | "try" } | null;
-  /** Card 186: departments are installed and /start still shows the wrap-up (credits, then the first job) until Go to your Desk. */
+  /** Card 186: departments are installed and /start still shows the wrap-up (credits, then the first job) until Go to your Company page. */
   wrapUp: boolean }
 export const NO_SETUP: SetupState = { done: false, stage: "business", skipped: [], plans: {}, designs: [], asked: [], leaning: [], offer: false, firstJob: null, wrapUp: false };
 /** The parts asked about, as stored: only real ones, each once, in the order asked (the last ask moves to the end). */
@@ -150,7 +150,7 @@ export function readSetupState(raw: unknown, templateIds: readonly string[]): Se
 }
 
 /**
- * Whether a business goes to setup instead of the Desk: it hasn't finished setup, has no departments,
+ * Whether a business goes to setup instead of the Company page: it hasn't finished setup, has no departments,
  * and its only agent (if any) is the Chief of Staff setup installed. A business with a crew never does.
  */
 export function needsSetup(p: { done: boolean; departments: number; agentIds: readonly string[] }): boolean {
@@ -178,7 +178,7 @@ export function factsLine(facts: readonly Pick<Fact, "topic" | "text" | "state">
  * The parts of the business a tool runs, for the directive (card 195): each id with its state, so Avery
  * asks about a part only while it is open. She names the id; code draws the card and writes the tools.
  */
-/** Avery's last message of setup (card 197), written by code: the Desk panel opens on it instead of a stale interview question. */
+/** Avery's last message of setup (card 197), written by code: the Company page panel opens on it instead of a stale interview question. */
 export const SETUP_HANDOFF = "Setup is done and your company is in place. From here, ask me what needs you today, how the goals are going, or tell me something new about the business.";
 
 /** Said of a part none of whose tools connect yet (card 196), so Avery never promises a connection there. */

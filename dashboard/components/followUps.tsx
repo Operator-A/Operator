@@ -7,7 +7,7 @@ import { reopenFinding } from "@/dashboard/setupCheckActions";
 import { SEVERITY_WORDS } from "@/core/setup-check-rules";
 
 /**
- * The Desk's "Finish setting up" card (card 183): for a part the founder had no tool for, the steps to
+ * The Company page's "Finish setting up" card (card 183): for a part the founder had no tool for, the steps to
  * create the account themselves and then connect it the normal way; for a tool with no connection,
  * where to upload an export. A part leaves when it is connected, uploaded, or the owner taps Not now.
  */
