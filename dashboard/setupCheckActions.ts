@@ -6,7 +6,7 @@ import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { audit } from "@/core/audit";
 import { orgId, withOrg } from "@/core/tenancy";
-import { claimCheck, runCheck, setFindingState, setupCheck, type SetupCheck } from "@/core/setup-check";
+import { claimCheck, claimFix, runCheck, runFix, setFindingState, setupCheck, type SetupCheck } from "@/core/setup-check";
 import { hasCheck } from "@/core/setup-check-rules";
 import { asRole, getHealth } from "./data";
 import { connectedTiles } from "./toolsStep";
@@ -31,6 +31,24 @@ export async function startSetupCheck(tile: string): Promise<ActionResult> {
     after(() => withOrg(org, () => runCheck(tile, connected)).catch((e: unknown) => { console.error(`[setup-check] ${tile} failed`, e); }));
     await audit(me, "setup_check", tile);
     return { ok: true, text: "Checking. This takes a minute or two; keep going, the card fills in when it’s done." };
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * Fix it for me (card 282): runs, in the background, an agent that already holds the finding's action and
+ * reads; what it stages lands on Approvals as ordinary cards. With none, says where to grant it (href).
+ */
+export async function fixFinding(tile: string, index: number): Promise<ActionResult & { href?: string }> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
+  if (!hasCheck(tile) || !Number.isInteger(index)) return { ok: false, text: "Unknown finding." };
+  try {
+    const claim = await claimFix(tile, index);
+    if ("problem" in claim) return { ok: false, text: claim.problem, href: claim.href };
+    const org = await orgId();
+    after(() => withOrg(org, () => runFix(tile, index, claim)).catch((e: unknown) => { console.error(`[setup-check] fix ${tile} failed`, e); }));
+    await audit(me, "setup_finding_fix", tile, { index, agent: claim.agentId, fix: claim.fix });
+    return { ok: true, text: `${claim.name} is on it. What it stages shows up on Approvals for you to check.` };
   } catch (e) { return fail(e); }
 }
 
