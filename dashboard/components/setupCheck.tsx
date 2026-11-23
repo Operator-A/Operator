@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { SetupCheck } from "@/core/setup-check";
 import Link from "next/link";
-import { FIXES, SEVERITY_WORDS, countLine, type Finding, type Severity } from "@/core/setup-check-rules";
+import { FIXES, SETUP_CHECK_LIMITS, SEVERITY_WORDS, countLine, type Finding, type Severity } from "@/core/setup-check-rules";
 import { fixFinding, reopenFinding, setupCheckState, skipFinding, startSetupCheck } from "@/dashboard/setupCheckActions";
 import { usd } from "@/core/cost-rules";
 
@@ -108,7 +108,7 @@ export function SetupCheckCard({ tile, name, initial, owner, approver, auto }: {
         </>
       )}
       {note && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{note.text}</span>}
-      {owner && !busy && c?.status !== "running" && <div><button type="button" className="btn outline sm" onClick={go}>{c ? "Check again" : "Check my setup"}</button></div>}
+      {owner && !busy && c?.status !== "running" && <div><button type="button" className="btn outline sm" onClick={go}>{c ? "Check again" : "Check my setup"} (up to {usd(SETUP_CHECK_LIMITS.maxCostUsd)})</button></div>}
     </div>
   );
 }
