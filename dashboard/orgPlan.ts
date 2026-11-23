@@ -1,7 +1,7 @@
 // Who works when the org is on, and what it costs a month, worked out in code (docs/org-schedule.md):
 // the first job's reply and the org switch summary on Crew > Schedule.
 // Pure: no database, so `npm run check:org-switch` tests it and the confirm and the action agree.
-import { DAY_RUNS, type Chain } from "@/core/flow-rules";
+import { dayRuns, type Chain } from "@/core/flow-rules";
 import type { Schedule } from "./crew";
 import { scheduleOf } from "./roster";
 import { nextRuns } from "./schedule";
@@ -42,7 +42,7 @@ export interface OrgPlan {
 }
 
 /** Runs in 30 days on a schedule (DAY_RUNS: 30 daily, 22 on weekdays, 4 on Mondays), none by hand. */
-export const runsInMonth = (s: Schedule) => (s.kind === "manual" ? 0 : DAY_RUNS[s.kind] ?? 0);
+export const runsInMonth = (s: Schedule) => (s.kind === "manual" ? 0 : dayRuns(s.kind));
 
 export function planOrgOn(members: readonly OrgMember[], chains: readonly Chain[], now: number, tz: string): OrgPlan {
   const inOrg = members.filter((m) => m.inOrg);

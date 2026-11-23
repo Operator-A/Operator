@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import { getFloor } from "@/dashboard/data";
 import { needs, split, PRI_COLOR } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
-import { deptAgentIds, needsByDept } from "@/dashboard/dept-rules";
+import { agentHref, deptAgentIds, needsByDept } from "@/dashboard/dept-rules";
+import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
 import { companySeat, seatOf } from "@/core/org";
 import { stateLook, stateOf } from "@/dashboard/status";
 import { when } from "@/dashboard/format";
@@ -13,8 +14,8 @@ import type { CrewMember } from "@/dashboard/crew";
 // Everyone (docs/department-pages.md): the bell opens it. What waits on you first, then every
 // department's agents with their last run, so one screen answers "who is doing what".
 
-export default async function Everyone() {
-  const [f, jar] = await Promise.all([getFloor(), cookies()]);
+export default async function Everyone({ searchParams }: { searchParams: Promise<{ agent?: string }> }) {
+  const [f, jar, sp] = await Promise.all([getFloor(), cookies(), searchParams]);
   const { now, later } = split(needs(f, f.now, parseSeen(jar.get(SEEN_COOKIE)?.value)));
   const org = f.chart;
   const red = org ? needsByDept(org.departments.map((d) => d.id), f.approvalOwners.map((o) => o.dept)).byDept : {};
@@ -22,7 +23,7 @@ export default async function Everyone() {
     const st = stateOf(a, f.agents[a.id], f.runs, f.spentToday[a.id] ?? 0);
     const last = f.runs.find((r) => r.agent_id === a.id && r.status !== "skipped");
     return (
-      <Link key={a.id} href={`/agents/${a.id}`} className="row rule wrap" style={{ gap: 10, padding: "10px 0", color: "inherit", textDecoration: "none", alignItems: "flex-start" }}>
+      <Link key={a.id} href={agentHref(org, a.id)} scroll={false} className="row rule wrap" style={{ gap: 10, padding: "10px 0", color: "inherit", textDecoration: "none", alignItems: "flex-start" }}>
         <Avatar a={a} size={30} working={st === "running"} />
         <span className="stack" style={{ gap: 2, flex: 1, minWidth: 200 }}>
           <span style={{ fontSize: 14, fontWeight: 600 }}>{a.name} <span className="muted" style={{ fontWeight: 500 }}>· {a.role}</span></span>
@@ -78,6 +79,7 @@ export default async function Everyone() {
           {offChart.filter((a) => a.id !== company?.id).map(row)}
         </div>
       )}
+      {sp.agent && <div className="dp-tok"><AgentSheetFor id={sp.agent} closeHref="/everyone" tz={f.tz} now={f.now} /></div>}
     </>
   );
 }

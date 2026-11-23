@@ -54,12 +54,9 @@ export function SideLink({ href, match, icon, label, note, noteColor, count, red
 }
 
 export function RailLink({ id, name, title, icon, running, badge }: { id: string; name: string; title: string; icon: string; running?: boolean; badge?: number }) {
-  const path = usePathname();
-  const tab = useSearchParams().get("tab");
-  // the builder page is the agent's Edit tab, so its chip stays selected there too
-  const sel = path === `/agents/${id}` || path === `/build/${id}`;
-  // switching agents keeps the tab the owner is on (Memory to Memory)
-  const href = path.startsWith("/build/") && !path.startsWith("/build/new") ? `/build/${id}` : `/agents/${id}${tab && path.startsWith("/agents/") ? `?tab=${tab}` : ""}`;
+  // an agent opens as its sheet (department pages slice 4); its chip stays selected while the sheet is open
+  const sel = useSearchParams().get("agent") === id;
+  const href = `/agents/${id}`;
   return (
     <IntentLink href={href} title={title} className={"rail-item" + (sel ? " sel" : "")} aria-current={sel ? "page" : undefined}>
       <span className={"rail-av" + (sel ? " sel" : "") + (running ? " running" : "")}>

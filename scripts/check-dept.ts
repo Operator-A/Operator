@@ -2,7 +2,8 @@
 // who works in a department, on a small chart. No database, no network. Run: npm run check:dept
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { DEPT_TABS, deptAgentIds, deptTab, headAgentId, needsByDept, tabHref } from "../dashboard/dept-rules";
+import { DEPT_TABS, agentHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
+import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from "../core/flow-rules";
 import { deptReach, headDirective } from "../core/head-chat-rules";
 import { resolveRuleWho, deptNamed } from "../core/chat-rules";
 import type { Org } from "../core/org-rules";
@@ -133,5 +134,40 @@ assert.ok(/memberFromCookie/.test(live) && /getRoster/.test(live), "the live rou
 assert.ok(/run_steps/.test(feedSrv) && /checklist\(/.test(feedSrv) && !/output|reply|messages/.test(feedSrv.match(/from\("run_steps"\)\.select\("([^"]+)"/)?.[1] ?? "x"), "the checklist reads only which tool ran and whether it worked");
 assert.ok(/if \(opts\.runId\) \{/.test(read("core/runner.ts")), "every logged run saves its steps as they happen, so a run you start shows live");
 assert.ok(/refresh-ok/.test(chat) && !/\bapprove\b(?! ?card)/i.test(chat.replace(/\/\/.*$/gm, "")) && !/approve\(/.test(chat), "the chat draws approval cards from the server and never approves itself");
+
+// the agent sheet (slice 4): in the address, old links open it, any set of days, and the same checks as before
+assert.equal(sheetHref("finance", "agents", "quinn"), "/dept/finance?tab=agents&agent=quinn");
+assert.equal(sheetHref("finance", "chat", "quinn"), "/dept/finance?agent=quinn");
+assert.equal(agentHref(org, "quinn"), "/dept/finance?tab=agents&agent=quinn", "an old agent link opens its sheet in its department");
+assert.equal(agentHref(org, "avery"), "/everyone?agent=avery", "an agent in no department opens on Everyone");
+assert.equal(agentHref(null, "quinn"), "/everyone?agent=quinn");
+assert.equal(daysOf([0, 1, 2, 3, 4, 5, 6]), "daily");
+assert.equal(daysOf([5, 1, 2, 3, 4]), "weekdays");
+assert.equal(daysOf([1]), "mondays");
+assert.equal(daysOf([5, 1, 3, 3]), "on:135");
+assert.equal(daysOf([]), null, "no days is no schedule");
+assert.deepEqual(daySet("on:135"), [1, 3, 5]);
+assert.ok(isDays("on:135") && isDays("weekdays") && !isDays("on:531") && !isDays("on:113") && !isDays("on:7") && !isDays("on:"), "a day set is unique weekdays 0-6 in order");
+assert.equal(dayWords("on:135"), "on Mondays, Wednesdays and Fridays");
+assert.equal(dayWords("on:6"), "on Saturdays");
+assert.equal(dayRuns("on:135"), 13);
+assert.equal(dayRuns("weekdays"), 22);
+assert.ok(onDay("on:135", "2026-11-23") && !onDay("on:135", "2026-11-24"), "Nov 23 2026 is a Monday");
+const one = withAgentTime({ chains: [] }, "quinn", "Quinn", { days: "on:135", time: "07:00" });
+assert.ok("flow" in one && one.flow.chains.length === 1 && one.flow.chains[0].steps.length === 1, "a schedule from the sheet writes exactly one one-step chain");
+const again = "flow" in one ? withAgentTime(one.flow, "quinn", "Quinn", { days: "daily", time: "07:15" }) : one;
+assert.ok("flow" in again && again.flow.chains.length === 1, "moving it changes that chain, never adds one");
+assert.ok("refuse" in withAgentTime({ chains: [] }, "quinn", "Quinn", { days: "on:9" as never, time: "07:00" }));
+
+const sheet = read("dashboard/components/agentSheet.tsx"), sheetFor = read("dashboard/components/agentSheetFor.tsx"), actionsSrc = read("dashboard/actions.ts");
+assert.ok(/saveSpec\.bind\(null, id\)/.test(sheetFor) && /goLive\.bind\(null, id\)/.test(sheetFor) && /setAgentTime\.bind\(null, id\)/.test(sheetFor) && /setEnabled\.bind\(null, id\)/.test(sheetFor), "the sheet uses the same actions the old pages did");
+assert.ok(!/activateSpecVersion|agent_defs|db\(\)/.test(sheet + sheetFor), "the sheet never writes a version or the database itself");
+assert.ok(/export async function saveSpec[\s\S]*?asRole\("owner"\)[\s\S]*?saveSpecVersion/.test(actionsSrc), "a changed job, model, reads or can do (grants) saves a draft, and only the owner can");
+assert.ok(/export async function goLive[\s\S]*?lastTry[\s\S]*?if \(!t\.clean\)/.test(actionsSrc), "a draft goes live only after a clean try");
+assert.ok(/disabled=\{busy \|\| !controls \|\| !d\.tried\?\.clean\}/.test(sheet), "Go live stays locked in the sheet until the try is clean");
+assert.ok(/redirect\(agentHref\(roster\.chart, id\)\)/.test(read("app/(room)/agents/[id]/page.tsx")), "old agent pages open the sheet");
+const build = read("app/(room)/build/[id]/page.tsx");
+assert.ok(/redirect\(agentHref\(org, id\)\)/.test(build) && !/TryLive|goLive|tryBuilt/.test(build), "the builder page keeps only the step editor; the rest is in the sheet");
+assert.ok(/<AgentSheetFor id=\{sp\.agent\}/.test(page) && /<AgentSheetFor id=\{sp\.agent\}/.test(everyone), "the department page and Everyone open the sheet");
 
 console.log("check:dept ok");

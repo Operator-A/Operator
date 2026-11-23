@@ -1,6 +1,6 @@
 // Shift times in the business's own time zone (card 187), from each agent's place in the crew flow (dashboard/roster.ts scheduleOf).
 // The dispatcher (app/api/dispatch) runs them while the org is on (docs/org-schedule.md).
-import { DAY_WORDS, onDay } from "@/core/flow-rules";
+import { daySet, dayWords, onDay } from "@/core/flow-rules";
 import { localAt, localDate, nextDay } from "@/core/time";
 import type { Schedule } from "./crew";
 import { t12 } from "./format";
@@ -23,12 +23,16 @@ export function nextRuns(s: Schedule | undefined, from: number, n: number, tz: s
   return out;
 }
 
+const SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 export function schedWords(s: Schedule | undefined) {
   if (!s || s.kind === "manual" || !s.time) return "Manual only";
-  return `${{ daily: "Daily", weekdays: "Weekdays", mondays: "Mondays" }[s.kind]} ${t12(s.time)}`;
+  const k = s.kind;
+  const named = k === "daily" ? "Daily" : k === "weekdays" ? "Weekdays" : k === "mondays" ? "Mondays" : daySet(k).map((i) => SHORT[i]).join(" ");
+  return `${named} ${t12(s.time)}`;
 }
 
 export function schedSentence(s: Schedule | undefined) {
   if (!s || s.kind === "manual" || !s.time) return "No automatic runs. Runs only when you press Run.";
-  return `Runs ${DAY_WORDS[s.kind]} at ${t12(s.time)}.`;
+  return `Runs ${dayWords(s.kind)} at ${t12(s.time)}.`;
 }

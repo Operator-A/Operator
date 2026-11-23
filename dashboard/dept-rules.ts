@@ -1,6 +1,6 @@
 // Department pages (docs/department-pages.md): which tab is open, what needs the owner in each
 // department, and who works there. Pure: no database, no network, so `npm run check:dept` can test it.
-import { deptAgentIds, headOf, type Org } from "@/core/org-rules";
+import { deptAgentIds, headOf, seatOf, type Org } from "@/core/org-rules";
 
 /** The tabs a department page has. Chat comes first and opens by default (slice 2). */
 export const DEPT_TABS = ["chat", "agents", "goals", "approvals"] as const;
@@ -11,6 +11,13 @@ export const TAB_LABEL: Record<DeptTab, string> = { chat: "Chat", agents: "Agent
 export const deptTab = (raw: unknown): DeptTab => (DEPT_TABS as readonly string[]).includes(String(raw)) ? (raw as DeptTab) : "chat";
 /** The tab's address: Chat is the page itself. */
 export const tabHref = (deptId: string, t: DeptTab) => (t === "chat" ? `/dept/${deptId}` : `/dept/${deptId}?tab=${t}`);
+/** Where an agent opens now that its own pages are gone (slice 4): its department's Agents tab with its sheet, else Everyone. */
+export function agentHref(o: Org | null, agentId: string): string {
+  const dept = o ? seatOf(o, agentId)?.departmentId : null;
+  return dept && o!.departments.some((d) => d.id === dept) ? sheetHref(dept, "agents", agentId) : `/everyone?agent=${encodeURIComponent(agentId)}`;
+}
+/** A tab with an agent's sheet open over it (slice 4): the sheet is in the address, so back closes it. */
+export const sheetHref = (deptId: string, t: DeptTab, agentId: string) => `${tabHref(deptId, t)}${t === "chat" ? "?" : "&"}agent=${encodeURIComponent(agentId)}`;
 
 /**
  * The red count on each department: approvals waiting on the owner, by the department stamped on
