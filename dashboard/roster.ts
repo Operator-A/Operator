@@ -8,7 +8,7 @@ import type { Chain } from "@/core/flow-rules";
 import { usd, type RunCost } from "@/core/cost-rules";
 
 export interface RosterRow { id: string; name: string; role?: string | null; icon?: string | null; hue?: string | null; manual_only?: boolean | null; in_org?: boolean | null; created_at?: string | null }
-export interface RosterSpec { name?: string; mandate?: string; goodResult?: string; tools: string[]; maxCostUsd?: number }
+export interface RosterSpec { name?: string; mandate?: string; goodResult?: string; tools: string[]; maxCostUsd?: number; model?: string }
 export interface RosterTool { label: string; kind: string }
 
 /** Avatar colours for an agent whose row has none, picked from its id so it never changes. */
@@ -64,6 +64,7 @@ export function memberOf(row: RosterRow, spec: RosterSpec | null, o: { tools: Re
     perRun: o.cost.perRun,
     costBasis: o.cost.basis,
     capPerRun: spec?.maxCostUsd,
+    model: spec?.model || undefined,
   };
 }
 

@@ -3,7 +3,6 @@
 // without a browser (`npm run check:org-canvas`). The canvas only draws what is here, and what is
 // here comes only from the org chart, the active flow and today's runs.
 import type { Chain } from "@/core/flow-rules";
-import type { GoalView } from "./goals";
 
 export type CanvasState = "run" | "on" | "call" | "off" | "over" | "missing";
 export interface CanvasAgent {
@@ -33,8 +32,6 @@ export interface CanvasDept {
   /** Head first, then every seat under it, depth first. */
   seats: CanvasSeat[];
   spent: number; budget: number | null;
-  rules: string[];
-  goals: GoalView[] | null;
 }
 export interface Handoff { from: string; to: string; chain: string }
 export interface CanvasRun { id: string; seat: string; who: string; text: string; at: string; status: "ok" | "failed" | "running"; href: string }

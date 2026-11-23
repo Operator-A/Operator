@@ -125,6 +125,8 @@ export interface Counts {
   /** Card 158: the gateway tool of each approval waiting on the owner, and the kind of each pending proposal (dashboard/needs-rules.ts). */
   approvalTools: string[];
   proposalKinds: string[];
+  /** Who made each approval waiting on the owner and its department (null: not in one), for the red counts on each department and agent (docs/department-pages.md). */
+  approvalOwners: { agent: string; dept: string | null }[];
   /** Person's jobs from this week's head plans that the owner hasn't marked done (slice 4). */
   jobsForYou: { planId: string; head: string | null; title: string; href: string }[];
   /** Proposed lessons waiting for the owner's Keep, per agent; empty until the memory tables exist. */
@@ -276,7 +278,7 @@ export const getRoster = cache(async (): Promise<Roster> => {
     const spec = (d.spec ?? {}) as { tools?: unknown; name?: unknown; mandate?: unknown; model?: unknown; effort?: unknown; limits?: { maxCostUsd?: unknown; maxSteps?: unknown } };
     grants[d.agent_id] = Array.isArray(spec.tools) ? spec.tools.filter((t): t is string => typeof t === "string") : [];
     liveVersion[d.agent_id] = Number(d.version);
-    specs[d.agent_id] = { name: typeof spec.name === "string" ? spec.name : undefined, mandate: typeof spec.mandate === "string" ? spec.mandate : "", tools: grants[d.agent_id], maxCostUsd: Number(spec.limits?.maxCostUsd) || undefined };
+    specs[d.agent_id] = { name: typeof spec.name === "string" ? spec.name : undefined, mandate: typeof spec.mandate === "string" ? spec.mandate : "", tools: grants[d.agent_id], maxCostUsd: Number(spec.limits?.maxCostUsd) || undefined, model: typeof spec.model === "string" ? spec.model : undefined };
     costSpecs[d.agent_id] = { model: typeof spec.model === "string" ? spec.model : "", effort: typeof spec.effort === "string" ? spec.effort : undefined, tools: grants[d.agent_id], maxSteps: Number(spec.limits?.maxSteps) || undefined, maxCostUsd: Number(spec.limits?.maxCostUsd) || undefined };
   }
   // the roster (docs/agent-roster.md): every agent with a live version, the same whether it started in code or the app
@@ -292,20 +294,21 @@ export const getRoster = cache(async (): Promise<Roster> => {
 /** What waits on the owner (card 304): the counts behind the Desk's list and the Approvals badge. One round. */
 export const getCounts = cache(async (): Promise<Counts> => {
   await cookies();
-  const none: Counts = { photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], jobsForYou: [], lessonsWaiting: {} };
+  const none: Counts = { photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], approvalOwners: [], jobsForYou: [], lessonsWaiting: {} };
   if (!health().supabase) { await requireSession(); return none; }
   const [, ph, ap, pp, jobsForYou, lessonsWaiting] = await Promise.all([
     requireSession(),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
     // drafts still with their lead (slice 4) aren't waiting on the owner yet; the older shape until that migration is applied
-    db().from("approvals").select("id, agent_actions(tool)", { count: "exact" }).eq("status", "pending").or("review_status.is.null,review_status.neq.waiting").limit(500)
-      .then((x) => (x.error ? db().from("approvals").select("id, agent_actions(tool)", { count: "exact" }).eq("status", "pending").limit(500) : x)),
+    db().from("approvals").select("id, agent_id, department_id, agent_actions(tool)", { count: "exact" }).eq("status", "pending").or("review_status.is.null,review_status.neq.waiting").limit(500)
+      .then((x) => (x.error ? db().from("approvals").select("id, agent_id, department_id, agent_actions(tool)", { count: "exact" }).eq("status", "pending").limit(500) : x)),
     db().from("proposals").select("kind", { count: "exact" }).eq("state", "pending").limit(500),
     openJobsThisWeek().catch(() => []),
     proposedLessons(),
   ]);
   return { photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0,
     approvalTools: ap.error ? [] : (ap.data ?? []).map((x) => toolOfCard(x.agent_actions)), proposalKinds: pp.error ? [] : (pp.data ?? []).map((x) => String(x.kind)),
+    approvalOwners: ap.error ? [] : (ap.data ?? []).map((x) => { const o = x as { agent_id?: string; department_id?: string | null }; return { agent: o.agent_id ?? "", dept: o.department_id ?? null }; }),
     jobsForYou, lessonsWaiting };
 });
 

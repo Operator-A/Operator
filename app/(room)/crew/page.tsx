@@ -9,9 +9,7 @@ import { planOrgOn } from "@/dashboard/orgPlan";
 import { OrgSwitch } from "@/dashboard/components/OrgSwitch";
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
 import { canvasData, deptExtras, orgView } from "@/dashboard/org";
-import { goalsByDept } from "@/dashboard/goals";
 import { listProposals, proposalsBySeat } from "@/core/proposals";
-import { GOALS_MISSING } from "@/core/goals";
 import { orgAddDepartment, orgAddDeptRule, orgAddSeat, orgEditDeptRule, orgEditSeat, orgForgetDeptRule, orgRemoveDepartment, orgRemoveSeat, orgRenameDepartment, orgSetDeptBudget, orgSetDeptEmails, orgSetHolder, orgSetLeadChecks } from "@/dashboard/orgActions";
 import { controlsOn } from "@/dashboard/session";
 import { loadFlow } from "@/core/flow";
@@ -64,8 +62,8 @@ async function Chart({ f, edit }: { f: Awaited<ReturnType<typeof getFloor>>; edi
   const org = f.chart; // read once with the floor (card 302)
   if (!org) return <div className="card"><span className="sub">{NO_ORG}</span></div>;
   // the canvas also draws hand-offs, from the chains that are on; without the flow it draws none
-  const [extras, goals, pending, flow] = await Promise.all([deptExtras(org), goalsByDept(org), listProposals(["pending"]).catch(() => null), edit ? null : loadFlow(f.palette).catch(() => null)]);
-  const v = orgView(f, org, extras, goals, pending ? proposalsBySeat(org, pending) : {});
+  const [extras, pending, flow] = await Promise.all([deptExtras(org), listProposals(["pending"]).catch(() => null), edit ? null : loadFlow(f.palette).catch(() => null)]);
+  const v = orgView(f, org, extras, pending ? proposalsBySeat(org, pending) : {});
   if (edit) return (
     <OrgChart
       v={v}
@@ -78,7 +76,6 @@ async function Chart({ f, edit }: { f: Awaited<ReturnType<typeof getFloor>>; edi
   );
   return (
     <>
-      {goals == null && <div className="card"><span className="sub">{GOALS_MISSING}</span></div>}
       {v.problems.length > 0 && <div className="card" style={{ borderLeft: "4px solid var(--red)", gap: 4 }}>{v.problems.map((p) => <span key={p} style={{ fontSize: 13 }}>{p}</span>)}</div>}
       <OrgCanvas d={canvasData(f, v, flow?.flow.chains ?? [])} />
       {v.offChart.length > 0 && (

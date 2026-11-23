@@ -41,6 +41,8 @@ export interface CrewMember {
   costBasis?: "real" | "estimate" | "unknown";
   /** Its cap per run, from its live version. */
   capPerRun?: number;
+  /** The model its live version runs on (an id from integrations/models.ts). */
+  model?: string;
   trigger?: string;
 }
 

@@ -40,7 +40,7 @@ export function MarkSeen({ agentId, at }: { agentId: string; at: number }) {
 }
 
 /** Sidebar link, active when the path matches (a trailing * matches a prefix) and, if given, the tab matches. */
-export function SideLink({ href, match, icon, label, note, noteColor, count }: { href: string; match: string | string[]; icon: string; label: string; note?: string; noteColor?: string; count?: string }) {
+export function SideLink({ href, match, icon, label, note, noteColor, count, red }: { href: string; match: string | string[]; icon: string; label: string; note?: string; noteColor?: string; count?: string; red?: boolean }) {
   const path = usePathname();
   const active = (Array.isArray(match) ? match : [match]).some((m) => (m.endsWith("*") ? path.startsWith(m.slice(0, -1)) : path === m));
   return (
@@ -48,7 +48,7 @@ export function SideLink({ href, match, icon, label, note, noteColor, count }: {
       <Icon name={icon} size={17} />
       <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap" }}>{label}</span>
       {note && <span className="side-note" style={{ color: noteColor }}>{note}</span>}
-      {count && <span className="count">{count}</span>}
+      {count && <span className={"count" + (red ? " red" : "")}>{count}</span>}
     </IntentLink>
   );
 }

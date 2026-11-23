@@ -11,7 +11,7 @@ const read = (p: string) => readFileSync(p, "utf8");
 const agent = (id: string, name: string) => ({ id, name, role: "Role", href: `/agents/${id}`, state: "on" as const, label: "On duty", last: "Last ran today", summary: "Did a thing.", lastRunHref: null, job: "A job.", writes: null });
 const seat = (id: string, parent: string | null, depth: number, who: string | null, holder: CanvasSeat["holder"] = who ? "agent" : "open"): CanvasSeat =>
   ({ id, title: `${id} seat`, sub: "", holder, parent, depth, agent: who ? agent(`a-${id}`, who) : null, href: who ? null : `/build/new?seat=${id}`, proposal: null });
-const dept = (id: string, seats: CanvasSeat[]): CanvasDept => ({ id, name: id, seats, spent: 1.5, budget: null, rules: [], goals: [] });
+const dept = (id: string, seats: CanvasSeat[]): CanvasDept => ({ id, name: id, seats, spent: 1.5, budget: null });
 const depts: CanvasDept[] = [
   dept("sales", [seat("s1", null, 0, "Reese"), seat("s2", "s1", 1, "Rico"), seat("s3", "s2", 2, "Ivy"), seat("s4", "s2", 2, null), seat("s5", "s1", 1, "Jo"), seat("s6", "s1", 1, "Kit"), seat("s7", "s6", 2, "Lee")]),
   dept("money", [seat("m1", null, 0, "Morgan"), seat("m2", "m1", 1, "Quinn")]),
