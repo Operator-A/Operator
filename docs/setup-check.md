@@ -42,9 +42,24 @@ against the domains and the pages fetched. Steps are plain text (text params ref
 - The Desk: "Setup you skipped" lists skipped findings with their steps and Open again.
 - Avery's next setup reply gets one line counted in code (`checkNote`).
 
+## Shopify and QuickBooks, and Fix it for me (card 282)
+
+- `shopify_setup` counts, in code, active products (up to 50) with thin (under 120 characters) or missing
+  descriptions, missing search title or description, or no tags, and the last 30 days' orders and customers
+  with no tags. `quickbooks_setup` counts expense lines in Uncategorized Expense (90 days), expense accounts
+  and unpaid bills (open, overdue, due soon). Both reuse existing fixed reads; no new scopes or server tools.
+- A finding may name one of its tool's fixes (`FIXES`): `shopify.update_copy`, `shopify.add_tags` or
+  `quickbooks.categorize_expense`, each an existing gateway action type that starts at Draft.
+- **Fix it for me** (owner): code picks an agent that already holds that action *and* the reads it needs
+  (`fixAgents`). It runs as that agent's manual run through `withRun` (its duty switch, budget and standing
+  orders hold), held to just those tools and `FIX_LIMITS`, and may stage at most 5 changes. Each one is an
+  ordinary approval card. The finding shows what it staged, counted in code.
+- With no such agent, nothing runs: the card links to an agent's Tools step to give it the action. A check
+  or fix never grants a tool.
+
 ## Later slices
 
-282 Fix it for me on Shopify and QuickBooks through existing action types; 283 Meta Ads; 284 Klaviyo and
+283 Meta Ads; 284 Klaviyo and
 Mailchimp, and heads re-checking; 285 reuse setup how-tos staff reviewed and published to the shared
 playbook (decided 2026-11-23), so fewer checks need a web search.
 

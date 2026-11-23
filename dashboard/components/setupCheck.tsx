@@ -4,8 +4,9 @@
 // page they came from), Skip, and Check again. Every finding passed code's checks before it was saved.
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { SetupCheck } from "@/core/setup-check";
-import { SEVERITY_WORDS, countLine, type Finding, type Severity } from "@/core/setup-check-rules";
-import { reopenFinding, setupCheckState, skipFinding, startSetupCheck } from "@/dashboard/setupCheckActions";
+import Link from "next/link";
+import { FIXES, SEVERITY_WORDS, countLine, type Finding, type Severity } from "@/core/setup-check-rules";
+import { fixFinding, reopenFinding, setupCheckState, skipFinding, startSetupCheck } from "@/dashboard/setupCheckActions";
 import { usd } from "@/core/cost-rules";
 
 const TONE: Record<Severity, { background: string; color: string }> = {
@@ -17,10 +18,17 @@ const POLL_MS = 4000;
 
 function host(url: string): string { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; } }
 
-function FindingRow({ f, i, tile, canEdit, onChange }: { f: Finding; i: number; tile: string; canEdit: boolean; onChange: (c: SetupCheck | null) => void }) {
+function FindingRow({ f, i, tile, canEdit, owner, onChange }: { f: Finding; i: number; tile: string; canEdit: boolean; owner: boolean; onChange: (c: SetupCheck | null) => void }) {
   const [open, setOpen] = useState(false);
   const [busy, start] = useTransition();
   const [bad, setBad] = useState<string | null>(null);
+  const [grant, setGrant] = useState<string | null>(null);
+  const fix = () => start(async () => {
+    const r = await fixFinding(tile, i);
+    setBad(r.ok ? null : r.text); setGrant(r.ok ? null : r.href ?? null);
+    onChange(await setupCheckState(tile));
+  });
+  const fixing = f.fix_run?.status === "running";
   const set = (skip: boolean) => start(async () => {
     const r = await (skip ? skipFinding(tile, i) : reopenFinding(tile, i));
     if (!r.ok) { setBad(r.text); return; }
@@ -41,11 +49,15 @@ function FindingRow({ f, i, tile, canEdit, onChange }: { f: Finding; i: number; 
       ) : null)}
       {(f.steps.length > 0 || canEdit) && (
         <div className="row wrap" style={{ gap: 8 }}>
+          {f.fix && owner && f.state !== "skipped" && <button type="button" className="btn dark sm" disabled={busy || fixing} onClick={fix} title={FIXES[f.fix].label}>{fixing ? "Fixing…" : "Fix it for me"}</button>}
           {f.steps.length > 0 && <button type="button" className="btn outline sm" onClick={() => setOpen(!open)}>{open ? "Hide steps" : "Show me how"}</button>}
           {canEdit && f.severity !== "good" && <button type="button" className="btn ghost sm" disabled={busy} onClick={() => set(f.state !== "skipped")}>{f.state === "skipped" ? "Open again" : "Skip"}</button>}
         </div>
       )}
-      {bad && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{bad}</span>}
+      {f.fix_run && f.fix_run.status !== "running" && (
+        <span className="soft-box" role="status" style={{ fontSize: 13 }}>{f.fix_run.note}{f.fix_run.status === "done" && f.fix_run.staged > 0 && <> <Link href="/approvals">Open Approvals</Link></>}</span>
+      )}
+      {bad && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{bad}{grant && <> <Link href={grant}>Give an agent this action</Link></>}</span>}
     </li>
   );
 }
@@ -65,7 +77,8 @@ export function SetupCheckCard({ tile, name, initial, owner, approver, auto }: {
     if (r.ok) setC(await setupCheckState(tile));
   });
   useEffect(() => { if (once.current || !auto || !owner || initial) return; once.current = true; go(); });
-  const running = c?.status === "running";
+  // poll while the check runs, or while a Fix it for me run is going
+  const running = c?.status === "running" || !!c?.findings.some((f) => f.fix_run?.status === "running");
   useEffect(() => {
     if (!running) return;
     const t = setInterval(async () => { const n = await setupCheckState(tile); if (n) setC(n); }, POLL_MS);
@@ -80,7 +93,7 @@ export function SetupCheckCard({ tile, name, initial, owner, approver, auto }: {
         <b style={{ fontSize: 14.5 }}>Is {name} set up well for you?</b>
         {c?.status === "done" && <span className="ink2" style={{ fontSize: 12.5 }}>{countLine(c.findings)}</span>}
       </span>
-      {busy || running ? (
+      {busy || c?.status === "running" ? (
         <span className="row ink2" style={{ gap: 10, fontSize: 14 }}><span className="wg-dots" aria-hidden><i /><i /><i /></span>Reading how your {name} is set up and checking its help pages. About a minute or two.</span>
       ) : !c ? (
         <span className="sub">A setup agent reads how your {name} is set up and lists what’s missing for your business, each with steps from {name}’s own help. It changes nothing in {name}.</span>
@@ -89,13 +102,13 @@ export function SetupCheckCard({ tile, name, initial, owner, approver, auto }: {
       ) : (
         <>
           {c.summary && <span style={{ fontSize: 14 }}>{c.summary}</span>}
-          {shown.length > 0 && <ul className="stack" style={{ gap: 0, margin: 0, padding: 0 }}>{shown.map(({ f, i }) => <FindingRow key={i} f={f} i={i} tile={tile} canEdit={approver} onChange={setC} />)}</ul>}
+          {shown.length > 0 && <ul className="stack" style={{ gap: 0, margin: 0, padding: 0 }}>{shown.map(({ f, i }) => <FindingRow key={i} f={f} i={i} tile={tile} canEdit={approver} owner={owner} onChange={setC} />)}</ul>}
           {skipped > 0 && <span className="ink2" style={{ fontSize: 12.5 }}>{skipped} skipped. They wait on your Desk.</span>}
-          <span className="ink2" style={{ fontSize: 12.5 }}>Read only: nothing was changed in {name}. This check cost {usd(c.costUsd)}.</span>
+          <span className="ink2" style={{ fontSize: 12.5 }}>The check changed nothing in {name}{c.findings.some((f) => f.fix) ? "; Fix it for me only stages changes for you to approve" : ""}. This check cost {usd(c.costUsd)}.</span>
         </>
       )}
       {note && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{note.text}</span>}
-      {owner && !busy && !running && <div><button type="button" className="btn outline sm" onClick={go}>{c ? "Check again" : "Check my setup"}</button></div>}
+      {owner && !busy && c?.status !== "running" && <div><button type="button" className="btn outline sm" onClick={go}>{c ? "Check again" : "Check my setup"}</button></div>}
     </div>
   );
 }

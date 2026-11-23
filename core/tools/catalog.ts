@@ -54,7 +54,7 @@ import { domainOf } from "@/core/lead-rules";
 import { hasGmail } from "@/integrations/gmail";
 import { klaviyoListSize, klaviyoLists, klaviyoReport } from "@/integrations/klaviyo";
 import { ga4Channels, ga4Overview, ga4Setup, ga4TopPages } from "@/integrations/ga4";
-import { salesGap } from "@/core/setup-check-rules";
+import { THIN_DESCRIPTION, salesGap, shopifySetupNumbers } from "@/core/setup-check-rules";
 import { ordersBetween } from "@/integrations/shopify/orders";
 import { stripeBalance, stripeCustomers, stripeMoneyIn, stripeOpenInvoices, stripeSubscriptions } from "@/integrations/stripe";
 import { INVOICE_CURRENCIES, INVOICE_LIMITS, MAX_INVOICE_USD, STRIPE_PERIODS, invoiceCents, type InvoiceLine, type StripePeriod } from "@/core/stripe-rules";
@@ -185,6 +185,16 @@ const TOOLS_LIST: ToolDef[] = [
         };
       });
       return { data: { days: Number(days), orders: rows }, numbers: { orders: rows.length, customers: custPick.size }, picks };
+    },
+  },
+  {
+    // card 282 (docs/setup-check.md): how the store is set up, for the setup check. Counts only, worked out in code; no product text.
+    id: "shopify_setup", label: "Store setup", detail: `How the business's Shopify is set up, counted in code: active products (up to 50) with thin (under ${THIN_DESCRIPTION} characters) or missing descriptions, missing search title or description, or no tags; and the last 30 days' orders and their customers with no tags, and repeat customers. Counts only, no names or text`,
+    kind: "read", group: "shopify", params: [], trusted: true, needs: SHOPIFY, costUsd: 0,
+    run: async () => {
+      const [products, orders] = await Promise.all([productCopy(), recentOrders(await orgDate(30))]);
+      const numbers = shopifySetupNumbers(products, orders.filter((o) => !o.cancelledAt));
+      return { data: { ...numbers, note: products.length >= 50 ? "Only the first 50 active products were counted." : null }, numbers };
     },
   },
   {
@@ -1376,6 +1386,16 @@ const QUICKBOOKS_TOOLS: ToolDef[] = [
     run: async (p) => {
       const r = await qboUnpaidBills(Number(p.limit ?? 20));
       return { data: { ...r, more_than_read: r.cut }, numbers: { qbo_bills_open: r.open, qbo_bills_owed: r.owed, qbo_bills_overdue: r.overdue, qbo_bills_overdue_amount: r.overdue_amount, qbo_bills_due_soon: r.due_soon, qbo_bills_due_soon_amount: r.due_soon_amount } };
+    },
+  },
+  {
+    // card 282: how the books are kept, for the setup check. Counts and sums worked out in code, no payee names.
+    id: "quickbooks_setup", label: "Books setup", detail: "How the business's QuickBooks is kept, worked out in code: expense lines still in Uncategorized Expense over the last 90 days (count and total), how many expense accounts there are to sort them into, and unpaid bills (open, overdue with the amount, and due in the next 14 days). Counts and sums only, no names",
+    kind: "read", group: "quickbooks", trusted: true, needs: QUICKBOOKS, costUsd: 0, params: [],
+    run: async () => {
+      const [u, a, b] = await Promise.all([qboUncategorized(90, 25), qboExpenseAccounts(), qboUnpaidBills(20)]);
+      const numbers = { uncategorized: u.count, uncategorized_total: u.total, uncategorized_more_than_read: u.cut ? 1 : 0, expense_accounts: a.accounts.length, bills_open: b.open, bills_overdue: b.overdue, bills_overdue_amount: b.overdue_amount, bills_due_soon: b.due_soon };
+      return { data: numbers, numbers };
     },
   },
   {

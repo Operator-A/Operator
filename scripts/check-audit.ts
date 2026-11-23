@@ -25,7 +25,7 @@ const AUDITED = [
   // first-run setup: facts every agent is told, and installing departments
   "setupAddFact", "setupEditFact", "setupConfirmFact", "setupRemoveFact", "setupInstall", "setupStartEmpty", "setupShopifyStore", "setupTimeZone", "setupAnswerTool", "setupSnapshot",
   // the setup check (card 281): a model run, and the founder skipping or reopening a finding
-  "startSetupCheck", "skipFinding", "reopenFinding",
+  "startSetupCheck", "skipFinding", "reopenFinding", "fixFinding",
   // the org chart: budgets, email caps, who holds a seat, drafts routing
   "orgSetDeptBudget", "orgSetDeptEmails", "placeAgent", "orgSetHolder", "orgSetLeadChecks",
   // proposals change an agent's spec or routine

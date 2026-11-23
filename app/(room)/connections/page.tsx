@@ -25,6 +25,7 @@ import { ga4PropertyList } from "@/integrations/ga4";
 import { when } from "@/dashboard/format";
 import { emailState } from "@/integrations/email";
 import { setupCheck, type SetupCheck } from "@/core/setup-check";
+import { CHECKS, CHECK_OF_MCP, type CheckTile } from "@/core/setup-check-rules";
 import { SetupCheckCard } from "@/dashboard/components/setupCheck";
 import { atLeast } from "@/core/roles";
 
@@ -32,7 +33,7 @@ import { atLeast } from "@/core/roles";
 export const maxDuration = 300;
 
 /** An MCP connection's state for its panel: signed in or not, and Klaviyo's lists to pick the counted one from. */
-interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; properties?: { id: string; name: string; account: string }[] | null; targets?: Record<string, number | null> | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null; check?: { initial: SetupCheck | null; owner: boolean; approver: boolean } | null }
+interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; properties?: { id: string; name: string; account: string }[] | null; targets?: Record<string, number | null> | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null; check?: { tile: CheckTile; initial: SetupCheck | null; owner: boolean; approver: boolean } | null }
 
 
 /** The vault's state: is MCP_SECRET_KEY set, and is every sign-in locked with it. */
@@ -135,10 +136,10 @@ function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView
                     : <ActionButton className="btn outline sm" action={ga4PickProperty.bind(null, p.id)}>Use this one</ActionButton>}
                 </span>
               ))}
-              {/* card 281: the setup check, once a property is picked */}
-              {v.check && <SetupCheckCard tile="analytics" name="Google Analytics" initial={v.check.initial} owner={v.check.owner} approver={v.check.approver} auto={false} />}
             </div>
           )}
+          {/* card 281/282: is this tool set up well for the business */}
+          {v.check && <SetupCheckCard tile={v.check.tile} name={CHECKS[v.check.tile].name} initial={v.check.initial} owner={v.check.owner} approver={v.check.approver} auto={false} />}
           {id === "klaviyo" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <span style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 15, fontWeight: 700 }}>The email list a goal counts</span><span className="muted" style={{ fontSize: 12.5 }}>Email list size counts the profiles on this list.</span></span>
@@ -287,8 +288,10 @@ export default async function Connections({ searchParams }: { searchParams: Prom
     if (status?.connected && !status.paused && sel.mcp === "ga4") {
       try { properties = await ga4PropertyList(); } catch (e) { listsProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
     }
-    const check = status?.connected && !status.paused && sel.mcp === "ga4" && status.settings.propertyId
-      ? { initial: await setupCheck("analytics").catch(() => null), owner: atLeast(me.role, "owner"), approver: atLeast(me.role, "approver") } : null;
+    // card 281/282: the setup check of this tool (Analytics once a property is picked)
+    const tile = CHECK_OF_MCP[sel.mcp] ?? null;
+    const check = tile && status?.connected && !status.paused && (sel.mcp !== "ga4" || status.settings.propertyId)
+      ? { tile, initial: await setupCheck(tile).catch(() => null), owner: atLeast(me.role, "owner"), approver: atLeast(me.role, "approver") } : null;
     mcp = { status, lists, listsProblem, properties, log, vault, org, orgProblem, check };
   }
   const more = await Promise.all((sel?.mcpMore ?? []).map(async (id) => {

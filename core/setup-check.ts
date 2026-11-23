@@ -13,8 +13,8 @@ import type { ToolDef } from "@/core/tools/types";
 import { SETUP_AGENT } from "@/core/setup-rules";
 import { TILE_BY_ID, type ToolTileId } from "@/core/tools-step-rules";
 import {
-  CHECKS, EVIDENCE_MAX, HELP_USES, MAX_STEPS, SETUP_CHECK_EFFORT, SETUP_CHECK_LIMITS, SETUP_CHECK_MODEL, SEVERITIES, STEP_MAX, TITLE_MAX, TOPIC_MAX, WHY_MAX,
-  checkDirective, countLine, hasCheck, helpDomains, isStale, keepFindings, readFinding, readFindings, type CheckTile, type Finding,
+  CHECKS, EVIDENCE_MAX, FIXES, FIX_LIMITS, HELP_USES, MAX_STEPS, SETUP_CHECK_EFFORT, SETUP_CHECK_LIMITS, SETUP_CHECK_MODEL, SEVERITIES, STEP_MAX, TITLE_MAX, TOPIC_MAX, WHY_MAX,
+  checkDirective, countLine, fixAgents, fixDirective, hasCheck, helpDomains, isStale, keepFindings, readFinding, readFindings, type CheckTile, type Finding, type FixRun, type FixType,
 } from "@/core/setup-check-rules";
 
 export interface SetupCheck { tile: CheckTile; status: "running" | "done" | "failed"; findings: Finding[]; summary: string | null; costUsd: number; runId: string | null; updatedAt: string }
@@ -64,9 +64,10 @@ function findingTool(tile: CheckTile, domains: readonly string[], held: Finding[
       { name: "evidence", type: "text", maxLength: EVIDENCE_MAX, description: `The keys from the reads you judged it from, comma separated: ${c.evidence.join(", ")}.` },
       { name: "steps", type: "text", maxLength: (STEP_MAX + 1) * MAX_STEPS, multiline: true, optional: true, description: `For a gap: the Show me how steps, one per line, at most ${MAX_STEPS}, from the help page you fetched. No links in the steps.` },
       { name: "help_url", type: "url", optional: true, description: `For a gap: the help page the steps came from, on ${domains.join(" or ")}. It must be a page you fetched in this run.` },
+      ...(c.fixes.length ? [{ name: "fix", type: "enum" as const, options: [...c.fixes], optional: true, description: `For a gap one of these actions could fix for the owner: ${c.fixes.map((f) => `${f} (${FIXES[f].label})`).join(", ")}. It only offers a Fix it for me button.` }] : []),
     ],
     collect: (input, rows) => {
-      const r = readFinding(input, { evidence: c.evidence, domains, held: rows.length });
+      const r = readFinding(input, { evidence: c.evidence, domains, held: rows.length, fixes: c.fixes });
       if ("problem" in r) return r;
       return { row: { finding: JSON.stringify(r.finding) } };
     },
@@ -140,4 +141,80 @@ export async function checkNote(): Promise<string | null> {
   const done = ((await setupChecks()) ?? []).filter((c) => c.status === "done");
   if (!done.length) return null;
   return `Setup checks so far (the founder sees each on its tool's card): ${done.map((c) => `${CHECKS[c.tile].name}: ${countLine(c.findings)}`).join("; ")}. Mention it briefly once if it fits; don't repeat the findings.`;
+}
+
+// ---------- Fix it for me (card 282) ----------
+
+/** Each agent's live tools, from its active saved version. */
+async function liveGrants(): Promise<{ grants: Record<string, string[]>; names: Record<string, string> }> {
+  const { data, error } = await db().from("agent_defs").select("agent_id, spec").eq("active", true);
+  if (error) throw new Error(error.message);
+  const grants: Record<string, string[]> = {}, names: Record<string, string> = {};
+  for (const d of data ?? []) {
+    const spec = (d.spec ?? {}) as { tools?: unknown; name?: unknown };
+    grants[d.agent_id] = Array.isArray(spec.tools) ? spec.tools.filter((t): t is string => typeof t === "string") : [];
+    names[d.agent_id] = typeof spec.name === "string" ? spec.name : d.agent_id;
+  }
+  return { grants, names };
+}
+
+async function saveFixRun(tile: CheckTile, index: number, run: FixRun): Promise<void> {
+  // read again just before writing, so a Skip tapped meanwhile isn't lost
+  const now = await setupCheck(tile);
+  if (!now || now.status !== "done" || !now.findings[index]) return;
+  const findings = now.findings.map((f, i) => (i === index ? { ...f, fix_run: run } : f));
+  const { error } = await db().from("setup_checks").update({ findings }).eq("tool", tile);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Fix it for me: who would run it. An agent that already holds the fix's action and reads; otherwise
+ * where to grant it (the builder's Tools step of an agent that holds one of the reads, else the Crew).
+ */
+export async function claimFix(tile: CheckTile, index: number): Promise<{ agentId: string; name: string; fix: FixType; finding: Finding } | { problem: string; href?: string }> {
+  const now = await setupCheck(tile);
+  if (!now || now.status !== "done") return { problem: "That check has no findings yet." };
+  const finding = now.findings[index];
+  if (!finding) return { problem: "Unknown finding." };
+  if (!finding.fix || !(CHECKS[tile].fixes as readonly string[]).includes(finding.fix)) return { problem: "This one has no Fix it for me." };
+  if (finding.fix_run?.status === "running" && !isStale("running", finding.fix_run.at)) return { problem: "That fix is already running." };
+  const fix = finding.fix;
+  const { grants, names } = await liveGrants();
+  const [agentId] = fixAgents(grants, fix);
+  if (!agentId) {
+    const near = Object.keys(grants).sort().find((a) => FIXES[fix].reads.some((t) => grants[a].includes(t)));
+    return { problem: `No agent can do this yet. Give one “${FIXES[fix].label}” on its Tools step, then tap Fix it for me again.`, href: near ? `/build/${near}?edit=1&step=connections` : "/crew" };
+  }
+  await saveFixRun(tile, index, { status: "running", agent: names[agentId], run_id: null, staged: 0, note: "", at: new Date().toISOString() });
+  return { agentId, name: names[agentId], fix, finding };
+}
+
+/**
+ * The fix run: that agent, logged through withRun as a manual run (so it respects its duty switch and
+ * budget), held to the fix's action and reads, delivering what it stages to the gateway as approval cards.
+ */
+export async function runFix(tile: CheckTile, index: number, c: { agentId: string; name: string; fix: FixType; finding: Finding }): Promise<void> {
+  const done = (run: Omit<FixRun, "agent" | "at">) => saveFixRun(tile, index, { ...run, agent: c.name, at: new Date().toISOString() });
+  try {
+    const loaded = await loadSpec(c.agentId);
+    if (!loaded) return done({ status: "failed", run_id: null, staged: 0, note: `${c.name} has no saved version.` });
+    const f = FIXES[c.fix];
+    const spec: AgentSpec = {
+      ...loaded.spec,
+      directive: fixDirective({ fix: c.fix, tool: CHECKS[tile].name, finding: c.finding, agentName: c.name }),
+      goodResult: "The changes that matter most staged as approval cards, then one plain sentence on what was staged.",
+      tools: [...f.reads, f.tool], limits: FIX_LIMITS, outputName: "setup fix",
+    };
+    let staged = 0;
+    const res = await withRun(c.agentId, "manual", async (runId, memory) => {
+      // its standing orders and lessons still hold on a fix run
+      const r = await runExplore(spec, { agentId: c.agentId, runId, memoryBlock: memory?.block ?? "", deliver: true, chat: true, prompt: `Fix it for me: ${c.finding.title}` });
+      staged = r.actions.filter((a) => a.status === "queued" || a.status === "scheduled").length;
+      return { status: r.status, summary: r.summary, tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd };
+    });
+    if (res.status !== "ok") return done({ status: "failed", run_id: res.runId, staged, note: res.status === "skipped" ? `${c.name} couldn't run: ${res.summary}` : "The fix stopped before it finished." });
+    return done({ status: "done", run_id: res.runId, staged, note: staged ? `${c.name} staged ${staged} change${staged === 1 ? "" : "s"} for you to approve.` : `${c.name} found nothing to change.` });
+  } catch (e) {
+    return done({ status: "failed", run_id: null, staged: 0, note: `The fix failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}` });
+  }
 }
