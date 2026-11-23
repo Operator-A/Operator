@@ -116,6 +116,7 @@ assert.doesNotMatch(checkDirective({ tile: "analytics", facts: [], domains: ["su
 const run = read("core/setup-check.ts");
 assert.match(run, /withRun\(SETUP_AGENT, trigger,/);
 assert.match(run, /\(await inSetup\(\)\) && !count \? "setup" : "preview"/, "free setup counts it only before departments exist");
+assert.match(read("dashboard/components/setupCheck.tsx"), /\(up to \{usd\(SETUP_CHECK_LIMITS\.maxCostUsd\)\}\)/, "the Check button shows the most a check can cost, the same limit code stops it at");
 assert.match(run, /maxUses: HELP_USES, allowedDomains: domains/, "web search and fetch are held to the help sites");
 assert.match(run, /keepFindings\(held, fetched, howTos\.map\(\(h\) => h\.help_url\)\)/, "links are checked against the pages fetched, or a staff how-to's page");
 assert.match(run, /if \(res\.status !== "ok" \|\| !finished\) return fail\(/, "nothing is saved from a run that didn't finish");
