@@ -1,5 +1,6 @@
 import { zoneLabel } from "@/core/time";
 import { cookies } from "next/headers";
+import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
@@ -25,6 +26,8 @@ import { FirstJobCard } from "@/dashboard/components/firstJob";
 import { followUpsView, skippedFindings } from "@/dashboard/followUps";
 import { FollowUpsCard, SkippedFindingsCard } from "@/dashboard/components/followUps";
 import { atLeast } from "@/core/roles";
+import { SkelLine, SkelTiles } from "@/dashboard/components/skeletons";
+import type { Org } from "@/core/org";
 
 // The Desk (docs/company-mode.md, slice 5): home. Goals with where each stands and its head's latest
 // word, then Needs you: only the four kinds that interrupt (card 158, dashboard/needs-rules.ts), each
@@ -65,8 +68,10 @@ export default async function Desk() {
   const role = me.role, owner = atLeast(role, "owner"), approver = atLeast(role, "approver");
   const open = needs(f, now, parseSeen(jar.get(SEEN_COOKIE)?.value));
   const org = f.chart;
-  const [goals, pending, first, bill, finish, skipped] = await Promise.all([goalsByDept(org), listProposals(["pending"], 12).catch(() => null), firstJobView(f).catch(() => null), billing(), followUpsView(f).catch(() => []), skippedFindings().catch(() => [])]);
-  const allGoals = org && goals ? org.departments.flatMap((d) => goals[d.id] ?? []) : [];
+  // goal numbers are read from the tools (core/measures.ts), the slowest thing here: they stream in
+  // behind their own skeleton while the rest of the Desk draws (card 303, docs/speed.md)
+  const goalsP = goalsByDept(org);
+  const [pending, first, bill, finish, skipped] = await Promise.all([listProposals(["pending"], 12).catch(() => null), firstJobView(f).catch(() => null), billing(), followUpsView(f).catch(() => []), skippedFindings().catch(() => [])]);
   // each goal tile carries its head's latest word (the head's own report, so its words, not code's)
   const heads = org ? org.departments.map((d) => headOf(org, d.id)).filter((s) => s?.holder === "agent" && s.agentId).map((s) => s!.agentId as string) : [];
   const cos = org ? companySeat(org) : null;
@@ -94,7 +99,7 @@ export default async function Desk() {
       <div className="stack" style={{ gap: 6 }}>
         <span style={{ fontSize: 13 }} className="muted">{longDay(now, f.tz)} · {hm(now, f.tz)} {zoneLabel(f.tz, now)}</span>
         <h1 style={{ fontSize: 32, lineHeight: 1.15, fontWeight: 600, letterSpacing: "-.025em" }}>{deskGreeting(now, f.tz)}.</h1>
-        <p style={{ fontSize: 14.5, textWrap: "pretty" }} className="ink2">{deskLine(allGoals.map((g) => g.status), interruptCount(open), waitCount, chief)}</p>
+        <Suspense fallback={<SkelLine width="55%" />}><DeskLine goalsP={goalsP} org={org} interrupts={interruptCount(open)} later={waitCount} chief={chief} /></Suspense>
       </div>
 
       {!f.ok && <div className="card" style={{ background: "var(--red-soft)", color: "var(--red-ink)", borderColor: "transparent" }}>{f.problem}</div>}
@@ -109,9 +114,7 @@ export default async function Desk() {
           <h2 id="goals-h" className="card-t">Goals</h2>
           <Link href="/goals/new" className="btn outline sm"><Icon name="plus" size={14} />Set a goal</Link>
         </div>
-        {goals == null ? <span className="sub">{GOALS_MISSING}</span>
-          : allGoals.length ? <div className="goal-tiles">{allGoals.map((g) => <GoalTile key={g.id} g={g} showDept quote={quoteOf(g.deptId)} />)}</div>
-          : <span className="sub">No goals yet. Give each department one, with a measure code can count, and its head plans around it.</span>}
+        <Suspense fallback={<SkelTiles />}><DeskGoals goalsP={goalsP} org={org} quoteOf={quoteOf} /></Suspense>
       </section>
 
       <section className="stack" style={{ gap: 12 }} aria-labelledby="needs-h">
@@ -170,4 +173,21 @@ export default async function Desk() {
       )}
     </>
   );
+}
+
+type GoalsP = ReturnType<typeof goalsByDept>;
+const goalList = (org: Org | null, goals: Awaited<GoalsP>) => (org && goals ? org.departments.flatMap((d) => goals[d.id] ?? []) : []);
+
+/** The Desk's one line under the greeting: it counts goals by how they stand, so it waits for their numbers. */
+async function DeskLine({ goalsP, org, interrupts, later, chief }: { goalsP: GoalsP; org: Org | null; interrupts: number; later: number; chief: string }) {
+  const all = goalList(org, await goalsP);
+  return <p style={{ fontSize: 14.5, textWrap: "pretty" }} className="ink2">{deskLine(all.map((g) => g.status), interrupts, later, chief)}</p>;
+}
+
+async function DeskGoals({ goalsP, org, quoteOf }: { goalsP: GoalsP; org: Org | null; quoteOf: (deptId: string) => { who: string; text: string } | null }) {
+  const goals = await goalsP;
+  const all = goalList(org, goals);
+  return goals == null ? <span className="sub">{GOALS_MISSING}</span>
+    : all.length ? <div className="goal-tiles">{all.map((g) => <GoalTile key={g.id} g={g} showDept quote={quoteOf(g.deptId)} />)}</div>
+    : <span className="sub">No goals yet. Give each department one, with a measure code can count, and its head plans around it.</span>;
 }

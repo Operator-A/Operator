@@ -49,3 +49,12 @@ rounds one after another (sign-in check, time zone, the floor, the page's own lo
 takes 400 ms on the server: a plain click took 798 ms; a click after hovering 49 ms; going back to a page just
 seen 68 ms with no server render. Cards 302-304 shorten the server render itself (one round of loads, page frame
 first, each page reads only what it shows).
+
+## The page frame draws first (card 303)
+
+7. **Slow parts stream in** (checked). Anything that calls the business's tools waits on another service, so it
+   sits in a `<Suspense>` with a small skeleton (dashboard/components/skeletons.tsx) while the rest of the page
+   draws. That covers goal numbers (core/measures.ts) on the Desk and the Crew chart, a connection's detail on
+   Connections (lists, account name, properties, setup check) and the Claude card. The Desk starts its goal reads
+   without awaiting them: `DeskLine` and `DeskGoals` both wait on the same promise. In a test app on Next 16.3.6
+   with a 1.2 s slow part, the title showed after 0.86 s instead of 1.88 s.

@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { SkelPane } from "@/dashboard/components/skeletons";
 import Link from "next/link";
 import { HARD_RULES } from "@/dashboard/crew";
 import { getFloor, requireSession, type Floor } from "@/dashboard/data";
@@ -288,16 +290,20 @@ export default async function Connections({ searchParams }: { searchParams: Prom
   const [f, me, customs, custom] = await Promise.all([getFloor(), requireSession(), listCustomServers(), sp.s && sp.s !== "new" ? getCustomServer(sp.s).catch(() => null) : null]);
   const adding = sp.s === "new";
   const sel = !custom && !adding && pick && pick in CONN_BY_ID ? CONN_BY_ID[pick as ConnId] : null;
-  const [statusPairs, customLog, mcp, more, line] = await Promise.all([
-    Promise.all(customs.map(async (c) => [c.id, await mcpStatus(c.id)] as const)),
-    custom ? mcpLog(custom.id, 10) : [],
-    sel?.mcp ? mcpViewOf(sel.mcp, me.role) : null,
-    Promise.all((sel?.mcpMore ?? []).map(async (id) => {
+  // the picked connection's detail calls its service (lists, account name, properties, setup check), so it
+  // streams in behind its own skeleton while the grid draws at once (card 303, docs/speed.md)
+  const detailP = sel ? Promise.all([
+    sel.mcp ? mcpViewOf(sel.mcp, me.role) : null,
+    Promise.all((sel.mcpMore ?? []).map(async (id) => {
       const [status, log, targets] = await Promise.all([mcpStatus(id), mcpLog(id), id === "meta_pauses" ? metaTargets().catch(() => null) : null]);
       // the owner's cost targets sit with the sign-in that pauses, read here and by the gateway
       return { id, v: { status, lists: null, listsProblem: null, log, vault: null, targets } as McpView };
     })),
-    sel?.id === "email" ? emailState() : null,
+    sel.id === "email" ? emailState() : null,
+  ] as const) : null;
+  const [statusPairs, customLog] = await Promise.all([
+    Promise.all(customs.map(async (c) => [c.id, await mcpStatus(c.id)] as const)),
+    custom ? mcpLog(custom.id, 10) : [],
   ]);
   const customStatuses = Object.fromEntries(statusPairs);
   const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected ? { ok: true, text: custom ? "Connected. Its tools are listed below, all off." : `Connected. Give an agent its read tools in the builder${sel?.mcp === "klaviyo" ? ", and pick the list Email list size counts below" : ""}.` } : null;
@@ -318,7 +324,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
           <span className="side-label" style={{ padding: "4px 2px 0" }}>Your servers</span>
           <CustomTiles servers={customs} statuses={customStatuses} sel={custom?.id ?? (adding ? "new" : null)} />
         </div>
-        {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} more={more} note={note} line={line} /></div>}
+        {sel && detailP && <div className="conn-detail"><Suspense fallback={<SkelPane />}><SelDetail c={sel} f={f} detailP={detailP} note={note} /></Suspense></div>}
         {custom && <div className="conn-detail"><CustomDetail tz={f.tz} c={custom} status={customStatuses[custom.id] ?? null} log={customLog} controls={controlsOn()} note={note} usedBy={Object.keys(f.grants).filter((a) => f.grants[a].some((t) => serverOfToolId(t) === custom.id)).map((a) => f.agents[a]?.name ?? a)} /></div>}
         {adding && <div className="conn-detail"><AddServerCard controls={controlsOn()} known={knownServer(sp.known)} /></div>}
       </div>
@@ -326,7 +332,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
         <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="lock" size={15} />Always on, for every agent</span>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", columnGap: 24 }}><LockList rules={HARD_RULES} dark /></div>
       </div>
-      <ClaudeCard owner={me.role === "owner"} query={sp} />
+      <Suspense fallback={<SkelPane />}><ClaudeCard owner={me.role === "owner"} query={sp} /></Suspense>
       <div className="card" style={{ gap: 10 }}>
         <span className="card-t">Behind the scenes</span>
         {BEHIND_THE_SCENES.map((b) => (
@@ -339,6 +345,12 @@ export default async function Connections({ searchParams }: { searchParams: Prom
       </div>
     </>
   );
+}
+
+/** The picked connection's detail, once its service has answered (card 303). */
+async function SelDetail({ c, f, detailP, note }: { c: Connection; f: Floor; detailP: Promise<readonly [McpView | null, Parameters<typeof Detail>[0]["more"], Parameters<typeof Detail>[0]["line"]]>; note: Parameters<typeof Detail>[0]["note"] }) {
+  const [mcp, more, line] = await detailP;
+  return <Detail c={c} f={f} mcp={mcp} more={more} note={note} line={line} />;
 }
 
 /** How agents think (card 162): the business's own Claude key (docs/tenancy.md, slice 8.1c), or on the cloud edition OPERATOR's hosted Claude on credits. */

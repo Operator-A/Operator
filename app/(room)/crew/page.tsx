@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Suspense } from "react";
+import { SkelPane } from "@/dashboard/components/skeletons";
 import { IntentLink } from "@/dashboard/components/intentLink";
 import { previewChain, rollBackFlow, runChainNow, saveCrewFlow, setAgentTime, setEnabled, turnOffOrg, turnOrgBackOn } from "@/dashboard/actions";
 import { orgDay } from "@/dashboard/orgDay";
@@ -50,7 +52,8 @@ export default async function Crew({ searchParams }: { searchParams: Promise<{ v
       <nav className="seg" aria-label="Crew view">
         {(Object.keys(VIEWS) as (keyof typeof VIEWS)[]).map((k) => <IntentLink key={k} href={VIEWS[k][0]} className={view === k ? "on" : ""} aria-current={view === k ? "page" : undefined}>{VIEWS[k][1]}</IntentLink>)}
       </nav>
-      {view === "schedule" ? <Schedule f={f} /> : <Chart f={f} edit={view === "edit"} />}
+      {/* the chart's goal numbers are read from the tools: the title and views draw at once, the chart streams in (card 303) */}
+      <Suspense key={view} fallback={<SkelPane />}>{view === "schedule" ? <Schedule f={f} /> : <Chart f={f} edit={view === "edit"} />}</Suspense>
     </>
   );
 }
