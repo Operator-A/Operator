@@ -250,20 +250,22 @@ function DeptTag({ i, view }: { i: ApprovalItem; view: ApprovalsView }) {
 }
 
 export default async function Approvals({ searchParams }: { searchParams: Promise<{ dept?: string }> }) {
-  const sp = await searchParams;
-  const [f, all, trust] = await Promise.all([getFloor(), getApprovals(), trustView().catch((e): TrustView => ({ offers: [], scheduled: [], lines: [], undoMinutes: 30, problem: e instanceof Error ? e.message : String(e) }))]);
+  const [sp, f, all, trust] = await Promise.all([searchParams, getFloor(), getApprovals(), trustView().catch((e): TrustView => ({ offers: [], scheduled: [], lines: [], undoMinutes: 30, problem: e instanceof Error ? e.message : String(e) }))]);
   // the department filter: one department, the ones off the chart ("none"), or everything
   const dept = all?.departments.some((d) => d.id === sp.dept) || sp.dept === "none" ? sp.dept : undefined;
   const inDept = (i: ApprovalItem) => !dept || (dept === "none" ? !i.department_id : i.department_id === dept);
   const view = all && { ...all, pending: all.pending.filter(inDept), withLead: all.withLead.filter(inDept), waiting: all.waiting.filter(inDept), decided: all.decided.filter(inDept) };
   const controls = controlsOn();
-  const blocker = !controls ? "Real runs are off on this OPERATOR" : await writeBlocker();
-  const quinnOn = !!f.agents.bookkeeper?.enabled;
-  const live = !blocker && quinnOn;
-  // what a Reject with words can save to or replace, per agent with a card waiting
+  // what a Reject with words can save to or replace, per agent with a card waiting; read with the write check in one round (card 302)
   const open = view ? [...view.pending, ...view.withLead] : [];
   const ruleIds = [...new Set(open.map((i) => i.agent_id))];
-  const rules: Record<string, ReactRules> = Object.fromEntries(await Promise.all(ruleIds.map(async (id) => [id, await getReactRules(id)] as const)));
+  const [blocker, rulePairs] = await Promise.all([
+    !controls ? "Real runs are off on this OPERATOR" : writeBlocker(),
+    Promise.all(ruleIds.map(async (id) => [id, await getReactRules(id)] as const)),
+  ]);
+  const rules: Record<string, ReactRules> = Object.fromEntries(rulePairs);
+  const quinnOn = !!f.agents.bookkeeper?.enabled;
+  const live = !blocker && quinnOn;
   const noRules: ReactRules = { deptName: null, agent: [], department: [], crew: [] };
   const card = (i: ApprovalItem) => {
     const a = f.byId[i.agent_id];

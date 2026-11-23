@@ -27,7 +27,7 @@ import { emailState } from "@/integrations/email";
 import { setupCheck, type SetupCheck } from "@/core/setup-check";
 import { CHECKS, CHECK_OF_MCP, type CheckTile } from "@/core/setup-check-rules";
 import { SetupCheckCard } from "@/dashboard/components/setupCheck";
-import { atLeast } from "@/core/roles";
+import { atLeast, type Role } from "@/core/roles";
 
 // a setup check (card 281) runs after its button answers, inside this request's time
 export const maxDuration = 300;
@@ -261,45 +261,46 @@ function Detail({ c, f, mcp, more, note, line }: { c: Connection; f: Floor; mcp:
   );
 }
 
+/** The detail of one built-in connection: its status, log and vault, then what its kind adds (lists, account, properties, setup check). */
+async function mcpViewOf(id: NonNullable<Connection["mcp"]>, role: Role): Promise<McpView> {
+  const [status, log, vault] = await Promise.all([mcpStatus(id), mcpLog(id), vaultState()]);
+  const live = !!status?.connected && !status.paused;
+  const problem = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 200);
+  // card 281/282: the setup check of this tool (Analytics once a property is picked)
+  const tile = CHECK_OF_MCP[id] ?? null;
+  const checks = !!tile && live && (id !== "ga4" || !!status?.settings.propertyId);
+  // what this kind of connection adds, all at once (card 302)
+  const [lists, org, properties, initial] = await Promise.all([
+    live && id === "klaviyo" ? klaviyoLists().then((v) => ({ v, p: null }), (e) => ({ v: null, p: problem(e) })) : { v: null, p: null },
+    live && id === "mercury" ? mercuryOrgName().then((v) => ({ v, p: null }), (e) => ({ v: null, p: problem(e) })) : { v: null, p: null },
+    live && id === "ga4" ? ga4PropertyList().then((v) => ({ v, p: null }), (e) => ({ v: null, p: problem(e) })) : { v: null, p: null },
+    checks ? setupCheck(tile!).catch(() => null) : null,
+  ]);
+  const check = checks ? { tile: tile!, initial, owner: atLeast(role, "owner"), approver: atLeast(role, "approver") } : null;
+  return { status, lists: lists.v, listsProblem: lists.p ?? properties.p, properties: properties.v, log, vault, org: org.v, orgProblem: org.p, check };
+}
+
 export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string; s?: string; known?: string; problem?: string; connected?: string; claude?: string; credits?: string; credits_problem?: string }> }) {
-  const [f, me] = await Promise.all([getFloor(), requireSession()]);
   const sp = await searchParams;
   const pick = sp.c;
-  // a custom server (s=<id>) or the add form (s=new) takes the detail pane instead of a built-in connection
-  const customs = await listCustomServers();
-  const custom = sp.s && sp.s !== "new" ? await getCustomServer(sp.s).catch(() => null) : null;
+  // two rounds (card 302, docs/speed.md): the floor, the member and the servers together, then every status and log together.
+  // A custom server (s=<id>) or the add form (s=new) takes the detail pane instead of a built-in connection.
+  const [f, me, customs, custom] = await Promise.all([getFloor(), requireSession(), listCustomServers(), sp.s && sp.s !== "new" ? getCustomServer(sp.s).catch(() => null) : null]);
   const adding = sp.s === "new";
   const sel = !custom && !adding && pick && pick in CONN_BY_ID ? CONN_BY_ID[pick as ConnId] : null;
-  const customStatuses = Object.fromEntries(await Promise.all(customs.map(async (c) => [c.id, await mcpStatus(c.id)] as const)));
-  const customLog = custom ? await mcpLog(custom.id, 10) : [];
+  const [statusPairs, customLog, mcp, more, line] = await Promise.all([
+    Promise.all(customs.map(async (c) => [c.id, await mcpStatus(c.id)] as const)),
+    custom ? mcpLog(custom.id, 10) : [],
+    sel?.mcp ? mcpViewOf(sel.mcp, me.role) : null,
+    Promise.all((sel?.mcpMore ?? []).map(async (id) => {
+      const [status, log, targets] = await Promise.all([mcpStatus(id), mcpLog(id), id === "meta_pauses" ? metaTargets().catch(() => null) : null]);
+      // the owner's cost targets sit with the sign-in that pauses, read here and by the gateway
+      return { id, v: { status, lists: null, listsProblem: null, log, vault: null, targets } as McpView };
+    })),
+    sel?.id === "email" ? emailState() : null,
+  ]);
+  const customStatuses = Object.fromEntries(statusPairs);
   const note = sp.problem ? { ok: false, text: sp.problem.slice(0, 300) } : sp.connected ? { ok: true, text: custom ? "Connected. Its tools are listed below, all off." : `Connected. Give an agent its read tools in the builder${sel?.mcp === "klaviyo" ? ", and pick the list Email list size counts below" : ""}.` } : null;
-  let mcp: McpView | null = null;
-  if (sel?.mcp) {
-    const [status, log, vault] = await Promise.all([mcpStatus(sel.mcp), mcpLog(sel.mcp), vaultState()]);
-    let lists: McpView["lists"] = null, listsProblem: string | null = null;
-    if (status?.connected && !status.paused && sel.mcp === "klaviyo") {
-      try { lists = await klaviyoLists(); } catch (e) { listsProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
-    }
-    let org: string | null = null, orgProblem: string | null = null;
-    if (status?.connected && !status.paused && sel.mcp === "mercury") {
-      try { org = await mercuryOrgName(); } catch (e) { orgProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
-    }
-    let properties: McpView["properties"] = null;
-    if (status?.connected && !status.paused && sel.mcp === "ga4") {
-      try { properties = await ga4PropertyList(); } catch (e) { listsProblem = (e instanceof Error ? e.message : String(e)).slice(0, 200); }
-    }
-    // card 281/282: the setup check of this tool (Analytics once a property is picked)
-    const tile = CHECK_OF_MCP[sel.mcp] ?? null;
-    const check = tile && status?.connected && !status.paused && (sel.mcp !== "ga4" || status.settings.propertyId)
-      ? { tile, initial: await setupCheck(tile).catch(() => null), owner: atLeast(me.role, "owner"), approver: atLeast(me.role, "approver") } : null;
-    mcp = { status, lists, listsProblem, properties, log, vault, org, orgProblem, check };
-  }
-  const more = await Promise.all((sel?.mcpMore ?? []).map(async (id) => {
-    const [status, log] = await Promise.all([mcpStatus(id), mcpLog(id)]);
-    // the owner's cost targets sit with the sign-in that pauses, read here and by the gateway
-    const targets = id === "meta_pauses" ? await metaTargets().catch(() => null) : null;
-    return { id, v: { status, lists: null, listsProblem: null, log, vault: null, targets } as McpView };
-  }));
   const outside = CONNECTIONS.filter((c) => !c.builtIn);
   const ok = outside.filter((c) => isSetUp(c, f.health)).length;
   const grid = (list: Connection[]) => <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>{list.map((c) => <Tile key={c.id} c={c} f={f} on={sel?.id === c.id} />)}</div>;
@@ -317,7 +318,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
           <span className="side-label" style={{ padding: "4px 2px 0" }}>Your servers</span>
           <CustomTiles servers={customs} statuses={customStatuses} sel={custom?.id ?? (adding ? "new" : null)} />
         </div>
-        {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} more={more} note={note} line={sel.id === "email" ? await emailState() : null} /></div>}
+        {sel && <div className="conn-detail"><Detail c={sel} f={f} mcp={mcp} more={more} note={note} line={line} /></div>}
         {custom && <div className="conn-detail"><CustomDetail tz={f.tz} c={custom} status={customStatuses[custom.id] ?? null} log={customLog} controls={controlsOn()} note={note} usedBy={Object.keys(f.grants).filter((a) => f.grants[a].some((t) => serverOfToolId(t) === custom.id)).map((a) => f.agents[a]?.name ?? a)} /></div>}
         {adding && <div className="conn-detail"><AddServerCard controls={controlsOn()} known={knownServer(sp.known)} /></div>}
       </div>

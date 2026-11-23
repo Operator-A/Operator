@@ -13,7 +13,7 @@ import { schedSentence, schedWords } from "@/dashboard/schedule";
 import { AgentTabs } from "@/dashboard/components/ui";
 import { placeAgent } from "@/dashboard/orgActions";
 import { mapOrgOf, seatChoices, seatToolChoices } from "@/dashboard/org";
-import { loadOrg, seatOf } from "@/core/org";
+import { seatOf } from "@/core/org";
 
 // One agent's builder page, its Edit tab (docs/builder-flow.md, slices 2-5). With ?edit it is the flow, steps 1-4,
 // one per card, editing the draft (else the live version). Without it, the agent map (tap a box to
@@ -21,14 +21,13 @@ import { loadOrg, seatOf } from "@/core/org";
 // the versions to go back to, its latest result and its latest runs.
 
 export default async function BuildAgent({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string; step?: string; saved?: string }> }) {
-  await requireSession();
-  const { id } = await params;
-  const sp = await searchParams;
+  const [{ id }, sp] = await Promise.all([params, searchParams]);
   if (!/^[a-z0-9_]{1,60}$/.test(id)) notFound();
-  const b = await getBuilder(id);
+  // one round (card 302, docs/speed.md); the login check goes with the reads and redirects before anything is drawn
+  const [, b, f, custom] = await Promise.all([requireSession(), getBuilder(id), getFloor(), customMenuFor()]);
   if (!b) notFound();
-  const f = await getFloor();
-  const menu = builderMenu(f.crew, f.health, await customMenuFor());
+  const menu = builderMenu(f.crew, f.health, custom);
+  const org = f.chart;
   const controls = controlsOn();
   const live = b.active;
   const working = b.draft ?? (live ? { ...live, active: true } : null);
@@ -36,7 +35,6 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
   const top = b.versions[0]?.version ?? 0;
 
   if (sp.edit != null || !s) {
-    const org = await loadOrg();
     const seatBlocks = await seatToolChoices(org);
     return (
       <Flow
@@ -63,7 +61,7 @@ export default async function BuildAgent({ params, searchParams }: { params: Pro
     );
   }
 
-  const mapOrg = await mapOrgOf(await loadOrg(), id);
+  const mapOrg = await mapOrgOf(org, id);
   const sch = f.byId[id]?.schedule;
   const saved = sp.saved != null;
   return (

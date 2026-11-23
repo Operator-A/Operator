@@ -107,6 +107,34 @@ for (const [f, part] of NAV) {
   if (!parts.length) problems.push(`${f}: navigation not found for check:speed rule 6; update NAV in scripts/check-speed.ts.`);
   for (const p of parts) if (plainLinks(p).length || !/<IntentLink\b/.test(p)) problems.push(`${f}: navigation should use IntentLink (loads on hover, touch or focus), not a plain Link (card 301).`);
 }
+// 7. One round of loads per page (card 302): the floor sends its sign-in check and time zone with every other read,
+//    pages read the org chart from the floor (f.chart) instead of again, and no page awaits its loads one by one
+//    behind conditions (`const x = c ? await a() : null` then `const y = d ? await b() : null`).
+export function floorRounds(data: string): string[] {
+  const body = data.match(/export const getFloor = cache\(async \(\)[\s\S]*?\n\}\);/)?.[0] ?? "";
+  if (!body) return ["getFloor not found"];
+  const out: string[] = [];
+  if (/await orgTz\(\)/.test(body)) out.push("awaits orgTz() on its own");
+  const lines = body.split("\n").filter((l) => /^\s*await requireSession\(\);/.test(l));
+  if (lines.length) out.push("awaits requireSession() before its reads");
+  const all = body.match(/await Promise\.all\(\[([\s\S]*?)\n {2}\]\);/)?.[1] ?? "";
+  if (!/requireSession\(\),/.test(all) || !/orgTz\(\),/.test(all)) out.push("does not send requireSession() and orgTz() in its one Promise.all");
+  return out;
+}
+export function chainedLoads(src: string): number[] {
+  const lines = src.split("\n");
+  return lines.flatMap((l, i) => (i > 0 && /^\s*(const|let) [^=]+= [^\n]*\? await \w/.test(l) && /^\s*(const|let) [^=]+= [^\n]*\? await \w/.test(lines[i - 1]) ? [i + 1] : []));
+}
+assert.deepEqual(floorRounds(`export const getFloor = cache(async (): Promise<Floor> => {\n  await requireSession();\n  const tz = await orgTz();\n  const [a] = await Promise.all([\n    x(),\n  ]);\n});`), ["awaits orgTz() on its own", "awaits requireSession() before its reads", "does not send requireSession() and orgTz() in its one Promise.all"]);
+assert.deepEqual(floorRounds(`export const getFloor = cache(async (): Promise<Floor> => {\n  if (!h) { await requireSession(); return e; }\n  const [, tz, a] = await Promise.all([\n    requireSession(),\n    orgTz(),\n    x(),\n  ]);\n});`), []);
+assert.deepEqual(chainedLoads(`  const a = x ? await f() : null;\n  const b = y ? await g() : null;\n  const c = await h();`), [2]);
+for (const p of floorRounds(read("dashboard/data.ts"))) problems.push(`dashboard/data.ts: getFloor ${p}. Send them with its other reads in one round (card 302).`);
+for (const f of ["app/(room)/layout.tsx", "app/(room)/page.tsx", "app/(room)/crew/page.tsx", "app/(room)/agents/[id]/page.tsx", "app/(room)/build/[id]/page.tsx"]) {
+  if (/\bloadOrg\(/.test(read(f))) problems.push(`${f}: reads the org chart again; use the floor's (f.chart), read in the same round (card 302).`);
+}
+for (const f of ["app"].filter(existsSync).flatMap(walk).filter((x) => x.startsWith(join("app", "(room)")))) {
+  for (const n of chainedLoads(readFileSync(f, "utf8"))) problems.push(`${f}:${n}: loads awaited one after another; start them together with Promise.all (card 302).`);
+}
 if (!/prefetch=\{warm \? true : null\}/.test(read("dashboard/components/intentLink.tsx"))) problems.push("dashboard/components/intentLink.tsx: IntentLink should pre-load the full page once warm and only to the loading frame before (card 301).");
 
 if (problems.length) { console.error(problems.join("\n")); process.exit(1); }

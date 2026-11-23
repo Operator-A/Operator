@@ -31,11 +31,13 @@ export function goalView(n: GoalNow, org: Org, names: Record<string, string>, ow
 /** Every active and paused goal with where it stands, by department id. Null when the goals table isn't there. */
 export async function goalsByDept(org: Org | null): Promise<Record<string, GoalView[]> | null> {
   if (!org) return {};
-  const goals = await listGoals();
-  if (goals == null) return null;
-  const [now, own] = await Promise.all([goalsNow(goals), ownMeasureDefs()]);
+  // two rounds, not four (card 302, docs/speed.md): the goals, the measures and the heads' names together, then where each goal stands
   const heads = org.departments.map((d) => ownerOf(org, d.id).agentId).filter((x): x is string => !!x);
-  const names = await agentNames(heads).catch(() => ({} as Record<string, string>));
+  const ownP = ownMeasureDefs();
+  ownP.catch(() => {}); // awaited below only when there are goals, as before
+  const [goals, names] = await Promise.all([listGoals(), agentNames(heads).catch(() => ({} as Record<string, string>))]);
+  if (goals == null) return null;
+  const [now, own] = await Promise.all([goalsNow(goals), ownP]);
   const out: Record<string, GoalView[]> = {};
   for (const n of now) (out[n.goal.department_id] ??= []).push(goalView(n, org, names, own));
   return out;

@@ -12,7 +12,7 @@ import { settings } from "@/core/settings";
 import { openJobsThisWeek } from "@/core/plans";
 import { DEFAULT_BUDGET, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad, type SharedLine } from "@/core/memory";
 import type { Reach } from "@/core/memory-rules";
-import { agentDepartment, agentNames, loadOrg } from "@/core/org";
+import { agentDepartment, agentNames, loadOrg, type Org } from "@/core/org";
 import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/core/reactions";
 import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
@@ -120,6 +120,8 @@ export interface Floor {
   grants: Record<string, string[]>;
   /** The live (active) saved-setup version of each agent, by agent id. */
   liveVersion: Record<string, number>;
+  /** The org chart (core/org.ts loadOrg), read once here so pages and the frame don't read it again (card 302); null before the org chart migration. */
+  chart: Org | null;
   /** Every agent with a live version, oldest first (dashboard/roster.ts). */
   crew: CrewMember[];
   byId: Record<string, CrewMember>;
@@ -212,14 +214,18 @@ export const getHealth = cache(async (): Promise<Record<IntegrationId, boolean>>
 
 /** Agents, the last 60 days of runs (newest first, at most 1000) and today's spend. */
 export const getFloor = cache(async (): Promise<Floor> => {
-  await requireSession();
+  await cookies(); // per request only, so the floor is never read at build time (no database)
   const h = health();
   const now = Date.now();
-  const tz = h.supabase ? await orgTz() : DEFAULT_TZ;
-  const empty: Floor = { ok: false, now, tz, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, org: { on: false, at: null, by: null, known: false } };
-  if (!h.supabase) return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." };
+  const empty = (tz: string): Floor => ({ ok: false, now, tz, agents: {}, runs: [], spentToday: {}, health: h, photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], jobsForYou: [], lessonsWaiting: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, org: { on: false, at: null, by: null, known: false }, chart: null });
+  if (!h.supabase) { await requireSession(); return { ...empty(DEFAULT_TZ), problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." }; }
   const since = new Date(now - 60 * 864e5).toISOString();
-  const [a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, set, orgSwitch] = await Promise.all([
+  // one round (card 302, docs/speed.md): the sign-in check and the time zone go out with every other read.
+  // The org comes from the signed session cookie, so the reads need not wait for the check; if the check
+  // fails it redirects before anything is drawn, and what was read is thrown away.
+  const [, tz, a, r, ph, ap, pp, jobsForYou, lessonsWaiting, defs, flowRow, org, set, orgSwitch] = await Promise.all([
+    requireSession(),
+    orgTz(),
     // role, icon, hue, manual_only and created_at come with the roster migration; the older shape until then
     // in_org comes with the org switch migration, role, icon, hue, manual_only and created_at with the roster one; older shapes until then
     db().from("agents").select("id, name, model, enabled, daily_budget_usd, role, icon, hue, manual_only, in_org, created_at")
@@ -240,7 +246,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
     orgState(),
   ]);
   Object.assign(h, set);
-  if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
+  if (a.error || r.error) return { ...empty(tz), problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];
   const agents = Object.fromEntries(rows.map((x) => [x.id, { id: x.id, name: x.name, model: x.model, enabled: x.enabled, daily_budget_usd: Number(x.daily_budget_usd) } as AgentRow]));
   const all = (r.data ?? []).map(toRun);
@@ -267,7 +273,7 @@ export const getFloor = cache(async (): Promise<Floor> => {
   const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, cost: runCostOf(costSpecs[x.id], realCost(runs, x.id)), seatTitle: seatTitle(x.id), chains })));
   return { ok: true, now, tz, agents, runs, spentToday, health: h, photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0,
     approvalTools: ap.error ? [] : (ap.data ?? []).map((x) => toolOfCard(x.agent_actions)), proposalKinds: pp.error ? [] : (pp.data ?? []).map((x) => String(x.kind)),
-    jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette, org: orgSwitch };
+    jobsForYou, lessonsWaiting, grants, liveVersion, ...roster, palette, org: orgSwitch, chart: org };
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
