@@ -216,7 +216,7 @@ from the tools the spec grants, code runs them, hard limits stop it.
     Haiku receipt reading counts toward the run's cost), then the model (Haiku 5.5, low, $0.30)
     proposes categories through the gateway, at most 10, blank rather than a guess.
 - **Web tools** `web_search` and `web_fetch`: Claude's own server tools, handed to the API as
-  such. At most 10 of each a run (they drop out of the tool list when used up), never trusted,
+  such. At most 10 of each a run (the tool list never changes inside a run, because thinking is tied to it; at the cap the agent is told to stop, and one more ends the run), never trusted,
   never in a playbook (`draftSteps` leaves them out; a playbook step naming one fails). Each
   shows as a step in Replay. Search costs are billed with the model turn.
 - **Reports that collect rows** (`collect`): the model hands one checked row per call (at most
