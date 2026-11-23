@@ -6,6 +6,7 @@ import ext from "operator-extensions";
 import type { Extensions, PlanAsk, ReturnPlace } from "@/core/extension-types";
 import type { Similar, SimilarAsk } from "@/core/brain-rules";
 import type { Billing } from "@/core/cost-rules";
+import { readHowTo, type CheckTile, type SetupHowTo } from "@/core/setup-check-rules";
 
 export type { PlanAsk, ReturnPlace };
 export const extensions: Extensions = ext;
@@ -49,4 +50,12 @@ export async function afterSchedule(now: number): Promise<string | null> {
 /** Businesses like this one (card 233): null in the open edition, and when the shared brain can't be read. Never throws. */
 export async function similarBusinesses(ask: SimilarAsk): Promise<Similar | null> {
   try { return await extensions.similarBusinesses(ask); } catch { return null; }
+}
+
+/** Staff-reviewed how-tos for one tool's setup check (card 285), each checked again here; empty when none or unreadable. Never throws. */
+export async function setupHowTos(tile: CheckTile): Promise<SetupHowTo[]> {
+  try {
+    const got = await extensions.setupHowTos(tile);
+    return got.flatMap((h) => { const r = readHowTo(h); return "howTo" in r && r.howTo.tile === tile ? [r.howTo] : []; });
+  } catch { return []; }
 }

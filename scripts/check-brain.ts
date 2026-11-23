@@ -62,6 +62,8 @@ const input: SnapshotInput = {
   levels: [{ tool: "klaviyo.campaign_draft", level: "act_undo" }, { tool: "gmail.draft", level: "draft" }, { tool: "Acme", level: "act" }],
   actionTypes: ["klaviyo.campaign_draft", "gmail.draft", "mercury.annotate"],
   campaigns: [],
+  // card 285: checked tools and gap topic tags; anything that isn't tool:topic is dropped
+  setup: { checked: ["analytics", "klaviyo", "Acme Coffee"], gaps: ["analytics:ga4.data_retention", "klaviyo:klaviyo.welcome_flow", "analytics:Acme Coffee Roasters", "analytics:ga4.data_retention"] },
 };
 const snap = buildSnapshot(input);
 assert.deepEqual(snap, {
@@ -76,8 +78,12 @@ assert.deepEqual(snap, {
   actions: { "klaviyo.campaign_draft": { decided: 4, unedited: 2, rejected: 1 } },
   levels: ["klaviyo.campaign_draft:act_undo"],
   results: {},
+  setup_checked: ["analytics", "klaviyo"],
+  setup_gaps: ["analytics:ga4.data_retention", "klaviyo:klaviyo.welcome_flow"],
 });
 assert.equal(snapshotProblem(snap), null);
+assert.ok(snapshotProblem({ ...snap, setup_gaps: ["analytics:Jane Doe"] }), "a setup gap is a tag, never words");
+assert.ok(snapshotProblem({ ...snap, setup_checked: ["Acme"] }));
 const text = JSON.stringify(snap);
 for (const p of PRIVATE) assert.ok(!text.includes(p), `a snapshot never holds "${p}"`);
 
@@ -120,6 +126,9 @@ assert.deepEqual(rpcs, ["core/db.ts"], "only core/db.ts calls brain_patterns()")
 // ---- 2. the function on a real Postgres
 const MIGRATION = readFileSync(join(process.cwd(), "supabase/migrations/20261226090000_shared_brain.sql"), "utf8");
 const RESULTS_MIGRATION = readFileSync(join(process.cwd(), "supabase/migrations/20261228090000_campaign_results.sql"), "utf8");
+const PLAYBOOK_MIGRATION = readFileSync(join(process.cwd(), "supabase/migrations/20261227090000_ee_playbook.sql"), "utf8");
+const GAPS_MIGRATION = readFileSync(join(process.cwd(), "supabase/migrations/20270102090000_setup_howtos.sql"), "utf8");
+assert.match(GAPS_MIGRATION, new RegExp(`select ${BRAIN_FLOOR} as n`), "the floor stays BRAIN_FLOOR in card 285's function");
 assert.match(RESULTS_MIGRATION, new RegExp(`select ${BRAIN_FLOOR} as n`), "the floor stays BRAIN_FLOOR in slice 4b's function");
 assert.match(MIGRATION, new RegExp(`select ${BRAIN_FLOOR} as n`), "the floor in SQL is BRAIN_FLOOR");
 
@@ -133,13 +142,15 @@ async function sql() {
   `);
   await pg.exec(MIGRATION);
   await pg.exec(RESULTS_MIGRATION);
+  await pg.exec(PLAYBOOK_MIGRATION);
+  await pg.exec(GAPS_MIGRATION);
   const org = async () => (await pg.query<{ id: string }>("insert into orgs default values returning id")).rows[0].id;
   const add = async (s: Partial<Record<string, unknown>>) => {
     const id = await org();
-    const row = { taken_on: "2026-11-21", kind: "online_store", revenue_band: "under_10k", age_band: "90_plus", tools: [], departments: [], bespoke: 0, on_duty: 0, actions: {}, levels: [], results: {}, ...s };
+    const row = { taken_on: "2026-11-21", kind: "online_store", revenue_band: "under_10k", age_band: "90_plus", tools: [], departments: [], bespoke: 0, on_duty: 0, actions: {}, levels: [], results: {}, setup_checked: [], setup_gaps: [], ...s };
     await pg.query(
-      "insert into brain_snapshots (org_id, taken_on, kind, revenue_band, age_band, tools, departments, bespoke, on_duty, actions, levels, results) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
-      [id, row.taken_on, row.kind, row.revenue_band, row.age_band, row.tools, row.departments, row.bespoke, row.on_duty, JSON.stringify(row.actions), row.levels, JSON.stringify(row.results)],
+      "insert into brain_snapshots (org_id, taken_on, kind, revenue_band, age_band, tools, departments, bespoke, on_duty, actions, levels, results, setup_checked, setup_gaps) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+      [id, row.taken_on, row.kind, row.revenue_band, row.age_band, row.tools, row.departments, row.bespoke, row.on_duty, JSON.stringify(row.actions), row.levels, JSON.stringify(row.results), row.setup_checked, row.setup_gaps],
     );
     return id;
   };
@@ -195,6 +206,25 @@ async function sql() {
   rows = await patterns();
   assert.deepEqual(find(rows, "kind:creator", "result:klaviyo.campaign_draft:subject_short"), { cohort: "kind:creator", pattern: "result:klaviyo.campaign_draft:subject_short", orgs: 7, hits: 6, num: null, den: null });
   assert.equal(find(rows, "kind:creator", "result:klaviyo.campaign_draft:preview_none"), undefined, "3 businesses with that shape: under the floor");
+  // card 285: setup gaps count businesses that checked that tool, by topic tag only, with the same floor
+  for (const g of [["analytics:Jane Doe"], ["analytics:ga4 data retention"], ["x".repeat(13) + ":ga4.y"]]) await assert.rejects(add({ setup_gaps: g }), `setup_gaps refuse ${g}`);
+  await assert.rejects(add({ setup_checked: ["Acme Coffee"] }));
+  for (let i = 0; i < 4; i++) await add({ kind: "services", setup_checked: ["analytics"], setup_gaps: ["analytics:ga4.data_retention"] });
+  rows = await patterns();
+  assert.equal(find(rows, "kind:services", "gap:analytics:ga4.data_retention"), undefined, "4 businesses: no gap pattern");
+  await add({ kind: "services", setup_checked: ["analytics", "klaviyo"], setup_gaps: ["analytics:ga4.data_retention", "klaviyo:klaviyo.welcome_flow"] });
+  await add({ kind: "services", setup_checked: ["analytics"] });
+  rows = await patterns();
+  assert.deepEqual(find(rows, "kind:services", "gap:analytics:ga4.data_retention"), { cohort: "kind:services", pattern: "gap:analytics:ga4.data_retention", orgs: 6, hits: 5, num: null, den: null }, "counted among businesses that checked Analytics");
+  assert.equal(find(rows, "kind:services", "gap:klaviyo:klaviyo.welcome_flow"), undefined, "one business with that gap: under the floor");
+  // the playbook's how-to fields come all together or not at all
+  const admin = await org();
+  const lesson = (o: Record<string, unknown>) => pg.query("insert into ee_playbook_lessons (org_id, title, body, written_by, setup_tile, setup_topic, steps, help_url) values ($1, 'Keep data longer', 'Analytics keeps two months unless you change it.', 'staff@operator', $2, $3, $4, $5)", [admin, o.tile ?? null, o.topic ?? null, o.steps ?? [], o.url ?? null]);
+  await lesson({ tile: "analytics", topic: "ga4.data_retention", steps: ["Open Admin"], url: "https://support.google.com/analytics/answer/7667196" });
+  await lesson({});
+  for (const o of [{ tile: "analytics", topic: "ga4.data_retention", steps: [], url: "https://support.google.com/x" }, { tile: "analytics" }, { tile: "stripe", topic: "a.b", steps: ["x"], url: "https://x.com" }, { tile: "analytics", topic: "Data Retention", steps: ["x"], url: "https://support.google.com/x" }])
+    await assert.rejects(lesson(o), `a how-to refuses ${JSON.stringify(o)}`);
+
   // campaign_results holds bands and an id, never words
   const org1 = await org();
   const cr = (o: Record<string, unknown>) => pg.query("insert into campaign_results (org_id, action_id, action_type, external_id, subject_band, has_preview, body_band, status, open_band, checked_at) values ($1, gen_random_uuid(), $2, $3, $4, true, 'short', $5, $6, $7)",

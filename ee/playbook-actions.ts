@@ -29,7 +29,7 @@ export async function playbookSave(form: FormData): Promise<void> {
   const l = readLesson(Object.fromEntries(form));
   let saved = "";
   try { saved = await saveLesson(l, me.email, id); } catch (e) { problem(e); }
-  await audit(me, id ? "playbook_edit" : "playbook_add", saved, { title: l.title.slice(0, 60), kind: l.kind ?? "all" });
+  await audit(me, id ? "playbook_edit" : "playbook_add", saved, { title: l.title.slice(0, 60), kind: l.kind ?? "all", how_to: l.howTo ? `${l.howTo.tile}:${l.howTo.topic}`.slice(0, 70) : "none" });
   // Publish / Take back to draft in the editor save the edits first, then change it (docs/settings.md)
   const then = form.get("then");
   if (then === "publish" || then === "unpublish") {

@@ -13,6 +13,7 @@ import { BANK_ID, BANK_SETTINGS, SYNC_KEY, pickSimilar, recallTags, syncDue, syn
 import { askWords, type Similar, type SimilarAsk } from "@/core/brain-rules";
 import { syncPlaybook } from "./playbook-rules";
 import { publishedLessons } from "./playbook";
+import { hasCheck, type CheckTile } from "@/core/setup-check-rules";
 
 const url = () => process.env.HINDSIGHT_API_URL?.trim() ?? "";
 const key = () => process.env.HINDSIGHT_API_KEY?.trim() ?? "";
@@ -97,4 +98,17 @@ export async function similarBusinesses(ask: SimilarAsk): Promise<Similar | null
     } catch { ranked = null; }
   }
   return pickSimilar({ ask, rows, lessons, kits: kitNames(), ranked });
+}
+
+/**
+ * Card 285: setup gaps many businesses share, for staff on Settings > Playbook, so they know which
+ * how-tos to write. Only the count's own rows (over the floor of 5 businesses): a tool and a topic tag
+ * with how many businesses have it among those that checked that tool. No business's words.
+ */
+export async function recurringGaps(): Promise<{ tile: CheckTile; topic: string; orgs: number; hits: number }[]> {
+  const rows = await brainPatterns();
+  return rows.filter((r) => r.cohort === "all" && r.pattern.startsWith("gap:")).flatMap((r) => {
+    const [, tile, topic] = r.pattern.split(":");
+    return hasCheck(tile) && topic ? [{ tile, topic, orgs: r.orgs, hits: r.hits }] : [];
+  }).sort((a, b) => b.hits - a.hits || a.topic.localeCompare(b.topic)).slice(0, 20);
 }

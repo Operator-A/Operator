@@ -18,6 +18,8 @@ const none: Extensions = {
   // no shared brain: a self-hosted OPERATOR is one company, with nobody to learn from
   afterSchedule: async () => null,
   similarBusinesses: async () => null,
+  // no playbook: the setup check looks every step up on the tool's help site
+  setupHowTos: async () => [],
 };
 
 export default none;
