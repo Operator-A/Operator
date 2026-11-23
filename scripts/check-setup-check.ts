@@ -13,13 +13,14 @@ import { GA4_SETUP_KEYS } from "../core/ga4-rules";
 import { TOOLS } from "../core/tools/catalog";
 import { TOOLS as GATEWAY } from "../core/gateway/policy";
 import { MCP_SERVERS } from "../core/mcp-rules";
+import * as Me from "../core/meta-rules";
 import { TENANT_TABLES } from "../core/tenancy";
 import { modelDef } from "../integrations/models";
 
 const read = (f: string) => readFileSync(f, "utf8");
 
 // ---- what a check may use: one read, the store comparison, its report tool and help reads
-assert.deepEqual(CHECK_TILES, ["analytics", "shopify", "quickbooks"], "Google Analytics (slice 1), Shopify and QuickBooks (slice 2)");
+assert.deepEqual(CHECK_TILES, ["analytics", "shopify", "meta", "quickbooks"], "Google Analytics (slice 1), Shopify and QuickBooks (slice 2), Meta Ads (slice 3)");
 assert.ok(hasCheck("analytics") && hasCheck("shopify") && !hasCheck("klaviyo") && !hasCheck("toString"));
 const ga = CHECKS.analytics;
 assert.equal(TOOLS[ga.read].kind, "read");
@@ -139,7 +140,7 @@ for (const tile of ["shopify", "quickbooks"] as const) {
 }
 assert.deepEqual([...CHECKS.shopify.evidence], [...SHOPIFY_SETUP_KEYS]);
 assert.deepEqual([...CHECKS.quickbooks.evidence], [...QBO_SETUP_KEYS]);
-assert.deepEqual(CHECK_OF_MCP, { ga4: "analytics", shopify: "shopify", quickbooks: "quickbooks" });
+assert.deepEqual(CHECK_OF_MCP, { ga4: "analytics", shopify: "shopify", quickbooks: "quickbooks", meta: "meta" });
 // every fix is an existing gateway action type, staged by the catalog tool that becomes it, read from tools that exist
 for (const [type, fx] of Object.entries(FIXES)) {
   assert.ok(Object.hasOwn(GATEWAY, type), `${type} is an existing action type`);
@@ -195,5 +196,41 @@ assert.doesNotMatch(run2, /from\("agent_defs"\)\.(update|insert|upsert)/, "a fix
 assert.match(read("dashboard/setupCheckActions.ts"), /export async function fixFinding[\s\S]*?asRole\("owner"\)[\s\S]*?controlsOn\(\)[\s\S]*?claimFix[\s\S]*?after\(\(\) => withOrg\(org, \(\) => runFix/);
 const sql2 = read("supabase/migrations/20261230090000_setup_checks_tools.sql");
 assert.match(sql2, /check \(tool in \('analytics', 'shopify', 'quickbooks'\)\)/);
+
+// ======== slice 3 (card 283): Meta Ads ========
+assert.equal(TOOLS[CHECKS.meta.read].kind, "read");
+assert.equal(TOOLS[CHECKS.meta.read].trusted, false, "pixel and account names are untrusted");
+assert.deepEqual([...CHECKS.meta.fixes], ["meta.pause_ad"], "the only fix is the existing pause; no budget change");
+assert.deepEqual([...CHECKS.meta.evidence], [...Me.META_SETUP_KEYS]);
+assert.ok(MCP_SERVERS.meta.readTools.includes("meta_setup") && !MCP_SERVERS.meta.writeTools.length, "named on the read-only sign-in");
+assert.deepEqual([...MCP_SERVERS.meta.scopes], ["ads_read"], "no new Meta permissions");
+assert.deepEqual(Me.checkMetaArgs("meta_setup", {}), { tool: "meta_setup" });
+assert.ok("problem" in Me.checkMetaArgs("meta_setup", { account: "act_1" }), "the setup read takes no inputs");
+// fixed GETs only, ids checked
+assert.equal(Me.setupPaths.pixels("act_12"), "/act_12/adspixels?fields=id,name,last_fired_time,is_unavailable,automatic_matching_fields,first_party_cookie_status&limit=3");
+assert.equal(Me.setupPaths.stats("99", 1000, true), "/99/stats?aggregation=event&start_time=1000&event_source=SERVER_ONLY");
+assert.match(Me.setupPaths.adsets("act_12"), /^\/act_12\/adsets\?fields=id,effective_status,learning_stage_info&effective_status=/);
+assert.ok(Me.pixelIdOk("123") && !Me.pixelIdOk("1/../me") && !Me.pixelIdOk(5));
+const metaSrv = read("integrations/meta-server.ts").replace(/^\s*(\/\/|\*).*$/gm, "");
+assert.doesNotMatch(metaSrv.slice(metaSrv.indexOf("async function metaSetup"), metaSrv.indexOf("/** Before a sign-in")), /fb\(token, [^)]*, \{/, "meta_setup never POSTs");
+// counted in code
+const now = Date.parse("2026-11-22T12:00:00Z");
+const statsAll = { data: [{ start_time: "x", aggregation: "event", data: [{ value: "Purchase", count: 4 }, { value: "PageView", count: 300 }] }, { data: [{ value: "Purchase", count: "2" }, { value: "<script>", count: 9 }] }] };
+assert.deepEqual(Me.readPixelStats(statsAll), { Purchase: 6, PageView: 300 }, "summed by event name; a name that isn't plain is dropped");
+assert.equal(Me.readPixelStats({}), null);
+const px = Me.readSetupPixels([{ id: "11", name: "Shop pixel", last_fired_time: "2026-11-22T09:00:00+0000", automatic_matching_fields: ["em", "ph"], first_party_cookie_status: "FIRST_PARTY_COOKIE_ENABLED" }, { id: "22", name: "Old", is_unavailable: true }, { id: "bad" }],
+  new Map([["11", { all: statsAll, server: { data: [{ data: [{ value: "Purchase", count: 1 }] }] } }], ["22", { all: null, server: null }]]), now);
+assert.equal(px.length, 2);
+assert.deepEqual(px[0], { id: "11", name: "Shop pixel", hours_since_fired: 3, unavailable: false, auto_matching: 2, first_party_cookies: "FIRST_PARTY_COOKIE_ENABLED", events_7d: { Purchase: 6, PageView: 300 }, server_events_7d: { Purchase: 1 } });
+assert.equal(px[1].hours_since_fired, null, "never fired"); assert.equal(px[1].server_events_7d, null, "server stats not read");
+assert.deepEqual(Me.readAdsets([{ effective_status: "ACTIVE", learning_stage_info: { status: "LEARNING" } }, { effective_status: "ACTIVE", learning_stage_info: { status: "FAIL" } }, { effective_status: "ACTIVE", learning_stage_info: { status: "SUCCESS" } }, { effective_status: "PAUSED", learning_stage_info: { status: "FAIL" } }]), { active: 3, learning: 1, learning_limited: 1 });
+const acct = (pixels: Me.MetaSetupAccount["pixels"], adsets: Me.MetaSetupAccount["adsets"]): Me.MetaSetupAccount => ({ account: "act_1", name: "Shop", currency: "USD", spent_all_time: 1234.5, pixels, adsets });
+const t1 = Me.setupTotals([acct(px, { active: 3, learning: 1, learning_limited: 1 })]);
+assert.deepEqual(t1.totals, { accounts: 1, spent_all_time: 1234.5, pixels: 2, pixels_unavailable: 1, pixels_never_fired: 1, events_7d: 306, purchase_events_7d: 6, add_to_cart_events_7d: 0, pixels_auto_matching: 1, hours_since_pixel_fired: 3, active_adsets: 3, adsets_learning: 1, adsets_learning_limited: 1 });
+assert.deepEqual(t1.unread, ["server_events_7d", "server_purchase_events_7d"], "one pixel's server stats unread: the server totals are left out, not zero");
+const t2 = Me.setupTotals([acct(null, null)]);
+assert.ok(!("pixels" in t2.totals) && t2.unread.includes("pixels") && t2.unread.includes("adsets_learning"), "parts Meta refused are unread");
+for (const k of Object.keys(t1.totals)) assert.ok((Me.META_SETUP_KEYS as readonly string[]).includes(k), `${k} is an evidence key`);
+assert.equal(read("supabase/migrations/20261231090000_setup_checks_meta.sql").includes("check (tool in ('analytics', 'shopify', 'quickbooks', 'meta'))"), true);
 
 console.log("check:setup-check ok");

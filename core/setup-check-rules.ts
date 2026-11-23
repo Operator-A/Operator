@@ -13,6 +13,7 @@
 // approval card at the gateway on that action's own trust level. With no such agent, the founder is sent to
 // give one the action on the builder's Tools step: a check never grants anything.
 import { GA4_SETUP_KEYS } from "@/core/ga4-rules";
+import { META_SETUP_KEYS } from "@/core/meta-rules";
 import type { ToolTileId } from "@/core/tools-step-rules";
 
 export const SEVERITIES = ["broken", "worth_fixing", "good"] as const;
@@ -72,6 +73,7 @@ export interface CheckDef {
 export const FIXES = {
   "shopify.update_copy": { tool: "shopify_copy", reads: ["shopify_product_copy"], label: "Rewrite product copy", task: "rewrite the copy of the products this finding is about (thin or missing descriptions or search text)" },
   "shopify.add_tags": { tool: "shopify_tag", reads: ["shopify_recent_orders"], label: "Tag an order or customer", task: "add tags to the recent orders or customers this finding is about, so they can be sorted and followed up" },
+  "meta.pause_ad": { tool: "meta_pause_ad", reads: ["meta_ad_accounts", "meta_ad_results"], label: "Pause a Meta ad", task: "pause the running ads this finding is about whose cost per result is over the owner's target (the target is the owner's, set on Connections; ads under it can't be paused)" },
   "quickbooks.categorize_expense": { tool: "quickbooks_categorize_expense", reads: ["quickbooks_uncategorized", "quickbooks_expense_accounts"], label: "Categorize a QuickBooks expense", task: "move the expense lines this finding is about out of Uncategorized Expense into the business's own expense accounts" },
 } as const satisfies Record<string, { tool: string; reads: readonly string[]; label: string; task: string }>;
 export type FixType = keyof typeof FIXES;
@@ -84,11 +86,12 @@ export const MAX_FIX_CARDS = 5;
 export const CHECKS = {
   analytics: { name: "Google Analytics", read: "analytics_setup", calcs: ["calc_sales_gap"], evidence: [...GA4_SETUP_KEYS, ...SALES_GAP_KEYS], help: ["support.google.com"], fixes: [] },
   shopify: { name: "Shopify", read: "shopify_setup", calcs: [], evidence: [...SHOPIFY_SETUP_KEYS], help: ["help.shopify.com"], fixes: ["shopify.update_copy", "shopify.add_tags"] },
+  meta: { name: "Meta Ads", read: "meta_ads_setup", calcs: [], evidence: [...META_SETUP_KEYS], help: ["facebook.com", "developers.facebook.com"], fixes: ["meta.pause_ad"] },
   quickbooks: { name: "QuickBooks", read: "quickbooks_setup", calcs: [], evidence: [...QBO_SETUP_KEYS], help: ["quickbooks.intuit.com"], fixes: ["quickbooks.categorize_expense"] },
 } as const satisfies Partial<Record<ToolTileId, CheckDef>>;
 export type CheckTile = keyof typeof CHECKS;
 /** Which MCP connection each check reads, for its Connections panel. */
-export const CHECK_OF_MCP: Partial<Record<string, CheckTile>> = { ga4: "analytics", shopify: "shopify", quickbooks: "quickbooks" };
+export const CHECK_OF_MCP: Partial<Record<string, CheckTile>> = { ga4: "analytics", shopify: "shopify", quickbooks: "quickbooks", meta: "meta" };
 export const CHECK_TILES = Object.keys(CHECKS) as CheckTile[];
 export const hasCheck = (t: unknown): t is CheckTile => typeof t === "string" && Object.hasOwn(CHECKS, t);
 

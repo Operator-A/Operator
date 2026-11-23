@@ -3,15 +3,17 @@ import "server-only";
 // server asks for ads_management on every sign-in, so this one runs in the app over the Marketing API.
 // It is the only file that calls Meta, and only integrations/mcp.ts reaches it (lint). Agents' sign-in
 // (profile "meta", ads_read): ad accounts, and spend and results per ad. The gateway's sign-in (profile
-// "meta_pauses", ads_management): pause one active ad that is over its target right now. There is no
+// "meta_pauses", ads_management): pause one active ad that is over its target right now. The setup check's
+// read (meta_setup, card 283) GETs pixels, their last 7 days of events and the ad sets' learning stage. There is no
 // budget, bid, create, resume or delete call, and none may be added (check:mcp fails on one).
 import { MCP_PROTOCOL, checkedTools, type McpId } from "@/core/mcp-rules";
-import { ACCOUNT_FIELDS, INSIGHT_FIELDS, MAX_PAGES, META_API, PAUSE_TOOL, PRESET, checkMetaArgs, checkPauseArgs, costPer, overTarget, permissionProblem, readAccounts, readResults, resultsOf } from "@/core/meta-rules";
+import { ACCOUNT_FIELDS, INSIGHT_FIELDS, MAX_PAGES, META_API, PAUSE_TOOL, PRESET, SETUP_ACCOUNTS, STATS_DAYS, checkMetaArgs, checkPauseArgs, costPer, overTarget, permissionProblem, pixelIdOk, readAccounts, readAdsets, readResults, readSetupPixels, resultsOf, setupPaths, setupTotals, type AccountRow, type MetaSetupAccount } from "@/core/meta-rules";
 
 const TIMEOUT_MS = 25_000;
 const DESCRIPTIONS: Record<string, string> = {
   meta_ad_accounts: "The ad accounts this sign-in sees, with currency and whether each is active.",
   meta_ad_results: "Spend and results per ad over a period, with cost per result worked out in code. Each ad carries an id for a pause. No audiences or people.",
+  meta_setup: "How the active ad accounts are set up: pixels with when each last fired, events received over the last 7 days by name (all, and server-sent), and active ad sets in learning, all counted in code. Read only.",
   [PAUSE_TOOL]: "Pauses one active ad whose cost per result is over the target right now. Gateway only, after an approval.",
 };
 
@@ -46,6 +48,26 @@ async function pages(token: string, path: string, what: string): Promise<{ rows:
     if (!after) return { rows, more: false };
   }
   return { rows, more: true };
+}
+
+/** The setup check's read (card 283): fixed GETs per active account, each part read softly so one refused part is listed, not fatal. */
+async function metaSetup(token: string, accounts: readonly AccountRow[]) {
+  const now = Date.now(), since = Math.floor(now / 1000) - STATS_DAYS * 86_400;
+  const soft = async <T>(f: () => Promise<T>): Promise<T | null> => { try { return await f(); } catch { return null; } };
+  const out: MetaSetupAccount[] = [];
+  for (const a of accounts.filter((x) => x.active).slice(0, SETUP_ACCOUNTS)) {
+    const rawPixels = await soft(async () => ((must(await fb(token, setupPaths.pixels(a.id)), "list pixels") as { data?: unknown[] }).data ?? []));
+    const stats = new Map<string, { all: unknown; server: unknown }>();
+    for (const p of (rawPixels ?? []) as { id?: unknown }[]) {
+      if (!pixelIdOk(p?.id)) continue;
+      const [all, server] = await Promise.all([soft(async () => must(await fb(token, setupPaths.stats(p.id as string, since, false)), "pixel stats")), soft(async () => must(await fb(token, setupPaths.stats(p.id as string, since, true)), "server events"))]);
+      stats.set(p.id as string, { all, server });
+    }
+    const sets = await soft(async () => (await pages(token, setupPaths.adsets(a.id), "list ad sets")).rows);
+    out.push({ account: a.id, name: a.name, currency: a.currency, spent_all_time: a.spent_all_time, pixels: rawPixels ? readSetupPixels(rawPixels, stats, now) : null, adsets: sets ? readAdsets(sets) : null });
+  }
+  if (!out.length) throw new Error("This sign-in has no active ad account to look over.");
+  return { accounts: out, ...setupTotals(out) };
 }
 
 /** Before a sign-in is kept: Meta's own list of what it granted must match the profile exactly. */
@@ -100,6 +122,8 @@ export function metaServer(profile: McpId, token: string) {
             const accounts = readAccounts((await pages(token, `/me/adaccounts?fields=${ACCOUNT_FIELDS.join(",")}&limit=50`, "list ad accounts")).rows);
             if (a.tool === "meta_ad_accounts") {
               result = { accounts };
+            } else if (a.tool === "meta_setup") {
+              result = await metaSetup(token, accounts);
             } else {
               // only an account this sign-in lists, so an id from anywhere else reads nothing
               const acct = accounts.find((x) => x.id === a.account);

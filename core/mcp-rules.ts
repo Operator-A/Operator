@@ -392,7 +392,7 @@ export const MCP_SERVERS = {
     // the same person connects pauses this sign-in can manage ads too; our server only reads with it.
     auth: "meta",
     url: "https://graph.facebook.com/v26.0",
-    readTools: ["meta_ad_accounts", "meta_ad_results"],
+    readTools: ["meta_ad_accounts", "meta_ad_results", "meta_setup"],
     reportTools: [],
     scopes: ["ads_read"],
     writeTools: [],
