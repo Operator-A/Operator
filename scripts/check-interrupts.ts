@@ -17,7 +17,7 @@ const money = new Set(["pay_vendor"]);
 assert.equal(interruptKind({ from: "approval", tool: "pay_vendor", promoted: true }, money), "money", "money asks every time, however much trust it earned");
 assert.equal(MONEY_TOOLS.size, 0, "no money tool is built yet");
 for (const id of MONEY_TOOLS) assert.equal(TOOLS[id]?.kind, "action");
-const want: Record<string, string | null> = { hire: "new_agent", department: "new_agent", goal: "goal", grant_tool: null, new_tool: null, retire: null, change_agent: null };
+const want: Record<string, string | null> = { hire: "new_agent", department: "new_agent", goal: "goal", grant_tool: null, new_tool: null, retire: null, change_agent: null, move_agent: null };
 for (const kind of [...PROPOSAL_KINDS, "department"]) {
   assert.ok(kind in want, `${kind} is decided here`);
   assert.equal(interruptKind({ from: "proposal", kind }), want[kind], `a ${kind} proposal`);

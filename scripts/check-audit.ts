@@ -27,7 +27,7 @@ const AUDITED = [
   // the setup check (card 281): a model run, and the founder skipping or reopening a finding
   "startSetupCheck", "skipFinding", "reopenFinding", "fixFinding",
   // the org chart: budgets, email caps, who holds a seat, drafts routing
-  "orgSetDeptBudget", "orgSetDeptEmails", "orgSetHolder", "orgSetLeadChecks",
+  "orgSetDeptBudget", "orgSetDeptEmails", "orgSetHolder", "orgPlaceAgent", "orgSetLeadChecks",
   // proposals change an agent's spec or routine
   "proposalAccept", "hireInChat", "changeInChat", "proposalDecline",
   // a new department: the owner files it from Avery's draft, or throws the draft away

@@ -150,4 +150,13 @@ assert.ok(rc.sections[1].lines.includes("Requests: https://x.test/connections/fi
 assert.ok(!requestCard({ name: "Square", ask: { by: "Sam", what: "Sales", at: "x" }, date: "d", link: null, known: null }).sections[1].lines.some((l) => l.startsWith("Requests:")));
 assert.equal(REQUEST_CARD.status, "Backlog");
 
+// card 370: putting an agent in a department is words until the owner's Approve
+const mv = plan({ kind: "move_agent", why, agent: "Tess", department: "Marketing" });
+assert.deepEqual(mv.plan, { kind: "move_agent", agent: "Tess", department: "Marketing", seat: null });
+assert.equal(proposalTitle(mv.plan), "Put Tess in Marketing");
+assert.equal(proposalTitle(plan({ kind: "move_agent", why, agent: "Tess", department: "Marketing", seat: "Paid social" }).plan), "Put Tess in Marketing (Paid social)");
+assert.match(problem({ kind: "move_agent", why, agent: "" }) ?? "", /agent must/);
+assert.match(problem({ kind: "move_agent", why, agent: "Tess", department: "https://x.test" }) ?? "", /link/);
+assert.ok(!(TOOLS.propose.params.find((x) => x.name === "kind") as { options: readonly string[] }).options.includes("move_agent"), "a head's propose tool can't move agents; only Avery's File a proposal can");
+
 console.log("proposals: ok");

@@ -9,12 +9,12 @@ import { OrgDay } from "@/dashboard/components/OrgDay";
 import { planOrgOn } from "@/dashboard/orgPlan";
 import { OrgSwitch } from "@/dashboard/components/OrgSwitch";
 import { getCrewCanvas, getFloor } from "@/dashboard/data";
-import { canvasData, deptExtras, orgView } from "@/dashboard/org";
+import { canvasData, deptExtras, orgView, placeDepts } from "@/dashboard/org";
 import { listProposals, proposalsBySeat } from "@/core/proposals";
-import { orgAddDepartment, orgAddSeat, orgEditSeat, orgRemoveSeat, orgSetHolder } from "@/dashboard/orgActions";
+import { orgAddDepartment, orgAddSeat, orgEditSeat, orgPlaceAgent, orgRemoveSeat, orgSetHolder } from "@/dashboard/orgActions";
 import { controlsOn } from "@/dashboard/session";
 import { loadFlow } from "@/core/flow";
-import { AgentCard } from "@/dashboard/components/orgBits";
+import { NotInDepartment } from "@/dashboard/components/placeAgent";
 import { OrgCanvas } from "@/dashboard/components/OrgCanvas";
 import { CrewCanvas } from "@/dashboard/components/CrewCanvas";
 import { Icon } from "@/dashboard/components/Icon";
@@ -71,19 +71,14 @@ async function Chart({ f, edit }: { f: Awaited<ReturnType<typeof getFloor>>; edi
       actions={{
         addDept: orgAddDepartment, addSeat: orgAddSeat, editSeat: orgEditSeat, removeSeat: orgRemoveSeat, setHolder: orgSetHolder,
       }}
+      notInDept={<NotInDepartment agents={v.offChart} depts={placeDepts(org)} place={orgPlaceAgent} />}
     />
   );
   return (
     <>
       {v.problems.length > 0 && <div className="card" style={{ borderLeft: "4px solid var(--red)", gap: 4 }}>{v.problems.map((p) => <span key={p} style={{ fontSize: 13 }}>{p}</span>)}</div>}
       <OrgCanvas d={canvasData(f, v, flow?.flow.chains ?? [])} />
-      {v.offChart.length > 0 && (
-        <div className="stack" style={{ gap: 10 }}>
-          <span className="card-t">Not on the chart yet</span>
-          <span className="ink2" style={{ fontSize: 13 }}>Put one in a seat with <Link href="/crew?view=edit">Edit chart</Link>, or from step 1 when you edit it.</span>
-          <div className="crew-grid">{v.offChart.map((a) => <AgentCard key={a.id} a={a} />)}</div>
-        </div>
-      )}
+      <NotInDepartment agents={v.offChart} depts={placeDepts(org)} place={orgPlaceAgent} />
     </>
   );
 }

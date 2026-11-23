@@ -2,7 +2,7 @@
 // Run: npm run check:org
 import assert from "node:assert/strict";
 
-import { LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, groupByDepartment, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, headBlock, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
+import { placeSpots, planPlacement, seatTitleFor, MAX_SEATS, LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, groupByDepartment, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, headBlock, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
 
 const org: Org = {
   departments: [{ id: "marketing", name: "Marketing", sort: 1, monthlyBudgetUsd: 20, maxEmailsPerDay: null, leadChecksDrafts: false }],
@@ -124,5 +124,27 @@ const dOf = (id: string) => (id === "b_sub" ? { id: "marketing", name: "Marketin
 assert.deepEqual(groupByDepartment([need("a", "b_sub"), need("b"), need("c", "cfo")], dOf).map((g) => [g.name, g.items.map((x) => x.title)]), [["Finance", ["c"]], ["Marketing", ["a"]], ["Everything else", ["b"]]]);
 assert.deepEqual(groupByDepartment([need("b")], dOf), [{ name: null, items: [need("b")] }], "no departments: one plain list");
 assert.deepEqual(groupByDepartment([], dOf), []);
+
+// Card 370: adding an agent to a department, from Crew or a move card
+assert.deepEqual(placeSpots(org, "marketing"), [
+  { seatId: null, label: "New seat under Head of marketing" },
+  { seatId: "h", label: "Head of marketing (open head seat)" },
+  { seatId: "l", label: "Retention lead (open)" },
+], "a new seat under the head first, then the open seats, head first");
+assert.deepEqual(placeSpots(org, "nope"), [], "no department, nowhere to go");
+assert.deepEqual(planPlacement(org, "b_tess", "marketing", null, "Tess"), { parentId: "h", title: "Tess" }, "no seat named: a new seat under the head");
+assert.deepEqual(planPlacement(org, "b_tess", "marketing", "l", "Tess"), { seatId: "l" }, "an open seat in that department");
+assert.match((planPlacement(org, "b_tess", "marketing", "s", "Tess") as { problem: string }).problem, /isn’t open/, "a held seat is refused");
+assert.match((planPlacement(org, "b_tess", "marketing", "c", "Tess") as { problem: string }).problem, /isn’t in Marketing/, "the company seat isn't a department seat");
+assert.match((planPlacement(org, "chief_of_staff", "marketing", null, "Avery") as { problem: string }).problem, /company seat/, "the company seat's agent stays above every department");
+assert.match((planPlacement(org, "b_sub", "marketing", null, "Subs") as { problem: string }).problem, /Already in Marketing/, "already there: moving inside a department is Edit chart's job");
+assert.deepEqual(planPlacement(org, "b_sub", "marketing", "l", "Subs"), { seatId: "l" }, "but an open seat in its own department is fine");
+assert.match((planPlacement(org, "b_tess", "coffee", null, "Tess") as { problem: string }).problem, /isn’t on the chart/);
+assert.match((planPlacement(org, "b_tess", "marketing", null, "  ") as { problem: string }).problem, /name/);
+const full: Org = { ...org, seats: [...org.seats, ...Array.from({ length: MAX_SEATS - org.seats.length }, (_, i) => ({ id: `f${i}`, departmentId: "marketing", parentId: "h", title: `F${i}`, sub: "", holder: "owner" as const, agentId: null, sort: 9 + i }))] };
+assert.ok(!placeSpots(full, "marketing").some((x) => x.seatId === null), "a full chart offers no new seat");
+assert.match((planPlacement(full, "b_tess", "marketing", null, "Tess") as { problem: string }).problem, /at most/);
+assert.equal(seatTitleFor({ name: "Tess", role: "Built in the app" }), "Tess", "no role of its own: its name");
+assert.equal(seatTitleFor({ name: "Tess", role: "Paid social" }), "Paid social");
 
 console.log("check-org: all passed");

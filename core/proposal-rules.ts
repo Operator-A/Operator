@@ -9,10 +9,10 @@ import type { DeptDraft } from "@/core/department-rules";
 import { daysOf, type Days } from "@/core/flow-rules";
 
 /** What a head (or Avery's File a proposal) may file. */
-export const PROPOSAL_KINDS = ["hire", "grant_tool", "new_tool", "retire", "goal", "change_agent"] as const;
+export const PROPOSAL_KINDS = ["hire", "grant_tool", "new_tool", "retire", "goal", "change_agent", "move_agent"] as const;
 /** Every kind a proposal can be: a new department is filed only by an owner, from Avery's draft (card 156). */
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number] | "department" | "setup_finding";
-export const KIND_WORDS: Record<ProposalKind, string> = { hire: "Hire", grant_tool: "Grant a tool", new_tool: "New tool", retire: "Retire", department: "New department", goal: "Goal change", setup_finding: "Finish setup", change_agent: "Change an agent" };
+export const KIND_WORDS: Record<ProposalKind, string> = { hire: "Hire", grant_tool: "Grant a tool", new_tool: "New tool", retire: "Retire", department: "New department", goal: "Goal change", setup_finding: "Finish setup", change_agent: "Change an agent", move_agent: "Add to a department" };
 
 export type Brain = "quick" | "thinking";
 /** Claude models only (owner's call, Nov 12). Specialists stay quick unless the job needs judgment (decision 5). */
@@ -53,7 +53,13 @@ export type ProposalPlan =
    * granted only on the Can do toggles, and a change never picks a model. Nothing happens until the owner's
    * Approve; a new job, good result, reads or cost cap then saves a draft version that needs a clean try.
    */
-  | { kind: "change_agent"; agent: string; when: { days: Days | null; time: string | null } | null; budget: number | null; job: string | null; goodResult: string | null; add: string[]; drop: string[]; costCap: number | null };
+  | { kind: "change_agent"; agent: string; when: { days: Days | null; time: string | null } | null; budget: number | null; job: string | null; goodResult: string | null; add: string[]; drop: string[]; costCap: number | null }
+  /**
+   * Card 370: put an agent in a department (from no department, or out of another one), in the open seat
+   * named or a new seat under the head. Filed by Avery, the owner or Claude, never a head. `department` is the
+   * department's name as filed; the server resolves it. Only where the agent sits changes, at the owner's Approve.
+   */
+  | { kind: "move_agent"; agent: string; department: string | null; seat: string | null };
 
 /** pause, resume and done: department pages slice 6 (the goal page's buttons, asked for in the chat). */
 export const GOAL_CHANGES = ["new", "change", "drop", "pause", "resume", "done"] as const;
@@ -106,7 +112,7 @@ export const toolIds = (v: unknown) => [...new Set(String(v ?? "").split(/[\s,]+
  */
 export function planProposal(input: Record<string, unknown>, tools: Record<string, ToolInfo>): { plan: ProposalPlan; why: string } | { problem: string } {
   const kind = String(input.kind ?? "") as (typeof PROPOSAL_KINDS)[number];
-  if (!PROPOSAL_KINDS.includes(kind)) return { problem: "kind must be hire, grant_tool, new_tool, retire, goal or change_agent" };
+  if (!PROPOSAL_KINDS.includes(kind)) return { problem: "kind must be hire, grant_tool, new_tool, retire, goal, change_agent or move_agent" };
   const why = many(input.why, 600);
   if (why.length < 10) return { problem: "say why in a sentence or two" };
   const checkTool = (id: string): string | null => {
@@ -197,6 +203,14 @@ export function planProposal(input: Record<string, unknown>, tools: Record<strin
     if (!when && budget == null && costCap == null && !job && !goodResult && !add.length && !drop.length) return { problem: "say what changes: days and time, budget, each_run, good_result, tools, drop or cost_cap" };
     return { plan: { kind, agent, when, budget: budget as number | null, job, goodResult, add, drop, costCap: costCap as number | null }, why };
   }
+  if (kind === "move_agent") {
+    const agent = one(input.agent, 40);
+    if (agent.length < 2) return { problem: "agent must name the agent to move" };
+    const department = one(input.department, 60) || null;
+    const seat = one(input.seat, 60) || null;
+    if ([agent, department, seat].some((t) => t && LINK.test(t))) return { problem: "a move can't hold a link" };
+    return { plan: { kind, agent, department, seat }, why };
+  }
   if (kind === "goal") {
     const change = String(input.change ?? "") as GoalChange;
     if (!GOAL_CHANGES.includes(change)) return { problem: "change must be new, change, drop, pause, resume or done" };
@@ -230,6 +244,7 @@ export function proposalTitle(p: ProposalPlan, labelOf: (toolId: string) => stri
     case "department": return `New department: ${p.draft.name}`;
     case "goal": return p.change === "new" ? `New goal: ${p.title}` : `${GOAL_VERB[p.change]} goal: ${p.goal}`;
     case "change_agent": return `Change ${p.agent}: ${changeWhat(p).join(", ")}`;
+    case "move_agent": return `Put ${p.agent} in ${p.department ?? "a department"}${p.seat ? ` (${p.seat})` : ""}`;
     case "setup_finding": return `Finish setup: ${p.title.length > 90 ? `${p.title.slice(0, 89)}…` : p.title}`;
   }
 }

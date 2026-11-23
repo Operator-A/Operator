@@ -5,16 +5,29 @@ import "server-only";
 // that draft goes live. Read in one round with the chat; the lines come from dashboard/change-rules.ts.
 import { db } from "@/core/db";
 import { draftOf, readSpec } from "@/core/agent-spec";
-import { seatOf } from "@/core/org";
+import { headOf, reportsTo, seatOf, seatTitleFor, type Org, type Seat } from "@/core/org";
 import { changesSpec } from "@/core/proposal-rules";
 import type { Proposal } from "@/core/proposals";
 import { TOOLS } from "@/core/tools/catalog";
 import { lastTry } from "@/dashboard/builder";
 import type { Roster } from "@/dashboard/data";
-import { CHANGE_KEEP_DAYS, changeRows, changeStage, goalRows, goalTitle, keepDecided, savedVersionOf, type AgentNow, type ChangeCardView } from "@/dashboard/change-rules";
+import { CHANGE_KEEP_DAYS, changeRows, changeStage, goalRows, goalTitle, keepDecided, moveRows, savedVersionOf, type AgentNow, type ChangeCardView, type Place } from "@/dashboard/change-rules";
 
 const label = (id: string) => TOOLS[id]?.label ?? id;
 type Row = Pick<Proposal, "id" | "kind" | "payload" | "state" | "outcome" | "created_at" | "decided_at">;
+/** The proposals a department's chat shows as change cards: agent changes, goal changes and (card 370) moves into it. */
+const CARD_KINDS = ["change_agent", "goal", "move_agent"];
+
+/** Card 370: where an agent sits on the chart, in words, for a move card's Now side. */
+function placeOf(chart: Org, seat: Seat | null, nameOf: (id: string) => string): Place {
+  if (!seat?.departmentId) return { dept: null, seat: null, boss: null };
+  const boss = reportsTo(chart, seat);
+  return {
+    dept: chart.departments.find((d) => d.id === seat.departmentId)?.name ?? null,
+    seat: seat.title,
+    boss: !boss ? null : boss.holder === "agent" && boss.agentId ? nameOf(boss.agentId) : boss.holder === "owner" ? "You" : `${boss.title} (open)`,
+  };
+}
 
 /** The department's change cards, oldest first, and the agents whose tries post in the chat (a draft a change saved). */
 export async function deptChanges(deptId: string, roster: Roster): Promise<{ cards: ChangeCardView[]; trying: Set<string> }> {
@@ -23,8 +36,8 @@ export async function deptChanges(deptId: string, roster: Roster): Promise<{ car
   const since = new Date(roster.now - CHANGE_KEEP_DAYS * 86_400_000).toISOString();
   const cols = "id, kind, payload, state, outcome, created_at, decided_at";
   const [waiting, decided] = await Promise.all([
-    db().from("proposals").select(cols).eq("state", "pending").in("kind", ["change_agent", "goal"]).eq("department_id", deptId).order("created_at").limit(20),
-    db().from("proposals").select(cols).in("state", ["accepted", "declined"]).in("kind", ["change_agent", "goal"]).eq("department_id", deptId).gte("decided_at", since).order("created_at").limit(20),
+    db().from("proposals").select(cols).eq("state", "pending").in("kind", CARD_KINDS).eq("department_id", deptId).order("created_at").limit(20),
+    db().from("proposals").select(cols).in("state", ["accepted", "declined"]).in("kind", CARD_KINDS).eq("department_id", deptId).gte("decided_at", since).order("created_at").limit(20),
   ]);
   const rows = [...(waiting.data ?? []), ...(decided.data ?? []).filter((r) => keepDecided(r.outcome as string | null))] as Row[];
   if (!rows.length) return { cards: [], trying: new Set() };
@@ -59,8 +72,29 @@ export async function deptChanges(deptId: string, roster: Roster): Promise<{ car
   const tries = await Promise.all(drafts.map((d) => (d ? lastTry(d.agentId, d.version).catch(() => null) : Promise.resolve(null))));
   const trying = new Set(drafts.filter((d): d is NonNullable<typeof d> => !!d).map((d) => d.agentId));
 
+  const nameOf = (id: string) => roster.byId[id]?.name ?? id;
   const cards: ChangeCardView[] = rows.map((r, i) => {
     const p = r.payload;
+    if (p.kind === "move_agent") {
+      // card 370: a move into this department, filed by Avery or Claude; Approve places it through placeAgent
+      const name = roster.byId[p.agentId ?? ""]?.name ?? p.agent;
+      const head = headOf(chart, deptId);
+      const open = p.seatId ? chart.seats.find((x) => x.id === p.seatId) ?? null : null;
+      const to: Place = {
+        dept: chart.departments.find((d) => d.id === deptId)?.name ?? p.department,
+        seat: open ? `${open.title} (open seat)` : `${seatTitleFor({ name, role: roster.byId[p.agentId ?? ""]?.role })} (new seat)`,
+        boss: open ? placeOf(chart, open, nameOf).boss : head ? (head.holder === "agent" && head.agentId ? nameOf(head.agentId) : head.holder === "owner" ? "You" : `${head.title} (open)`) : null,
+      };
+      const pending = r.state === "pending";
+      const fromDept = p.fromDeptId ? chart.departments.find((d) => d.id === p.fromDeptId)?.name ?? "Another department" : null;
+      return {
+        key: `c:${r.id}`, proposalId: r.id, kind: "move", agentId: p.agentId ?? null,
+        kicker: pending ? `Move ${name} · needs your OK` : `Move ${name}`,
+        title: `${name} to ${to.dept}`,
+        rows: pending ? moveRows(to, placeOf(chart, p.agentId ? seatOf(chart, p.agentId) : null, nameOf)) : moveRows({ dept: to.dept, seat: null, boss: null }, { dept: fromDept, seat: null, boss: null }),
+        spec: false, stage: pending ? "proposed" : "done", version: null, why: null, done: pending ? null : r.outcome, at: r.created_at,
+      };
+    }
     const d = drafts[i], t = tries[i];
     if (p.kind === "change_agent") {
       const name = roster.byId[p.agentId ?? ""]?.name ?? p.agent;

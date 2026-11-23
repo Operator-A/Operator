@@ -72,16 +72,17 @@ export function ChangeCard({ c, head, headTitle, controls, acts, trying, onTry, 
               </div>
             ))}
           </dl>
+          {stage === "proposed" && c.kind === "move" && <span className="dp-note">Only where {name.replace(/ to .*$/, "")} sits changes. What it reads, can do and when it runs stay as they are.</span>}
           {stage === "proposed" && c.spec && <span className="dp-note">This saves a new version. {name} tries it once on today’s data before it replaces what runs now.</span>}
           {stage === "failed" && c.why && <span className="dp-note">The latest try {c.why}.</span>}
           {c.done && stage === "done" && <span className="dp-done"><Icon name="check" size={14} />{c.done}</span>}
           {!closed && stage !== "done" && (
             <div className="dp-btns">
-              {stage === "proposed" && <button type="button" className="dp-btn dark" disabled={busy || !controls} title={off} onClick={approve}>{busy ? "Approving…" : c.spec ? "Approve and try once" : "Approve"}</button>}
+              {stage === "proposed" && <button type="button" className="dp-btn dark" disabled={busy || (!controls && c.kind !== "move")} title={c.kind === "move" ? undefined : off} onClick={approve}>{busy ? "Approving…" : c.spec ? "Approve and try once" : "Approve"}</button>}
               {stage === "proposed" && <button type="button" className="dp-btn" disabled={busy} onClick={notNow}>Not now</button>}
               {(stage === "draft" || stage === "failed") && c.agentId && <button type="button" className="dp-btn dark" disabled={busy || !controls} title={off} onClick={() => onTry(c.agentId!)}>{stage === "failed" ? "Try again" : "Try once"}</button>}
               {stage === "clean" && <button type="button" className="dp-btn dark" disabled={busy || !controls} title={off} onClick={live}>{busy ? "Going live…" : `Go live with v${c.version}`}</button>}
-              {(stage === "proposed" || stage === "failed") && <button type="button" className="dp-btn" disabled={busy} onClick={() => onChange(`Change ${c.kind === "goal" ? `the goal “${name}”` : name}: `)}>Change something</button>}
+              {(stage === "proposed" || stage === "failed") && c.kind !== "move" && <button type="button" className="dp-btn" disabled={busy} onClick={() => onChange(`Change ${c.kind === "goal" ? `the goal “${name}”` : name}: `)}>Change something</button>}
             </div>
           )}
           {said && <span className={said.ok ? "dp-done" : "dp-note dp-bad"}>{said.ok && <Icon name="check" size={14} />}{said.text}</span>}

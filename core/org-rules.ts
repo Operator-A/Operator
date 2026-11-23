@@ -277,3 +277,53 @@ export function deptAgentIds(org: Org, deptId: string): string[] {
   if (!head) return [];
   return [head, ...below(org, head.id)].filter((s) => s.holder === "agent" && s.agentId).map((s) => s.agentId as string);
 }
+
+// ---- Adding an agent to a department (card 370). From Crew's "Not in a department yet" or a move card
+// the owner approves (a move_agent proposal). Where an agent sits still gives it nothing by itself.
+
+/** One place an agent can go in a department: an open seat, or (seatId null) a new seat under the head. */
+export interface PlaceSpot { seatId: string | null; label: string }
+
+/** Where an agent can go in a department: a new seat under the head first, then its open seats, head seat first, in chart order. */
+export function placeSpots(o: Org, deptId: string): PlaceSpot[] {
+  const head = headOf(o, deptId);
+  if (!head) return [];
+  const open = [head, ...below(o, head.id)].filter((s) => s.holder === "open");
+  const roomForNew = o.seats.length < MAX_SEATS && depthOf(o, head) + 1 <= MAX_DEPTH;
+  const under = head.holder === "agent" ? "the head" : head.title;
+  return [
+    ...(roomForNew ? [{ seatId: null, label: `New seat under ${under}` }] : []),
+    ...open.map((s) => ({ seatId: s.id, label: s.parentId == null ? `${s.title} (open head seat)` : `${s.title} (open)` })),
+  ];
+}
+
+/** What a new seat for an agent is called: its role, or its name when it has no role of its own. */
+export const seatTitleFor = (a: { name: string; role?: string | null }) => cleanTitle(a.role && a.role !== "Built in the app" ? a.role : a.name) || "Agent";
+
+export type Placement = { seatId: string } | { parentId: string; title: string };
+
+/**
+ * Where an agent goes when it is added to a department: the open seat named, or a new seat under the head.
+ * Refuses the company seat's agent, a seat that isn't open or isn't in that department, and an agent already in
+ * that department without a seat named (moving inside a department is Edit chart's job).
+ */
+export function planPlacement(o: Org, agentId: string, deptId: string, seatId: string | null, title: string): Placement | { problem: string } {
+  const dept = o.departments.find((d) => d.id === deptId);
+  if (!dept) return { problem: "That department isn’t on the chart any more." };
+  const now = seatOf(o, agentId);
+  if (now && now.departmentId == null) return { problem: "The company seat’s agent stays above every department." };
+  if (seatId) {
+    const s = o.seats.find((x) => x.id === seatId);
+    if (!s || s.departmentId !== deptId) return { problem: `That seat isn’t in ${dept.name}.` };
+    if (s.holder !== "open") return { problem: `The ${s.title} seat isn’t open any more.` };
+    return { seatId };
+  }
+  if (now?.departmentId === deptId) return { problem: `Already in ${dept.name}. To change its seat there, use Edit chart.` };
+  const head = headOf(o, deptId);
+  if (!head) return { problem: `${dept.name} has no head seat.` };
+  if (o.seats.length >= MAX_SEATS) return { problem: `A chart holds ${MAX_SEATS} seats at most.` };
+  if (depthOf(o, head) + 1 > MAX_DEPTH) return { problem: `A department goes ${MAX_DEPTH} levels deep at most.` };
+  const t = cleanTitle(title);
+  if (!t) return { problem: "Give the seat a name." };
+  return { parentId: head.id, title: t };
+}
