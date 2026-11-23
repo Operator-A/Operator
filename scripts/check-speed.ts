@@ -6,7 +6,7 @@
 //    say so on the same line: `// refresh-ok: <reason>`.
 // 3. The Control Room has a loading frame (app/(room)/loading.tsx): a click shows it at once, and Next.js
 //    pre-loads dynamic pages up to it.
-// 4-6. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
+// 4-9. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
 //    starts loading on hover, touch or focus (IntentLink). Each rule is below, where it is checked.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -110,16 +110,23 @@ for (const [f, part] of NAV) {
 // 7. One round of loads per page (card 302): the floor sends its sign-in check and time zone with every other read,
 //    pages read the org chart from the floor (f.chart) instead of again, and no page awaits its loads one by one
 //    behind conditions (`const x = c ? await a() : null` then `const y = d ? await b() : null`).
-export function floorRounds(data: string): string[] {
-  const body = data.match(/export const getFloor = cache\(async \(\)[\s\S]*?\n\}\);/)?.[0] ?? "";
-  if (!body) return ["getFloor not found"];
+export function floorRounds(data: string, name = "getFloor", needTz = true): string[] {
+  const body = data.match(new RegExp(`export const ${name} = cache\\(async \\(\\)[\\s\\S]*?\\n\\}\\);`))?.[0] ?? "";
+  if (!body) return ["not found"];
   const out: string[] = [];
   if (/await orgTz\(\)/.test(body)) out.push("awaits orgTz() on its own");
   const lines = body.split("\n").filter((l) => /^\s*await requireSession\(\);/.test(l));
   if (lines.length) out.push("awaits requireSession() before its reads");
-  const all = body.match(/await Promise\.all\(\[([\s\S]*?)\n {2}\]\);/)?.[1] ?? "";
-  if (!/requireSession\(\),/.test(all) || !/orgTz\(\),/.test(all)) out.push("does not send requireSession() and orgTz() in its one Promise.all");
+  const all = body.match(/await Promise\.all\(\[([\s\S]*?)\]\);/)?.[1] ?? "";
+  if (!/requireSession\(\),/.test(all) || (needTz && !/orgTz\(\)/.test(all))) out.push(`does not send requireSession()${needTz ? " and orgTz()" : ""} in its one Promise.all`);
   return out;
+}
+/** Card 304: the whole floor is its pieces in one round, so a page that shows less can ask for less. */
+export const FLOOR_PIECES = ["getRoster", "getCounts", "getHealth", "getTz", "getOrgSwitch"] as const;
+export function floorIsPieces(data: string): boolean {
+  const body = data.match(/export const getFloor = cache\(async \(\)[\s\S]*?\n\}\);/)?.[0] ?? "";
+  const all = body.match(/await Promise\.all\(\[([\s\S]*?)\]\)/)?.[1] ?? "";
+  return !!all && FLOOR_PIECES.every((p) => all.includes(`${p}()`)) && !/db\(\)/.test(body);
 }
 export function chainedLoads(src: string): number[] {
   const lines = src.split("\n");
@@ -128,7 +135,10 @@ export function chainedLoads(src: string): number[] {
 assert.deepEqual(floorRounds(`export const getFloor = cache(async (): Promise<Floor> => {\n  await requireSession();\n  const tz = await orgTz();\n  const [a] = await Promise.all([\n    x(),\n  ]);\n});`), ["awaits orgTz() on its own", "awaits requireSession() before its reads", "does not send requireSession() and orgTz() in its one Promise.all"]);
 assert.deepEqual(floorRounds(`export const getFloor = cache(async (): Promise<Floor> => {\n  if (!h) { await requireSession(); return e; }\n  const [, tz, a] = await Promise.all([\n    requireSession(),\n    orgTz(),\n    x(),\n  ]);\n});`), []);
 assert.deepEqual(chainedLoads(`  const a = x ? await f() : null;\n  const b = y ? await g() : null;\n  const c = await h();`), [2]);
-for (const p of floorRounds(read("dashboard/data.ts"))) problems.push(`dashboard/data.ts: getFloor ${p}. Send them with its other reads in one round (card 302).`);
+const dataSrc = read("dashboard/data.ts");
+for (const [piece, tz] of [["getTz", true], ["getRoster", false], ["getCounts", false], ["getOrgSwitch", false]] as const) {
+  for (const p of floorRounds(dataSrc, piece, tz)) problems.push(`dashboard/data.ts: ${piece} ${p}. Send them with its other reads in one round (card 302).`);
+}
 for (const f of ["app/(room)/layout.tsx", "app/(room)/page.tsx", "app/(room)/crew/page.tsx", "app/(room)/agents/[id]/page.tsx", "app/(room)/build/[id]/page.tsx"]) {
   if (/\bloadOrg\(/.test(read(f))) problems.push(`${f}: reads the org chart again; use the floor's (f.chart), read in the same round (card 302).`);
 }
@@ -145,6 +155,18 @@ if (/await goalsByDept\(/.test(desk) || !SUSPENDED("<DeskGoals\\b").test(desk) |
 const conn = read("app/(room)/connections/page.tsx");
 if (!SUSPENDED("<SelDetail\\b").test(conn) || !SUSPENDED("<ClaudeCard\\b").test(conn)) problems.push("app/(room)/connections/page.tsx: a connection's detail (SelDetail) and ClaudeCard call services; each should sit in <Suspense> (card 303).");
 if (!SUSPENDED("\\{view === \"schedule\" \\? <Schedule\\b").test(read("app/(room)/crew/page.tsx"))) problems.push("app/(room)/crew/page.tsx: the chart (goal numbers from the tools) should stream in behind <Suspense> under the title and views (card 303).");
+
+// 9. Each page reads only what it shows (card 304): the floor is pieces (the crew and its runs, what waits on the owner,
+//    which tools are set up, the time zone, the org switch), each read once per request. Only the pages that show all of
+//    it (the frame, the Desk, an agent, a run's replay, Crew) and the first-job action ask for the whole floor; the rest
+//    name their pieces (getRoster, getCrewFloor, getTz, ...).
+assert.ok(floorIsPieces(`export const getFloor = cache(async (): Promise<Floor> => {\n  const [a, b, c, d, e] = await Promise.all([getRoster(), getCounts(), getHealth(), getTz(), getOrgSwitch()]);\n  return x;\n});`));
+assert.ok(!floorIsPieces(`export const getFloor = cache(async (): Promise<Floor> => {\n  const [a, b] = await Promise.all([getRoster(), db().from("x").select("y")]);\n  return x;\n});`));
+if (!floorIsPieces(dataSrc)) problems.push("dashboard/data.ts: getFloor should be its pieces (getRoster, getCounts, getHealth, getTz, getOrgSwitch) in one round, reading nothing itself (card 304).");
+const WHOLE_FLOOR = new Set(["app/(room)/layout.tsx", "app/(room)/page.tsx", "app/(room)/agents/[id]/page.tsx", "app/(room)/runs/[id]/page.tsx", "app/(room)/crew/page.tsx", "dashboard/actions.ts", "dashboard/data.ts"].map((x) => join(...x.split("/"))));
+for (const f of ["app", "dashboard"].filter(existsSync).flatMap(walk).filter((x) => /\.tsx?$/.test(x) && !WHOLE_FLOOR.has(x))) {
+  if (/\bgetFloor\(\)/.test(readFileSync(f, "utf8"))) problems.push(`${f}: reads the whole floor; ask for only the pieces this page shows (getRoster, getCrewFloor, getTz, getCounts, getHealth, getOrgSwitch; card 304).`);
+}
 if (!/prefetch=\{warm \? true : null\}/.test(read("dashboard/components/intentLink.tsx"))) problems.push("dashboard/components/intentLink.tsx: IntentLink should pre-load the full page once warm and only to the loading frame before (card 301).");
 
 if (problems.length) { console.error(problems.join("\n")); process.exit(1); }

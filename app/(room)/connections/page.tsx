@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { SkelPane } from "@/dashboard/components/skeletons";
 import Link from "next/link";
 import { HARD_RULES } from "@/dashboard/crew";
-import { getFloor, requireSession, type Floor } from "@/dashboard/data";
+import { getCrewFloor, requireSession, type CrewFloor } from "@/dashboard/data";
 import { BEHIND_THE_SCENES, CONNECTIONS, CONN_BY_ID, isSetUp, toolsOf, usersOf, type ConnId, type Connection } from "@/dashboard/connections";
 import type { ToolDef } from "@/core/tools/types";
 import { Icon } from "@/dashboard/components/Icon";
@@ -176,7 +176,7 @@ function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView
 // One page for every integration: is it set up, what can an agent read, do and hand you there,
 // and which agents have each of those in their saved setup. Shown here, granted in the builder.
 
-function Who({ id, f }: { id: string; f: Floor }) {
+function Who({ id, f }: { id: string; f: CrewFloor }) {
   const a = f.byId[id];
   const name = a?.name ?? id;
   return (
@@ -187,14 +187,14 @@ function Who({ id, f }: { id: string; f: Floor }) {
   );
 }
 
-function Status({ c, f }: { c: Connection; f: Floor }) {
+function Status({ c, f }: { c: Connection; f: CrewFloor }) {
   if (c.builtIn && !c.checks.length) return <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>Built in</span>;
   const ok = isSetUp(c, f.health);
   // not set up yet is setup to do, not a fault (card 189): grey, never red
   return <span className="pill sm" style={{ background: ok ? "var(--mint-soft)" : "var(--soft)", color: ok ? "var(--mint-ink)" : "var(--ink2)" }}><span className="dot" style={{ width: 6, height: 6, background: ok ? "var(--mint)" : "var(--mut)" }} />{ok ? (c.builtIn ? "Built in" : "Set up") : "Not set up"}</span>;
 }
 
-function Tile({ c, f, on }: { c: Connection; f: Floor; on: boolean }) {
+function Tile({ c, f, on }: { c: Connection; f: CrewFloor; on: boolean }) {
   const users = usersOf(c.id, f.grants).length;
   return (
     <Link href={on ? "/connections" : `/connections?c=${c.id}`} scroll={false} className="card" style={{ gap: 10, padding: 16, textDecoration: "none", color: "var(--ink)", outline: on ? "2px solid var(--ink)" : undefined }}>
@@ -207,7 +207,7 @@ function Tile({ c, f, on }: { c: Connection; f: Floor; on: boolean }) {
   );
 }
 
-function ToolRow({ t, f, locked }: { t: ToolDef; f: Floor; locked?: boolean }) {
+function ToolRow({ t, f, locked }: { t: ToolDef; f: CrewFloor; locked?: boolean }) {
   const has = Object.keys(f.grants).filter((a) => f.grants[a].includes(t.id));
   const only = Array.isArray(t.agents) && t.agents.length ? t.agents.map((id) => f.byId[id]?.name ?? id) : null;
   return (
@@ -227,7 +227,7 @@ function ToolRow({ t, f, locked }: { t: ToolDef; f: Floor; locked?: boolean }) {
   );
 }
 
-function Detail({ c, f, mcp, more, note, line }: { c: Connection; f: Floor; mcp: McpView | null; more: { id: McpId; v: McpView }[]; note: { ok: boolean; text: string } | null; line?: { ok: boolean; text: string } | null }) {
+function Detail({ c, f, mcp, more, note, line }: { c: Connection; f: CrewFloor; mcp: McpView | null; more: { id: McpId; v: McpView }[]; note: { ok: boolean; text: string } | null; line?: { ok: boolean; text: string } | null }) {
   const t = toolsOf(c.id);
   const missing = c.checks.filter((k) => !f.health[k.key]);
   const section = (title: string, sub: string, list: ToolDef[], empty: string, locked?: boolean) => (
@@ -287,7 +287,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
   const pick = sp.c;
   // two rounds (card 302, docs/speed.md): the floor, the member and the servers together, then every status and log together.
   // A custom server (s=<id>) or the add form (s=new) takes the detail pane instead of a built-in connection.
-  const [f, me, customs, custom] = await Promise.all([getFloor(), requireSession(), listCustomServers(), sp.s && sp.s !== "new" ? getCustomServer(sp.s).catch(() => null) : null]);
+  const [f, me, customs, custom] = await Promise.all([getCrewFloor(), requireSession(), listCustomServers(), sp.s && sp.s !== "new" ? getCustomServer(sp.s).catch(() => null) : null]);
   const adding = sp.s === "new";
   const sel = !custom && !adding && pick && pick in CONN_BY_ID ? CONN_BY_ID[pick as ConnId] : null;
   // the picked connection's detail calls its service (lists, account name, properties, setup check), so it
@@ -348,7 +348,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
 }
 
 /** The picked connection's detail, once its service has answered (card 303). */
-async function SelDetail({ c, f, detailP, note }: { c: Connection; f: Floor; detailP: Promise<readonly [McpView | null, Parameters<typeof Detail>[0]["more"], Parameters<typeof Detail>[0]["line"]]>; note: Parameters<typeof Detail>[0]["note"] }) {
+async function SelDetail({ c, f, detailP, note }: { c: Connection; f: CrewFloor; detailP: Promise<readonly [McpView | null, Parameters<typeof Detail>[0]["more"], Parameters<typeof Detail>[0]["line"]]>; note: Parameters<typeof Detail>[0]["note"] }) {
   const [mcp, more, line] = await detailP;
   return <Detail c={c} f={f} mcp={mcp} more={more} note={note} line={line} />;
 }
