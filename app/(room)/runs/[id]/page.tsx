@@ -18,6 +18,7 @@ import { AgentMap } from "@/dashboard/components/AgentMap";
 import { mapOf, mapRunOf } from "@/dashboard/agentMap";
 import { builderMenu, customMenuFor, mapFor, mapSteps } from "@/dashboard/builder";
 import { Avatar, Summary } from "@/dashboard/components/ui";
+import { RunView } from "@/dashboard/components/runView";
 
 export default async function Replay({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -33,7 +34,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const [items, mf, steps, said, rules, custom, chain, asked, picture] = await Promise.all([
     has("report_leads") ? leadItemsOfRun(run.id) : null, mapFor(a.id), mapSteps(run.id),
     reactable ? getRunReactions(run.id) : Promise.resolve({} as Awaited<ReturnType<typeof getRunReactions>>), reactable ? getReactRules(a.id) : null,
-    customMenuFor(), run.trigger === "chain" ? getChainRuns(run.id) : null, run.trigger === "chat" ? askedIn(run.id).catch(() => null) : null,
+    customMenuFor(), run.trigger === "chain" ? getChainRuns(run.id, f.tz) : null, run.trigger === "chat" ? askedIn(run.id).catch(() => null) : null,
     // a Make an image step's picture (chains slice 4), through a short signed link
     run.trigger === "chain" ? getRunImage(run.id) : null,
   ]);
@@ -109,37 +110,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
           )}
         </div>
       )}
-      {chain && (
-        <div className="card" style={{ gap: 12 }}>
-          <div className="card-h">
-            <span className="node-ic"><Icon name="git-pull-request" size={13} /></span>
-            <span className="card-t">Chain: {chain.name}</span>
-            <span className="muted" style={{ fontSize: 12, flex: 1 }}>{chain.runs.length} of {Math.max(chain.steps.length, chain.runs.length)} step{Math.max(chain.steps.length, chain.runs.length) === 1 ? "" : "s"} ran</span>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>{m4(chain.runs.reduce((s, r) => s + r.costUsd, 0))}</span>
-          </div>
-          <div className="chain-steps">
-            {(chain.steps.length ? chain.steps : chain.runs.map((r) => r.agentId)).map((agentId, k) => {
-              const r = chain.runs.find((x) => x.step === k);
-              const who = f.byId[agentId];
-              const l = r ? RUN_LOOK[r.status] : null;
-              const body = (
-                <>
-                  <span className="row" style={{ gap: 8 }}>
-                    {who && <Avatar a={who} size={24} />}
-                    <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>Step {k + 1}: {who?.name ?? agentId}</span>
-                    {l ? <span className="row" style={{ gap: 6, fontSize: 12 }}><span className="dot" style={{ background: l.dot }} />{l.label}</span> : <span className="muted" style={{ fontSize: 12 }}>Didn’t run</span>}
-                  </span>
-                  <span className="muted" style={{ fontSize: 12 }}>{r ? `${when(r.startedAt, f.tz)} · ${m4(r.costUsd)}` : "The chain stopped before this step, or it is still waiting."}</span>
-                  {r?.summary && <span style={{ fontSize: 12.5, lineHeight: 1.45, overflowWrap: "anywhere" }} className="ink2"><Summary text={r.summary.slice(0, 220)} /></span>}
-                </>
-              );
-              return r && r.id !== run.id
-                ? <Link key={k} href={`/runs/${r.id}`} className="chain-step">{body}</Link>
-                : <div key={k} className={"chain-step" + (r?.id === run.id ? " here" : "")}>{body}</div>;
-            })}
-          </div>
-        </div>
-      )}
+      {chain && <RunView name={chain.name} timeline={chain.timeline} images={chain.images} current={run.id} tz={f.tz} hue={(id) => f.byId[id]?.hue ?? null} />}
 
       {others.length > 0 && (
         <div className="row wrap" style={{ gap: 6 }}>
