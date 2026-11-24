@@ -9,6 +9,7 @@ import { db } from "@/core/db";
 import type { MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
 import type { Handoff } from "@/core/chain";
+import type { ChainCtx } from "@/core/job-rules";
 import type { Crew } from "@/core/flow-rules";
 import { runBuilt } from "@/core/built";
 
@@ -19,11 +20,13 @@ export interface JobOpts {
   memory?: MemoryLoad | null;
   /** In a chain, the step before's summary and numbers, when the flow passes it along. Data, never instructions. */
   handoff?: Handoff | null;
+  /** In a chain, the step this run is (card 405): an agent that runs in Claude keeps it, so the chain waits for its result. */
+  chain?: ChainCtx | null;
 }
 
 /** The job. A dry run makes the routine's reads in code and writes nothing, with no model. */
 export const jobOf = (id: string) => (o: JobOpts): Promise<RunResult> =>
-  runBuilt(id, { runId: o.runId, dryRun: o.dryRun, memory: o.memory, handoff: o.handoff });
+  runBuilt(id, { runId: o.runId, dryRun: o.dryRun, memory: o.memory, handoff: o.handoff, chain: o.chain });
 
 /**
  * The agents that can run, and which of them run only by hand (agents.manual_only: only the Run

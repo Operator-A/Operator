@@ -18,10 +18,13 @@ import { runsOn } from "@/core/claude-agents";
 import { promptLine } from "@/core/routine-rules";
 import { routineState, type RoutineState } from "@/integrations/mcp";
 import { CONNECTIONS } from "@/dashboard/connections";
+import { fillClaudeTools, matchClaudeTools, type ToolMatch } from "@/dashboard/runs-on-rules";
 import { agentHref } from "@/dashboard/dept-rules";
 import { canGroups, chainsOf, fillQuery, headRows, upTo, type CanChoice, type CanGroup, type HandChain, type HeadRow, type UpTo } from "@/dashboard/handoff-rules";
 
 export interface SheetChoice { id: string; label: string; on: boolean; ready: boolean; why?: string }
+/** A model on the Runs on picker (card 405): a SheetChoice with its maker. */
+export interface SheetModel extends SheetChoice { provider: string }
 export interface SheetData {
   id: string; name: string; role: string; deptId: string | null; deptName: string | null;
   enabled: boolean; next: string | null; model: string | null;
@@ -34,7 +37,7 @@ export interface SheetData {
   /** What going live with the draft changes beyond its words: actions and limits it adds, and when it starts (a draft from Claude). */
   atGoLive: string[];
   days: number[]; time: string; manual: boolean;
-  reads: SheetChoice[]; can: CanChoice[]; models: SheetChoice[];
+  reads: SheetChoice[]; can: CanChoice[]; models: SheetModel[];
   /** Can do by tool (card 400): connected tools as cards, the rest folded into one line. */
   canBy: { shown: CanGroup[]; later: CanGroup[] };
   /** Hand-offs (card 400): the multi-agent chains it is a step of, each head's report if it reads Department reports, and where a head's report goes. */
@@ -60,9 +63,23 @@ export interface SheetData {
   limits: { maxSteps: { min: number; max: number }; maxCostUsd: { min: number; max: number } };
   /** An agent that runs in Claude (docs/live-events.md, slice 2): its Claude connectors, routine and the prompt line to paste. */
   claude: { tools: string[]; routine: RoutineState; prompt: string } | null;
+  /** Runs on (card 405): "Uses in Claude" filled from the tools it has, for a move to a Claude routine. */
+  claudeFill: string[];
+  /** Runs on (card 405): for an agent in Claude, each of its connectors matched to an OPERATOR tool, for a move back. */
+  claudeMatch: ToolMatch[] | null;
 }
 
 const READ_KINDS = new Set(["read", "calculate"]);
+
+/** OPERATOR's own sources (other agents, the Control Room, math in code): never a Claude connector. */
+const BUILT_IN = new Set<string>(CONNECTIONS.filter((c) => c.builtIn).map((c) => c.id));
+
+/** Each connection the menu's tools come from, connected when any of its tools is. */
+function conns(tools: readonly { conn: unknown; connected: boolean }[], name: (c: string) => string) {
+  const by = new Map<string, boolean>();
+  for (const t of tools) { const c = String(t.conn); by.set(c, (by.get(c) ?? false) || t.connected); }
+  return [...by].map(([id, connected]) => ({ id, name: name(id), connected }));
+}
 
 export async function agentSheet(id: string): Promise<SheetData | null> {
   if (!/^[a-z0-9_]{1,60}$/.test(id)) return null;
@@ -124,7 +141,7 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
     reads, can, canBy: canGroups(can, connName),
     chains: chainsOf(id, roster.chains, names), heads, upTo: up,
     follow: roster.crew.filter((x) => x.id !== id).map((x) => ({ id: x.id, name: x.name, when: x.schedule && x.schedule.kind !== "manual" && x.schedule.time ? schedWords(x.schedule) : null })),
-    models: menu.models.map((m) => ({ id: m.id, label: m.label, on: m.id === spec?.model, ready: m.ready, why: m.ready ? undefined : `Add a ${m.providerName} key on Connections` })),
+    models: menu.models.map((m) => ({ id: m.id, label: m.label, provider: m.provider, on: m.id === spec?.model, ready: m.ready, why: m.ready ? undefined : `Add a ${m.providerName} key on Connections` })),
     budget: b?.budget ?? 0, ceiling: BUDGET_CEILING, monthAtPace: Math.round(spent30 * 100) / 100,
     places: chart && !(seat && seat.departmentId == null)
       ? chart.departments.map((x) => ({ id: x.id, name: x.name, spots: placeSpots(chart, x.id).filter((p) => x.id !== dept?.id || p.seatId) }))
@@ -139,6 +156,8 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
       .map((t) => ({ id: t.id, label: t.label, on: has.has(t.id), ready: t.connected, why: t.connected ? undefined : "Not connected" })),
     limits: { maxSteps: { min: RUN_LIMITS.maxSteps.min, max: RUN_LIMITS.maxSteps.max }, maxCostUsd: { min: RUN_LIMITS.maxCostUsd.min, max: RUN_LIMITS.maxCostUsd.max } },
     claude,
+    claudeFill: fillClaudeTools(tools.filter((t) => has.has(t.id) && !BUILT_IN.has(String(t.conn))).map((t) => connName(String(t.conn)))),
+    claudeMatch: claude ? matchClaudeTools(claude.tools, conns(tools.filter((t) => !BUILT_IN.has(String(t.conn))), connName)) : null,
   };
 }
 
@@ -168,7 +187,7 @@ export async function newAgentSheet(deptId: string | null): Promise<NewSheetData
   const headName = (id: string) => { const h = chart ? headOf(chart, id) : null; return h?.holder === "agent" && h.agentId ? roster.byId[h.agentId]?.name ?? null : h?.holder === "owner" ? "You" : null; };
   return {
     deptId,
-    models: menu.models.map((m) => ({ id: m.id, label: m.label, provider: m.providerName, on: false, ready: m.ready, why: m.ready ? undefined : `Add a ${m.providerName} key on Connections` })),
+    models: menu.models.map((m) => ({ id: m.id, label: m.label, provider: m.provider, on: false, ready: m.ready, why: m.ready ? undefined : `Add a ${m.providerName} key on Connections` })),
     reads: menu.tools.filter((t) => READ_KINDS.has(t.kind) && t.connected && t.grantable && !t.seat && !TOOLS[t.id]?.codeOnly && t.id !== "agent_output" && t.id !== "notion_read_page")
       .map((t) => ({ id: t.id, label: t.label, on: false, ready: true })),
     canBy: canGroups(can, connName),

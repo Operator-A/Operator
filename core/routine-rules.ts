@@ -37,6 +37,23 @@ export const ROUTINE_CAPS = { perAgentHour: 25, perOrgHour: 90 } as const;
 /** How long a session may take to post its result with finish_run, and how much it may say. */
 export const FINISH = { withinHours: 24, maxResult: 4000 } as const;
 
+/**
+ * Chains across where agents run (card 405): a chain step that runs in Claude keeps its place in the chain on its
+ * session, and the chain waits for the session's result (finish_run) instead of moving on when the routine starts.
+ * With no result within FINISH.withinHours the step counts as failed, and the chain's own rule for that step decides.
+ */
+export const NO_RESULT = `No result from the Claude session within ${FINISH.withinHours} hours.`;
+
+/** Whether a chain waits on this session: it started from a chain step and has no result yet. */
+export const chainWaits = (s: { chain?: unknown; finished_at?: string | null } | null | undefined) => !!s?.chain && !s.finished_at;
+
+/** Whether a waiting session is past FINISH.withinHours, so its step counts as failed. */
+export function waitExpired(s: { chain?: unknown; finished_at?: string | null; fired_at?: string | null } | null | undefined, now = Date.now()): boolean {
+  if (!chainWaits(s) || !s?.fired_at) return false;
+  const at = Date.parse(s.fired_at);
+  return Number.isFinite(at) && now - at > FINISH.withinHours * 3600_000;
+}
+
 /** Labels for the connectors the Claude session will use, shown on the sheet. Never granted in OPERATOR. */
 export const CLAUDE_TOOLS = { max: 8, maxLabel: 40 } as const;
 

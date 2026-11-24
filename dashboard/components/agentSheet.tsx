@@ -12,6 +12,8 @@ import { daysOf, type AgentTime } from "@/core/flow-rules";
 import { notionId } from "@/core/settings-rules";
 import { chainHref, type HeadState, type UpTo } from "@/dashboard/handoff-rules";
 import { t12 } from "@/dashboard/format";
+import { MATCH_WORD, switchKind, switchWords, type RunsOnChoice } from "@/dashboard/runs-on-rules";
+import { ClaudeToolsField, RunsOnPicker } from "./runsOn";
 
 type Result = { ok: boolean; text: string };
 export interface SheetActions {
@@ -26,10 +28,11 @@ export interface SheetActions {
   keep: (memoryId: string, forCrew: boolean) => Promise<Result>;
   discard: (memoryId: string) => Promise<Result>;
   goBack: (version: number, confirmed: boolean) => Promise<Result>;
-  /** An agent that runs in Claude (live events slice 2): its routine, and moving it into OPERATOR. */
+  /** An agent that runs in Claude (live events slice 2): its routine. */
   routineSave: (routine: string, token: string) => Promise<Result>;
   routineRemove: () => Promise<Result>;
-  moveIn: () => Promise<Result>;
+  /** Runs on (card 405): moves it to a Claude routine or into OPERATOR, owner only, checked on the server. */
+  runsOn: (choice: RunsOnChoice, confirmed: boolean) => Promise<Result>;
   /** Card 385: moves it to another department (or an open seat in its own), owner only, checked on the server. */
   place: (deptId: string, seatId: string | null) => Promise<Result>;
   /** "After another agent finishes" (card 400): run after that agent in its scheduled chain. */
@@ -70,6 +73,8 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
   // the edit form, from what the server drew; a fresh draw (after a save) starts it over
   const init = () => ({
     job: d.spec?.directive ?? "", model: d.spec?.model ?? "", tools: [...(d.spec?.tools ?? [])],
+    // Runs on (card 405): where it runs, and the connectors a Claude routine names
+    where: (d.claude ? "claude" : "operator") as "claude" | "operator", ctools: [...(d.claude?.tools ?? d.claudeFill)],
     // a "Give it a time" link (card 400) fills in a schedule; nothing saves until Save changes
     days: fill ? fill.days : d.days, time: fill ? fill.time : d.time, manual: fill ? false : d.manual, budget: d.budget.toFixed(2),
     // more detail (slice 6): what the step editor held
@@ -125,13 +130,24 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
   const timeChanged = f.manual !== d.manual || (!f.manual && (f.time !== d.time || f.days.slice().sort().join() !== d.days.slice().sort().join()));
   const budgetN = Number(f.budget);
   const budgetChanged = Number.isFinite(budgetN) && Math.round(budgetN * 100) !== Math.round(d.budget * 100);
-  const dirty = specChanged || timeChanged || budgetChanged;
+  const choice: RunsOnChoice = f.where === "claude" ? { on: "claude", tools: f.ctools } : { on: "operator", model: f.model };
+  const kind = switchKind({ on: d.claude ? "claude" : "operator", model: d.spec?.model ?? null }, choice);
+  const switching = kind === "to_claude" || kind === "to_operator";
+  const toolsChanged = !!d.claude && f.where === "claude" && f.ctools.join() !== d.claude.tools.join();
+  const sw = switchWords(kind, d.name, d.models.find((m) => m.id === f.model)?.label);
+  const dirty = specChanged || timeChanged || budgetChanged || switching || toolsChanged;
   const toggleTool = (id: string) => set({ tools: f.tools.includes(id) ? f.tools.filter((t) => t !== id) : [...f.tools, id] });
 
   function save(confirmed: boolean) {
     start(async () => {
       const said: string[] = [];
       try {
+        if (switching || toolsChanged) {
+          const r = await act.runsOn(choice, confirmed);
+          if (asksConfirm(r)) { setConfirm(r.text); return; }
+          if (!r.ok) { setToast(r.text); return; }
+          if (r.text) said.push(r.text);
+        }
         if (timeChanged) {
           if (!f.manual && !dayChoice) { setToast("Pick at least one day."); return; }
           const r = await act.time(f.manual ? null : { days: dayChoice!, time: f.time }, confirmed);
@@ -140,7 +156,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
           said.push(r.text);
         }
         if (budgetChanged) { const r = await act.budget(budgetN); if (!r.ok) { setToast(r.text); return; } said.push(r.text); }
-        if (specChanged && d.spec) {
+        if (specChanged && d.spec && f.where === "operator") {
           const r = await act.save({
             ...d.spec, directive: f.job.trim(), model: f.model, tools: f.tools, goodResult: f.good.trim(),
             limits: { maxCostUsd: Number.isFinite(capN) ? capN : d.spec.limits.maxCostUsd, maxSteps: Number.isFinite(stepsN) ? Math.round(stepsN) : d.spec.limits.maxSteps },
@@ -212,16 +228,47 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
         {tab === "edit" && (
           <div className="ag-body">
             {!d.spec && <span className="dp-note">{d.name} has no saved version to edit.</span>}
-            {d.claude && (
+            {d.spec && (
+              <div className="ag-two">
+                <div className="fld"><label htmlFor="ag-job">Job</label>
+                  {d.claude && f.where === "claude"
+                    ? <><span id="ag-job" style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{d.spec.directive || "No job saved."}</span>
+                      <span className="dp-note">Sent with every run. Change it in the routine’s prompt on claude.ai.</span></>
+                    : <><textarea id="ag-job" maxLength={4000} value={f.job} onChange={(e) => set({ job: e.target.value })} />
+                      <span className="dp-note">In your words. The agent follows this on every run.</span></>}</div>
+                <div className="fld"><span className="lbl" id="ag-ro-l">Runs on</span>
+                  <RunsOnPicker labelId="ag-ro-l" models={d.models} disabled={busy} claudeTools={f.ctools} value={choice}
+                    onChange={(v) => set(v.on === "claude" ? { where: "claude", ctools: v.tools } : { where: "operator", model: v.model })} />
+                  <span className="dp-note">Models run in OPERATOR, with its reads, approval cards and caps. A Claude routine runs in your Claude account.</span></div>
+              </div>
+            )}
+            {sw && (
+              <div className="ro-sw">
+                <div className="ro-sw-h"><span className="ic" aria-hidden="true">{kind === "to_claude" ? "✦" : "→"}</span>{sw.title}</div>
+                <ul>
+                  <li><b>Keeps</b><span>{sw.keeps}</span></li>
+                  <li><b>Stops</b><span>{sw.stops}</span></li>
+                  <li><b>Then</b><span>{sw.then}</span></li>
+                </ul>
+                {kind === "to_claude" && <ClaudeToolsField tools={f.ctools} disabled={busy} onChange={(t) => set({ ctools: t })} note="Filled in from its reads. Labels only: you give the routine these connectors on claude.ai." />}
+                {kind === "to_operator" && d.claudeMatch && d.claudeMatch.length > 0 && (
+                  <div className="fld"><span className="lbl">Its Claude connectors, here</span>
+                    <div className="ro-map">{d.claudeMatch.map((m) => (
+                      <div key={m.label} className="ro-mrow"><b>{m.label}</b><span className="dp-note what">{m.what}</span><span className={`ro-st ${m.state}`}>{MATCH_WORD[m.state]}</span></div>
+                    ))}</div>
+                    <span className="dp-note">A connector with no OPERATOR tool shows “None here”. <Link href="/connections/find">Find a tool</Link></span></div>
+                )}
+                {confirm && <div className="ro-confirm">{confirm.replace(/^Confirm first: /, "Save again to confirm: ")}</div>}
+              </div>
+            )}
+            {kind === "to_claude" && <div className="ro-kept"><b>Reads ({d.reads.filter((r) => r.on).length}) and Can do ({d.can.filter((c) => c.on).length})</b> are kept, so moving back later turns them on again. They aren’t used while it runs in Claude.</div>}
+            {d.claude && f.where === "claude" && (
               <>
                 <div className="ag-draft">
                   <b>{d.name} runs in Claude.</b>
                   <span>Each run, on its schedule, from a chain, an event or Run now, starts a session of your Claude routine. The session posts its result back here. What it does with its Claude connectors happens in Claude, outside OPERATOR’s approval cards and caps; its prompt asks it to send anything outward here as a proposal.</span>
                 </div>
-                <div className="fld"><span className="lbl">Uses in Claude</span>
-                  <div className="dp-chipset">{d.claude.tools.length ? d.claude.tools.map((t) => <span key={t} className="dp-chip">{t}</span>) : <span className="dp-note">No connectors named.</span>}</div></div>
-                <div className="fld"><span className="lbl">Job</span><span style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{d.spec?.directive || "No job saved."}</span>
-                  <span className="dp-note">Sent with every run. Change it in the routine’s prompt on claude.ai.</span></div>
+                <ClaudeToolsField tools={f.ctools} disabled={busy} onChange={(t) => set({ ctools: t })} />
                 <div className="fld"><span className="lbl">Claude routine</span>
                   {d.claude.routine.connected
                     ? <span style={{ fontSize: 14 }}>{d.claude.routine.paused ? `Paused: ${d.claude.routine.paused}` : `Connected: ${d.claude.routine.routine ?? "routine"}`}</span>
@@ -238,11 +285,9 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
                     {d.claude.routine.connected && <button type="button" className="dp-btn" disabled={busy} onClick={() => go(act.routineRemove)}>Forget token</button>}
                   </div>
                   <span className="dp-note">The token is locked away and never shown again. It can only start this one routine.</span></div>
-                <div className="fld"><span className="lbl">When OPERATOR has its connectors</span>
-                  <button type="button" className="dp-btn" style={{ alignSelf: "flex-start" }} disabled={busy} onClick={() => { if (window.confirm(`Move ${d.name} into OPERATOR? It keeps its runs and goes off duty until you give it reads, try it and go live.`)) go(act.moveIn); }}>Move into OPERATOR</button></div>
               </>
             )}
-            {d.spec && d.draft && !d.claude && (
+            {d.spec && d.draft && !d.claude && f.where === "operator" && (
               <div className="ag-draft">
                 <b>Draft v{d.version} isn’t live yet.</b>
                 <span>{d.tried ? (d.tried.clean ? `Its try worked on every step (${d.tried.at}).` : `Its latest try ${d.tried.why}.`) : "Try it on today’s data. It sends nothing."} {d.live ? `v${d.live} keeps running until you go live.` : ""}</span>
@@ -258,18 +303,6 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
                     say(r);
                   })}>Go live</button>
                 </div>
-              </div>
-            )}
-            {d.spec && !d.claude && (
-              <div className="ag-two">
-                <div className="fld"><label htmlFor="ag-job">Job</label>
-                  <textarea id="ag-job" maxLength={4000} value={f.job} onChange={(e) => set({ job: e.target.value })} />
-                  <span className="dp-note">In your words. The agent follows this on every run.</span></div>
-                <div className="fld"><label htmlFor="ag-model">Runs on</label>
-                  <select id="ag-model" value={f.model} onChange={(e) => set({ model: e.target.value })}>
-                    {d.models.map((m) => <option key={m.id} value={m.id} disabled={!m.ready && !m.on}>{m.label}{m.ready ? "" : ` (${m.why})`}</option>)}
-                  </select>
-                  <span className="dp-note">Other models use your own key from Connections.</span></div>
               </div>
             )}
             <div className="fld"><span className="lbl">When it runs</span>
@@ -349,7 +382,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
                 </div>
               </div>
             )}
-            {d.spec && !d.claude && (
+            {d.spec && f.where === "operator" && (
               <>
                 <div className="fld"><span className="lbl">Reads</span>
                   <div className="dp-chipset">
@@ -414,7 +447,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
                 )}
                 <span className="dp-note">Only where it sits changes. Its old seat closes if nothing sits under it. Owner only.</span></div>
             )}
-            {d.spec && !d.claude && (
+            {d.spec && f.where === "operator" && (
               <details className="ag-more">
                 <summary>More detail</summary>
                 <div className="ag-more-b">
@@ -495,7 +528,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
 
         {tab === "edit" && (
           <div className="ag-foot">
-            <span className="dp-note note">{confirm ?? (specChanged ? "A new job, model, reads, can do or more detail saves as a draft you try, then go live." : d.head ? `Or tell ${d.head} in the chat what to change.` : "Changes apply through the same checks as before.")}</span>
+            <span className="dp-note note">{confirm ?? (switching ? "Switching where it runs takes it off duty. Only the owner can switch." : specChanged ? "A new job, model, reads, can do or more detail saves as a draft you try, then go live." : d.head ? `Or tell ${d.head} in the chat what to change.` : "Changes apply through the same checks as before.")}</span>
             <button type="button" className="dp-btn" disabled={busy || !dirty} onClick={() => { setF(init()); setConfirm(null); }}>Cancel</button>
             <button type="button" className="dp-btn dark" disabled={busy || !dirty} onClick={() => save(!!confirm)}>{confirm ? "Confirm and save" : "Save changes"}</button>
           </div>

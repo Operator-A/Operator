@@ -19,7 +19,7 @@ import * as Woo from "../core/woo-rules";
 import * as Hs from "../core/hubspot-rules";
 import * as Me from "../core/meta-rules";
 import { CAMPAIGN_LIMITS, campaignHtml, campaignText, checkDraftArgs, looksLikeKlaviyoKey } from "../core/klaviyo-draft-rules";
-import { cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage } from "../core/mercury-rules";
+import { cashOf, needsCategoryIds, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage, withCategoryIds } from "../core/mercury-rules";
 import { envWrapper, isBound, keyIdOf, newDataKey, open, seal, vaultKey } from "../core/vault";
 import * as C from "../core/custom-mcp-rules";
 import {
@@ -227,6 +227,22 @@ assert.equal(readTxnPage({ transactions: [{ id: tid(3), amount: 1, status: "sent
 assert.equal(readTxnPage({ transactions: [], page: { nextPage: "not-a-cursor" } }).next, null);
 assert.equal(readOneTxn({ transaction: { id: tid(4), amount: -3, status: "sent" } })?.id, tid(4));
 assert.equal(readOneTxn({ id: tid(5), amount: -3, status: "sent" })?.id, tid(5));
+// Mercury's newer reply shape (Nov 2026): date for the posted date, category by name only, attachmentsCount
+const nw = readTxnPage({ transactions: [
+  { id: tid(6), amount: -129.37, status: "sent", kind: "debitCardTransaction", date: "2026-11-18T10:46:09.299956Z", category: "Software & Subscriptions", attachmentsCount: 0 },
+  { id: tid(7), amount: -15, status: "sent", date: "2026-11-10T09:00:00Z", category: null, attachmentsCount: 2 },
+] }).transactions;
+assert.equal(nw[0].postedAt, "2026-11-18T10:46:09.299956Z", "date is read as the posted date, so the books sync keeps the charge");
+assert.deepEqual([nw[0].categoryData, nw[0].categoryName, nw[0].attachments?.length], [null, "Software & Subscriptions", 0]);
+assert.deepEqual([nw[1].categoryName, nw[1].attachments?.length], [null, 2], "attachmentsCount still shows Mercury already has a receipt");
+assert.equal(needsCategoryIds(nw), true);
+const named = withCategoryIds(nw, [{ id: "k9", name: "software &  subscriptions" }]);
+assert.deepEqual(named[0].categoryData, { id: "k9", name: "software &  subscriptions" }, "a category name gets its id from the business's own list");
+assert.equal(named[1].categoryData, null);
+assert.equal(withCategoryIds(nw, [])[0].categoryName, "Software & Subscriptions", "an unmatched name still reads as categorized");
+assert.equal(readTxnPage(pgOld()).transactions[0].categoryName, "Coffee", "the older shape keeps working");
+function pgOld() { return { transactions: [{ id: tid(1), amount: -12.5, status: "sent", postedAt: "2026-11-02", categoryData: { id: "c", name: "Coffee" }, attachments: [{ fileName: "r.pdf" }] }] }; }
+assert.equal(readOneTxn({ transaction: { id: tid(8), amount: -3, status: "sent", date: "2026-11-18T10:46:09Z", attachmentsCount: 1 } })?.attachments?.length, 1);
 assert.deepEqual(readCategories({ categories: [{ id: "k1", name: "Green coffee" }, { id: "k2" }] }).categories, [{ id: "k1", name: "Green coffee" }]);
 assert.equal(readOrgName({ organization: { legalBusinessName: "Acme Coffee LLC", ein: "12-3456789" } }), "Acme Coffee LLC");
 

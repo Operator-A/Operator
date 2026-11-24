@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import type { NewSheetData } from "@/dashboard/agentSheet";
 import { NEW_LIMITS } from "@/dashboard/new-agent-rules";
+import type { RunsOnChoice } from "@/dashboard/runs-on-rules";
+import { ClaudeToolsField, RunsOnPicker } from "./runsOn";
 
 type Result = { ok: boolean; text: string; agentId?: string };
 
@@ -17,7 +19,7 @@ const X = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="cu
 const CLOCK = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
 const ARROW = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
 const HAND = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5v-2a1.5 1.5 0 0 1 3 0V12M14 10.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3.5 16a1.5 1.5 0 0 1 2.5-1.6L8 17" /></svg>;
-/** The Runs on select's value for a Claude routine; every other value is a model id. */
+/** The model field's value while it runs as a Claude routine; every other value is a model id. */
 const ROUTINE = "routine";
 /** The seat select's value for a new seat under the head. */
 const NEW_SEAT = "new";
@@ -39,7 +41,7 @@ export function NewAgentSheet({ d, closeHref, openHref, controls, create }: {
   const firstDept = d.deptId ?? NONE;
   const spotFor = (dept: string) => { const s = d.places.find((p) => p.id === dept)?.spots[0]; return s ? s.seatId ?? NEW_SEAT : ""; };
   const [f, setF] = useState({
-    name: "", role: "", job: "", good: "", model: firstModel, claudeTools: "",
+    name: "", role: "", job: "", good: "", model: firstModel, claudeTools: [] as string[],
     tools: [] as string[], when: "manual" as "manual" | "schedule" | "after",
     days: [1, 2, 3, 4, 5], time: "09:00", after: d.follow.find((o) => o.when)?.id ?? "", pass: true,
     dept: firstDept, spot: spotFor(firstDept), budget: d.budget.toFixed(2),
@@ -64,16 +66,16 @@ export function NewAgentSheet({ d, closeHref, openHref, controls, create }: {
   const place = d.places.find((p) => p.id === f.dept);
   const prev = d.follow.find((o) => o.id === f.after);
   const missing = !f.name.trim() ? "Give it a name and a job to create it." : !f.job.trim() ? "Give it a job to create it."
-    : routine ? (!f.claudeTools.trim() ? "Name the Claude connectors it uses." : null)
+    : routine ? (!f.claudeTools.length ? "Name the Claude connectors it uses." : null)
     : !f.tools.some((t) => d.reads.some((r) => r.id === t)) ? "Pick at least one thing it reads." : null;
-  const providers = [...new Set(d.models.map((m) => m.provider))];
+  const choice: RunsOnChoice = routine ? { on: "claude", tools: f.claudeTools } : { on: "operator", model: f.model };
 
   function submit(tryIt: boolean) {
     start(async () => {
       try {
         const r = await create({
           name: f.name, role: f.role, job: f.job, good: f.good,
-          runsOn: routine ? { on: "claude", tools: f.claudeTools.split(",").map((t) => t.trim()).filter(Boolean) } : { on: "operator", model: f.model },
+          runsOn: routine ? { on: "claude", tools: f.claudeTools } : { on: "operator", model: f.model },
           tools: routine ? [] : f.tools,
           start: f.when === "schedule" ? { kind: "schedule", days: f.days, time: f.time } : f.when === "after" ? { kind: "after", agentId: f.after, passAlong: f.pass } : { kind: "manual" },
           place: f.dept ? { deptId: f.dept, seatId: f.spot === NEW_SEAT || !f.spot ? null : f.spot } : null,
@@ -111,15 +113,10 @@ export function NewAgentSheet({ d, closeHref, openHref, controls, create }: {
             <textarea id="na-job" maxLength={NEW_LIMITS.job} placeholder="What should it do, in your words?" value={f.job} onChange={(e) => set({ job: e.target.value })} />
             <span className="dp-note">In your own words. The agent works from this.</span></div>
 
-          <div className="fld"><label htmlFor="na-model">Runs on</label>
-            <select id="na-model" value={f.model} onChange={(e) => set({ model: e.target.value })} style={{ maxWidth: 360 }}>
-              {providers.map((p) => (
-                <optgroup key={p} label={p}>
-                  {d.models.filter((m) => m.provider === p).map((m) => <option key={m.id} value={m.id} disabled={!m.ready}>{m.label}{m.ready ? "" : `: ${m.why}`}</option>)}
-                </optgroup>
-              ))}
-              <optgroup label="In your Claude account"><option value={ROUTINE}>A Claude routine</option></optgroup>
-            </select></div>
+          <div className="fld"><span className="lbl" id="na-ro-l">Runs on</span>
+            <RunsOnPicker labelId="na-ro-l" models={d.models} disabled={busy} claudeTools={f.claudeTools} value={choice}
+              onChange={(v) => set(v.on === "claude" ? { model: ROUTINE, claudeTools: v.tools } : { model: v.model })} />
+            <span className="dp-note">Models run in OPERATOR, with its reads, approval cards and caps. A Claude routine runs in your Claude account.</span></div>
 
           {!routine && (
             <div className="fld"><span className="lbl">Reads</span>
@@ -188,9 +185,10 @@ export function NewAgentSheet({ d, closeHref, openHref, controls, create }: {
           )}
 
           {routine && (
-            <div className="fld"><label htmlFor="na-claude">Its Claude connectors</label>
-              <input id="na-claude" className="ag-input" placeholder="Gmail, Google Calendar" value={f.claudeTools} onChange={(e) => set({ claudeTools: e.target.value })} />
-              <span className="dp-note">Labels only, separated by commas: OPERATOR grants nothing here, and what the routine does with them happens in Claude. After you create it, its sheet shows the line to paste into your routine and where to put the routine id and token.</span></div>
+            <>
+              <ClaudeToolsField tools={f.claudeTools} disabled={busy} onChange={(t) => set({ claudeTools: t })} />
+              <span className="dp-note">OPERATOR grants nothing here, and what the routine does with them happens in Claude. After you create it, its sheet shows the line to paste into your routine and where to put the routine id and token.</span>
+            </>
           )}
 
           <div className="ag-two">
