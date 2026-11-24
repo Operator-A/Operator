@@ -90,11 +90,13 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
         </header>
         <div className="body">
           <aside className="side">
-            <div className="side-group">
-              {nav.map((it) => <SideLink key={it.label} {...it} />)}
+            {/* the top places and departments scroll inside the panel when they don't fit; Status, Settings and Sign out stay pinned */}
+            <div className="side-scroll">
+              <div className="side-group">
+                {nav.map((it) => <SideLink key={it.label} {...it} />)}
+              </div>
+              {deptGroup}
             </div>
-            {deptGroup}
-            <div className="side-spacer" style={{ flex: 1 }} />
             <SideLink href="/status" match="/status" icon="circle-alert" label="Status" />
             <SideLink href="/settings" match="/settings*" icon="settings" label="Settings" />
             <SignOutButton />
