@@ -162,7 +162,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false 
                 </div>
               );
             })}
-            <Link href="/runs" className="dp-note" style={{ textDecoration: "underline" }}>Every run, on Runs</Link>
+            <Link href="/activity" className="dp-note" style={{ textDecoration: "underline" }}>Every run, on Activity</Link>
           </div>
         )}
 

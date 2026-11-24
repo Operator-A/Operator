@@ -31,15 +31,15 @@ const keyPart = (s: string) => s.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice
 /** Everything wrong, worst first. Alerts email the owner; warnings only show on the page. */
 export function statusProblems(f: StatusFacts, now = Date.now()): Problem[] {
   const out: Problem[] = [];
-  if (f.deadJobs.count) out.push({ key: "dead_jobs", level: "alert", title: `${plural(f.deadJobs.count, "job")} failed in the last day`, detail: f.deadJobs.latest?.outcome ? `Latest: ${f.deadJobs.latest.outcome.slice(0, 200)}` : "A chain step stopped without finishing.", href: "/runs" });
+  if (f.deadJobs.count) out.push({ key: "dead_jobs", level: "alert", title: `${plural(f.deadJobs.count, "job")} failed in the last day`, detail: f.deadJobs.latest?.outcome ? `Latest: ${f.deadJobs.latest.outcome.slice(0, 200)}` : "A chain step stopped without finishing.", href: "/activity#runs" });
   if (f.overdueJobs.count) {
     const mins = f.overdueJobs.oldestDue ? Math.max(0, Math.round((now - Date.parse(f.overdueJobs.oldestDue)) / 6e4)) : null;
-    out.push({ key: "overdue_jobs", level: "alert", title: `${plural(f.overdueJobs.count, "job")} waiting past ${f.overdueJobs.count === 1 ? "its" : "their"} time`, detail: `${mins != null ? `The oldest was due ${mins} minutes ago. ` : ""}The scheduler may not be running: check the dispatch schedule in Vercel.`, href: "/runs" });
+    out.push({ key: "overdue_jobs", level: "alert", title: `${plural(f.overdueJobs.count, "job")} waiting past ${f.overdueJobs.count === 1 ? "its" : "their"} time`, detail: `${mins != null ? `The oldest was due ${mins} minutes ago. ` : ""}The scheduler may not be running: check the dispatch schedule in Vercel.`, href: "/activity#runs" });
   }
   for (const p of f.paused) out.push({ key: `paused:${keyPart(p.id)}`, level: "alert", title: `${p.name} is paused`, detail: `${p.why ? `${p.why.slice(0, 200)}. ` : ""}${p.custom ? "Open it on Connections to accept the change or resume it." : "Sign in again (or paste a new key) on Connections."} Agents that use it skip those tools until then.`, href: "/connections" });
-  if (f.failedRuns.count) out.push({ key: "failed_runs", level: "warn", title: `${plural(f.failedRuns.count, "run")} failed in the last day`, detail: f.failedRuns.agents.length ? `By ${f.failedRuns.agents.slice(0, 6).join(", ")}.` : "", href: "/runs" });
+  if (f.failedRuns.count) out.push({ key: "failed_runs", level: "warn", title: `${plural(f.failedRuns.count, "run")} failed in the last day`, detail: f.failedRuns.agents.length ? `By ${f.failedRuns.agents.slice(0, 6).join(", ")}.` : "", href: "/activity#runs" });
   if (f.refused.count) out.push({ key: "refused", level: "warn", title: `${plural(f.refused.count, "proposal")} refused by the gateway in the last day`, detail: f.refused.latest ? `Latest: ${f.refused.latest.slice(0, 200)}` : "Over a cap, or to someone agents may not contact or pay.", href: "/?tab=approvals#history" });
-  for (const u of f.unread) out.push({ key: `unread:${keyPart(u)}`, level: "warn", title: `Couldn’t check ${u}`, detail: "Its migration may not be applied yet.", href: "/status" });
+  for (const u of f.unread) out.push({ key: `unread:${keyPart(u)}`, level: "warn", title: `Couldn’t check ${u}`, detail: "Its migration may not be applied yet.", href: "/activity" });
   return out;
 }
 
