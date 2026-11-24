@@ -6,10 +6,13 @@ import { TOOLS } from "./catalog";
 import { callThrough, createHost, listThrough, type Handle } from "./mcp-host";
 import type { ToolCtx, ToolDef, ToolResult } from "./types";
 
-export const builtinHost: Handle = createHost(TOOLS);
+// made on first use, not at import: the tool list imports modules that lead back here, so reading TOOLS while this
+// file loads can run before the list exists (a build failed on it)
+let built: Handle | null = null;
+const builtinHost = (): Handle => (built ??= createHost(TOOLS));
 
 /** A host over another tool list (tests and previews that hand the runner their own tools). */
-export const hostFor = (tools: Readonly<Record<string, ToolDef>> | undefined): Handle => (!tools || tools === TOOLS ? builtinHost : createHost(tools));
+export const hostFor = (tools: Readonly<Record<string, ToolDef>> | undefined): Handle => (!tools || tools === TOOLS ? builtinHost() : createHost(tools));
 
-export const callTool = (name: string, input: Record<string, string | number>, ctx: ToolCtx, host: Handle = builtinHost): Promise<ToolResult> => callThrough(host, name, input, ctx);
-export const listTools = (ctx?: ToolCtx, host: Handle = builtinHost) => listThrough(host, ctx);
+export const callTool = (name: string, input: Record<string, string | number>, ctx: ToolCtx, host: Handle = builtinHost()): Promise<ToolResult> => callThrough(host, name, input, ctx);
+export const listTools = (ctx?: ToolCtx, host: Handle = builtinHost()) => listThrough(host, ctx);
