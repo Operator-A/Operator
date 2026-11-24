@@ -9,6 +9,8 @@ import type { Schedule } from "./crew";
 /** One multi-agent chain an agent is a step of, as the sheet's "When it runs" draws it. */
 export interface HandChain {
   key: string; name: string; on: boolean;
+  /** Where the chain opens (chains slice 1): its department's Chains tab, or Settings > Schedule for a company chain. */
+  href: string;
   nodes: { id: string; name: string; at: string; me: boolean }[];
   /** The step before this agent's, and whether it hands its summary over; null when the agent starts the chain. */
   prev: { name: string; passAlong: boolean } | null;
@@ -20,17 +22,17 @@ const DAY_SHORT: Record<string, string> = { daily: "daily", weekdays: "weekdays"
 const daysShort = (d: Days) => DAY_SHORT[d] ?? daySet(d).map((i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][i]).join(" ");
 
 /** The chains with two or more agents that `id` is a step of, each with its agents in order. */
-export function chainsOf(id: string, chains: readonly Chain[], names: Record<string, string>): HandChain[] {
+export function chainsOf(id: string, chains: readonly Chain[], names: Record<string, string>, href: (c: Chain) => string): HandChain[] {
   return chains.filter((c) => c.steps.length > 1 && c.steps.some((s) => s.agent === id)).map((c) => {
     const k = c.steps.findIndex((s) => s.agent === id);
-    const startAt = c.start.type === "schedule" ? `${t12(c.start.time)} ${daysShort(c.start.days)}` : c.start.type === "button" ? "Run chain" : c.start.type === "event" ? "a live event" : "an approval";
+    const startAt = c.start.type === "schedule" ? `${t12(c.start.time)} ${daysShort(c.start.days)}` : c.start.type === "button" ? "Run chain" : c.start.type === "event" ? "a live event" : c.start.type === "after" ? `after ${chains.find((x) => x.key === (c.start as { chain: string }).chain)?.name ?? "another chain"}` : "an approval";
     const nodes = c.steps.map((s, i) => {
       const at = i === 0 ? startAt : [s.days ? daysShort(s.days) : "", s.notBefore ? `not before ${t12(s.notBefore)}` : ""].filter(Boolean).join(", ");
       return { id: s.agent, name: names[s.agent] ?? s.agent, at, me: s.agent === id };
     });
     const after = c.steps[k + 1];
     return {
-      key: c.key, name: c.name, on: c.on, nodes,
+      key: c.key, name: c.name, on: c.on, href: href(c), nodes,
       prev: k > 0 ? { name: nodes[k - 1].name, passAlong: !!c.steps[k].passAlong } : null,
       next: after ? { name: names[after.agent] ?? after.agent, passAlong: !!after.passAlong } : null,
     };
@@ -117,5 +119,3 @@ export function canGroups(can: readonly CanChoice[], connName: (conn: string) =>
   return { shown: groups.filter((g) => g.connected || g.items.some((i) => i.on)), later: groups.filter((g) => !g.connected && !g.items.some((i) => i.on)) };
 }
 
-/** Settings > Schedule with the chains fold open and this chain picked. */
-export const chainHref = (key: string) => `/settings/schedule?chain=${encodeURIComponent(key)}#chains`;

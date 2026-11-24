@@ -2,10 +2,10 @@
 // department, and who works there. Pure: no database, no network, so `npm run check:dept` can test it.
 import { deptAgentIds, headOf, seatOf, type Org } from "@/core/org-rules";
 
-/** The tabs a department page has. Chat comes first and opens by default (slice 2). */
-export const DEPT_TABS = ["chat", "agents", "goals", "approvals"] as const;
+/** The tabs a department page has. Chat comes first and opens by default (slice 2); Chains is chains slice 1 (card 430). */
+export const DEPT_TABS = ["chat", "agents", "goals", "chains", "approvals"] as const;
 export type DeptTab = (typeof DEPT_TABS)[number];
-export const TAB_LABEL: Record<DeptTab, string> = { chat: "Chat", agents: "Agents", goals: "Goals", approvals: "Approvals" };
+export const TAB_LABEL: Record<DeptTab, string> = { chat: "Chat", agents: "Agents", goals: "Goals", chains: "Chains", approvals: "Approvals" };
 
 /** The tab in the address, or Chat. */
 export const deptTab = (raw: unknown): DeptTab => (DEPT_TABS as readonly string[]).includes(String(raw)) ? (raw as DeptTab) : "chat";

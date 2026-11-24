@@ -6,7 +6,7 @@ import "server-only";
 import { orgTz } from "@/core/tz";
 import { loadCrew, resolveAgent } from "@/agents/registry";
 import { db } from "@/core/db";
-import { afterStep, loadFlow, type Chain, type Ended } from "@/core/flow";
+import { MAX_HOPS, afterStep, followersOf, loadFlow, type Chain, type Ended, type Flow } from "@/core/flow";
 import { chainDedupe, chainPayload, type ChainCtx } from "@/core/job-rules";
 import { enqueue, kick } from "@/core/jobs";
 import { orgOn } from "@/core/org-switch";
@@ -30,12 +30,31 @@ export async function startStep(origin: string, c: Chain, ctx: ChainCtx, runAfte
  * After a chain run ends: start the next step now, enqueue it for its "not before" time (the
  * scheduler kicks it then), or stop. Returns what happened, in words, for the log.
  */
-export async function continueChain(origin: string, c: Chain, ctx: ChainCtx, runId: string, ended: Ended): Promise<string> {
+export async function continueChain(origin: string, c: Chain, ctx: ChainCtx, runId: string, ended: Ended, flow?: Flow): Promise<string> {
   const next = afterStep(c, ctx.step, ended, await orgTz());
-  if (!next.go) return next.why;
-  const nctx: ChainCtx = { chainId: ctx.chainId, key: ctx.key, step: next.step, parent: runId, manual: ctx.manual };
+  if (!next.go) {
+    // the chain's last step ended: start the chains saved to start after it (chains slice 1)
+    if (!c.steps[ctx.step + 1] && flow) { const more = await startFollowers(origin, flow, c, ctx, runId, ended.status); if (more) return `${next.why} ${more}`; }
+    return next.why;
+  }
+  const nctx: ChainCtx = { chainId: ctx.chainId, key: ctx.key, step: next.step, parent: runId, manual: ctx.manual, ...(ctx.hops ? { hops: ctx.hops } : {}) };
   await startStep(origin, c, nctx, next.at ?? undefined);
   return next.at ? `Step ${next.step + 1} waits until ${new Date(next.at).toISOString()}.` : `Step ${next.step + 1} started.`;
+}
+
+/**
+ * After chain `c` finished: start each chain that is on and saved to start after it, while the org is on, its first
+ * step getting `runId` as the step before (so "pass along" hands it the last step's summary). At most MAX_HOPS chains
+ * in a row from one start, so a mistake can't loop; the saved flow refuses circles too.
+ */
+async function startFollowers(origin: string, flow: Flow, c: Chain, ctx: ChainCtx, runId: string, ended: Ended["status"]): Promise<string> {
+  const next = followersOf(flow, c.key, ended);
+  if (!next.length) return "";
+  const hops = (ctx.hops ?? 0) + 1;
+  if (hops > MAX_HOPS) return `It didn’t start ${next.map((x) => x.name).join(", ")}: ${MAX_HOPS} chains in a row is the most.`;
+  if (!(await orgOn())) return "The org is off, so the chains after it didn’t start.";
+  for (const f of next) await startStep(origin, f, { chainId: crypto.randomUUID(), key: f.key, step: 0, parent: runId, hops });
+  return `Started ${next.map((x) => x.name).join(", ")}.`;
 }
 
 /**
@@ -64,7 +83,7 @@ export async function runChainStep(origin: string, ctx: ChainCtx): Promise<{ out
       log(`step ${ctx.step + 1} waits for its Claude session`);
       return { outcome: `Run ${res.status}. Started in Claude: the chain goes on when its session posts a result.`, runId: res.runId };
     }
-    const then = await continueChain(origin, c, ctx, res.runId, { status: res.status, metrics: res.metrics }).catch((e) => `The next step couldn't start: ${e instanceof Error ? e.message : e}`);
+    const then = await continueChain(origin, c, ctx, res.runId, { status: res.status, metrics: res.metrics }, flow.flow).catch((e) => `The next step couldn't start: ${e instanceof Error ? e.message : e}`);
     log(then);
     return { outcome: `Run ${res.status}. ${then}`, runId: res.runId };
   } catch (e) {
@@ -73,7 +92,7 @@ export async function runChainStep(origin: string, ctx: ChainCtx): Promise<{ out
     // a failed step can still lead somewhere (a step with when "failed" or "any")
     const { data } = await db().from("agent_runs").select("id").eq("chain_id", ctx.chainId).eq("chain_step", ctx.step).order("started_at", { ascending: false }).limit(1).maybeSingle();
     let then = "";
-    if (data) then = await continueChain(origin, c, ctx, data.id as string, { status: "failed" }).catch((x) => `The next step couldn't start: ${x instanceof Error ? x.message : x}`);
+    if (data) then = await continueChain(origin, c, ctx, data.id as string, { status: "failed" }, flow.flow).catch((x) => `The next step couldn't start: ${x instanceof Error ? x.message : x}`);
     if (then) log(then);
     return { outcome: `Run failed: ${why} ${then}`.trim(), runId: data?.id as string | undefined, failed: true };
   }
@@ -88,7 +107,7 @@ export async function resumeChain(origin: string, ctx: ChainCtx, runId: string, 
   const flow = await loadFlow(await loadCrew());
   const c = flow.flow.chains.find((x) => x.key === ctx.key);
   if (!c) return "The chain isn't in the saved crew flow any more.";
-  const then = await continueChain(origin, c, ctx, runId, { status });
+  const then = await continueChain(origin, c, ctx, runId, { status }, flow.flow);
   console.log(`[chain ${c.key}] after Claude: ${then}`);
   return then;
 }

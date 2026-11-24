@@ -375,7 +375,7 @@ const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = 
   assert.ok(/<OrgChartPane f=\{f\} edit=\{dview === "edit"\}/.test(company) && /aria-label="Departments view"/.test(company), "Company > Departments has the Cards / Chart switch and the chart");
   assert.ok(/SCHEDULE_HREF\} className="dp-pill co-org"/.test(company) && /!f\.org\.on &&/.test(company), "an org that is off shows the Turn on pill");
   const sched = read("app/(room)/settings/schedule/page.tsx");
-  for (const bit of ["<OrgSwitch", "<OrgDay", "<CrewCanvas"]) assert.ok(sched.includes(bit), `Settings > Schedule has ${bit}`);
+  for (const bit of ["<OrgSwitch", "<OrgDay", "<ChainsBoard"]) assert.ok(sched.includes(bit), `Settings > Schedule has ${bit}`);
   assert.ok(/slug: "schedule"/.test(read("dashboard/settings-sections.ts")), "Schedule is a Settings section");
   for (const f of [...walk("app"), ...walk("dashboard"), ...walk("core")].filter((x) => /\.tsx?$/.test(x) && !x.includes(join("crew", "page.tsx"))))
     assert.ok(!/["'`]\/crew(\b|\?|["'`])/.test(read(f)), `${f}: no link to /crew left`);

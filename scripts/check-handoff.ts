@@ -4,16 +4,16 @@
 import assert from "node:assert/strict";
 import { flowProblems, withAgentAfter, type Flow } from "../core/flow-rules";
 import type { Org } from "../core/org-rules";
-import { canGroups, chainHref, chainsOf, fillQuery, headRows, quarterBefore, readFill, upTo, type CanChoice } from "../dashboard/handoff-rules";
+import { canGroups, chainsOf, fillQuery, headRows, quarterBefore, readFill, upTo, type CanChoice } from "../dashboard/handoff-rules";
 import type { Schedule } from "../dashboard/crew";
 
 const flow: Flow = { chains: [
   { key: "morning", name: "Morning", on: true, start: { type: "schedule", days: "daily", time: "07:00" }, steps: [{ agent: "cfo" }, { agent: "cos", days: "weekdays", when: "any", notBefore: "07:30", passAlong: true }] },
   { key: "solo-coffee", name: "Coffee head", on: true, start: { type: "schedule", days: "weekdays", time: "07:15" }, steps: [{ agent: "coffee" }] },
   { key: "solo-sales", name: "Sales head", on: true, start: { type: "schedule", days: "weekdays", time: "09:00" }, steps: [{ agent: "sales" }] },
-  { key: "full", name: "Full", on: false, start: { type: "schedule", days: "daily", time: "05:00" }, steps: [{ agent: "a" }, { agent: "b" }, { agent: "c" }] },
+  { key: "full", name: "Full", on: false, start: { type: "schedule", days: "daily", time: "05:00" }, steps: ["d", "e", "f", "g", "h", "a", "b", "c"].map((agent) => ({ agent })) },
 ] };
-const crew = { ids: ["cfo", "cos", "coffee", "sales", "mkt", "a", "b", "c", "rae"], manualOnly: new Set<string>(["mkt", "rae"]) };
+const crew = { ids: ["cfo", "cos", "coffee", "sales", "mkt", "a", "b", "c", "d", "e", "f", "g", "h", "rae"], manualOnly: new Set<string>(["mkt", "rae"]) };
 assert.deepEqual(flowProblems(flow, crew), []);
 
 // ---- running after another agent
@@ -38,24 +38,24 @@ const why = (r: ReturnType<typeof withAgentAfter>) => ("refuse" in r ? r.refuse 
 assert.match(why(withAgentAfter(flow, "rae", "Rae", "mkt", "Marketing head", true)), /doesn’t run on a schedule yet/);
 assert.match(why(withAgentAfter(flow, "rae", "Rae", "rae", "Rae", true)), /after itself/);
 assert.match(why(withAgentAfter(flow, "rae", "Rae", "cfo", "CFO", true)), /isn’t the last agent in Morning/);
-assert.match(why(withAgentAfter(flow, "rae", "Rae", "c", "C", true)), /already has 3 agents/);
+assert.match(why(withAgentAfter(flow, "rae", "Rae", "c", "C", true)), /already has 8 agents/);
 assert.match(why(withAgentAfter(flow, "cfo", "CFO", "cos", "Chief", true)), /already in Morning/);
 // the flow it was given is never changed
 assert.equal(flow.chains.find((c) => c.key === "solo-coffee")!.steps.length, 1);
 
 // ---- the chains an agent is in
 const names = { cfo: "Morgan", cos: "Avery", coffee: "Marlow", sales: "Rico", mkt: "Sloane", a: "A", b: "B", c: "C", rae: "Rae" };
-const inCos = chainsOf("cos", flow.chains, names);
+const inCos = chainsOf("cos", flow.chains, names, (c) => `/x/${c.key}`);
 assert.equal(inCos.length, 1);
 assert.deepEqual(inCos[0].nodes.map((n) => [n.name, n.at, n.me]), [["Morgan", "7:00 AM daily", false], ["Avery", "weekdays, not before 7:30 AM", true]]);
 assert.deepEqual(inCos[0].prev, { name: "Morgan", passAlong: true });
 assert.equal(inCos[0].next, null);
-const inCfo = chainsOf("cfo", flow.chains, names);
+const inCfo = chainsOf("cfo", flow.chains, names, (c) => `/x/${c.key}`);
 assert.equal(inCfo[0].prev, null);
 assert.deepEqual(inCfo[0].next, { name: "Avery", passAlong: true });
 // a one-step chain (an agent's own schedule) isn't a hand-off
-assert.deepEqual(chainsOf("coffee", flow.chains, names), []);
-assert.equal(chainHref("morning"), "/settings/schedule?chain=morning#chains");
+assert.deepEqual(chainsOf("coffee", flow.chains, names, (c) => `/x/${c.key}`), []);
+assert.equal(inCos[0].href, "/x/morning", "each chain opens where it lives");
 
 // ---- times
 assert.equal(quarterBefore("07:30"), "07:15");

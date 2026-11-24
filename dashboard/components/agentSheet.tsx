@@ -10,7 +10,7 @@ import type { SheetData } from "@/dashboard/agentSheet";
 import { clock, dayLabel, initialsOf, runFoot, runState, runTitle } from "@/dashboard/dept-feed";
 import { daysOf, type AgentTime } from "@/core/flow-rules";
 import { notionId } from "@/core/settings-rules";
-import { chainHref, type HeadState, type UpTo } from "@/dashboard/handoff-rules";
+import type { HeadState, UpTo } from "@/dashboard/handoff-rules";
 import { t12 } from "@/dashboard/format";
 import { MATCH_WORD, switchKind, switchWords, type RunsOnChoice } from "@/dashboard/runs-on-rules";
 import { ClaudeToolsField, RunsOnPicker } from "./runsOn";
@@ -306,9 +306,10 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
               </div>
             )}
             <div className="fld"><span className="lbl">When it runs</span>
+              {d.chains.length > 0 && <span className="dp-note">Chains {d.name} is in</span>}
               {d.chains.map((c) => (
                 <div key={c.key} className="trow">
-                  <div className="trow-h"><span className="ic">{ARROW}</span>{c.prev ? `After ${c.prev.name} finishes` : `Starts ${c.name}`}<span className="dp-note">{c.name}{c.on ? "" : " (off)"}</span><Link className="ag-lnk" href={chainHref(c.key)}>Edit chain</Link></div>
+                  <div className="trow-h"><span className="ic">{ARROW}</span>{c.prev ? `After ${c.prev.name} finishes` : `Starts ${c.name}`}<span className="dp-note">{c.name}{c.on ? "" : " (off)"}</span><Link className="ag-lnk" href={c.href}>Open</Link></div>
                   <div className="ag-chain">{c.nodes.map((n, i) => <span key={n.id} className="ag-chain-n">{i > 0 && <span className="ar" aria-hidden="true">→</span>}<span className={`nd${n.me ? " me" : ""}`}>{n.at ? `${n.name} · ${n.at}` : n.name}</span></span>)}</div>
                   {c.prev?.passAlong && <span className="ag-carry">Gets {c.prev.name}’s summary and numbers as facts.</span>}
                   {c.next?.passAlong && <span className="ag-carry">{c.next.name} gets {d.name}’s summary and numbers.</span>}
@@ -321,13 +322,17 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
                   <div className="row2"><label htmlFor="ag-time" className="dp-note">at</label><input type="time" id="ag-time" step={900} value={f.time} onChange={(e) => set({ time: e.target.value })} /></div>
                 </div>
               )}
-              <button type="button" className="dp-chip addtrig" aria-expanded={pick} onClick={() => setPick((x) => !x)}>+ Add a trigger</button>
+              <span className="ag-trigs">
+                <button type="button" className="dp-chip addtrig" aria-expanded={pick} onClick={() => setPick((x) => !x)}>+ Add a trigger</button>
+                <Link className="dp-chip addtrig" href={d.newChain}>+ New chain starting with {d.name}</Link>
+              </span>
               {pick && (
                 <div className="picker">
                   <button type="button" disabled={!f.manual} onClick={() => { set({ manual: false }); setPick(false); }}>On a schedule{!f.manual && <small>Set</small>}</button>
                   <button type="button" aria-expanded={fol.open} onClick={() => { setFol((x) => ({ ...x, open: true, confirm: null, after: x.after || (d.follow.find((o) => o.when)?.id ?? "") })); setPick(false); }}>After another agent finishes<small>Pick here</small></button>
-                  <Link href="/settings/schedule">When you approve a draft<small>Settings &gt; Schedule</small></Link>
-                  <Link href="/settings/schedule">When a live event comes in, like a new order<small>Settings &gt; Schedule</small></Link>
+                  <Link href={d.newChain}>When you approve a draft<small>New chain</small></Link>
+                  <Link href={d.newChain}>When a live event comes in, like a new order<small>New chain</small></Link>
+                  <Link href={d.newChain}>After another chain finishes<small>New chain</small></Link>
                 </div>
               )}
               {fol.open && (

@@ -12,7 +12,7 @@ import { settings } from "@/core/settings";
 import { openJobsThisWeek } from "@/core/plans";
 import { DEFAULT_BUDGET, loadMemory, memoryView, proposedLessons, readPages, type MemoryEvent, type MemoryLoad, type MemoryRow, type PageLoad, type SharedLine } from "@/core/memory";
 import type { Reach } from "@/core/memory-rules";
-import { agentDepartment, agentNames, loadOrg, type Org } from "@/core/org";
+import { agentDepartment, agentNames, loadOrg, seatOf, type Org } from "@/core/org";
 import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/core/reactions";
 import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
@@ -27,7 +27,8 @@ import type { CrewMember, IntegrationId } from "./crew";
 import { buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
 import { runCostOf, type CostSpec } from "./cost";
 import { realCost } from "@/core/cost-rules";
-import type { CrewAgent, CrewCanvasData } from "./components/CrewCanvas";
+import type { ChainAgent, ChainsData } from "./components/chains";
+import { MODEL_LIST } from "@/integrations/models";
 import { SESSION_COOKIE, controlsOn, sessionOf } from "./session";
 import { memberById } from "@/core/members";
 import { atLeast, refusal, type Member, type Role } from "@/core/roles";
@@ -537,36 +538,49 @@ export async function getMemory(agentId: string): Promise<{ tab: MemoryTab | nul
   }
 }
 
-// ---- Crew canvas (docs/agent-setup.md, slice 5)
+// ---- Chains (chains slice 1, card 430): a department's Chains tab and Settings > Schedule
 
 /**
- * The Crew canvas: the active flow, its versions, and the palette of agents a chain can pick
- * (with what each run costs on average, from real runs). Null problem-free values when the
- * crew_flow table isn't there yet.
+ * The saved chains and what their editor needs: every agent a step can pick (where it runs, its department, what a
+ * run costs from real runs), the departments, and, for Settings, the flow's versions. A problem in place of the
+ * chains when the crew_flow table isn't there yet.
  */
-export async function getCrewCanvas(f: Floor): Promise<CrewCanvasData> {
+export async function getChains(r: Roster, tz: string, versions = false): Promise<ChainsData> {
   await requireSession();
-  // every agent with a live version, the same whether it started in code or was built in the app
-  const palette: CrewAgent[] = f.palette.ids.map((id) => {
-    const a = f.byId[id];
+  const chart = r.chart;
+  const deptOf: Record<string, string | null> = Object.fromEntries(r.palette.ids.map((id) => [id, chart ? seatOf(chart, id)?.departmentId ?? null : null]));
+  const where = new Map<string, string>();
+  if (health().supabase) {
+    const { data } = await db().from("agents").select("id, runs_on");
+    for (const a of data ?? []) where.set(a.id as string, (a.runs_on as string | null) ?? "operator");
+  }
+  const palette: ChainAgent[] = r.palette.ids.map((id) => {
+    const a = r.byId[id];
+    const model = a?.model ?? r.agents[id]?.model;
     return {
-      id, name: a?.name ?? id, role: a?.role ?? "", hue: a?.hue ?? "#999", icon: a?.icon ?? "cpu",
-      enabled: !!f.agents[id]?.enabled, buttonOnly: f.palette.manualOnly.has(id),
+      id, name: a?.name ?? id, role: a?.role ?? "", job: a?.job ?? "", hue: a?.hue ?? "#999",
+      enabled: !!r.agents[id]?.enabled, buttonOnly: r.palette.manualOnly.has(id), dept: deptOf[id],
+      claude: where.get(id) === "claude", model: MODEL_LIST.find((m) => m.id === model)?.label ?? model ?? null,
       metrics: METRICS[id] ?? [], perRun: a?.perRun ?? null, estimated: a?.costBasis === "estimate",
     };
   });
-  const base = { palette, approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })), controls: controlsOn(), maxSteps: MAX_STEPS, maxChains: MAX_CHAINS, now: f.now, tz: f.tz };
-  if (!health().supabase) return { ...base, version: 0, note: null, flow: { chains: [] }, problems: [], versions: [], next: {}, problem: "Supabase isn’t set up, so there is no flow to show." };
+  const base = {
+    palette, deptOf, depts: (chart?.departments ?? []).map((d) => ({ id: d.id, name: d.name })),
+    approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })),
+    controls: controlsOn(), maxSteps: MAX_STEPS, maxChains: MAX_CHAINS, now: r.now, tz,
+  };
+  const empty = { version: 0, flow: { chains: [] }, problems: [], versions: [], next: {} };
+  if (!health().supabase) return { ...base, ...empty, problem: "Supabase isn’t set up, so there are no chains to show." };
   try {
-    const [active, all] = await Promise.all([loadFlow(f.palette), listFlowVersions(f.palette)]);
-    const next = Object.fromEntries(active.flow.chains.map((c) => [c.key, nextFirings(c, f.now, 3, f.tz).map((t) => new Date(t).toISOString())]));
+    const [active, all] = await Promise.all([loadFlow(r.palette), versions ? listFlowVersions(r.palette) : Promise.resolve([])]);
+    const next = Object.fromEntries(active.flow.chains.map((c) => [c.key, nextFirings(c, r.now, 3, tz).map((t) => new Date(t).toISOString())]));
     return {
-      ...base, version: active.version, note: active.note, flow: active.flow, problems: active.problems, next,
+      ...base, version: active.version, flow: active.flow, problems: active.problems, next,
       versions: all.map((v) => ({ version: v.version, active: v.active, note: v.note, createdBy: v.createdBy, createdAt: v.createdAt, chains: v.flow.chains.length, on: v.flow.chains.filter((c) => c.on).map((c) => c.name) })),
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ...base, version: 0, note: null, flow: { chains: [] }, problems: [], versions: [], next: {}, problem: /crew_flow/.test(msg) ? "The crew_flow table isn’t in Supabase yet: apply the migration 20261112200000_crew_flow.sql." : `Supabase: ${msg}` };
+    return { ...base, ...empty, problem: /crew_flow/.test(msg) ? "The crew_flow table isn’t in Supabase yet: apply the migration 20261112200000_crew_flow.sql." : `Supabase: ${msg}` };
   }
 }
 
