@@ -133,6 +133,17 @@ feed's order; the live route, the runner and the one approval path).
 - **Triggers.** "+ Add a trigger" offers the schedule; "after another agent finishes" and "when you approve a
   draft" link to Crew > Schedule, where those chains are set today; triggers from a connected tool come in
   slice 6.
+- **Wider, with hand-offs (card 400).** The drawer is 760px wide on a computer and nearly full height on a phone.
+  Can do is grouped by the tool each action belongs to (`canGroups` in `dashboard/handoff-rules.ts`): a card per
+  connected tool, and the tools not connected folded into one line with Connect links. "When it runs" shows every
+  chain of two or more agents the agent is a step of (`chainsOf`), with Edit chain opening Settings > Schedule on
+  that chain (`?chain=`). "After another agent finishes" is picked on the sheet: `followAgent` puts the agent as the
+  next step of the scheduled chain that agent ends (`withAgentAfter` in `core/flow-rules.ts`), takes out its own
+  one-step schedule, and keeps Settings > Schedule's checks (flowProblems; a chain that is on gaining an agent needs
+  Controls and a confirm). An agent with Department reports gets "What reaches it": each head, when it runs, and
+  whether its report is there in time (`headRows`); a head with no time, or one after, has a button that opens
+  its sheet with a time a quarter hour earlier filled in (`?at=&days=`, nothing saved until Save changes). A
+  head's sheet shows where its report goes (`upTo`). Checked by `npm run check:handoff`.
 - **Can do = an approver's grant.** The Can do toggles grant an action an approver may give (`agents:
   "granted"`), exactly as the builder's Tools step did; a proposal still can't grant one. CLAUDE.md names
   the sheet (since slice 6, the sheet and the hire card only).

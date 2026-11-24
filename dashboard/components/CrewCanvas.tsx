@@ -98,9 +98,11 @@ const COL = 300, ROW = 150;
 
 type Sel = { key: string; step: number | "start" } | null;
 
-export function CrewCanvas({ d, actions }: { d: CrewCanvasData; actions: CrewActions }) {
+export function CrewCanvas({ d, actions, pick }: { d: CrewCanvasData; actions: CrewActions; pick?: string }) {
   const [draft, setDraft] = useState<Flow>(d.flow);
-  const [sel, setSel] = useState<Sel>(d.flow.chains[0] ? { key: d.flow.chains[0].key, step: "start" } : null);
+  // the agent sheet's Edit chain (card 400) opens here with that chain picked
+  const first = d.flow.chains.find((c) => c.key === pick) ?? d.flow.chains[0];
+  const [sel, setSel] = useState<Sel>(first ? { key: first.key, step: "start" } : null);
   const [note, setNote] = useState("");
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [confirm, setConfirm] = useState<(Confirm & { go: () => void }) | null>(null);

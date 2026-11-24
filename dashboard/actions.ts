@@ -21,7 +21,7 @@ import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { env } from "@/core/env";
 import { approvalDecided, startStep } from "@/core/chain";
 import { orgId, withOrg } from "@/core/tenancy";
-import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, dayWords, type AgentTime, type Flow } from "@/core/flow";
+import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, withAgentAfter, dayWords, type AgentTime, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
 import { flowWithStarts, readStored, startsWords } from "@/core/draft-starts-rules";
 import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, versionStarts, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
@@ -154,6 +154,36 @@ export async function setAgentTime(agentId: string, t: AgentTime | null, confirm
     revalidatePath("/", "layout");
     await audit(me, "set_agent_time", agentId, { when: t ? schedWords({ kind: t.days, time: t.time }) : "by hand" });
     return { ok: true, text: t ? `${who.name} runs ${schedWords({ kind: t.days, time: t.time })}, while the org is on.` : `${who.name} runs only when you press Run now.` };
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * The agent sheet's "After another agent finishes" (card 400): `agentId` becomes the next step of the scheduled
+ * chain `afterId` ends, with `afterId`'s summary passed along when asked (core/flow-rules withAgentAfter). The same
+ * checks as Settings > Schedule: flowProblems, and a chain that is on gaining an agent needs Controls and a confirm.
+ */
+export async function followAgent(agentId: string, afterId: string, passAlong: boolean, confirmed = false): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const [who, prev] = await Promise.all([crewAgent(agentId), crewAgent(String(afterId ?? ""))]);
+  if (!who || !prev) return { ok: false, text: "Unknown agent." };
+  try {
+    const crew = await loadCrew();
+    const flow = await loadFlow(crew);
+    const r = withAgentAfter(flow.flow, agentId, who.name, prev.id, prev.name, passAlong === true);
+    if ("refuse" in r) return { ok: false, text: r.refuse };
+    const manualOnly = new Set(crew.manualOnly); manualOnly.delete(agentId);
+    const problems = flowProblems(r.flow, { ids: crew.ids, manualOnly });
+    if (problems.length) return { ok: false, text: problems.join(" ") };
+    const looser = flowLooser(flow.flow, r.flow);
+    if (looser.length || crew.manualOnly.has(agentId)) {
+      if (!controlsOn()) return { ok: false, text: `${CONTROLS_OFF} ${who.name} would run after ${prev.name}.` };
+      if (!confirmed) return { ok: false, text: `Confirm first: ${who.name} would run after ${prev.name} finishes, in ${r.chain}${passAlong ? `, with ${prev.name}’s summary` : ""}.` };
+    }
+    if (crew.manualOnly.has(agentId)) { const { error } = await db().from("agents").update({ manual_only: false }).eq("id", agentId); if (error) return fail(error.message); }
+    await saveFlowVersion(r.flow, `${who.name} after ${prev.name}`, me.email, flow.version);
+    revalidatePath("/", "layout");
+    await audit(me, "follow_agent", agentId, { after: prev.id, chain: r.chain, passAlong: passAlong === true });
+    return { ok: true, text: `${who.name} now runs after ${prev.name} in ${r.chain}${passAlong ? `, with ${prev.name}’s summary` : ""}, while the org is on.` };
   } catch (e) { return fail(e); }
 }
 

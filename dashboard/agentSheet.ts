@@ -11,12 +11,15 @@ import { getRoster, getTz } from "@/dashboard/data";
 import { deptRuns } from "@/dashboard/deptFeed";
 import type { FeedRun } from "@/dashboard/dept-feed";
 import { when } from "@/dashboard/format";
-import { nextRuns } from "@/dashboard/schedule";
+import { nextRuns, schedWords } from "@/dashboard/schedule";
 import { BUDGET_CEILING, RUN_LIMITS, specLooser, versionStarts, type AgentSpec } from "@/core/agent-spec";
 import { readStored, startsWords } from "@/core/draft-starts-rules";
 import { runsOn } from "@/core/claude-agents";
 import { promptLine } from "@/core/routine-rules";
 import { routineState, type RoutineState } from "@/integrations/mcp";
+import { CONNECTIONS } from "@/dashboard/connections";
+import { agentHref } from "@/dashboard/dept-rules";
+import { canGroups, chainsOf, fillQuery, headRows, upTo, type CanChoice, type CanGroup, type HandChain, type HeadRow, type UpTo } from "@/dashboard/handoff-rules";
 
 export interface SheetChoice { id: string; label: string; on: boolean; ready: boolean; why?: string }
 export interface SheetData {
@@ -31,7 +34,13 @@ export interface SheetData {
   /** What going live with the draft changes beyond its words: actions and limits it adds, and when it starts (a draft from Claude). */
   atGoLive: string[];
   days: number[]; time: string; manual: boolean;
-  reads: SheetChoice[]; can: SheetChoice[]; models: SheetChoice[];
+  reads: SheetChoice[]; can: CanChoice[]; models: SheetChoice[];
+  /** Can do by tool (card 400): connected tools as cards, the rest folded into one line. */
+  canBy: { shown: CanGroup[]; later: CanGroup[] };
+  /** Hand-offs (card 400): the multi-agent chains it is a step of, each head's report if it reads Department reports, and where a head's report goes. */
+  chains: HandChain[]; heads: (HeadRow & { href: string | null })[] | null; upTo: UpTo | null;
+  /** Agents it may run after (on the sheet's "After another agent finishes"), with their schedule. */
+  follow: { id: string; name: string; when: string | null }[];
   budget: number; ceiling: number; monthAtPace: number;
   boss: string | null;
   /**
@@ -89,7 +98,14 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
     .map((t) => ({ id: t.id, label: t.label, on: has.has(t.id), ready: t.connected, why: t.connected ? undefined : "Not connected" }));
   // can do: the actions an approver may grant here (code names the agents of every other action)
   const can = tools.filter((t) => t.kind === "action" && (t.agents === "granted" || has.has(t.id)))
-    .map((t) => ({ id: t.id, label: TOOLS[t.id]?.label ?? t.label, on: has.has(t.id), ready: t.connected && t.agents === "granted", why: !t.connected ? "Not connected" : t.agents !== "granted" ? "Set in code" : undefined }));
+    .map((t) => ({ id: t.id, label: TOOLS[t.id]?.label ?? t.label, on: has.has(t.id), ready: t.connected && t.agents === "granted", why: !t.connected ? "Not connected" : t.agents !== "granted" ? "Set in code" : undefined, conn: String(t.conn) }));
+  const connName = (c: string) => CONNECTIONS.find((x) => x.id === c)?.name ?? custom.conns.find((x) => x.id === c)?.name ?? c;
+  // hand-offs: names and schedules of the live crew, from the chains read with the roster
+  const names = Object.fromEntries(roster.crew.map((x) => [x.id, x.name]));
+  const schedules = Object.fromEntries(roster.crew.map((x) => [x.id, x.schedule ?? { kind: "manual" as const }]));
+  const mine = s ?? { kind: "manual" as const };
+  const heads = chart && has.has("department_reports") ? headRows(chart, mine, schedules, names).map((h) => ({ ...h, href: h.head ? `${agentHref(chart, h.head.id, true)}${h.fill ? fillQuery(h.fill) : ""}` : null })) : null;
+  const up = chart ? upTo(chart, id, mine, schedules, names, (x) => (roster.grants[x] ?? []).includes("department_reports")) : null;
   const spent30 = (spend.data ?? []).reduce((n, r) => n + Number(r.cost_usd ?? 0), 0);
   const drafted = b?.draft ? readStored(await versionStarts(id, b.draft.version).catch(() => null)) : null;
   const atGoLive = b?.draft ? [
@@ -105,7 +121,9 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
     tried: b?.tried ? { clean: b.tried.clean, why: b.tried.why, at: b.tried.at, runId: b.tried.runId } : null,
     atGoLive,
     days: s && s.kind !== "manual" ? daySet(s.kind) : [1, 2, 3, 4, 5], time: s && s.kind !== "manual" && s.time ? s.time : "09:00", manual: !s || s.kind === "manual" || !s.time,
-    reads, can,
+    reads, can, canBy: canGroups(can, connName),
+    chains: chainsOf(id, roster.chains, names), heads, upTo: up,
+    follow: roster.crew.filter((x) => x.id !== id).map((x) => ({ id: x.id, name: x.name, when: x.schedule && x.schedule.kind !== "manual" && x.schedule.time ? schedWords(x.schedule) : null })),
     models: menu.models.map((m) => ({ id: m.id, label: m.label, on: m.id === spec?.model, ready: m.ready, why: m.ready ? undefined : `Add a ${m.providerName} key on Connections` })),
     budget: b?.budget ?? 0, ceiling: BUDGET_CEILING, monthAtPace: Math.round(spent30 * 100) / 100,
     places: chart && !(seat && seat.departmentId == null)

@@ -295,3 +295,25 @@ export function withAgentTime(flow: Flow, agent: string, name: string, t: AgentT
   if (k > 0 && t.time < start.time) return { refuse: `${name} runs after ${own.steps[k - 1].agent} in ${own.name}, which starts at ${start.time}, so pick ${start.time} or later, or change it on the chain.` };
   return { flow: { chains } };
 }
+
+/**
+ * The flow with `agent` running after `after` (card 400, the agent sheet's "After another agent finishes"): the
+ * next step of the scheduled chain `after` ends, passing `after`'s summary along when asked. `agent`'s own
+ * one-step schedule comes out, so it doesn't run twice. Refused when `after` runs on no schedule, isn't the
+ * last step of its chain, or that chain is full, or `agent` is already in it. Check the result with
+ * flowProblems and save it like any other flow.
+ */
+export function withAgentAfter(flow: Flow, agent: string, name: string, after: string, afterName: string, passAlong: boolean): { flow: Flow; chain: string } | { refuse: string } {
+  if (agent === after) return { refuse: `${name} can’t run after itself.` };
+  const sched = flow.chains.filter((c) => c.start.type === "schedule" && c.steps.some((s) => s.agent === after));
+  const own = sched.find((c) => c.on) ?? sched[0];
+  if (!own) return { refuse: `${afterName} doesn’t run on a schedule yet. Give ${afterName} a time first, then add ${name} after it.` };
+  if (own.steps.some((s) => s.agent === agent)) return { refuse: `${name} is already in ${own.name}. Change it in Settings > Schedule.` };
+  if (own.steps[own.steps.length - 1].agent !== after) return { refuse: `${afterName} isn’t the last agent in ${own.name}. Change it in Settings > Schedule.` };
+  if (own.steps.length >= MAX_STEPS) return { refuse: `${own.name} already has ${MAX_STEPS} agents, the most a chain can hold.` };
+  const step: Step = passAlong ? { agent, when: "ok", passAlong: true } : { agent, when: "ok" };
+  const chains = flow.chains
+    .filter((c) => !(c !== own && c.start.type === "schedule" && c.steps.length === 1 && c.steps[0].agent === agent))
+    .map((c) => (c === own ? { ...c, steps: [...c.steps, step] } : c));
+  return { flow: { chains }, chain: own.name };
+}
