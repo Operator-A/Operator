@@ -395,6 +395,22 @@ The skill lives in the owner's Claude account, so they delete it there.
 - Only an owner proposes; a head (or File a proposal) can't file a department. Every check runs again
   at the owner's yes against the chart as it is then (`departmentProblems`).
 
+**Never a dead card (card 440).** Asking Avery for a department always ends in a draft the owner can
+propose, or a plain line saying what is missing and a button that asks her to fill it:
+
+- After the first answer Avery fills every part herself with her best suggestion (name, purpose,
+  tracks, at least one goal, in words when no measure fits, and a head) and asks the owner to confirm
+  or change it, instead of collecting answers one by one.
+- A head can't be blocked by a missing tool: when nothing on the tool list reads the department's
+  source yet (GitHub with no connection, say), a head named with no tools starts with **Goal
+  progress** (`HEAD_START_TOOLS`), and its own tools come when the source is connected. Narrow agents
+  still need at least one read tool.
+- Avery says she changed the draft only after calling Update the department draft. Code adds a line
+  under any reply about the draft that still has gaps: what is missing, from `draftGaps`.
+- The card says, in a full sentence, what still stops Propose, and **Ask Avery to fill these in**
+  sends her a message in the chat below (an event the chat listens for), so the owner never has to
+  guess what to type.
+
 **Data.** The draft is the policies row `department_draft` (one per business). Migration
 `20261221090000_department_proposals.sql` widens `proposals.kind` to `department`; until it's applied
 Propose says so.

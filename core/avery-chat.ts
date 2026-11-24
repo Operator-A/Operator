@@ -78,9 +78,9 @@ Besides answering you can do only these things:
 - When they want to hire, give an agent a read tool, get a new tool built, or retire an agent or close a seat, file it with File a proposal. Nothing happens until an owner says yes on Proposals. Ask first if you don't know enough to fill it in.
 - When they want an agent put in a department (one in no department, which The crew now lists, or one moving from another department), file a move_agent with File a proposal: the agent, the department, and seat only when they named an open seat (otherwise it gets a new seat under the head). It shows as a move card in that department's chat for them to approve; only where the agent sits changes.
 - When they describe new work, first decide whether it needs one new agent or a new department, using The crew now. Suggest one agent (a hire into the department it fits) when it is one job, or when an existing department's purpose already covers it. Suggest a new department only when it is its own area: its own goals to measure, more than one job, and no department that fits. Say which you suggest and why in a sentence. If they ask for a department and one agent would do, say so and offer both; it's their call.
-- When they want a new department, interview them, a question or two at a time: what it is for and what to track; what "going well" means (up to 3 goals, each with a measure from Department menu when one fits, otherwise in words); where the information lives (a tool they connected, a server they added, or a service to ask for, by name, never an address); and who does the work (a head and up to 2 narrow agents, each with one job and read tools from Department menu). Put each answer in the draft with Update the department draft as you go, and say what is still missing. They propose the draft themselves from the card above the chat; you never create a department.
+- When they want a new department, find out what it is for and what to track. As soon as you know that, fill in the whole draft yourself with Update the department draft, in the same reply: the name, purpose and tracks; at least one goal (a measure from Department menu when one fits, otherwise in words); where the information lives (a tool they connected, a server they added, or a service to ask for, by name, never an address); and a head with a name, a seat, a job and the closest read tools from Department menu (Read a web page, Web search or Goal progress when nothing reads the source yet; with no tools at all the head starts with Goal progress). Add up to 2 narrow agents only when the work needs them. Then tell them what you suggested in a few lines and ask them to confirm or change it. Never end a reply about a department while the draft still needs something you could suggest. They propose the draft themselves from the card in the chat; you never create a department.
 
-You never run, start, stop or change an agent, and you never send, buy or post. If they ask for that, tell them where in the Control Room they can do it. Code saves rules and proposals only after you finish and adds a line under your reply saying what it saved, so don't say you saved anything yourself.`;
+You never run, start, stop or change an agent, and you never send, buy or post. If they ask for that, tell them where in the Control Room they can do it. Code saves rules, proposals and draft parts only after you finish and adds a line under your reply saying what it saved or refused, so don't say you saved anything yourself, and never say a part is in the draft unless you called Update the department draft for it.`;
 
 /**
  * The crew now: who sits where, on duty or not, how each agent's last run went, this week's plans and the
@@ -245,7 +245,7 @@ function departmentDraftTool(): ToolDef {
       { name: "job", type: "text", maxLength: 200, optional: true, description: "head or agent: what it does, in one sentence." },
       { name: "each_run", type: "text", maxLength: 1500, optional: true, multiline: true, description: "head or agent: what it does on each run, step by step." },
       { name: "good_result", type: "text", maxLength: 400, optional: true, description: "head or agent: what a good result looks like." },
-      { name: "tools", type: "text", maxLength: 300, optional: true, description: "head or agent: read tool ids from Department menu, comma separated (at most 8)." },
+      { name: "tools", type: "text", maxLength: 300, optional: true, description: "head or agent: read tool ids from Department menu, comma separated (at most 8). A head may leave it empty when nothing reads its source yet: it starts with goal_progress." },
       { name: "brain", type: "enum", options: ["quick", "thinking"], default: "quick", description: "head or agent: quick for most jobs; thinking only when the job needs judgment." },
     ],
     collect: (input, held) => {
@@ -259,6 +259,16 @@ function departmentDraftTool(): ToolDef {
       return (await updateDraft(o.rows)).join(" | ") || "nothing to save";
     },
   };
+}
+
+/** Card 440: the gaps line for a chat run that touched the department draft or talked about one; "" otherwise. */
+async function draftGapLine(reports: readonly { tool: string; note: string }[], reply: string, message: string): Promise<string> {
+  // every report tool is delivered after a finished run, so only a draft update that saved or refused something counts
+  const about = reports.some((r) => r.tool === "update_department_draft" && !!r.note && r.note !== "nothing to save") || /department/i.test(`${reply} ${message}`);
+  if (!about) return "";
+  const [{ loadDraft }, { draftGaps, gapNote }] = await Promise.all([import("@/core/departments"), import("@/core/department-rules")]);
+  const d = await loadDraft();
+  return d ? gapNote(draftGaps(d)) : "";
 }
 
 export interface ChatAnswer { ok: boolean; reply: string; notes: string[]; runId: string | null; costUsd: number; kept: boolean }
@@ -305,6 +315,9 @@ export async function askAvery(message: string): Promise<ChatAnswer> {
   const notes = savedLines(reports);
   const like = finished ? similarNote(heldSimilar.got.at(-1) ?? null) : null;
   if (like) notes.push(like);
+  // card 440: a reply about the department draft says, from code, what it still needs
+  const gap = await draftGapLine(reports, said ?? "", message).catch(() => "");
+  if (gap) notes.push(gap);
   const reply = res.status === "skipped" ? `I can't answer right now: ${res.summary}` : (finished && said ? said : res.summary).slice(0, MAX_REPLY);
   const keptReply = kept && await keepChat({ role: "avery", text: reply, run_id: res.runId, notes });
   return { ok: res.status === "ok", reply, notes, runId: res.runId, costUsd: res.costUsd ?? 0, kept: !!keptReply };

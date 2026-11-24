@@ -16,6 +16,7 @@ import { ChangeCard, type ChangeActs } from "./changeCard";
 import { clock, dayLabel, initialsOf, mergeFeed, runFoot, runState, runTitle, type FeedRun, type FeedTalk } from "@/dashboard/dept-feed";
 import { Reply } from "./chatReply";
 import { Icon } from "./Icon";
+import { SAY_EVENT } from "@/dashboard/company-rules";
 
 const LIVE_MS = 3000, IDLE_MS = 20000;
 
@@ -125,6 +126,15 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
       if (!a.kept) setMine((m) => [...m, { id: `a${Date.now()}`, role: "head", text: a.reply, notes: a.notes, runId: a.runId, at: new Date().toISOString() }]);
     });
   };
+
+  // card 440: a card's button on this page (Ask Avery to fill these in) sends its words as if typed
+  const goRef = useRef(go);
+  useEffect(() => { goRef.current = go; });
+  useEffect(() => {
+    const on = (e: Event) => { const t = (e as CustomEvent<unknown>).detail; if (typeof t === "string") goRef.current(t); };
+    window.addEventListener(SAY_EVENT, on);
+    return () => window.removeEventListener(SAY_EVENT, on);
+  }, []);
 
   const startTry = (agentId: string) => {
     if (!hireActs || trying.includes(agentId)) return;

@@ -27,6 +27,8 @@ export const SCHEDULE_HREF = "/settings/schedule";
 
 /** What "Add a department" types into Avery's chat: her department interview starts from it. */
 export const ADD_DEPT_SAY = "Add a department for ";
+/** Card 440: the window event a card's button fires to send a message in the chat on the same page. */
+export const SAY_EVENT = "operator:say";
 export const addDeptHref = () => `/?say=${encodeURIComponent(ADD_DEPT_SAY)}`;
 
 /** The Company page's colour (the departments take theirs from DEPT_HUES). */
