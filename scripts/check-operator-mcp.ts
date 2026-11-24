@@ -9,7 +9,7 @@ import {
   resourceMetadata, toolsFor, tokenParts, TOOL_BY_NAME, MAX_DRAFT_TOOLS, MAX_DRAFT_ACTIONS, MOVE_PROMPT, draftActions, CONSENT_OWNER_LINES, draftTools, staleRead, toolList, type RpcRequest,
 } from "../core/operator-mcp-rules";
 import { TENANT_TABLES } from "../core/tenancy";
-import { eventKey, flowWithStarts, readDays, readStarts, readStored, startsToday, startsWords, type DraftStarts } from "../core/draft-starts-rules";
+import { eventKey, flowWithStarts, readDays, readStarts, readStored, startsOnItsOwn, startsToday, startsWords, type DraftStarts } from "../core/draft-starts-rules";
 import { flowProblems, soloKey, type Flow } from "../core/flow-rules";
 
 const read = (p: string) => readFileSync(p, "utf8");
@@ -162,6 +162,13 @@ const run = async () => {
   assert.deepEqual(startsToday(today, "quinn", true, {}), ["When someone presses Run now"]);
   assert.deepEqual(readStored({ when: { days: "weekdays", time: "08:00" }, after: { agent: "Bad Id!", when: "ok" } }), { when: { days: "weekdays", time: "08:00" } }, "a malformed part of a stored starts is dropped");
   assert.equal(readStored(null), null);
+  // card 450: which waiting starts take an agent off "only by hand" at Go live (draft_chain counts them as scheduled)
+  assert.equal(startsOnItsOwn({ when: { days: "mondays", time: "07:45" } }), true, "its own schedule");
+  assert.equal(startsOnItsOwn({ event: { type: "event", event: "shopify.order_created" } }), true, "a live event");
+  assert.equal(startsOnItsOwn({ after: { agent: "cfo", when: "ok" } }), true, "after another agent");
+  assert.equal(startsOnItsOwn({ when: "by_hand" }), false);
+  assert.equal(startsOnItsOwn({ event: "none", after: "none" }), false, "dropping starts never schedules");
+  assert.equal(startsOnItsOwn(null), false, "a draft saved in OPERATOR carries no starts");
   for (const k of ["days", "time", "by_hand", "start_on_event", "min_total", "run_after", "after_result"]) assert.ok(k in update.inputSchema.properties && !(k in create.inputSchema.properties), `only update_agent takes ${k}`);
   const srv = read("core/operator-mcp.ts");
   assert.ok(!/saveFlowVersion|activateFlow|manual_only/.test(srv), "the server never changes the flow or by-hand: starts wait on the draft");

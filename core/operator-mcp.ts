@@ -586,7 +586,8 @@ async function draftChain(caller: Caller, origin: string, args: Args): Promise<T
   const r = readDraftChain(String(args.chain), flow.chains);
   if ("problem" in r) return no(`Not drafted: ${r.problem}`);
   // the same checks as the Save button: the flow's rules, someone to pay for quick steps, the models' keys
-  const got = await chainInFlow(r.chain.key, r.chain);
+  // an agent whose waiting version (update_agent) starts it on its own counts as scheduled here; Use checks today's crew
+  const got = await chainInFlow(r.chain.key, r.chain, { asDrafted: true });
   if ("problem" in got) return no(got.problem.replace(/^Not saved/, "Not drafted"));
   if (r.base && JSON.stringify(r.base) === JSON.stringify(r.chain)) return no("Nothing changes from the saved chain.");
   const ids = [...new Set([r.chain, ...(r.base ? [r.base] : [])].flatMap((c) => [...c.steps.flatMap((s) => (s.agent ? [s.agent] : [])), ...(c.owner && "agent" in c.owner ? [c.owner.agent] : [])]))];
@@ -603,7 +604,8 @@ async function draftChain(caller: Caller, origin: string, args: Args): Promise<T
   await audit(caller.member, "draft_chain", r.chain.key, { draft: saved.id, chain: r.chain.name, new: !r.base, via: caller.client });
   return { text: answerText({
     draft: saved.id, chain: r.chain.name, key: r.chain.key, new_chain: !r.base, replaced_an_older_draft: saved.replaced, changes,
-    note: `Drafted. Nothing changes until the owner opens it on the Chains tab in OPERATOR and saves it, with the same checks and confirm as any save, or discards it. ${r.base ? (r.chain.on ? "The chain stays on as it is." : "The chain stays off.") : "A new chain is saved off."} Drafts are deleted after ${CHAIN_DRAFT.keepDays} days.`,
+    ...(got.waitsOn.length ? { waits_on_go_live: got.waitsOn.map((w) => `${w.name} v${w.version}`) } : {}),
+    note: `Drafted. Nothing changes until the owner opens it on the Chains tab in OPERATOR and saves it, with the same checks and confirm as any save, or discards it. ${r.base ? (r.chain.on ? "The chain stays on as it is." : "The chain stays off.") : "A new chain is saved off."}${got.waitsOn.length ? ` ${got.waitsOn.map((w) => w.name).join(" and ")} run${got.waitsOn.length === 1 ? "s" : ""} only by hand until ${got.waitsOn.map((w) => `v${w.version}`).join(" and ")} go${got.waitsOn.length === 1 ? "es" : ""} live, so the owner can use this draft after that Go live.` : ""} Drafts are deleted after ${CHAIN_DRAFT.keepDays} days.`,
   }, `${origin}/settings/schedule?chain=${encodeURIComponent(r.chain.key)}#chains`) };
 }
 

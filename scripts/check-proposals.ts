@@ -2,9 +2,10 @@
 // never hands out an action, and that a hire becomes a spec code accepts. No database, no network.
 // Run: npm run check:proposals
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
 
 import { KNOWN_SERVERS, MAX_ASKS_KEPT, REQUEST_CARD, checkServiceName, checkWhat, knownByAddress, knownServer, requestCard, requestCardName, serviceKey, withAsk, type Ask } from "../core/connector-rules";
-import { BRAINS, CHANGE_COST_CAP, HIRE_STEPS, MAX_HIRE_TOOLS, changeWhat, changesSpec, hireSpec, planProposal, proposalTitle, toolIds, toolInfoOf, type ProposalPlan } from "../core/proposal-rules";
+import { BRAINS, CHANGE_COST_CAP, HIRE_STEPS, KIND_WORDS, MAX_HIRE_TOOLS, changeWhat, changesSpec, hireSpec, planProposal, proposalTitle, toolIds, toolInfoOf, type ProposalPlan } from "../core/proposal-rules";
 import { readSpec } from "../core/agent-spec";
 import { TOOLS } from "../core/tools/catalog";
 import { checkInput } from "../core/tools/types";
@@ -160,3 +161,16 @@ assert.match(problem({ kind: "move_agent", why, agent: "Tess", department: "http
 assert.ok(!(TOOLS.propose.params.find((x) => x.name === "kind") as { options: readonly string[] }).options.includes("move_agent"), "a head's propose tool can't move agents; only Avery's File a proposal can");
 
 console.log("proposals: ok");
+
+// the database allows every kind code files, and only those (card 450: change_agent and move_agent were refused by
+// proposals_kind_check because no migration added them). The last migration that sets the check is the one in force.
+{
+  const dir = "supabase/migrations";
+  let allowed: string[] | null = null;
+  for (const f of readdirSync(dir).filter((x) => x.endsWith(".sql")).sort()) {
+    const m = [...readFileSync(`${dir}/${f}`, "utf8").matchAll(/proposals_kind_check\s+check\s*\(\s*kind\s+in\s*\(([^)]*)\)/gi)].at(-1);
+    if (m) allowed = [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
+  }
+  assert.ok(allowed, "a migration sets proposals_kind_check");
+  assert.deepEqual([...allowed].sort(), Object.keys(KIND_WORDS).sort(), "proposals_kind_check in supabase/migrations must allow exactly the kinds in KIND_WORDS: add a migration");
+}

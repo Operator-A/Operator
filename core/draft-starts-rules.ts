@@ -76,6 +76,16 @@ export function readStarts(args: Record<string, string | number>, self: string, 
   return { starts: Object.keys(out).length ? out : null };
 }
 
+/**
+ * Whether these draft starts take an agent off "only by hand" at Go live: its own schedule, a live event or a
+ * run after another agent (flowWithStarts sets manual false for each). draft_chain uses it so a chain can be
+ * drafted for an agent whose waiting version gives it a schedule (card 450); the chain is used only after that.
+ */
+export function startsOnItsOwn(s: DraftStarts | null): boolean {
+  if (!s || s.when === "by_hand") return false;
+  return typeof s.when === "object" || (!!s.event && s.event !== "none") || (!!s.after && s.after !== "none");
+}
+
 /** The key of an agent's own event chain. */
 export const eventKey = (agent: string) => `event-${agent}`.slice(0, 40);
 
