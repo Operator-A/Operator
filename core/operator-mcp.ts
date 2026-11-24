@@ -25,6 +25,7 @@ import { mcpStatuses, modelKeysReady } from "@/integrations/mcp";
 import { NEED_TILE, TILE_BY_ID } from "@/core/tools-step-rules";
 import { fileProposal, listProposals } from "@/core/proposals";
 import { finishRun, markLinked } from "@/core/claude-agents";
+import { resumeChain } from "@/core/chain";
 import { promptLine, readClaudeTools, readFinish } from "@/core/routine-rules";
 import { loadCrew } from "@/agents/registry";
 import { flowProblems, loadFlow } from "@/core/flow";
@@ -547,6 +548,8 @@ async function finishRunTool(caller: Caller, origin: string, args: Args): Promis
   const got = await finishRun(f.runId, f.status, f.result);
   if ("problem" in got) return no(got.problem);
   await audit(caller.member, "finish_run", f.runId, { agent: got.agentId, status: f.status, via: caller.client });
+  // a chain step in Claude (card 405): the chain goes on now, with this result handed to the next step
+  if (got.chain) await resumeChain(origin, got.chain, f.runId, f.status).catch((e) => console.error("[finish_run] chain", e instanceof Error ? e.message : e));
   return { text: answerText({ run: f.runId, status: f.status, note: "Saved on the run in OPERATOR. Anything outward still goes through propose." }, `${origin}/runs/${f.runId}`) };
 }
 

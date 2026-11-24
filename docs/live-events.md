@@ -95,11 +95,32 @@ on a run that started a session. The result is saved as the run's summary, label
 Anything outward the session wants goes through `propose`, so a person decides it in OPERATOR. What the
 session does with its own Claude connectors is outside OPERATOR's gateway; the sheet says so.
 
-### Moving it in
+### Switching where it runs (card 405)
 
-When OPERATOR gains the connector, Move into OPERATOR on the sheet makes the same agent run on the runner,
-keeping its runs and history. Its routine token is forgotten and it goes off duty until it has reads, a
-clean try and an approved playbook, like any agent. Forget token takes it off duty too.
+The Runs on picker on the agent sheet's Edit tab (`dashboard/components/runsOn.tsx`, rules in
+`dashboard/runs-on-rules.ts`) lists the models OPERATOR runs, grouped by maker (Claude, OpenAI, Gemini, Grok, on
+the business's own keys), then "A Claude routine". Picking the other side shows what the agent keeps and what
+stops; Save asks once, and `setRunsOn` (owner only) does the switch. Either way the agent goes off duty and keeps
+its runs, history, schedule and chains.
+
+- Into a Claude routine: "Uses in Claude" starts from the tools behind its reads (labels only). Its reads and
+  can do stay in its versions but aren't used, and no action is carried into Claude. Connect the routine, then
+  put it on duty.
+- Back into OPERATOR: its routine token is forgotten. Each Claude connector is matched by name to an OPERATOR
+  connection (works here, connect first, none here). It needs reads, a clean try and an approved playbook,
+  like any agent. Forget token takes it off duty too.
+
+Only Claude has a routine OPERATOR can start from outside and get the result back from (checked 2026-11-24:
+OpenAI workspace agents can be started but their answer can't be read through the API; Gemini's scheduled tasks
+and Grok's automations live only in their apps). Decided 2026-11-24: other makers' models run inside OPERATOR.
+
+### Chains across where agents run (card 405)
+
+A chain step that runs in Claude keeps its place in the chain on its session (`agent_runs.claude_session.chain`).
+The chain doesn't move on when the routine starts: it goes on when the session posts its result with
+`finish_run`, which hands that result to the next step (`resumeChain` in `core/chain.ts`). With no result within
+24 hours, the scheduler (`expireWaits`) finishes the step as failed, and the chain's own rule for that step
+(only when it worked, or however it went) decides what happens next.
 
 ### Database (`20270106090000_claude_agents.sql`)
 

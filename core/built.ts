@@ -17,6 +17,7 @@ import type { MemoryLoad } from "@/core/memory";
 import type { RunResult } from "@/core/runs";
 import type { Handoff } from "@/core/chain";
 import { fireLinked, runsOn } from "@/core/claude-agents";
+import type { ChainCtx } from "@/core/job-rules";
 
 /** The active spec and approved playbook, or why the agent can't run on the runner. */
 async function ready(agentId: string) {
@@ -61,11 +62,11 @@ export async function dryRunPlaybook(agentId: string): Promise<RunResult & { lin
 }
 
 /** One run on the runner, following the approved playbook, delivering what it produces. Call inside withRun. */
-export async function runBuilt(agentId: string, opts: { runId?: string; dryRun?: boolean; memory?: MemoryLoad | null; handoff?: Handoff | null }): Promise<RunResult> {
+export async function runBuilt(agentId: string, opts: { runId?: string; dryRun?: boolean; memory?: MemoryLoad | null; handoff?: Handoff | null; chain?: ChainCtx | null }): Promise<RunResult> {
   // a linked agent runs in the owner's Claude routine (docs/live-events.md, slice 2): fire it instead of the runner
   if ((await runsOn(agentId)).on === "claude") {
     if (opts.dryRun) return { status: "skipped", summary: "It runs in Claude, so there is nothing to dry run here." };
-    return fireLinked(agentId, opts.runId, opts.handoff);
+    return fireLinked(agentId, opts.runId, opts.handoff, undefined, opts.chain);
   }
   if (opts.dryRun) { const d = await dryRunPlaybook(agentId); return { status: d.status, summary: `${d.summary} ${d.lines.join(" · ")}`, metrics: d.metrics }; }
   const r = await ready(agentId);

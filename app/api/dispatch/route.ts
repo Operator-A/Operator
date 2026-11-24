@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { orgTz } from "@/core/tz";
 import { loadCrew } from "@/agents/registry";
-import { claimFiring, startStep } from "@/core/chain";
+import { claimFiring, resumeChain, startStep } from "@/core/chain";
+import { expireWaits } from "@/core/claude-agents";
 import { allOrgIds } from "@/core/db";
 import { firingsBetween, loadFlow } from "@/core/flow";
 import { dueJobs, failMissed, failStale, kick } from "@/core/jobs";
@@ -68,6 +69,8 @@ async function schedule(origin: string, now: number) {
   // live events (docs/live-events.md): one catch-up run per event chain that held events at its cap; never stops the scheduler
   const caughtUp = on ? await catchUpHeld(origin, now).catch((e) => { console.error("[dispatch] events", e instanceof Error ? e.message : e); return []; }) : [];
   await pruneEvents(now).catch((e) => console.error("[dispatch] prune events", e instanceof Error ? e.message : e));
+  // chain steps in Claude with no result after 24 hours count as failed, and their chains go on; never stops the scheduler
+  const expired = await expireWaits(now).then((xs) => Promise.all(xs.map((x) => resumeChain(origin, x.chain, x.runId, "failed")))).catch((e) => { console.error("[dispatch] claude waits", e instanceof Error ? e.message : e); return []; });
   const stale = await failStale(now);
   // a step whose kicks kept failing is skipped once it is hours late, not run at the wrong time of day
   const missed = await failMissed(now);
@@ -81,5 +84,5 @@ async function schedule(origin: string, now: number) {
   // card 284: setup check findings skipped 3 weeks ago come back once as a head's proposal (code, no model), only while the org is on
   const rechecks = on ? await returnSkipped(now).catch((e) => { console.error("[dispatch] setup re-checks", e instanceof Error ? e.message : e); return []; }) : [];
   const alerted = await sendStatusAlerts(origin, now).catch((e) => { console.error("[dispatch] alerts", e instanceof Error ? e.message : e); return []; });
-  return { on, started, caughtUp, kicked: due.length, stale, missed, trusted, brain, rechecks, alerted, problems: flow.problems };
+  return { on, started, caughtUp, kicked: due.length, expired: expired.length, stale, missed, trusted, brain, rechecks, alerted, problems: flow.problems };
 }

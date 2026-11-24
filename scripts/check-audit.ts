@@ -35,7 +35,7 @@ const AUDITED = [
   // OPERATOR's own MCP server: an app (Claude) connected or disconnected
   "allowApp", "disconnectApp",
   // agents that run in Claude: the routine a linked agent fires, and moving it into OPERATOR
-  "routineSave", "routineRemove", "moveIntoOperator",
+  "routineSave", "routineRemove", "setRunsOn",
 ];
 
 // not audited: they change nothing an agent may do, spend or reach, or keep their own history

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
-  CLAUDE_TOOLS, FINISH, ROUTINE_API, ROUTINE_CAPS, afterFire, finishable, fireFits, fireNote, fireStart, isRunsOn, promptLine, readClaudeTools, readFinish, readRoutine, readSession, routineVaultId,
+  CLAUDE_TOOLS, FINISH, NO_RESULT, ROUTINE_API, chainWaits, waitExpired, ROUTINE_CAPS, afterFire, finishable, fireFits, fireNote, fireStart, isRunsOn, promptLine, readClaudeTools, readFinish, readRoutine, readSession, routineVaultId,
 } from "../core/routine-rules";
 
 const read = (p: string) => readFileSync(p, "utf8");
@@ -120,5 +120,26 @@ assert.match(runs, /export async function withRun/, "every run, a linked one too
 const agents = read("core/claude-agents.ts");
 assert.match(agents, /fireFits\(n\.agent, n\.org\)/, "OPERATOR's caps are checked before every fire");
 assert.doesNotMatch(agents, /@\/core\/gateway|callWriteTool|enabled: true/, "no gateway, no duty");
+
+// ---- chains across where agents run (card 405): a step in Claude waits for its session's result
+const CTX = { chainId: "00000000-0000-4000-8000-000000000001", key: "morning", step: 0 };
+const fired = new Date(Date.UTC(2026, 10, 24, 12)).toISOString();
+assert.equal(chainWaits({ chain: CTX, finished_at: null }), true, "a chain step in Claude waits");
+assert.equal(chainWaits({ chain: CTX, finished_at: fired }), false, "not once it has its result");
+assert.equal(chainWaits({ finished_at: null }), false, "a run outside a chain doesn't hold anything up");
+assert.equal(chainWaits(null), false);
+const H = 3600_000, at = Date.parse(fired);
+assert.equal(waitExpired({ chain: CTX, fired_at: fired }, at + 23 * H), false);
+assert.equal(waitExpired({ chain: CTX, fired_at: fired }, at + 25 * H), true, `no result after ${FINISH.withinHours} hours counts as failed`);
+assert.equal(waitExpired({ chain: CTX, fired_at: fired, finished_at: fired }, at + 25 * H), false);
+assert.equal(waitExpired({ fired_at: fired }, at + 25 * H), false);
+assert.match(NO_RESULT, /24 hours/);
+const chainSrc = read("core/chain.ts");
+assert.match(chainSrc, /found\.job\(\{ runId, memory, handoff, chain: ctx \}\)/, "a chain step hands its place in the chain to the run");
+assert.ok(chainSrc.indexOf("waitsOnClaude(res.runId)") > 0 && chainSrc.indexOf("waitsOnClaude(res.runId)") < chainSrc.indexOf("const then = await continueChain(origin, c, ctx, res.runId"), "a step in Claude doesn't move the chain on when the routine starts");
+assert.match(agents, /chain \? \{ chain \} : \{\}/, "the session keeps the chain step");
+assert.match(agents, /\.is\("claude_session->>finished_at", null\)\.select\("id"\)/, "a result is taken once, so the chain goes on once");
+assert.match(read("core/operator-mcp.ts"), /if \(got\.chain\) await resumeChain\(origin, got\.chain, f\.runId, f\.status\)/, "finish_run goes on with the chain");
+assert.match(read("app/api/dispatch/route.ts"), /expireWaits\(now\)[\s\S]*resumeChain\(origin, x\.chain, x\.runId, "failed"\)/, "the scheduler fails waits past 24 hours and goes on");
 
 console.log("check:claude-agents ok");
