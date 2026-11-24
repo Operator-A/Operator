@@ -120,13 +120,19 @@ assert.doesNotMatch(read("core/chain-view-rules.ts"), /from "@\/core\/db"|fetch\
 const dc = store.slice(store.indexOf("async function draftChain"), store.indexOf("async function tryAgent"));
 assert.match(store, /case "draft_chain": return draftChain\(caller, origin, args\);/);
 assert.match(dc, /readDraftChain\(String\(args\.chain\), flow\.chains\)/);
-assert.match(dc, /await chainInFlow\(r\.chain\.key, r\.chain\)/, "the same checks as saving in OPERATOR");
+assert.match(dc, /await chainInFlow\(r\.chain\.key, r\.chain, \{ asDrafted: true \}\)/, "the same checks as saving in OPERATOR, with waiting versions' starts (card 450)");
+assert.match(dc, /waits_on_go_live/, "the answer says which version must go live before the draft can be used");
 assert.match(dc, /saveChainDraft\(/);
 assert.match(dc, /audit\(caller\.member, "draft_chain"/);
 assert.doesNotMatch(dc, /saveFlowVersion|activateFlow|startChain|runChain/, "a draft never saves, turns on or runs a chain");
 const save = read("core/chain-save.ts");
-assert.match(save, /export async function chainInFlow\(key: string, raw: unknown\)/);
-assert.match(save, /flowProblems\(/);
+assert.match(save, /export async function chainInFlow\(key: string, raw: unknown, opts: \{ asDrafted\?: boolean \} = \{\}\)/);
+assert.match(save, /flowProblems\(next, check\)/);
+// card 450: only a draft counts a waiting version's starts; Save and Use check today's crew and name the version to put live
+assert.match(save, /const waitsOn = opts\.asDrafted \? waiting : \[\]/);
+assert.match(save, /put v\$\{w\.version\} live first, then save this chain/);
+assert.match(save, /startsOnItsOwn\(readStored\(await versionStarts\(id, d\.version\)\)\)/, "read fresh from the waiting version");
+for (const f of ["dashboard/actions.ts"]) assert.doesNotMatch(read(f), /asDrafted/, "Save and Use never count a waiting version");
 
 // ---- using and discarding in OPERATOR
 const act = read("dashboard/actions.ts");

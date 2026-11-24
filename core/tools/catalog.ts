@@ -102,7 +102,7 @@ const TOOLS_LIST: ToolDef[] = [
   },
   {
     id: "mercury_charges", label: "Charges", detail: "Settled money in and out over a window: date, merchant, amount, category. Merchant names come from outside, so they are untrusted",
-    kind: "read", group: "mercury", params: [daysParam(30, 60, "How many days back.")], trusted: false, needs: MERCURY, costUsd: 0,
+    kind: "read", group: "mercury", params: [daysParam(30, 90, "How many days back.")], trusted: false, needs: MERCURY, costUsd: 0,
     run: async ({ days }) => {
       const txns = await mercuryTransactions((await orgDate(Number(days))), (await orgDate(0)));
       const shown = txns.slice(-200);

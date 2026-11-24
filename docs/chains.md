@@ -113,6 +113,10 @@ rules, someone to pay for quick steps, the models' keys) and kept as a row in `c
 with the saved chain it was made from. It changes nothing by itself:
 
 - A new chain is drafted off; a changed chain keeps whether it is on as saved (`core/chain-draft-rules.ts`).
+- An agent that runs only by hand today, whose waiting version from `update_agent` gives it a schedule, an event or a
+  run after another agent (`startsOnItsOwn` in `core/draft-starts-rules.ts`), counts as scheduled for the draft (card
+  450), and the answer says which version must go live first. Use this draft still checks today's crew; until that
+  Go live it is refused with "put v2 live first, then save this chain".
 - The Chains tab lists it under **Drafts from Claude**, and Waiting for you has a line. Opening one puts it in the
   editor with a strip: who drafted it, when, Claude's note, what it changes line by line, and Discard.
 - **Use this draft** is the tab's own Save (`saveChain` with the draft's id), with the same checks and the same confirm

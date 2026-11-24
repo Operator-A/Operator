@@ -100,4 +100,8 @@ assert.match(sync, /queueBookkeeperProposals\(/, "proposals go to the gateway as
 const catalog = readFileSync("core/tools/catalog.ts", "utf8");
 assert.match(catalog, /id: "report_books_sync"[\s\S]{0,700}kind: "report"[\s\S]{0,200}codeOnly: true/, "report_books_sync is a core report tool, code only");
 
+// Charges reads as far back as Burn rate averages by default (card 450: an agent asked for 90 days and got 60)
+const daysOf = (id: string) => catalog.match(new RegExp(`id: "${id}"[\\s\\S]{0,600}?daysParam\\((\\d+), (\\d+)`))!.slice(1).map(Number);
+assert.ok(daysOf("mercury_charges")[1] >= daysOf("calc_burn_rate")[0], "mercury_charges reaches back at least as far as calc_burn_rate's default window");
+
 console.log("check:books ok");
