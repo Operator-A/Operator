@@ -321,6 +321,17 @@ const crew = read("dashboard/components/orgChartPane.tsx");
 assert.ok(/<NotInDepartment agents=\{v\.offChart\}/.test(crew) && /orgPlaceAgent/.test(crew), "the Departments chart adds an agent in no department to one");
 assert.ok(!/step 1/.test(crew) && !/step 1/.test(chartSrc), "no pointer to the builder's deleted seat picker");
 assert.ok(/asRole\("owner"\)/.test(orgActs.slice(orgActs.indexOf("export async function orgPlaceAgent"))), "adding to a department is the owner's");
+// card 385: moving a placed agent from its sheet, and the empty old seat closing on every move
+{
+  const sheet = read("dashboard/components/agentSheet.tsx"), sheetFor = read("dashboard/components/agentSheetFor.tsx"), sheetData = read("dashboard/agentSheet.ts"), orgSrc = read("core/org.ts");
+  assert.ok(/place: orgPlaceAgent\.bind\(null, id\)/.test(sheetFor), "the sheet's Move goes through orgPlaceAgent (owner only, audited)");
+  assert.ok(/<span className="lbl">Department<\/span>/.test(sheet) && /act\.place\(/.test(sheet), "the sheet has a Department line with Move");
+  assert.ok(/placeSpots\(chart, x\.id\)\.filter\(\(p\) => x\.id !== dept\?\.id \|\| p\.seatId\)/.test(sheetData), "in its own department only open seats are offered");
+  assert.ok(/seat\.departmentId == null/.test(sheetData.slice(sheetData.indexOf("places:"))), "no Move for the company seat's agent");
+  const pa = orgSrc.slice(orgSrc.indexOf("export async function placeAgent"));
+  assert.ok(/seatToClose\(o, agentId/.test(pa) && /removeSeat\(leaving\.id\)/.test(pa), "placeAgent closes the empty old seat, for Crew, the sheet and move cards alike");
+  assert.ok(/placedWords\(/.test(orgActs) && /placedWords\(/.test(read("core/proposals.ts")), "the reply says when the old seat closed");
+}
 
 console.log("check:dept ok");
 

@@ -2,7 +2,7 @@
 // Run: npm run check:org
 import assert from "node:assert/strict";
 
-import { placeSpots, planPlacement, seatTitleFor, MAX_SEATS, LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, groupByDepartment, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, headBlock, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
+import { placeSpots, placedWords, planPlacement, seatToClose, seatTitleFor, MAX_SEATS, LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, groupByDepartment, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, headBlock, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
 
 const org: Org = {
   departments: [{ id: "marketing", name: "Marketing", sort: 1, monthlyBudgetUsd: 20, maxEmailsPerDay: null, leadChecksDrafts: false }],
@@ -141,6 +141,16 @@ assert.match((planPlacement(org, "b_sub", "marketing", null, "Subs") as { proble
 assert.deepEqual(planPlacement(org, "b_sub", "marketing", "l", "Subs"), { seatId: "l" }, "but an open seat in its own department is fine");
 assert.match((planPlacement(org, "b_tess", "coffee", null, "Tess") as { problem: string }).problem, /isn’t on the chart/);
 assert.match((planPlacement(org, "b_tess", "marketing", null, "  ") as { problem: string }).problem, /name/);
+// Card 385: a move closes the old seat when it is a department seat, not a head, and nothing sits under it
+assert.equal(seatToClose(org, "b_sub", null)?.id, "s", "moving out leaves nothing under Subscriptions: it closes");
+assert.equal(seatToClose(org, "b_sub", "s"), null, "staying put closes nothing");
+assert.equal(seatToClose(org, "b_tess", null), null, "an agent in no seat leaves nothing behind");
+assert.equal(seatToClose(org, "chief_of_staff", null), null, "the company seat stays");
+const headed: Org = { ...org, seats: org.seats.map((x) => (x.id === "h" ? { ...x, holder: "agent" as const, agentId: "b_head" } : x.id === "l" ? { ...x, holder: "agent" as const, agentId: "b_lead" } : x)) };
+assert.equal(seatToClose(headed, "b_head", null), null, "a head seat stays open");
+assert.equal(seatToClose(headed, "b_lead", null), null, "a seat with seats under it stays open");
+assert.equal(placedWords("Wren", { words: "a new Researcher seat in Product", closed: "Analyst" }), "Wren is in a new Researcher seat in Product now. Its old Analyst seat is closed. Nothing else about it changed.");
+assert.equal(placedWords("Tess", { words: "the Lead seat in Sales", closed: null }), "Tess is in the Lead seat in Sales now. Nothing else about it changed.");
 const full: Org = { ...org, seats: [...org.seats, ...Array.from({ length: MAX_SEATS - org.seats.length }, (_, i) => ({ id: `f${i}`, departmentId: "marketing", parentId: "h", title: `F${i}`, sub: "", holder: "owner" as const, agentId: null, sort: 9 + i }))] };
 assert.ok(!placeSpots(full, "marketing").some((x) => x.seatId === null), "a full chart offers no new seat");
 assert.match((planPlacement(full, "b_tess", "marketing", null, "Tess") as { problem: string }).problem, /at most/);

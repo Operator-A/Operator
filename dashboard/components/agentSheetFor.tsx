@@ -3,6 +3,7 @@ import "server-only";
 // actions the old agent and builder pages used, so every check stays where it was.
 import { discardLessonLine, forgetMemoryLine, keepLessonLine, goBack, goLive, moveIntoOperator, realRun, routineRemove, routineSave, saveSpec, setAgentTime, setBuiltBudget, setEnabled, tryBuilt } from "@/dashboard/actions";
 import { agentSheet } from "@/dashboard/agentSheet";
+import { orgPlaceAgent } from "@/dashboard/orgActions";
 import { controlsOn } from "@/dashboard/session";
 import { AgentSheet } from "./agentSheet";
 
@@ -13,7 +14,7 @@ export async function AgentSheetFor({ id, closeHref, tz, now, edit = false }: { 
     <AgentSheet key={id} d={d} closeHref={closeHref} tz={tz} now={now} controls={controlsOn()} edit={edit} act={{
       duty: setEnabled.bind(null, id), run: realRun.bind(null, id), time: setAgentTime.bind(null, id), budget: setBuiltBudget.bind(null, id),
       save: saveSpec.bind(null, id), tryIt: tryBuilt.bind(null, id), goLive: goLive.bind(null, id), forget: forgetMemoryLine, keep: keepLessonLine, discard: discardLessonLine, goBack: goBack.bind(null, id),
-      routineSave: routineSave.bind(null, id), routineRemove: routineRemove.bind(null, id), moveIn: moveIntoOperator.bind(null, id),
+      routineSave: routineSave.bind(null, id), routineRemove: routineRemove.bind(null, id), moveIn: moveIntoOperator.bind(null, id), place: orgPlaceAgent.bind(null, id),
     }} />
   );
 }

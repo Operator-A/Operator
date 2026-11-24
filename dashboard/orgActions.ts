@@ -9,7 +9,7 @@ import { withActor } from "@/core/actor";
 import { db } from "@/core/db";
 import { loadCaps } from "@/core/gateway";
 import { addDepartmentRule, forgetMemory } from "@/core/memory";
-import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, placeAgent, removeSeat, renameDepartment, seatTitleFor, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks } from "@/core/org";
+import { addDepartment, addSeat, deptBudgetChange, deptEmailChange, editSeat, loadOrg, removeDepartment, placeAgent, placedWords, removeSeat, renameDepartment, seatTitleFor, setDeptBudget, setDeptEmailCap, setHolder, setLeadChecks } from "@/core/org";
 import type { ActionResult } from "./actions";
 import { getRoster, asRole } from "./data";
 import { controlsOn } from "./session";
@@ -79,8 +79,9 @@ export async function orgSetHolder(seatId: string, who: string): Promise<ActionR
 }
 
 /**
- * Card 370: adds an agent to a department from Crew, owner only: into the open seat picked, or (seatId empty) a
- * new seat under the head named after the agent's role. Its old seat, if any, opens. Gives it nothing else.
+ * Card 370: adds an agent to a department from Crew or its sheet (card 385, moving a placed agent), owner only: into
+ * the open seat picked, or (seatId empty) a new seat under the head named after the agent's role. Its old seat closes
+ * when nothing sits under it and it isn't a head, else it opens. Gives it nothing else.
  */
 export async function orgPlaceAgent(agentId: string, deptId: string, seatId: string | null): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
@@ -92,8 +93,8 @@ export async function orgPlaceAgent(agentId: string, deptId: string, seatId: str
     const a = (await getRoster()).byId[id];
     const name = a?.name ?? id;
     const r = await withActor(me.email, () => placeAgent(id, d, { seatId: s, title: seatTitleFor({ name, role: a?.role }), sub: a?.job && a.job !== "No job line yet" ? a.job : "" }));
-    await audit(me, "place_agent", id, { department: d, seat: r.seatId });
-    return done(`${name} is in ${r.words} now. Nothing else about it changed.`);
+    await audit(me, "place_agent", id, { department: d, seat: r.seatId, closed: r.closed });
+    return done(placedWords(name, r));
   } catch (e) { return fail(e); }
 }
 

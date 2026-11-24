@@ -9,7 +9,7 @@ import { orgDate } from "@/core/tz";
 import { db } from "@/core/db";
 import { createBuiltAgent, draftOf, listSpecVersions, readSpec, saveSpecVersion } from "@/core/agent-spec";
 import { teach } from "@/core/memory";
-import { addSeat, agentNames, below, headOf, liveAgentIds, loadOrg, placeAgent, planPlacement, removeSeat, seatOf, seatTitleFor, setHolder, unseat, type Org, type Seat } from "@/core/org";
+import { addSeat, agentNames, below, headOf, liveAgentIds, loadOrg, placeAgent, placedWords, planPlacement, removeSeat, seatOf, seatTitleFor, setHolder, unseat, type Org, type Seat } from "@/core/org";
 import { TOOLS } from "@/core/tools/catalog";
 import { createGoal, editGoal, getGoal, GOALS_MISSING, listGoals, ownMeasureDefs, setGoalState, type Goal } from "@/core/goals";
 import { MAX_GOALS_PER_DEPT, planGoal, type GoalInput } from "@/core/goal-rules";
@@ -349,8 +349,8 @@ export async function acceptProposal(id: string, opts: { grants?: readonly strin
       const { data: row } = await db().from("agents").select("name, role").eq("id", p.agentId).maybeSingle();
       if (!row) throw new Error(`${p.agent} isn't on the crew any more.`);
       const at = await placeAgent(p.agentId, p.deptId, { seatId: p.seatId ?? null, title: seatTitleFor({ name: p.agent, role: row.role as string | null }) });
-      await close(id, "accepted", `${p.agent} is in ${at.words}.`, p.agentId);
-      return { text: `${p.agent} is in ${at.words} now. Nothing else about it changed.`, href: null, agentId: p.agentId };
+      await close(id, "accepted", `${p.agent} is in ${at.words}.${at.closed ? ` Its old ${at.closed} seat is closed.` : ""}`, p.agentId);
+      return { text: placedWords(p.agent, at), href: null, agentId: p.agentId };
     }
     if (p.kind === "department") {
       // card 156: the department, its people off duty, its goals and asks, through the app's own paths

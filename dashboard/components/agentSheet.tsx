@@ -28,6 +28,8 @@ export interface SheetActions {
   routineSave: (routine: string, token: string) => Promise<Result>;
   routineRemove: () => Promise<Result>;
   moveIn: () => Promise<Result>;
+  /** Card 385: moves it to another department (or an open seat in its own), owner only, checked on the server. */
+  place: (deptId: string, seatId: string | null) => Promise<Result>;
 }
 
 const DAY_KEYS = [1, 2, 3, 4, 5, 6, 0];
@@ -35,6 +37,8 @@ const DAY_LETTER = ["S", "M", "T", "W", "T", "F", "S"];
 const DAY_NAME = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const X = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>;
 const CLOCK = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
+/** The Move picker's value for a new seat under the head; any other value is an open seat's id. */
+const NEW_SEAT = "new";
 const asksConfirm = (r: Result) => !r.ok && /^Confirm first/.test(r.text);
 
 export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false }: { d: SheetData; closeHref: string; tz: string; now: number; controls: boolean; act: SheetActions; edit?: boolean }) {
@@ -62,6 +66,14 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false 
   const [addFrom, setAddFrom] = useState(false), [addReport, setAddReport] = useState(false);
   const [rt, setRt] = useState({ routine: "", token: "" });
   const [pick, setPick] = useState(false);
+  // card 385: the Move picker, the same choices as Crew's (a new seat under the head, or an open seat)
+  const firstPlace = () => {
+    const ds = d.places ?? [];
+    const x = ds.find((p) => p.id !== d.deptId && p.spots.length) ?? ds.find((p) => p.spots.length) ?? ds[0];
+    return { dept: x?.id ?? "", spot: x?.spots[0] ? x.spots[0].seatId ?? NEW_SEAT : "" };
+  };
+  const [moving, setMoving] = useState(false);
+  const [mv, setMv] = useState(firstPlace);
 
   useEffect(() => {
     const r = requestAnimationFrame(() => setOpen(true));
@@ -121,6 +133,16 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false 
       } catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong."); }
     });
   }
+
+  const mvSpots = d.places?.find((p) => p.id === mv.dept)?.spots ?? [];
+  const pickDept = (id: string) => { const sp = d.places?.find((p) => p.id === id)?.spots[0]; setMv({ dept: id, spot: sp ? sp.seatId ?? NEW_SEAT : "" }); };
+  const move = () => start(async () => {
+    try {
+      const r = await act.place(mv.dept, mv.spot === NEW_SEAT ? null : mv.spot);
+      setToast(r.text);
+      if (r.ok) setMoving(false);
+    } catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong."); }
+  });
 
   const reads = d.reads.filter((r) => f.tools.includes(r.id));
   const st = d.enabled;
@@ -270,6 +292,26 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false 
             )}
             <div className="fld"><label htmlFor="ag-budget">Daily AI budget</label>
               <div className="row2"><span>$</span><input type="number" id="ag-budget" min={0} max={d.ceiling} step={0.05} value={f.budget} onChange={(e) => set({ budget: e.target.value })} style={{ width: 110 }} /><span className="dp-note">${d.monthAtPace.toFixed(2)} in the last 30 days</span></div></div>
+            {d.places && (
+              <div className="fld"><span className="lbl">Department</span>
+                <div className="row2"><span style={{ fontSize: 14 }}>{d.deptName ?? "Not in a department yet"}</span>
+                  {!moving && <button type="button" className="dp-btn" disabled={!d.places.length} onClick={() => { setMv(firstPlace()); setMoving(true); }}>Move</button>}</div>
+                {moving && (
+                  <div className="ag-move">
+                    <select value={mv.dept} onChange={(e) => pickDept(e.target.value)} aria-label={`Department for ${d.name}`}>
+                      {d.places.map((p) => <option key={p.id} value={p.id}>{p.name}{p.id === d.deptId ? " (now)" : ""}</option>)}
+                    </select>
+                    <select value={mv.spot} onChange={(e) => setMv({ ...mv, spot: e.target.value })} aria-label={`Seat for ${d.name}`} disabled={!mvSpots.length}>
+                      {mvSpots.length ? mvSpots.map((p) => <option key={p.seatId ?? NEW_SEAT} value={p.seatId ?? NEW_SEAT}>{p.label}</option>) : <option value="">{mv.dept === d.deptId ? "No open seat here" : "No room in this department"}</option>}
+                    </select>
+                    <div className="row2">
+                      <button type="button" className="dp-btn dark" disabled={busy || !mv.spot} onClick={move}>{busy ? "Moving…" : "Move"}</button>
+                      <button type="button" className="dp-btn" disabled={busy} onClick={() => setMoving(false)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                <span className="dp-note">Only where it sits changes. Its old seat closes if nothing sits under it. Owner only.</span></div>
+            )}
             <div className="fld"><span className="lbl">Reports to</span><span style={{ fontSize: 14 }}>{d.boss ?? "No one yet"}</span></div>
             {d.spec && !d.claude && (
               <details className="ag-more">
