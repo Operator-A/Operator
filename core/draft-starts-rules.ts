@@ -139,7 +139,7 @@ export function startsToday(flow: Flow, agent: string, manual: boolean, names: R
   for (const c of flow.chains) {
     const k = c.steps.findIndex((x) => x.agent === agent);
     if (k < 0 || !c.on) continue;
-    if (k > 0) { out.push(`After ${names[c.steps[k - 1].agent] ?? c.steps[k - 1].agent} in ${c.name}`); continue; }
+    if (k > 0) { const b = c.steps[k - 1].agent; out.push(`After ${b ? names[b] ?? b : "Ask a model"} in ${c.name}`); continue; }
     if (c.start.type === "schedule") out.push(`${timeWords(c.start.days, c.start.time).replace(/^./, (m) => m.toUpperCase())}`);
     else if (c.start.type === "event") out.push(eventStartWords(c.start));
     else if (c.start.type === "approval") out.push(`When an approval is decided (${c.name})`);

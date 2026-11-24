@@ -17,7 +17,7 @@ import { reactionTally, reactionsOf, reactionsOnRun, type Reaction } from "@/cor
 import type { Tally } from "@/core/reaction-rules";
 import { APPROVAL_LABELS, APPROVAL_TOOLS, MAX_CHAINS, MAX_STEPS, METRICS, listFlowVersions, loadFlow, nextFirings, readFlow, type Chain, type Crew } from "@/core/flow";
 import { TOOLS } from "@/core/tools/catalog";
-import { CLAUDE_KEY_ID, mcpStatuses, vaultReady, type McpStatus } from "@/integrations/mcp";
+import { CLAUDE_KEY_ID, mcpStatuses, modelKeysReady, vaultReady, type McpStatus } from "@/integrations/mcp";
 import { claudeState } from "./claude";
 import { claudeReady } from "@/core/claude-choice-rules";
 import { withOrg } from "@/core/tenancy";
@@ -27,7 +27,9 @@ import type { CrewMember, IntegrationId } from "./crew";
 import { buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
 import { runCostOf, type CostSpec } from "./cost";
 import { realCost } from "@/core/cost-rules";
-import type { ChainAgent, ChainsData } from "./components/chains";
+import type { ChainAgent, ChainModel, ChainsData } from "./components/chains";
+import { payers } from "@/core/ask-rules";
+import { NO_MODEL_KEYS, modelReady } from "@/core/agent-spec";
 import { MODEL_LIST } from "@/integrations/models";
 import { SESSION_COOKIE, controlsOn, sessionOf } from "./session";
 import { memberById } from "@/core/members";
@@ -286,7 +288,7 @@ export const getRoster = cache(async (): Promise<Roster> => {
   }
   // the roster (docs/agent-roster.md): every agent with a live version, the same whether it started in code or the app
   const live = rows.filter((x) => specs[x.id]).sort((x, y) => (x.created_at ?? "").localeCompare(y.created_at ?? "") || x.id.localeCompare(y.id));
-  const palette: Crew = { ids: live.map((x) => x.id).sort(), manualOnly: new Set(live.filter((x) => x.manual_only !== false).map((x) => x.id)) };
+  const palette: Crew = { ids: live.map((x) => x.id).sort(), manualOnly: new Set(live.filter((x) => x.manual_only !== false).map((x) => x.id)), models: MODEL_LIST.map((m) => m.id) };
   const chains: Chain[] = flowRow.error || !flowRow.data ? [] : readFlow(flowRow.data.flow, palette).flow.chains;
   const tools = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, { label: t.label, kind: t.kind }]));
   const seatTitle = (id: string) => org?.seats.find((x) => x.holder === "agent" && x.agentId === id)?.title ?? null;
@@ -564,8 +566,11 @@ export async function getChains(r: Roster, tz: string, versions = false): Promis
       metrics: METRICS[id] ?? [], perRun: a?.perRun ?? null, estimated: a?.costBasis === "estimate",
     };
   });
+  // Ask a model steps (chains slice 2): the models and whether each can run here, and who pays for a chain's steps
+  const keys = await modelKeysReady().catch(() => NO_MODEL_KEYS);
+  const models: ChainModel[] = MODEL_LIST.map((m) => ({ id: m.id, label: m.label, ready: modelReady(m.id, keys), in: m.in, out: m.out }));
   const base = {
-    palette, deptOf, depts: (chart?.departments ?? []).map((d) => ({ id: d.id, name: d.name })),
+    palette, deptOf, depts: (chart?.departments ?? []).map((d) => ({ id: d.id, name: d.name })), models, payers: payers(chart),
     approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })),
     controls: controlsOn(), maxSteps: MAX_STEPS, maxChains: MAX_CHAINS, now: r.now, tz,
   };
@@ -597,7 +602,7 @@ export async function getChainRuns(runId: string): Promise<{ chainId: string; ke
   try {
     const flow = await loadFlow((await getRoster()).palette);
     const c = flow.flow.chains.find((x) => x.key === me.chain_key);
-    if (c) { name = c.name; steps = c.steps.map((s) => s.agent); }
+    if (c) { name = c.name; steps = c.steps.map((s) => s.agent ?? "Ask a model"); }
   } catch { /* the flow can't be read: show the runs alone */ }
   return {
     chainId: me.chain_id as string, key: me.chain_key as string, name, steps,

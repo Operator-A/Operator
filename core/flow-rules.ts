@@ -4,7 +4,7 @@
 // The crew flow: which agents run when, and which agent starts
 // after another. A flow is a list of chains. Each chain has one start (a schedule, the Run
 // button, an approval being decided, a signed outside event, or another chain finishing) and one
-// to eight agent steps, and an owner: an agent, a department or the company (chains slice 1). A step after the first
+// to eight steps (an agent, or from chains slice 2 an Ask a model step), and an owner: an agent, a department or the company. A step after the first
 // can wait for the step before it to finish OK or failed (or either), only go on if a number
 // the code computed passes a check, only run on some days, wait until a time, and pass the
 // earlier step's summary along as facts.
@@ -66,8 +66,22 @@ export type Start =
   /** Another chain of the flow finished its last step (chains slice 1): "ok" only when that step worked, or "any". */
   | { type: "after"; chain: string; when?: "ok" | "any" };
 
-export interface Step {
-  agent: string;
+/**
+ * Ask a model (chains slice 2): a quick step, not an agent. One instruction to one model on the list, the step
+ * before's result as facts when passed along, text back. No tools, no reads, no memory, so it can reach nothing;
+ * capped at `maxUsd` a run and billed to the chain owner's agent (billedBy in core/chain-bill-rules.ts).
+ */
+export interface Ask { model: string; prompt: string; maxUsd: number }
+/** The limits of an Ask a model step, in code. `maxUsd` is the most a step's cap may be set to. */
+export const ASK = { promptMax: 2000, maxUsd: 1, defaultUsd: 0.1, outMax: 4000 } as const;
+const MODEL_ID = /^[a-z0-9][a-z0-9.-]{1,59}$/;
+
+/** A step: one of the crew (`agent`), or an Ask a model step (`ask`), never both. */
+export type Step = StepIf & ({ agent: string; ask?: undefined } | { ask: Ask; agent?: undefined });
+/** What a step is called in sentences: its agent, or "Ask a model". */
+export const stepName = (s: Step) => s.agent ?? "Ask a model";
+
+export interface StepIf {
   /** How the step before must have ended. Ignored on the first step. */
   when?: When;
   /** Only go on when this number, computed in code by the step before, passes. */
@@ -96,7 +110,7 @@ export const METRICS: Record<string, { key: string; label: string }[]> = {
  * run only by hand (agents.manual_only), which may only be in a chain started with the Run chain
  * button. Every agent on the engine can read a hand-off from the step before.
  */
-export interface Crew { ids: readonly string[]; manualOnly: ReadonlySet<string> }
+export interface Crew { ids: readonly string[]; manualOnly: ReadonlySet<string>; models?: readonly string[] }
 /** Gateway action types an approval start may name (core/gateway/policy.ts TOOLS). */
 export const APPROVAL_TOOLS = ["mercury.annotate_transaction"];
 export const APPROVAL_LABELS: Record<string, string> = { "mercury.annotate_transaction": "Quinn’s receipt, category and memo changes" };
@@ -175,9 +189,15 @@ function chainProblems(c: Chain, i: number, crew: Crew, keys: ReadonlySet<unknow
   const seen = new Set<string>();
   c.steps.forEach((st: Step, k: number) => {
     const sat = `${at}, step ${k + 1}`;
-    if (!st || !crew.ids.includes(st.agent)) { out.push(`${sat}: unknown agent.`); return; }
-    if (seen.has(st.agent)) out.push(`${sat}: ${st.agent} is already in this chain. No loops.`); seen.add(st.agent);
-    if (crew.manualOnly.has(st.agent) && s?.type !== "button") out.push(`${sat}: ${st.agent} runs only by hand, so it can only be in a chain started with the Run chain button.`);
+    if (!st || typeof st !== "object") { out.push(`${sat}: unknown agent.`); return; }
+    if (st.ask !== undefined) {
+      if (st.agent !== undefined) { out.push(`${sat}: a step is an agent or Ask a model, not both.`); return; }
+      out.push(...askProblems(st.ask, crew).map((p) => `${sat}: ${p}`));
+    } else {
+      if (!crew.ids.includes(st.agent)) { out.push(`${sat}: unknown agent.`); return; }
+      if (seen.has(st.agent)) out.push(`${sat}: ${st.agent} is already in this chain. No loops.`); seen.add(st.agent);
+    }
+    if (st.agent !== undefined && crew.manualOnly.has(st.agent) && s?.type !== "button") out.push(`${sat}: ${st.agent} runs only by hand, so it can only be in a chain started with the Run chain button.`);
     if (st.when !== undefined && !["ok", "failed", "any"].includes(st.when)) out.push(`${sat}: when must be ok, failed or any.`);
     if (st.days !== undefined && !isDays(st.days)) out.push(`${sat}: days must be at least one day of the week.`);
     if (st.notBefore !== undefined && (typeof st.notBefore !== "string" || !TIME.test(st.notBefore) || Number(st.notBefore.slice(3)) % 15)) out.push(`${sat}: not before must be HH:MM on a quarter hour.`);
@@ -185,10 +205,24 @@ function chainProblems(c: Chain, i: number, crew: Crew, keys: ReadonlySet<unknow
     if (st.check !== undefined) {
       const prev = k > 0 ? c.steps[k - 1]?.agent : undefined;
       if (k === 0) out.push(`${sat}: the first step has nothing before it to check.`);
-      else if (!METRICS[prev!]?.some((m) => m.key === st.check!.metric)) out.push(`${sat}: ${prev} doesn't report ${String(st.check.metric)}.`);
+      else if (!prev || !METRICS[prev]?.some((m) => m.key === st.check!.metric)) out.push(`${sat}: ${prev ?? "Ask a model"} doesn't report ${String(st.check.metric)}.`);
       if (!OPS.includes(st.check.op) || typeof st.check.value !== "number" || !Number.isFinite(st.check.value)) out.push(`${sat}: the check needs a comparison and a number.`);
     }
   });
+  return out;
+}
+
+/** Why an Ask a model step can't be saved; [] when it is fine. `crew.models` is the model list, when known. */
+export function askProblems(a: unknown, crew: Pick<Crew, "models">): string[] {
+  if (!a || typeof a !== "object") return ["Ask a model needs a model, an instruction and a cap."];
+  const x = a as Partial<Ask>;
+  const out: string[] = [];
+  if (typeof x.model !== "string" || !MODEL_ID.test(x.model) || (crew.models && !crew.models.includes(x.model))) out.push("pick a model OPERATOR runs.");
+  if (typeof x.prompt !== "string" || !x.prompt.trim()) out.push("say what to ask the model.");
+  else if (x.prompt.length > ASK.promptMax) out.push(`the instruction is at most ${ASK.promptMax} characters.`);
+  if (typeof x.maxUsd !== "number" || !Number.isFinite(x.maxUsd) || x.maxUsd < 0.01 || x.maxUsd > ASK.maxUsd) out.push(`the cap is between $0.01 and $${ASK.maxUsd.toFixed(2)} a run.`);
+  const extra = Object.keys(x).filter((k) => !["model", "prompt", "maxUsd"].includes(k));
+  if (extra.length) out.push(`Ask a model takes a model, an instruction and a cap only (not ${extra.join(", ")}).`);
   return out;
 }
 
@@ -222,7 +256,8 @@ export function followersOf(flow: Flow, key: string, ended: Ended["status"]): Ch
 /** Who owns a chain: its saved owner, else an agent's own one-step chain (soloKey) is that agent's, else the company's (null). */
 export function chainOwner(c: Chain): Owner | null {
   if (c.owner) return c.owner;
-  if (c.key.startsWith("solo-") && c.steps.length === 1) return { agent: c.steps[0].agent };
+  const only = c.steps.length === 1 ? c.steps[0].agent : undefined;
+  if (c.key.startsWith("solo-") && only) return { agent: only };
   return null;
 }
 
@@ -278,15 +313,15 @@ export function afterStep(c: Chain, k: number, ended: Ended, tz: string, now = D
   if (!next) return { go: false, why: "That was the last step." };
   if (ended.status === "skipped") return { go: false, why: "The step was skipped (off duty or over budget), so the chain stops." };
   const when = next.when ?? "ok";
-  if (when === "ok" && ended.status !== "ok") return { go: false, why: `${next.agent} only runs when the step before worked.` };
-  if (when === "failed" && ended.status !== "failed") return { go: false, why: `${next.agent} only runs when the step before failed.` };
+  if (when === "ok" && ended.status !== "ok") return { go: false, why: `${stepName(next)} only runs when the step before worked.` };
+  if (when === "failed" && ended.status !== "failed") return { go: false, why: `${stepName(next)} only runs when the step before failed.` };
   if (next.check) {
     const v = ended.metrics?.[next.check.metric];
     if (v === undefined) return { go: false, why: `The step before didn't report ${next.check.metric}, so the check can't pass.` };
     if (!pass(next.check.op, v, next.check.value)) return { go: false, why: `${next.check.metric} was ${v}, not ${next.check.op} ${next.check.value}.` };
   }
   const today = localDate(tz, 0, new Date(now));
-  if (!onDay(next.days, today)) return { go: false, why: `${next.agent} only runs ${dayWords(next.days!)}.` };
+  if (!onDay(next.days, today)) return { go: false, why: `${stepName(next)} only runs ${dayWords(next.days!)}.` };
   const at = next.notBefore ? localAt(today, next.notBefore, tz) : null;
   return { go: true, step: k + 1, at: at && at > now ? at : null };
 }
@@ -303,8 +338,11 @@ export function flowLooser(now: Flow, next: Flow): string[] {
     const was = now.chains.find((x) => x.key === c.key);
     if (!was || !was.on) out.push(`${c.name} starts running on its own`);
     else {
-      const added = c.steps.filter((s) => !was.steps.some((w) => w.agent === s.agent)).map((s) => s.agent);
+      const added = c.steps.flatMap((s) => (s.agent && !was.steps.some((w) => w.agent === s.agent) ? [s.agent] : []));
       if (added.length) out.push(`${c.name} now also runs ${added.join(", ")}`);
+      // Ask a model steps spend on their own: a higher total cap a run is looser (chains slice 2)
+      const capOf = (x: Chain) => x.steps.reduce((t, s) => t + (s.ask?.maxUsd ?? 0), 0);
+      if (capOf(c) > capOf(was) + 1e-9) out.push(`${c.name} may now spend up to $${capOf(c).toFixed(2)} a run on Ask a model (was $${capOf(was).toFixed(2)})`);
       if (c.start.type !== was.start.type || JSON.stringify(c.start) !== JSON.stringify(was.start)) out.push(`${c.name} starts at a different time or on a different event`);
     }
   }
@@ -330,7 +368,7 @@ function dropStep(c: Chain, agent: string): Chain | null {
   if (k > 0) return { ...c, steps };
   const [first, ...rest] = steps;
   const start: Start = c.start.type === "schedule" ? { type: "schedule", days: first.days ?? c.start.days, time: first.notBefore ?? c.start.time } : c.start;
-  return { ...c, start, steps: [{ agent: first.agent }, ...rest] };
+  return { ...c, start, steps: [first.ask ? { ask: first.ask } : { agent: first.agent }, ...rest] };
 }
 
 /**
@@ -360,7 +398,7 @@ export function withAgentTime(flow: Flow, agent: string, name: string, t: AgentT
     if (k === 0) return { ...c, start: { type: "schedule" as const, days: t.days, time: t.time } };
     return { ...c, steps: c.steps.map((s, i) => (i === k ? { ...s, notBefore: t.time, days: t.days === start.days ? undefined : t.days } : s)) };
   });
-  if (k > 0 && t.time < start.time) return { refuse: `${name} runs after ${own.steps[k - 1].agent} in ${own.name}, which starts at ${start.time}, so pick ${start.time} or later, or change it on the chain.` };
+  if (k > 0 && t.time < start.time) return { refuse: `${name} runs after ${stepName(own.steps[k - 1])} in ${own.name}, which starts at ${start.time}, so pick ${start.time} or later, or change it on the chain.` };
   return { flow: { chains } };
 }
 

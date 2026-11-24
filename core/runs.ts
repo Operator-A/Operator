@@ -88,7 +88,7 @@ async function deptBlocked(agentId: string): Promise<string | null> {
  * Trigger "preview" (a try from the builder) loads none: the job reads memory itself without
  * changing it.
  */
-export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null) => Promise<RunResult>, opts: { chain?: RunChain } = {}): Promise<RunResult & { runId: string }> {
+export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null) => Promise<RunResult>, opts: { chain?: RunChain; quick?: boolean } = {}): Promise<RunResult & { runId: string }> {
   return traced("run", { "operator.agent": agentId, "operator.trigger": trigger, "operator.chain": opts.chain?.key }, async (set) => {
     const out = await loggedRun(agentId, trigger, job, opts, (runId) => set({ "operator.run": runId }));
     set({ "operator.status": out.status, "operator.tokens_in": out.tokensIn ?? 0, "operator.tokens_out": out.tokensOut ?? 0, "operator.cost_usd": out.costUsd ?? 0 });
@@ -96,7 +96,7 @@ export async function withRun(agentId: string, trigger: string, job: (runId: str
   });
 }
 
-async function loggedRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null) => Promise<RunResult>, opts: { chain?: RunChain }, started: (runId: string) => void): Promise<RunResult & { runId: string }> {
+async function loggedRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null) => Promise<RunResult>, opts: { chain?: RunChain; quick?: boolean }, started: (runId: string) => void): Promise<RunResult & { runId: string }> {
   // chain columns arrive with the crew_flow migration; only a chain run names them
   const c = opts.chain;
   const chainCols = c ? { chain_id: c.chainId, chain_key: c.key, chain_step: c.step, ...(c.parent ? { parent_run_id: c.parent } : {}) } : {};
@@ -109,7 +109,8 @@ async function loggedRun(agentId: string, trigger: string, job: (runId: string, 
   const billing: Billing = await billingNow().catch(() => "own_key" as const);
   try {
     const blocked = await blockedReason(agentId, trigger, billing);
-    const agentRun = !blocked && (trigger === "cron" || trigger === "manual" || trigger === "chain");
+    // an Ask a model chain step (opts.quick) is not the agent thinking either: it only pays for it
+    const agentRun = !blocked && !opts.quick && (trigger === "cron" || trigger === "manual" || trigger === "chain");
     // only agent runs load memory; a gateway apply run (trigger "approval") is not the agent thinking,
     // and a Preview reads memory itself without counting anything down
     if (agentRun) {

@@ -48,7 +48,7 @@ export function planOrgOn(members: readonly OrgMember[], chains: readonly Chain[
   const inOrg = members.filter((m) => m.inOrg);
   const ids = new Set(inOrg.map((m) => m.id));
   // a chain comes on with the org only when every agent in it is in the org; one that is on stays on
-  const next = chains.map((c) => (c.on || !c.steps.every((s) => ids.has(s.agent)) ? c : { ...c, on: true }));
+  const next = chains.map((c) => (c.on || !c.steps.every((s) => !s.agent || ids.has(s.agent)) ? c : { ...c, on: true }));
   const chainsOn = next.filter((c, i) => c.on && !chains[i].on).map((c) => c.key);
   // the agent's schedule once those chains are on: only chains that are on count
   const live = next.filter((c) => c.on);

@@ -3,13 +3,15 @@
 // the open chain as a lane on the right (its start, then each step, with what passes between them and a "+" to add a
 // step there). Used on a department page's Chains tab and on Settings > Schedule (every chain, plus the versions).
 // It only holds the open chain until Save: the server (saveChain) merges it into the saved flow and checks it again,
-// and a chain never turns an agent on.
+// and a chain never turns an agent on. A step is an agent or, from chains slice 2, an Ask a model step: one
+// instruction to a model, text back, no tools, capped a run and billed to the agent that pays for the chain.
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import type { ActionResult, ChainPreviewStep } from "@/dashboard/actions";
-import { DAYS, flowProblems, isDays, runsPerMonth, type Chain, type Days, type Flow, type Op, type Owner, type Start, type Step, type When } from "@/core/flow-rules";
+import { ASK, DAYS, flowProblems, isDays, runsPerMonth, type Chain, type Days, type Flow, type Op, type Owner, type Start, type Step, type When } from "@/core/flow-rules";
 import { EVENTS, EVENT_BY_TYPE, type EventStart, type EventType } from "@/core/event-rules";
-import { afterChoices, boardGroups, linkWords, moveStep, newChain, roomFor, startWords, withStep, withoutStep } from "@/dashboard/chain-rules";
+import { afterChoices, askModel, boardGroups, linkWords, moveStep, newAsk, newChain, roomFor, startWords, withStep, withoutStep } from "@/dashboard/chain-rules";
+import { payerOf, type Payers } from "@/core/ask-rules";
 import { Modal, Toast, type Confirm } from "./client";
 import { Summary } from "./ui";
 
@@ -22,12 +24,16 @@ export interface ChainAgent {
   /** Average cost of its last real runs; null before any. */
   perRun: number | null; estimated: boolean;
 }
+/** A model an Ask a model step can pick (integrations/models.ts), and whether it can run here (its key is saved). */
+export interface ChainModel { id: string; label: string; ready: boolean; in: number; out: number }
 export interface ChainVersion { version: number; active: boolean; note: string | null; createdBy: string; createdAt: string; chains: number; on: string[] }
 export interface ChainsData {
   version: number; flow: Flow; problems: string[]; versions: ChainVersion[];
   /** Next scheduled firings (ISO) of each saved chain. */
   next: Record<string, string[]>;
   palette: ChainAgent[]; deptOf: Record<string, string | null>; depts: { id: string; name: string }[];
+  /** Ask a model steps: the model list, and the agents that pay for a department's or the company's chains. */
+  models: ChainModel[]; payers: Payers;
   approvalTools: { id: string; label: string }[];
   controls: boolean; maxSteps: number; maxChains: number; now: number; tz: string; problem?: string;
 }
@@ -68,10 +74,13 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
   actions: ChainsActions;
 }) {
   const byId = useMemo(() => Object.fromEntries(d.palette.map((a) => [a.id, a])), [d.palette]);
-  const crew = useMemo(() => ({ ids: d.palette.map((a) => a.id), manualOnly: new Set(d.palette.filter((a) => a.buttonOnly).map((a) => a.id)) }), [d.palette]);
+  const crew = useMemo(() => ({ ids: d.palette.map((a) => a.id), manualOnly: new Set(d.palette.filter((a) => a.buttonOnly).map((a) => a.id)), models: d.models.map((m) => m.id) }), [d.palette, d.models]);
+  const modelOf = (id: string) => d.models.find((m) => m.id === id);
+  const firstModel = askModel(d.models);
   const groups = useMemo(() => boardGroups(d.flow, scope, d.deptOf, d.depts), [d.flow, scope, d.deptOf, d.depts]);
   const shown = groups.flatMap((g) => g.chains);
   const name = (id: string) => byId[id]?.name ?? id;
+  const stepName = (s: Step) => (s.ask ? `Ask ${modelOf(s.ask.model)?.label ?? s.ask.model}` : name(s.agent));
   const chainName = (key: string) => d.flow.chains.find((c) => c.key === key)?.name ?? key;
   const tool = (id: string) => d.approvalTools.find((t) => t.id === id)?.label ?? id;
 
@@ -121,7 +130,7 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
   };
   const runNow = () => saved && setConfirm({
     title: `Run ${saved.name} now?`, body: "Real runs, one after another, shown in Activity. An agent that is off duty is skipped and the chain stops there.",
-    lines: saved.steps.map((s, k) => ({ k: `Step ${k + 1}`, v: `${name(s.agent)}${byId[s.agent]?.enabled ? "" : " (off duty, skipped)"}` })),
+    lines: saved.steps.map((s, k) => ({ k: `Step ${k + 1}`, v: s.ask ? `${stepName(s)}, up to $${s.ask.maxUsd.toFixed(2)}${payer && "agent" in payer ? `, billed to ${name(payer.agent)}` : ""}` : `${name(s.agent)}${byId[s.agent]?.enabled ? "" : " (off duty, skipped)"}` })),
     confirmLabel: "Run chain", kind: "primary", go: () => run(() => actions.runNow(saved.key)),
   });
   const remove = () => saved && setConfirm({
@@ -139,8 +148,10 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
 
   const set = (c: Chain) => setDraft(c);
   const setStep = (k: number, st: Step) => draft && set({ ...draft, steps: draft.steps.map((x, i) => (i === k ? st : x)) });
-  const perRun = draft ? draft.steps.reduce((s, st) => s + (byId[st.agent]?.perRun ?? 0), 0) : 0;
-  const unknownCost = draft ? draft.steps.some((st) => byId[st.agent]?.perRun == null || byId[st.agent]?.estimated) : false;
+  // an Ask a model step counts at its cap: the most it can cost a run
+  const perRun = draft ? draft.steps.reduce((s, st) => s + (st.ask ? st.ask.maxUsd : byId[st.agent]?.perRun ?? 0), 0) : 0;
+  const unknownCost = draft ? draft.steps.some((st) => !st.ask && (byId[st.agent]?.perRun == null || byId[st.agent]?.estimated)) : false;
+  const payer = draft && draft.steps.some((s) => s.ask) ? payerOf(draft, d.payers) : null;
   const month = draft && draft.on ? perRun * runsPerMonth(draft) : 0;
 
   const picker = (k: number) => {
@@ -165,7 +176,11 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
           </Link>
         )}
         <div className="ch-pgrp">A quick step</div>
-        {[["AI", "Ask a model", "Claude, OpenAI, Gemini or Grok. One instruction, text back", "k-model"], ["▣", "Make an image", "Saved with the run, never posted by itself", "k-image"], ["✓", "Wait for my OK", "An approval card; the chain goes on when you approve", "k-ok"]].map(([ic, t, sub, k]) => (
+        <button type="button" role="menuitem" className="ch-po" disabled={!firstModel} onClick={() => { if (!firstModel) return; set(withStep(draft, k, newAsk(firstModel))); setAdding(null); setOpen(k); }}>
+          <span className="ch-ico k-model" aria-hidden="true">AI</span>
+          <b>Ask a model</b><small>Claude, OpenAI, Gemini or Grok. One instruction, text back, no tools</small>
+        </button>
+        {[["▣", "Make an image", "Saved with the run, never posted by itself", "k-image"], ["✓", "Wait for my OK", "An approval card; the chain goes on when you approve", "k-ok"]].map(([ic, t, sub, k]) => (
           <div key={t} className="ch-po dis" aria-disabled="true">
             <span className={`ch-ico ${k}`} aria-hidden="true">{ic}</span>
             <b>{t}<span className="ch-soon">Coming soon</span></b><small>{sub}</small>
@@ -193,7 +208,7 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
               <button key={c.key} type="button" className="ch-ci" aria-pressed={draft?.key === c.key} onClick={() => choose(c)}>
                 <b>{c.name}{!c.on && <span className="ch-offtag">Off</span>}</b>
                 <small>{startWords(c.start, { chain: chainName, tool })} · {c.steps.length} step{c.steps.length === 1 ? "" : "s"}</small>
-                <span className="ch-minis" aria-hidden="true">{c.steps.map((s) => <i key={s.agent} className={byId[s.agent]?.claude ? "k-claude" : undefined} style={byId[s.agent]?.claude ? undefined : { background: byId[s.agent]?.hue }}>{byId[s.agent]?.claude ? "✦" : name(s.agent).slice(0, 1)}</i>)}</span>
+                <span className="ch-minis" aria-hidden="true">{c.steps.map((s, i) => (s.ask ? <i key={i} className="k-model">AI</i> : <i key={i} className={byId[s.agent]?.claude ? "k-claude" : undefined} style={byId[s.agent]?.claude ? undefined : { background: byId[s.agent]?.hue }}>{byId[s.agent]?.claude ? "✦" : name(s.agent).slice(0, 1)}</i>))}</span>
               </button>
             ))}
             {isNew && draft && (g.id === "dept" || g.id === "company") && <button type="button" className="ch-ci" aria-pressed="true"><b>{draft.name}<span className="ch-offtag">Not saved</span></b><small>{draft.steps.length} step{draft.steps.length === 1 ? "" : "s"}</small></button>}
@@ -226,9 +241,83 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
             </div>
             {link(0, "then")}
             {draft.steps.map((st, k) => {
-              const a = byId[st.agent];
-              const prev = k > 0 ? byId[draft.steps[k - 1].agent] : undefined;
+              const a = st.agent ? byId[st.agent] : undefined;
+              const pb = k > 0 ? draft.steps[k - 1] : undefined;
+              const prev = pb?.agent ? byId[pb.agent] : undefined;
+              const prevName = pb ? (pb.ask ? "the model" : name(pb.agent)) : undefined;
               const nx = draft.steps[k + 1];
+              const shared = (
+                <>
+                  {k > 0 && (
+                    <label className="ch-row"><span>Runs</span>
+                      <select value={st.when ?? "ok"} onChange={(e) => setStep(k, { ...st, when: e.target.value as When })}>{(Object.keys(WHEN_LABEL) as When[]).map((w) => <option key={w} value={w}>{w === "any" ? "either way" : `${WHEN_LABEL[w].replace("it", prevName ?? "the step before")}`}</option>)}</select>
+                    </label>
+                  )}
+                  {k > 0 && prev && prev.metrics.length > 0 && (st.check ? (
+                    <div className="ch-row"><span>Only if</span>
+                      <select aria-label="Number" value={st.check.metric} onChange={(e) => setStep(k, { ...st, check: { ...st.check!, metric: e.target.value } })}>{prev.metrics.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select>
+                      <select aria-label="Comparison" value={st.check.op} onChange={(e) => setStep(k, { ...st, check: { ...st.check!, op: e.target.value as Op } })}>{OPS.map((o) => <option key={o} value={o}>{o}</option>)}</select>
+                      <input aria-label="Value" type="number" style={{ width: 80 }} value={st.check.value} onChange={(e) => setStep(k, { ...st, check: { ...st.check!, value: Number(e.target.value) } })} />
+                      <button type="button" className="ch-x" onClick={() => setStep(k, { ...st, check: undefined })}>No check</button>
+                    </div>
+                  ) : <button type="button" className="ch-x" onClick={() => setStep(k, { ...st, check: { metric: prev.metrics[0].key, op: ">", value: 0 } })}>Only if… a number from {prev.name}</button>)}
+                  <label className="ch-row"><span>On</span>
+                    <select value={st.days ?? "daily"} onChange={(e) => setStep(k, { ...st, days: e.target.value === "daily" ? undefined : (e.target.value as Days) })}>
+                      {[...DAYS, ...(st.days && !DAYS.includes(st.days) ? [st.days] : [])].map((x) => <option key={x} value={x}>{x === "daily" ? "any day" : `${DAY_LABEL[x] ?? x} only`}</option>)}
+                    </select>
+                  </label>
+                  {k > 0 && (
+                    <label className="ch-row"><span>Not before</span>
+                      <select value={st.notBefore ?? ""} onChange={(e) => setStep(k, { ...st, notBefore: e.target.value || undefined })}><option value="">no wait</option>{QUARTERS.map((q) => <option key={q} value={q}>{clock(q)}</option>)}</select>
+                    </label>
+                  )}
+                  {(k > 0 || draft.start.type === "after") && <label className="ch-row ch-chk"><input type="checkbox" checked={!!st.passAlong} onChange={(e) => setStep(k, { ...st, passAlong: e.target.checked || undefined })} />Gets {k > 0 ? (pb?.ask ? "the model’s answer" : `${prevName ?? "the step before"}’s result`) : "the last step’s result"} as facts</label>}
+                  <div className="ch-row">
+                    <button type="button" className="ch-x" disabled={k === 0} onClick={() => { set(moveStep(draft, k, -1)); setOpen(k - 1); }}>Move up</button>
+                    <button type="button" className="ch-x" disabled={!nx} onClick={() => { set(moveStep(draft, k, 1)); setOpen(k + 1); }}>Move down</button>
+                    <button type="button" className="ch-x" disabled={draft.steps.length === 1} onClick={() => { set(withoutStep(draft, k)); setOpen(null); }}>Remove step</button>
+                  </div>
+                </>
+              );
+              if (st.ask) {
+                const ask = st.ask, m = modelOf(ask.model);
+                const setAsk = (p: Partial<typeof ask>) => setStep(k, { ...st, ask: { ...ask, ...p } });
+                return (
+                  <div key={`ask-${k}`} className="ch-stwrap">
+                    <div className={`ch-st${open === k ? " open" : ""}`}>
+                      <span className="ch-ico k-model" aria-hidden="true">AI</span>
+                      <button type="button" className="ch-stb" aria-expanded={open === k} onClick={() => setOpen(open === k ? null : k)}><b>Ask a model{ask.prompt.trim() ? `: ${firstLine(ask.prompt)}` : ""}</b></button>
+                      <span className="ch-badge b-op">{m?.label ?? ask.model}</span>
+                      <span className="ch-what">
+                        A quick task, not an agent: one instruction{st.passAlong ? ", the step before’s result as facts" : ""}, text back. No tools, no reads. Up to {money(ask.maxUsd)} a run
+                        {payer && "agent" in payer ? <>, billed to {name(payer.agent)}.</> : "."}
+                        {payer && "problem" in payer && <b className="ch-warn"> {payer.problem}</b>}
+                        {payer && "agent" in payer && byId[payer.agent] && !byId[payer.agent].enabled && <b className="ch-warn"> {name(payer.agent)} is off duty, so this step is skipped and the chain stops here.</b>}
+                        {m && !m.ready && <b className="ch-warn"> {m.label} needs its key on Connections &gt; Other models.</b>}
+                        {!ask.prompt.trim() && <b className="ch-warn"> Say what to ask.</b>}
+                      </span>
+                      {open === k && (
+                        <div className="ch-opts">
+                          <label className="ch-row"><span>Model</span>
+                            <select value={ask.model} onChange={(e) => setAsk({ model: e.target.value })}>
+                              {d.models.map((x) => <option key={x.id} value={x.id} disabled={!x.ready && x.id !== ask.model}>{x.label}{x.ready ? "" : " (needs its key)"}</option>)}
+                            </select>
+                          </label>
+                          <label className="ch-row ch-ask"><span>Ask</span>
+                            <textarea rows={4} maxLength={ASK.promptMax} placeholder="Write three short captions for this week’s post, each under 120 characters." value={ask.prompt} onChange={(e) => setAsk({ prompt: e.target.value })} />
+                          </label>
+                          <label className="ch-row"><span>Up to</span>
+                            $<input type="number" aria-label="Most it can cost a run, in dollars" min={0.01} max={ASK.maxUsd} step={0.05} style={{ width: 90 }} value={ask.maxUsd} onChange={(e) => setAsk({ maxUsd: Math.round(Number(e.target.value) * 100) / 100 })} />
+                            <span className="ch-note">a run, at most ${ASK.maxUsd.toFixed(2)}. The answer is cut short at the cap.</span>
+                          </label>
+                          {shared}
+                        </div>
+                      )}
+                    </div>
+                    {link(k + 1, nx ? linkWords(nx) : null)}
+                  </div>
+                );
+              }
               return (
                 <div key={`${st.agent}-${k}`} className="ch-stwrap">
                   <div className={`ch-st${open === k ? " open" : ""}`}>
@@ -247,35 +336,7 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
                             {d.palette.filter((p) => p.id === st.agent || !draft.steps.some((s) => s.agent === p.id)).map((p) => <option key={p.id} value={p.id}>{p.name}, {p.role}{p.enabled ? "" : " (off duty)"}{p.buttonOnly ? " · by hand only" : ""}</option>)}
                           </select>
                         </label>
-                        {k > 0 && (
-                          <label className="ch-row"><span>Runs</span>
-                            <select value={st.when ?? "ok"} onChange={(e) => setStep(k, { ...st, when: e.target.value as When })}>{(Object.keys(WHEN_LABEL) as When[]).map((w) => <option key={w} value={w}>{w === "any" ? "either way" : `${WHEN_LABEL[w].replace("it", prev?.name ?? "the step before")}`}</option>)}</select>
-                          </label>
-                        )}
-                        {k > 0 && prev && prev.metrics.length > 0 && (st.check ? (
-                          <div className="ch-row"><span>Only if</span>
-                            <select aria-label="Number" value={st.check.metric} onChange={(e) => setStep(k, { ...st, check: { ...st.check!, metric: e.target.value } })}>{prev.metrics.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select>
-                            <select aria-label="Comparison" value={st.check.op} onChange={(e) => setStep(k, { ...st, check: { ...st.check!, op: e.target.value as Op } })}>{OPS.map((o) => <option key={o} value={o}>{o}</option>)}</select>
-                            <input aria-label="Value" type="number" style={{ width: 80 }} value={st.check.value} onChange={(e) => setStep(k, { ...st, check: { ...st.check!, value: Number(e.target.value) } })} />
-                            <button type="button" className="ch-x" onClick={() => setStep(k, { ...st, check: undefined })}>No check</button>
-                          </div>
-                        ) : <button type="button" className="ch-x" onClick={() => setStep(k, { ...st, check: { metric: prev.metrics[0].key, op: ">", value: 0 } })}>Only if… a number from {prev.name}</button>)}
-                        <label className="ch-row"><span>On</span>
-                          <select value={st.days ?? "daily"} onChange={(e) => setStep(k, { ...st, days: e.target.value === "daily" ? undefined : (e.target.value as Days) })}>
-                            {[...DAYS, ...(st.days && !DAYS.includes(st.days) ? [st.days] : [])].map((x) => <option key={x} value={x}>{x === "daily" ? "any day" : `${DAY_LABEL[x] ?? x} only`}</option>)}
-                          </select>
-                        </label>
-                        {k > 0 && (
-                          <label className="ch-row"><span>Not before</span>
-                            <select value={st.notBefore ?? ""} onChange={(e) => setStep(k, { ...st, notBefore: e.target.value || undefined })}><option value="">no wait</option>{QUARTERS.map((q) => <option key={q} value={q}>{clock(q)}</option>)}</select>
-                          </label>
-                        )}
-                        {(k > 0 || draft.start.type === "after") && <label className="ch-row ch-chk"><input type="checkbox" checked={!!st.passAlong} onChange={(e) => setStep(k, { ...st, passAlong: e.target.checked || undefined })} />Gets {k > 0 ? `${prev?.name ?? "the step before"}’s` : "the last step’s"} result as facts</label>}
-                        <div className="ch-row">
-                          <button type="button" className="ch-x" disabled={k === 0} onClick={() => { set(moveStep(draft, k, -1)); setOpen(k - 1); }}>Move up</button>
-                          <button type="button" className="ch-x" disabled={!nx} onClick={() => { set(moveStep(draft, k, 1)); setOpen(k + 1); }}>Move down</button>
-                          <button type="button" className="ch-x" disabled={draft.steps.length === 1} onClick={() => { set(withoutStep(draft, k)); setOpen(null); }}>Remove step</button>
-                        </div>
+                        {shared}
                       </div>
                     )}
                   </div>
@@ -300,10 +361,10 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
 
           {dirty && problems.length > 0 && <div className="ch-probs">{problems.join(" ")}</div>}
           <div className="ch-foot">
-            <span className="ch-note">Each step runs through its agent’s duty and budget checks. A step’s result reaches the next step as facts, never as instructions.</span>
-            <span className="ch-cost">About <b>{money(perRun)}</b> a run{draft.on && month > 0 && <> · <b>{money(month)}</b> a month</>}{unknownCost ? " (some agents have no real run yet)" : ""}</span>
+            <span className="ch-note">Each step runs through its agent’s duty and budget checks (an Ask a model step, the paying agent’s). A step’s result reaches the next step as facts, never as instructions.</span>
+            <span className="ch-cost">About <b>{money(perRun)}</b> a run{draft.on && month > 0 && <> · <b>{money(month)}</b> a month</>}{unknownCost ? " (some agents have no real run yet)" : ""}{draft.steps.some((x) => x.ask) ? " (Ask a model at its cap)" : ""}</span>
             {saved && <button type="button" className="dp-btn sm ghost" disabled={busy} onClick={remove}>Delete</button>}
-            <button type="button" className="dp-btn" disabled={busy || problems.length > 0} onClick={tryIt} title="Dry-runs each step on real data. No writes, no model, no cost, nothing logged.">Try it</button>
+            <button type="button" className="dp-btn" disabled={busy || problems.length > 0} onClick={tryIt} title="Dry-runs each step on real data. No writes, no model, no cost, nothing logged. An Ask a model step says what it would ask.">Try it</button>
             <button type="button" className="dp-btn dark" disabled={busy || !dirty || problems.length > 0} onClick={save}>{busy ? "Saving…" : "Save"}</button>
           </div>
           {saved && dirty && <span className="ch-note">Run chain now runs the saved version. Save to run your changes.</span>}
@@ -311,7 +372,7 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
       ) : (
         <div className="ch-ed ch-empty">
           <b>No chains here yet</b>
-          <span className="ch-note">A chain starts on a schedule, with Run chain, after another chain, on a live event or when you decide an approval, then runs up to {d.maxSteps} agents in order, each getting the one before’s result.</span>
+          <span className="ch-note">A chain starts on a schedule, with Run chain, after another chain, on a live event or when you decide an approval, then runs up to {d.maxSteps} steps in order (agents, or Ask a model), each getting the one before’s result.</span>
         </div>
       )}
 

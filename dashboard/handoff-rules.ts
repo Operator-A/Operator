@@ -28,13 +28,13 @@ export function chainsOf(id: string, chains: readonly Chain[], names: Record<str
     const startAt = c.start.type === "schedule" ? `${t12(c.start.time)} ${daysShort(c.start.days)}` : c.start.type === "button" ? "Run chain" : c.start.type === "event" ? "a live event" : c.start.type === "after" ? `after ${chains.find((x) => x.key === (c.start as { chain: string }).chain)?.name ?? "another chain"}` : "an approval";
     const nodes = c.steps.map((s, i) => {
       const at = i === 0 ? startAt : [s.days ? daysShort(s.days) : "", s.notBefore ? `not before ${t12(s.notBefore)}` : ""].filter(Boolean).join(", ");
-      return { id: s.agent, name: names[s.agent] ?? s.agent, at, me: s.agent === id };
+      return { id: s.agent ?? "", name: s.agent ? names[s.agent] ?? s.agent : "Ask a model", at, me: s.agent === id };
     });
     const after = c.steps[k + 1];
     return {
       key: c.key, name: c.name, on: c.on, href: href(c), nodes,
       prev: k > 0 ? { name: nodes[k - 1].name, passAlong: !!c.steps[k].passAlong } : null,
-      next: after ? { name: names[after.agent] ?? after.agent, passAlong: !!after.passAlong } : null,
+      next: after ? { name: after.agent ? names[after.agent] ?? after.agent : "Ask a model", passAlong: !!after.passAlong } : null,
     };
   });
 }
