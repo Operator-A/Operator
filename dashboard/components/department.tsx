@@ -3,6 +3,8 @@
 // number comes from code (dashboard/department.ts).
 import Link from "next/link";
 import { ActionButton } from "./client";
+import { AskAveryButton } from "./askAvery";
+import { fillAsk, gapSentence } from "@/core/department-rules";
 import { proposeDepartment, discardDepartmentDraft } from "@/dashboard/proposalActions";
 import { usd } from "@/core/cost-rules";
 import type { DraftView } from "@/dashboard/department";
@@ -73,10 +75,12 @@ export function DraftCard({ v, owner }: { v: DraftView; owner: boolean }) {
       </span>
       <b style={{ fontSize: 15.5, fontWeight: 600 }}>{v.draft.name || "New department"}</b>
       <DraftBody v={v} />
-      {v.gaps.length > 0 && <span className="muted" style={{ fontSize: 12 }}>Still needs {v.gaps.join(", ")}.</span>}
+      {v.gaps.length > 0 && <span className="ink2" style={{ fontSize: 13 }}>{gapSentence(v.gaps)} Avery can suggest them, or tell her in the chat what you want.</span>}
       {owner && (
         <span className="row wrap" style={{ gap: 8 }}>
-          <ActionButton className="btn dark sm" action={proposeDepartment} follow disabled={v.gaps.length > 0} title={v.gaps.length ? `Still needs ${v.gaps.join(", ")}` : undefined}>Propose this department</ActionButton>
+          {v.gaps.length > 0
+            ? <AskAveryButton className="btn dark sm" say={fillAsk(v.gaps)}>Ask Avery to fill these in</AskAveryButton>
+            : <ActionButton className="btn dark sm" action={proposeDepartment} follow>Propose this department</ActionButton>}
           <ActionButton className="btn outline sm" action={discardDepartmentDraft} confirm={{ title: "Discard the draft?", body: "Avery’s department draft goes. The conversation stays.", confirmLabel: "Discard", kind: "danger" }}>Discard</ActionButton>
         </span>
       )}

@@ -8,6 +8,11 @@ import { checkServiceName } from "@/core/connector-rules";
 
 export const MAX_TRACKS = 6, MAX_DEPT_GOALS = 3, MAX_SOURCES = 5, MAX_AGENTS = 2, MAX_PERSON_TOOLS = 8;
 export const MAX_DRAFT_PARTS = 12;
+/**
+ * Card 440: what a head starts with when nothing on the tool list reads its department's source yet
+ * (GitHub with no connection, say). Without it a head could never be added and the draft stayed stuck.
+ */
+export const HEAD_START_TOOLS = ["goal_progress"] as const;
 
 export interface DraftGoal { title: string; measure: string | null; target: number | null }
 export interface DraftSource { service: string; what: string }
@@ -70,8 +75,10 @@ export function checkPerson(input: Record<string, unknown>, ctx: DraftCtx, role:
   const goodResult = many(input.good_result, 400);
   if (goodResult.length < 10) return { problem: "good_result must say what a good result looks like" };
   if (LINK.test(job) || LINK.test(eachRun) || LINK.test(goodResult)) return { problem: "a person's words can't hold a link or an address" };
-  const tools = toolList(input.tools);
-  if (!tools.length) return { problem: "tools must list at least one read tool id" };
+  const named = toolList(input.tools);
+  // a head with no tools named starts with Goal progress; its own tools come once its source is connected
+  const tools = !named.length && role === "head" ? HEAD_START_TOOLS.filter((id) => ctx.tools[id]) : named;
+  if (!tools.length) return { problem: "tools must list at least one read tool id from Department menu (Read a web page, Web search or Goal progress when nothing reads the source yet)" };
   if (tools.length > MAX_PERSON_TOOLS) return { problem: `at most ${MAX_PERSON_TOOLS} tools` };
   for (const id of tools) {
     const t = ctx.tools[id];
@@ -163,7 +170,11 @@ export function applyPart(d: DeptDraft, input: Record<string, unknown>, ctx: Dra
     const others = [...(part === "head" ? next.agents : [next.head, ...next.agents.filter((a) => !same(a.name, one(input.name, 30)))]).filter((x): x is DraftPerson => !!x)];
     const p = checkPerson(input, { ...ctx, agentNames: [...ctx.agentNames, ...others.map((x) => x.name)] }, part);
     if ("problem" in p) return p;
-    if (part === "head") { next.head = p.person; return { draft: next, note: `head ${p.person.name}` }; }
+    if (part === "head") {
+      next.head = p.person;
+      const starter = !toolList(input.tools).length;
+      return { draft: next, note: `head ${p.person.name}${starter ? " (Goal progress until a tool reads its source)" : ""}` };
+    }
     const at = next.agents.findIndex((x) => same(x.name, p.person.name));
     if (at < 0 && next.agents.length >= MAX_AGENTS) return { problem: `at most ${MAX_AGENTS} narrow agents to start: remove one first` };
     if (at >= 0) next.agents[at] = p.person; else next.agents.push(p.person);
@@ -212,6 +223,23 @@ export function draftGaps(d: DeptDraft): string[] {
   if (!d.head) out.push("a head");
   if (!d.goals.length) out.push("at least one goal");
   return out;
+}
+
+const joined = (xs: readonly string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/** Card 440: the card's line when the draft can't be proposed yet, as a full sentence. "" when it can. */
+export function gapSentence(gaps: readonly string[]): string {
+  return gaps.length ? `Still needs ${joined(gaps)} before you can propose it.` : "";
+}
+
+/** Card 440: what Ask Avery to fill these in sends her. */
+export function fillAsk(gaps: readonly string[]): string {
+  return gaps.length ? `Suggest ${joined(gaps)} for the department draft and put them in the draft.` : "";
+}
+
+/** Card 440: the line code adds under a reply about a draft that still has gaps. */
+export function gapNote(gaps: readonly string[]): string {
+  return gaps.length ? `The department draft still needs ${joined(gaps)}. Ask me to suggest them, or tell me what you want.` : "";
 }
 
 export type SourceState =
