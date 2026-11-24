@@ -182,7 +182,7 @@ are in `core/flow-rules.ts` (no database, so the browser checks a draft too), th
 `core/flow.ts` (table `crew_flow`, versioned like `agent_setup`), running in `core/chain.ts`, the
 dispatcher in `app/api/dispatch`. Migration `20261112200000_crew_flow.sql`.
 
-- A flow is up to 12 chains. A chain has a name, an on switch, one start and one to three agents.
+- A flow is up to 30 chains. A chain has a name, an on switch, an owner, one start and one to eight agents (docs/chains.md).
 - Starts: a schedule (every day, weekdays or Mondays, in the business's time zone, on a quarter hour), the Run chain
   button, or an approval being decided (approve, reject or either; at most once a minute per chain).
 - Each step after the first can: run after the step before worked, failed, or either way; only go

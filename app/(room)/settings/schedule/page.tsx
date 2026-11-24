@@ -1,31 +1,33 @@
 // Settings > Schedule (docs/org-schedule.md; moved from Crew > Schedule in department pages slice 11): the org switch,
-// your org's day (when each agent runs, what it costs, on or off), and the chains, the one place a schedule is turned on.
-import { previewChain, rollBackFlow, runChainNow, saveCrewFlow, setAgentTime, setEnabled, turnOffOrg, turnOrgBackOn } from "@/dashboard/actions";
+// your org's day (when each agent runs, what it costs, on or off), and every chain (chains slice 1: the same board as a
+// department's Chains tab, plus the company's chains and the versions).
+import { deleteChain, previewChain, rollBackFlow, runChainNow, saveChain, setAgentTime, setEnabled, turnOffOrg, turnOrgBackOn } from "@/dashboard/actions";
 import { orgDay } from "@/dashboard/orgDay";
 import { OrgDay } from "@/dashboard/components/OrgDay";
 import { planOrgOn } from "@/dashboard/orgPlan";
 import { OrgSwitch } from "@/dashboard/components/OrgSwitch";
-import { getCrewCanvas, getFloor } from "@/dashboard/data";
+import { getChains, getFloor } from "@/dashboard/data";
 import { controlsOn } from "@/dashboard/session";
-import { CrewCanvas } from "@/dashboard/components/CrewCanvas";
+import { ChainsBoard } from "@/dashboard/components/chains";
 import { SectionHead } from "@/dashboard/components/settingsHead";
 
-// Preview dry-runs up to three agents in a row.
+// Try it dry-runs up to eight agents in a row.
 export const maxDuration = 300;
 
-export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ chain?: string }> }) {
+export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ chain?: string; new?: string }> }) {
   const [f, sp] = await Promise.all([getFloor(), searchParams]);
   const pick = typeof sp.chain === "string" && /^[a-z0-9_-]{1,40}$/.test(sp.chain) ? sp.chain : undefined;
+  const startWith = typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined;
   return (
     <>
       <SectionHead title="Schedule" sub="When your org works, what it costs, and when you hear from it." />
-      <Schedule f={f} pick={pick} />
+      <Schedule f={f} pick={pick} startWith={startWith} />
     </>
   );
 }
 
-async function Schedule({ f, pick }: { f: Awaited<ReturnType<typeof getFloor>>; pick?: string }) {
-  const [d, org] = [await getCrewCanvas(f), f.chart];
+async function Schedule({ f, pick, startWith }: { f: Awaited<ReturnType<typeof getFloor>>; pick?: string; startWith?: string }) {
+  const [d, org] = [await getChains(f, f.tz, true), f.chart];
   const members = f.crew.map((a) => ({ id: a.id, name: a.name, inOrg: a.inOrg !== false, perRun: a.perRun ?? null }));
   const plan = planOrgOn(members, d.flow.chains, f.now, f.tz);
   const day = orgDay({
@@ -38,15 +40,10 @@ async function Schedule({ f, pick }: { f: Awaited<ReturnType<typeof getFloor>>; 
     <>
       <OrgSwitch tz={f.tz} org={f.org} plan={plan} controls={controlsOn()} turnOn={turnOrgBackOn} turnOff={turnOffOrg} />
       <OrgDay day={day} controls={controlsOn()} orgOn={f.org.on} setTime={setAgentTime} setOn={setEnabled} />
-      <details className="card" id="chains" style={{ gap: 10 }} open={!!pick && d.flow.chains.some((c) => c.key === pick)}>
-        <summary style={{ cursor: "pointer", fontSize: 14.5, fontWeight: 600 }}>Edit chains: hand-offs between agents</summary>
-        <span className="ink2" style={{ fontSize: 13, lineHeight: 1.55 }}>
-          For more than a time: one agent after another, checks on numbers, waits and hand-offs. Chains run only while the org is on, and a chain never turns an agent on.
-          Every step still checks that its agent is on duty and under its daily budget; a skipped step stops the chain.
-          The next agent only gets facts from the one before (its summary and numbers), never instructions, and nothing an email or web page says can choose what runs.
-        </span>
-        <CrewCanvas d={d} pick={pick} actions={{ save: saveCrewFlow, rollBack: rollBackFlow, runNow: runChainNow, preview: previewChain }} />
-      </details>
+      <section className="stack" id="chains" style={{ gap: 10 }}>
+        <div className="card-h"><span className="card-t">Every chain</span><span className="sub" style={{ flex: 1 }}>The company’s chains, and each department’s (also on its Chains tab). Chains run only while the org is on, and a chain never turns an agent on.</span></div>
+        <ChainsBoard d={d} scope="all" place="Settings" pick={pick} startWith={startWith} actions={{ save: saveChain, remove: deleteChain, runNow: runChainNow, preview: previewChain, rollBack: rollBackFlow }} />
+      </section>
     </>
   );
 }

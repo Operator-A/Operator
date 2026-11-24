@@ -84,7 +84,7 @@ const ok = (r: ReturnType<typeof withAgentTime>) => { if ("refuse" in r) throw n
 // a new time for an agent in no chain: its own one-step chain, on
 const piper = ok(withAgentTime(flow, "b_piper", "Piper", { days: "weekdays", time: "06:30" }));
 assert.equal(piper.chains.length, 2);
-assert.deepEqual(piper.chains[1], { key: "solo-b_piper", name: "Piper", on: true, start: { type: "schedule", days: "weekdays", time: "06:30" }, steps: [{ agent: "b_piper" }] });
+assert.deepEqual(piper.chains[1], { key: "solo-b_piper", name: "Piper", on: true, owner: { agent: "b_piper" }, start: { type: "schedule", days: "weekdays", time: "06:30" }, steps: [{ agent: "b_piper" }] });
 assert.deepEqual(flowProblems(piper, crew), []);
 assert.equal(flow.chains.length, 1); // not changed in place
 // a first step moves the chain's start; a later step moves its "not before"

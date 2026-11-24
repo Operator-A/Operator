@@ -224,7 +224,7 @@ Spec: "Spec: Claude changes agent actions, triggers and schedules" (Claude Doc).
   from Claude on top of it keeps those starts (parts named again replace them); a draft saved in OPERATOR
   doesn't carry them.
 - **Checked at save**: `flowWithStarts` works out the flow from today's flow, then `flowProblems` checks it
-  (at most 3 agents a chain, no loops, a by-hand agent only in Run chain chains). An agent that runs in Claude
+  (at most 8 agents a chain, no loops, a by-hand agent only in Run chain chains). An agent that runs in Claude
   can't take starts.
 - **What each start does**: a schedule or by hand goes through `withAgentTime`, as the sheet does. An event
   makes or replaces the agent's own event chain (`event-<agent>`; event caps unchanged); `none` drops it.

@@ -150,8 +150,8 @@ const run = async () => {
   const out = flowWithStarts(aft.flow, false, "quinn", "Quinn", { after: "none" }) as { flow: Flow };
   assert.deepEqual(out.flow.chains.find((c) => c.key === "solo-morgan")?.steps, [{ agent: "morgan" }]);
   assert.deepEqual((apply({ after: { agent: "avery", when: "ok" } }) as { flow: Flow }).flow.chains.find((c) => c.key === "morning")?.steps.map((x) => x.agent), ["rowan", "avery", "quinn"], "a shared chain that ends with that agent and has room takes it");
-  const full: Flow = { chains: [{ key: "big", name: "Big", on: true, start: { type: "schedule", days: "daily", time: "06:00" }, steps: [{ agent: "rowan" }, { agent: "avery" }, { agent: "morgan" }] }] };
-  assert.match((flowWithStarts(full, true, "quinn", "Quinn", { after: { agent: "morgan", when: "ok" } }) as { refuse: string }).refuse, /already has 3 agents/);
+  const full: Flow = { chains: [{ key: "big", name: "Big", on: true, start: { type: "schedule", days: "daily", time: "06:00" }, steps: ["rowan", "avery", "x1", "x2", "x3", "x4", "x5", "morgan"].map((agent) => ({ agent })) }] };
+  assert.match((flowWithStarts(full, true, "quinn", "Quinn", { after: { agent: "morgan", when: "ok" } }) as { refuse: string }).refuse, /already has 8 agents/);
   assert.match((apply({ after: { agent: "quinn", when: "ok" } }) as { refuse: string }).refuse, /nothing to follow/);
   const hand = flowWithStarts(sched.flow, false, "quinn", "Quinn", { when: "by_hand" }) as { flow: Flow; manual: boolean };
   assert.equal(hand.manual, true);

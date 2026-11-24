@@ -15,6 +15,7 @@ import { nextRuns, schedWords } from "@/dashboard/schedule";
 import { BUDGET_CEILING, RUN_LIMITS, specLooser, versionStarts, type AgentSpec } from "@/core/agent-spec";
 import { readStored, startsWords } from "@/core/draft-starts-rules";
 import { runsOn } from "@/core/claude-agents";
+import { chainHref, newChainHref } from "@/dashboard/chain-rules";
 import { promptLine } from "@/core/routine-rules";
 import { routineState, type RoutineState } from "@/integrations/mcp";
 import { CONNECTIONS } from "@/dashboard/connections";
@@ -41,7 +42,10 @@ export interface SheetData {
   /** Can do by tool (card 400): connected tools as cards, the rest folded into one line. */
   canBy: { shown: CanGroup[]; later: CanGroup[] };
   /** Hand-offs (card 400): the multi-agent chains it is a step of, each head's report if it reads Department reports, and where a head's report goes. */
-  chains: HandChain[]; heads: (HeadRow & { href: string | null })[] | null; upTo: UpTo | null;
+  chains: HandChain[];
+  /** "+ New chain starting with" this agent (chains slice 1). */
+  newChain: string;
+  heads: (HeadRow & { href: string | null })[] | null; upTo: UpTo | null;
   /** Agents it may run after (on the sheet's "After another agent finishes"), with their schedule. */
   follow: { id: string; name: string; when: string | null }[];
   budget: number; ceiling: number; monthAtPace: number;
@@ -103,6 +107,7 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
   const has = new Set(spec?.tools ?? []);
   const chart = roster.chart;
   const seat = chart ? seatOf(chart, id) : null;
+  const deptOf = Object.fromEntries(roster.palette.ids.map((x) => [x, chart ? seatOf(chart, x)?.departmentId ?? null : null]));
   const dept = seat?.departmentId && chart ? chart.departments.find((d) => d.id === seat.departmentId) ?? null : null;
   const boss = chart && seat ? reportsTo(chart, seat) : null;
   const hs = chart && dept ? headOf(chart, dept.id) : null;
@@ -139,7 +144,7 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
     atGoLive,
     days: s && s.kind !== "manual" ? daySet(s.kind) : [1, 2, 3, 4, 5], time: s && s.kind !== "manual" && s.time ? s.time : "09:00", manual: !s || s.kind === "manual" || !s.time,
     reads, can, canBy: canGroups(can, connName),
-    chains: chainsOf(id, roster.chains, names), heads, upTo: up,
+    chains: chainsOf(id, roster.chains, names, (c) => chainHref(c, deptOf)), newChain: newChainHref(id, dept?.id ?? null), heads, upTo: up,
     follow: roster.crew.filter((x) => x.id !== id).map((x) => ({ id: x.id, name: x.name, when: x.schedule && x.schedule.kind !== "manual" && x.schedule.time ? schedWords(x.schedule) : null })),
     models: menu.models.map((m) => ({ id: m.id, label: m.label, provider: m.provider, on: m.id === spec?.model, ready: m.ready, why: m.ready ? undefined : `Add a ${m.providerName} key on Connections` })),
     budget: b?.budget ?? 0, ceiling: BUDGET_CEILING, monthAtPace: Math.round(spent30 * 100) / 100,
