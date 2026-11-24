@@ -51,25 +51,57 @@ export interface MercuryTxn {
   note?: string | null;
   mercuryCategory?: string | null;
   categoryData?: { id: string; name: string } | null;
+  /** The category's name, set whenever Mercury shows one, even when the reply gives no id (resolved with withCategoryIds). */
+  categoryName?: string | null;
   attachments?: { fileName?: string; attachmentType?: string }[];
 }
 
-/** One transaction, checked. Null without an id or a finite amount. */
+/**
+ * One transaction, checked. Null without an id or a finite amount.
+ * Mercury's MCP replies have come in two shapes. The older one has postedAt, createdAt, categoryData
+ * { id, name } and an attachments list; the newer one (seen from Nov 2026) has date (the posted date),
+ * category (the name only) and attachmentsCount. Both are read, so a settled charge never loses its
+ * date, and a category or attachment already in Mercury is never missed by the gateway's checks.
+ */
 export function readTxn(x: unknown): MercuryTxn | null {
   const t = obj(x);
   const id = str(t.id, 60), amount = fin(t.amount);
   if (!id || amount == null) return null;
   const cat = obj(t.categoryData);
+  const categoryData = str(cat.id, 60) && str(cat.name) ? { id: str(cat.id, 60)!, name: str(cat.name)! } : null;
+  const attachments = Array.isArray(t.attachments)
+    ? t.attachments.map((a) => ({ fileName: str(obj(a).fileName) ?? undefined, attachmentType: str(obj(a).attachmentType, 40) ?? undefined }))
+    : Array.from({ length: Math.max(0, Math.min(100, Math.floor(fin(t.attachmentsCount) ?? 0))) }, () => ({}));
   return {
     id, amount, status: str(t.status, 30) ?? "",
     accountId: str(t.accountId, 60) ?? undefined, kind: str(t.kind, 60) ?? undefined,
-    postedAt: str(t.postedAt, 40), createdAt: str(t.createdAt, 40) ?? undefined,
+    postedAt: str(t.postedAt, 40) ?? str(t.date, 40), createdAt: str(t.createdAt, 40) ?? undefined,
     counterpartyName: str(t.counterpartyName), counterpartyNickname: str(t.counterpartyNickname),
     bankDescription: str(t.bankDescription, 300), note: str(t.note, 500), mercuryCategory: str(t.mercuryCategory, 80),
-    categoryData: str(cat.id, 60) && str(cat.name) ? { id: str(cat.id, 60)!, name: str(cat.name)! } : null,
-    attachments: arr(t.attachments).map((a) => ({ fileName: str(obj(a).fileName) ?? undefined, attachmentType: str(obj(a).attachmentType, 40) ?? undefined })),
+    categoryData,
+    categoryName: categoryData?.name ?? str(t.category),
+    attachments,
   };
 }
+
+/**
+ * Gives a category id to transactions that came back with only a category name, from the business's
+ * own category list (same name, ignoring case and spacing). A name with no match keeps categoryData
+ * null but keeps categoryName, so the charge still reads as categorized.
+ */
+export function withCategoryIds(txns: MercuryTxn[], categories: readonly MercuryCategory[]): MercuryTxn[] {
+  const key = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+  const byName = new Map<string, MercuryCategory>();
+  for (const c of categories) if (!byName.has(key(c.name))) byName.set(key(c.name), c);
+  return txns.map((t) => {
+    if (t.categoryData || !t.categoryName) return t;
+    const c = byName.get(key(t.categoryName));
+    return c ? { ...t, categoryData: { id: c.id, name: c.name } } : t;
+  });
+}
+
+/** True when some transaction names a category but has no id yet. */
+export const needsCategoryIds = (txns: readonly MercuryTxn[]) => txns.some((t) => !t.categoryData && !!t.categoryName);
 
 /** A getTransactionById reply: the transaction itself, or wrapped in `transaction`. */
 export const readOneTxn = (payload: unknown): MercuryTxn | null => readTxn(obj(payload).transaction ?? payload);

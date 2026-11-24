@@ -347,6 +347,8 @@ export interface LiveTxn {
   amount: number;
   note?: string | null;
   categoryData?: { id: string } | null;
+  /** Set when Mercury shows a category, even one whose id couldn't be resolved. */
+  categoryName?: string | null;
   attachments?: unknown[];
 }
 
@@ -374,7 +376,7 @@ export function planWrite(args: AnnotateArgs, live: LiveTxn | null, expect: { am
     else plan.attach = true;
   }
   if (args.category_id) {
-    if (live.categoryData?.id) plan.skipped.push("category: already set in Mercury, never changed by an agent");
+    if (live.categoryData?.id || live.categoryName?.trim()) plan.skipped.push("category: already set in Mercury, never changed by an agent");
     else if (!categoryIds.has(args.category_id)) plan.skipped.push("category: not in Mercury's category list any more");
     else plan.categoryId = args.category_id;
   }

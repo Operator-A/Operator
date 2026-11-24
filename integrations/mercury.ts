@@ -5,7 +5,7 @@ import "server-only";
 // (core/mercury-rules.ts), never by a model.
 import { settings } from "@/core/settings";
 import { callMcpTool, mcpStatus } from "@/integrations/mcp";
-import { MERCURY_UUID, cashOf, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage, type MercuryCategory, type MercuryTxn } from "@/core/mercury-rules";
+import { MERCURY_UUID, cashOf, needsCategoryIds, readAccounts, readCategories, readOneTxn, readOrgName, readTxnPage, withCategoryIds, type MercuryCategory, type MercuryTxn } from "@/core/mercury-rules";
 
 export type { MercuryCategory, MercuryTxn } from "@/core/mercury-rules";
 
@@ -26,6 +26,15 @@ const PAGE = 300;
 
 /** Every settled transaction posted between two dates (YYYY-MM-DD), across all accounts the sign-in sees. */
 export async function mercuryTransactions(postedStart: string, postedEnd: string): Promise<MercuryTxn[]> {
+  return resolveCategories(await listSettled(postedStart, postedEnd));
+}
+
+/** Category ids for replies that give only a category name (Mercury's newer reply shape). */
+async function resolveCategories(txns: MercuryTxn[]): Promise<MercuryTxn[]> {
+  return needsCategoryIds(txns) ? withCategoryIds(txns, await mercuryCategories()) : txns;
+}
+
+async function listSettled(postedStart: string, postedEnd: string): Promise<MercuryTxn[]> {
   const out: MercuryTxn[] = [];
   let after: string | null = null, limit = PAGE;
   for (let call = 0; call < 40; call++) {
@@ -59,7 +68,8 @@ export async function mercuryCategories(): Promise<MercuryCategory[]> {
 export async function mercuryTransaction(id: string): Promise<MercuryTxn | null> {
   if (!MERCURY_UUID.test(id)) return null;
   try {
-    return readOneTxn(await callMcpTool("mercury", "getTransactionById", { transactionId: id }));
+    const t = readOneTxn(await callMcpTool("mercury", "getTransactionById", { transactionId: id }));
+    return t ? (await resolveCategories([t]))[0] : null;
   } catch (e) {
     if (/\b404\b|not found/i.test(e instanceof Error ? e.message : String(e))) return null;
     throw e;

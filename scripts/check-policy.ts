@@ -1,6 +1,6 @@
 // Exercises the gateway caps (core/gateway/policy.ts) with a table of cases. Run: npm run check:policy
 import { DISCOUNT_LIMITS, addDays, daysBetween, normCode, refuseDiscount, refuseDiscountDates, CARRIERS, normTracking, claimsIn, copyFacts, copyHtml, copyPrint, numbersIn, refuseCopyFacts } from "../core/shopify-actions";
-import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_REFUND, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal } from "../core/gateway/policy";
+import { ANNOTATE, CALENDAR_HOLD, CAMPAIGN_DRAFT, MAILCHIMP_DRAFT, WOO_NOTE, HUBSPOT_MOVE, META_PAUSE, DRAFT_EMAIL, SHOPIFY_COPY, SHOPIFY_DISCOUNT, SHOPIFY_REFUND, SHOPIFY_SHIP, SHOPIFY_STOCK, SHOPIFY_TAGS, TOOLS, refuseAgent, refuseCampaignTo, type ActionDef, capChange, checkEmail, checkPurchase, effectiveCap, refuseDraftTo, refuseProposal, planWrite } from "../core/gateway/policy";
 let fails = 0; const t = (n: string, c: boolean) => { if (!c) { fails++; console.log("FAIL", n); } else console.log("ok  ", n); };
 const vendors = [{ id: "v1", name: "Royal", mercury_recipient_id: "r1" }, { id: "v2", name: "NoRecip", mercury_recipient_id: null }];
 const base = { vendors, monthSpentUsd: 0, paidVendorIds: new Set<string>(), maxPurchaseUsd: 500, maxMonthlyUsd: 1500 };
@@ -266,5 +266,18 @@ t("meta: refused on a non-ad target", refuseProposal("b_mkt_1", META_PAUSE, "act
 t("meta: refused when the agent names a target", refuseProposal("b_mkt_1", META_PAUSE, "120210000000001", { ...pz, target: 1 }, 200, ["meta_pause_ad"]) !== null);
 t("meta: refused with a budget", refuseProposal("b_mkt_1", META_PAUSE, "120210000000001", { ...pz, daily_budget: 10 }, 200, ["meta_pause_ad"]) !== null);
 
+// ---- planWrite: a category already in Mercury is never replaced, in either reply shape
+{
+  const want = { amountUsd: 129.37, status: "open" };
+  const cats = new Set(["k9"]);
+  const blank = planWrite({ category_id: "k9" }, { status: "sent", amount: -129.37, categoryData: null, categoryName: null }, want, cats);
+  t("a charge with no category gets the approved one", typeof blank !== "string" && blank.categoryId === "k9");
+  const byName = planWrite({ category_id: "k9" }, { status: "sent", amount: -129.37, categoryData: null, categoryName: "Software & Subscriptions" }, want, cats);
+  t("a category Mercury shows only by name is still left alone", typeof byName !== "string" && !byName.categoryId && byName.skipped.some((x) => x.startsWith("category:")));
+  const withFile = planWrite({ attach: true, receipt_path: "x" }, { status: "sent", amount: -129.37, attachments: [{}] }, want, cats);
+  t("an attachment Mercury counts is never doubled", typeof withFile !== "string" && !withFile.attach);
+}
+
 console.log(fails ? `${fails} FAILED` : "all passed");
 if (fails) process.exit(1);
+

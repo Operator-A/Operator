@@ -92,7 +92,7 @@ function newDoc(t: MercuryTxn, tz: string): Doc {
   return {
     mercury_txn_id: t.id, account_id: t.accountId ?? null, date: dayIn(t.postedAt!, tz), merchant,
     amount_usd: round2(Math.abs(t.amount)), mercury_kind: t.kind ?? null, mercury_category: t.mercuryCategory ?? null,
-    category_id: t.categoryData?.id ?? null, category: t.categoryData?.name ?? null,
+    category_id: t.categoryData?.id ?? null, category: t.categoryData?.name ?? t.categoryName ?? null,
     status: !evidence ? "not_needed" : inMercury ? "matched" : "open",
     status_note: !evidence ? "Moves money between the business's own accounts" : null,
     receipt_path: null, source: inMercury ? "mercury" : null, gmail_message_id: null, receipt_json: null,
@@ -225,6 +225,9 @@ export async function syncBooks(runId: string | undefined, opts: { notionParent?
   ]);
   if (error) throw new Error(`Could not read expense_docs (is the starting migration applied?): ${error.message}`);
   const existing = new Map(((existingRows ?? []) as Doc[]).map((d) => [d.mercury_txn_id, d]));
+  // settled charges always have a posted date: if none does, the reply's shape changed, and skipping
+  // every charge would quietly leave new ones off the books (and their approvals refused at the gateway)
+  if (txns.length && txns.every((t) => !t.postedAt)) throw new Error(`Mercury sent ${txns.length} settled transactions with no posted date, so the books sync stopped instead of skipping them all. The reply format may have changed (core/mercury-rules.ts readTxn).`);
   const charges = txns.filter((t) => t.amount < 0 && t.postedAt);
   const gmailReady = await hasGmailRead();
 
@@ -235,7 +238,7 @@ export async function syncBooks(runId: string | undefined, opts: { notionParent?
     if (!old) { fresh.push(newDoc(t, tz)); continue; }
     const next = { ...old };
     // a category set in Mercury (by a person or a Mercury rule) always wins; the sync never changes it
-    if ((t.categoryData?.id ?? null) !== old.category_id) { next.category_id = t.categoryData?.id ?? null; next.category = t.categoryData?.name ?? null; }
+    if ((t.categoryData?.id ?? null) !== old.category_id) { next.category_id = t.categoryData?.id ?? null; next.category = t.categoryData?.name ?? t.categoryName ?? null; }
     if (t.attachments?.length && OPEN.includes(old.status)) { next.status = "matched"; next.source = "mercury"; next.matched_at = new Date().toISOString(); next.status_note = null; }
     if (JSON.stringify(next) !== JSON.stringify(old)) touched.set(t.id, next);
   }

@@ -116,7 +116,7 @@ const TOOLS_LIST: ToolDef[] = [
       const rows = shown.map((t, i) => {
         const date = (t.postedAt ?? t.createdAt ?? "").slice(0, 10), merchant = t.counterpartyNickname || t.counterpartyName || t.bankDescription || "?";
         picks[`c${i + 1}`] = { kind: "charge", id: t.id, label: `${merchant.slice(0, 60)} · ${usd(t.amount)} · ${date}` };
-        return { pick: `c${i + 1}`, date, merchant, amountUsd: t.amount, kind: t.kind ?? null, category: t.categoryData?.name ?? null, merchantType: t.mercuryCategory ?? null, memo: t.note ?? null, ...(proposed.has(t.id) ? { categoryProposed: true } : {}) };
+        return { pick: `c${i + 1}`, date, merchant, amountUsd: t.amount, kind: t.kind ?? null, category: t.categoryData?.name ?? t.categoryName ?? null, merchantType: t.mercuryCategory ?? null, memo: t.note ?? null, ...(proposed.has(t.id) ? { categoryProposed: true } : {}) };
       });
       return { data: { days: Number(days), shown: rows.length, of: txns.length, charges: rows }, numbers: { transactions: txns.length }, picks };
     },
