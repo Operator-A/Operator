@@ -45,7 +45,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
   cards from no department or from a department since removed are counted apart, so the parts add up to
   the Approvals count. The side menu, the page header, the Approvals tab and Everyone all use it.
 - **Side menu.** Departments sit under the main items with their head's name and the red count, on
-  desktop and in the phone's menu sheet.
+  desktop and in the phone's menu (the same sidebar, sliding in from the left).
 - **Everyone.** `/everyone`, opened by the bell: what needs you (the Desk's list), then every
   department's agents with their state and last run, then the company seat and agents in no department.
   (Deleted in slice 9: the bell is a drop-down and Company > Departments lists agents in no department.)

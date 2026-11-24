@@ -2,7 +2,7 @@
 // The few interactive pieces: theme, nav highlighting, and confirm-then-act buttons.
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { SEEN_COOKIE, parseSeen } from "../seen";
 import { Icon } from "./Icon";
@@ -86,13 +86,17 @@ export function HeaderPop({ label, className, trigger, children, panelClass }: {
   );
 }
 
-/** Phones only (CSS hides it on wide screens): a menu button that opens the full navigation as a sheet. */
-export function MobileMenu({ children, alert }: { children: React.ReactNode; alert?: boolean }) {
-  const here = usePathname() + "?" + useSearchParams().toString();
+// Phones (decided 2026-11-24, the approved mockup's phone menu): the menu button opens the sidebar itself, which
+// slides in from the left over a dimmed page. One menu: the same sidebar as on a wide screen, where none of this shows.
+// It closes on the dim, Escape, a swipe to the left, a tap on a link in it, or after navigating.
+const MenuCtx = createContext<{ open: boolean; set: (o: boolean) => void }>({ open: false, set: () => {} });
+
+export function MenuRoot({ children }: { children: React.ReactNode }) {
+  const here = usePathname();
   // remembers the page it was opened on, so it closes itself after navigating
   const [openOn, setOpenOn] = useState<string | null>(null);
   const open = openOn === here;
-  const setOpen = (o: boolean | ((o: boolean) => boolean)) => setOpenOn((typeof o === "function" ? o(open) : o) ? here : null);
+  const set = useCallback((o: boolean) => setOpenOn(o ? here : null), [here]);
   useEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenOn(null); };
@@ -100,17 +104,33 @@ export function MobileMenu({ children, alert }: { children: React.ReactNode; ale
     document.body.style.overflow = "hidden";
     return () => { document.removeEventListener("keydown", esc); document.body.style.overflow = ""; };
   }, [open]);
+  return <MenuCtx.Provider value={{ open, set }}>{children}</MenuCtx.Provider>;
+}
+
+/** Phones only (CSS hides it on wide screens): the round button at the left of the top bar. */
+export function MenuButton({ alert }: { alert?: boolean }) {
+  const { open, set } = useContext(MenuCtx);
+  return (
+    <button type="button" className="round menu-btn" aria-label="Menu" aria-controls="side-menu" aria-expanded={open} onClick={() => set(!open)} style={{ position: "relative" }}>
+      <Icon name="menu" />
+      {alert && !open && <span className="menu-alert" />}
+    </button>
+  );
+}
+
+/** The sidebar: a panel beside the page on a wide screen, a drawer from the left on a phone. */
+export function SideMenu({ children }: { children: React.ReactNode }) {
+  const { open, set } = useContext(MenuCtx);
+  const x0 = useRef<number | null>(null);
   return (
     <>
-      <button className="round menu-btn" aria-label="Menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} style={{ position: "relative" }}>
-        <Icon name={open ? "x" : "menu"} />
-        {alert && !open && <span className="menu-alert" />}
-      </button>
-      {open && (
-        <div className="sheet-bg" onClick={() => setOpen(false)}>
-          <nav className="sheet" aria-label="Menu" onClick={(e) => e.stopPropagation()}>{children}</nav>
-        </div>
-      )}
+      <div className={"side-bg" + (open ? " open" : "")} onClick={() => set(false)} aria-hidden="true" />
+      <aside id="side-menu" className={"side" + (open ? " open" : "")} aria-label="Menu"
+        onClick={(e) => { if ((e.target as HTMLElement).closest("a")) set(false); }}
+        onTouchStart={(e) => { x0.current = open ? e.touches[0].clientX : null; }}
+        onTouchEnd={(e) => { if (x0.current !== null && x0.current - e.changedTouches[0].clientX > 60) set(false); x0.current = null; }}>
+        {children}
+      </aside>
     </>
   );
 }

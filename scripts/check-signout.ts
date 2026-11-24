@@ -1,7 +1,7 @@
 // Sign out from anywhere (card 204): `npm run check:signout`. Pure: reads source, no database.
 // 1. One button (dashboard/components/signOut.tsx) posts to the signOut action; nothing else makes its own.
-// 2. It is in the Control Room sidebar AND the phone menu (the sidebar is hidden on a phone), in setup's
-//    top bar, and on Settings.
+// 2. It is in your initial's menu in the top bar AND at the bottom of the phone menu (the sidebar, which
+//    slides in from the left on a phone, where your initial's menu is hidden), in setup's top bar, and on Settings.
 // 3. signOut deletes the session cookie and goes to /login.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -12,15 +12,15 @@ assert.match(button, /import \{ signOut \} from "@\/dashboard\/authActions"/, "t
 assert.match(button, /<form action=\{signOut\}/, "the button is a form posting to signOut, so it works before scripts load");
 assert.equal((button.match(/type="submit"/g) ?? []).length, 3, "all three looks submit the form");
 
-// the layout: one in the phone menu sheet, one in your initial's menu in the top bar (slice 9; the sidebar's moved there)
+// the layout: one in your initial's menu in the top bar (slice 9), one in the sidebar's phone-only foot
 const layout = read("app/(room)/layout.tsx");
-const sheet = layout.slice(layout.indexOf("<MobileMenu"), layout.indexOf("</MobileMenu>"));
-const side = layout.slice(layout.indexOf('<aside className="side">'), layout.indexOf("</aside>"));
-const meMenu = layout.slice(layout.indexOf('<HeaderPop label="Your account"'), layout.indexOf("<MobileMenu"));
-assert.ok(sheet.length > 0 && side.length > 0 && meMenu.length > 0, "layout still has the phone menu, the sidebar and your initial's menu");
-assert.match(sheet, /<SignOutButton \/>/, "the phone menu has Sign out");
+const side = layout.slice(layout.indexOf("<SideMenu>"), layout.indexOf("</SideMenu>"));
+const phoneFoot = side.slice(side.indexOf('<div className="side-me phone-only">'));
+const meMenu = layout.slice(layout.indexOf('<HeaderPop label="Your account"'), layout.indexOf("</header>"));
+assert.ok(side.length > 0 && meMenu.length > 0 && side.includes('className="side-me phone-only"'), "layout still has the sidebar, its phone foot and your initial's menu");
+assert.match(phoneFoot, /<SignOutButton \/>/, "the phone menu has Sign out at its foot");
 assert.match(meMenu, /<SignOutButton look="menu" \/>/, "your initial's menu has Sign out");
-assert.doesNotMatch(side, /<SignOutButton/, "the sidebar no longer has its own");
+assert.equal((side.match(/<SignOutButton/g) ?? []).length, 1, "the sidebar's only Sign out is the phone-only one (wide screens use your initial's menu)");
 
 // setup: in the top bar, so a founder mid-setup can leave
 const start = read("app/start/page.tsx");

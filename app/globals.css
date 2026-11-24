@@ -348,7 +348,6 @@ h1, h2, h3, p { margin: 0; }
   .ws:has(.dp) .topbar > * { pointer-events: auto; }
   .ws:has(.dp) .topbar .brand { display: none; }
   .ws:has(.dp) .topbar .top-right { display: contents; }
-  .ws:has(.dp) .topbar .menu-btn { order: -1; }
   .ws:has(.dp) .topbar .round, .ws:has(.dp) .topbar .menu-btn, .ws:has(.dp) .topbar .hp-live { width: 44px; height: 44px; border-radius: 99px; background: rgba(255,255,255,.74); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4); border: 1px solid rgba(255,255,255,.95); box-shadow: 0 14px 30px -20px rgba(46,46,102,.45); }
   :root[data-theme="dark"] .ws:has(.dp) .topbar .round, :root[data-theme="dark"] .ws:has(.dp) .topbar .menu-btn, :root[data-theme="dark"] .ws:has(.dp) .topbar .hp-live { background: rgba(30,30,44,.7); border-color: rgba(255,255,255,.08); }
   .ws:has(.dp) .topbar .top-right > .hp:first-child { margin-left: auto; }
@@ -642,12 +641,7 @@ a.co-row:hover { text-decoration: none; background: var(--soft); }
 .menu-btn, .phone-only { display: none; }
 .wide-only { display: contents; }
 .menu-alert { position: absolute; top: 11px; right: 11px; width: 7px; height: 7px; border-radius: 999px; background: var(--red); border: 1.5px solid var(--soft); }
-.sheet-bg { position: fixed; inset: 0; z-index: 35; background: rgba(17, 17, 20, .38); display: flex; justify-content: flex-end; align-items: flex-start; padding: 64px 8px 8px; }
-.sheet { width: min(320px, 100%); max-height: calc(100dvh - 72px); overflow-y: auto; background: var(--ws); border: 1px solid var(--bd); border-radius: 24px; box-shadow: 0 24px 60px rgba(17, 17, 26, .22); padding: 12px; display: flex; flex-direction: column; gap: 6px; }
-.sheet-group { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
-.sheet-group + .sheet-group { border-top: 1px solid var(--bd); }
-.sheet-group .side-label { padding-top: 6px; }
-.sheet .side-item { min-height: 46px; }
+.side-bg { display: none; }
 
 /* phones and small tablets: one top bar with a menu button, a labeled agent switcher, full-width cards */
 @media (max-width: 860px) {
@@ -657,7 +651,17 @@ a.co-row:hover { text-decoration: none; background: var(--soft); }
   .brand { width: auto; flex: 1; }
   .brand-mark { width: 34px; height: 34px; border-radius: 11px; }
   .top-right { gap: 8px; }
-  .wide-only, .wide-only-block, .side, .top-right .hp-me { display: none; }
+  .wide-only, .wide-only-block, .top-right .hp-me { display: none; }
+  /* the phone menu (decided 2026-11-24, the approved mockup): the sidebar itself slides in from the left over a dimmed page */
+  .side { position: fixed; z-index: 56; top: 0; bottom: 0; left: 0; width: min(300px, 84vw); gap: 10px; background: var(--ws); border: 0; border-radius: 0 22px 22px 0; box-shadow: 0 30px 60px -20px rgba(20, 20, 60, .45);
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+    transform: translateX(-105%); visibility: hidden; transition: transform .4s cubic-bezier(.22, .8, .2, 1), visibility 0s linear .4s; }
+  .side.open { transform: none; visibility: visible; transition: transform .4s cubic-bezier(.22, .8, .2, 1); }
+  .side-bg { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(10, 10, 20, .35); opacity: 0; pointer-events: none; transition: opacity .4s; }
+  .side-bg.open { opacity: 1; pointer-events: auto; }
+  .side .side-item { min-height: 46px; }
+  .side-me { flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--bd); }
+  .side-me .hp-who { border: 0; margin: 0; padding: 4px 12px 2px; }
   /* the working pill becomes a round dot with its count; your name and Sign out sit at the bottom of the menu */
   .hp-live { width: 44px; padding: 0; justify-content: center; gap: 0; font-size: 0; }
   .hp-live .hp-pulse { width: 10px; height: 10px; }
@@ -1347,3 +1351,6 @@ textarea.input { height: auto; min-height: 84px; padding: 12px 16px; border-radi
 .act-ev { display: grid; grid-template-columns: 70px minmax(0,1fr) auto; gap: 10px; padding: 9px 0; border-top: 1px solid var(--bd); font-size: 13px; }
 .act-ev small { display: block; color: var(--mut); font-size: 12px; }
 @media (max-width: 760px) { .act-run { grid-template-columns: 58px minmax(0,1fr); } .act-rt { grid-column: 2; flex-direction: row; align-items: center; } .act-ev { grid-template-columns: 58px minmax(0,1fr); } .act-ev > small { grid-column: 2; } }
+
+/* the phone menu holds still when motion is reduced */
+@media (prefers-reduced-motion: reduce) { .side, .side.open, .side-bg { transition: none !important; } }
