@@ -37,6 +37,11 @@ import { deptAgentIds, deptHue, headAgentId, needsByDept, tabHref } from "@/dash
 import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, addDeptHref, companyHref, companyTab, goalsWord, type CompanyTab } from "@/dashboard/company-rules";
 import { controlsOn } from "@/dashboard/session";
 import { SkelLine } from "@/dashboard/components/skeletons";
+import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
+import { agentHref } from "@/dashboard/dept-rules";
+import { seatOf } from "@/core/org-rules";
+import { stateLook, stateOf } from "@/dashboard/status";
+import { when } from "@/dashboard/format";
 
 // The Company page (docs/department-pages.md, slice 8): home, in place of the Desk and the floating Avery
 // panel, built to the approved mockup. The same shape as a department's page: a short header, glass tabs
@@ -68,7 +73,7 @@ function goalLine(p: Extract<ProposalPlan, { kind: "goal" }>, dept?: string | nu
   return `${dept ?? "A department"} · ${what}`;
 }
 
-export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string }> }) {
+export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; agent?: string; edit?: string }> }) {
   const jar = await cookies(); // per request only, so nothing here is read at build time (no database)
   const [f, setup, me, sp, biz] = await Promise.all([getFloor(), inSetup(), requireSession(), searchParams, loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
   // a new business starts with setup (card 151, docs/setup.md), not an empty Company page
@@ -117,6 +122,8 @@ export default async function Company({ searchParams }: { searchParams: Promise<
           <Suspense key={tab} fallback={<PaneSkel />}><Pane tab={tab} f={f} chiefId={chiefId} chief={chief} spend={spend} owner={atLeast(me.role, "owner")} approver={atLeast(me.role, "approver")} open={open} view={view} pending={pending} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} /></Suspense>
         </div>
       </div>
+      {/* the chief of staff and any agent in no department open their sheet here (slice 9, in place of Everyone) */}
+      {typeof sp.agent === "string" && <AgentSheetFor id={sp.agent} closeHref={companyHref(tab)} tz={f.tz} now={f.now} edit={sp.edit != null} />}
     </div>
   );
 }
@@ -250,7 +257,33 @@ async function Departments({ f, spend }: P) {
           );
         })}
       </div>
+      <Unplaced f={f} />
       <Link href={addDeptHref()} className="dp-newline">{PLUS}<span><b>Add a department.</b> Avery interviews you in the chat (what to track, goals, which tools), then proposes a head, agents and a monthly cost for your OK.</span></Link>
+    </div>
+  );
+}
+
+/** The chief of staff and every agent in no department: a row each, opening its sheet here (slice 9). */
+function Unplaced({ f }: { f: Floor }) {
+  const org = f.chart;
+  const ids = f.crew.filter((a) => !(org && seatOf(org, a.id)?.departmentId && org.departments.some((d) => d.id === seatOf(org, a.id)!.departmentId))).map((a) => a.id);
+  if (!ids.length) return null;
+  return (
+    <div className="dp-panel co-unplaced">
+      <div className="dp-panel-h"><h3>Not in a department</h3><span className="sp" /><span className="dp-note">Your chief of staff and any agent without a department. Ask in the chat to move one into a department.</span></div>
+      {ids.map((aid) => {
+        const a = f.byId[aid];
+        const st = stateOf(a, f.agents[aid], f.runs, f.spentToday[aid] ?? 0);
+        const last = f.runs.find((r) => r.agent_id === aid && r.status !== "skipped");
+        const dot = st === "running" ? "live" : st === "over" ? "bad" : st === "active" || st === "manual" ? "" : "off";
+        return (
+          <div key={aid} className="dp-agent">
+            <span className={`dp-dot ${dot}`} title={stateLook(st, f.org.on).label} />
+            <Link href={agentHref(org, aid)} scroll={false} className="dp-hit" aria-label={`Open ${a.name}`} /><div className="dp-nm"><b>{a.name}</b><span>{a.role}</span></div>
+            <div className="dp-last"><small>{last ? when(last.started_at, f.tz) : "Never run"}</small>{last ? firstSentence(last.summary ?? (last.status === "failed" ? last.error ?? "The run failed." : "Working now."), 200) : a.job}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }

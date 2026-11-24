@@ -10,16 +10,17 @@ const read = (p: string) => readFileSync(p, "utf8");
 const button = read("dashboard/components/signOut.tsx");
 assert.match(button, /import \{ signOut \} from "@\/dashboard\/authActions"/, "the button uses the existing signOut action");
 assert.match(button, /<form action=\{signOut\}/, "the button is a form posting to signOut, so it works before scripts load");
-assert.equal((button.match(/type="submit"/g) ?? []).length, 2, "both looks submit the form");
+assert.equal((button.match(/type="submit"/g) ?? []).length, 3, "all three looks submit the form");
 
-// the layout: one in the phone menu sheet, one in the desktop sidebar
+// the layout: one in the phone menu sheet, one in your initial's menu in the top bar (slice 9; the sidebar's moved there)
 const layout = read("app/(room)/layout.tsx");
 const sheet = layout.slice(layout.indexOf("<MobileMenu"), layout.indexOf("</MobileMenu>"));
 const side = layout.slice(layout.indexOf('<aside className="side">'), layout.indexOf("</aside>"));
-assert.ok(sheet.length > 0 && side.length > 0, "layout still has the phone menu and the sidebar");
+const meMenu = layout.slice(layout.indexOf('<HeaderPop label="Your account"'), layout.indexOf("<MobileMenu"));
+assert.ok(sheet.length > 0 && side.length > 0 && meMenu.length > 0, "layout still has the phone menu, the sidebar and your initial's menu");
 assert.match(sheet, /<SignOutButton \/>/, "the phone menu has Sign out");
-assert.match(side, /<SignOutButton \/>/, "the sidebar has Sign out");
-assert.ok(side.indexOf("<SignOutButton") > side.indexOf('label="Settings"'), "Sign out sits under Settings, at the bottom of the sidebar");
+assert.match(meMenu, /<SignOutButton look="menu" \/>/, "your initial's menu has Sign out");
+assert.doesNotMatch(side, /<SignOutButton/, "the sidebar no longer has its own");
 
 // setup: in the top bar, so a founder mid-setup can leave
 const start = read("app/start/page.tsx");

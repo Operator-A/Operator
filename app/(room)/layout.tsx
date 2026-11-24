@@ -2,11 +2,10 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { toConnect } from "@/dashboard/connections";
 import { getFloor, requireSession } from "@/dashboard/data";
-import { longDay } from "@/dashboard/format";
 import { alerting, interruptCount, needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
-import { isLive, stateLook, stateOf } from "@/dashboard/status";
-import { LiveRefresher, MobileMenu, RailLink, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
+import { isLive } from "@/dashboard/status";
+import { HeaderPop, LiveRefresher, MobileMenu, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { SignOutButton } from "@/dashboard/components/signOut";
 import { headOf } from "@/core/org";
@@ -15,6 +14,9 @@ import { SideDept } from "@/dashboard/components/deptTabs";
 import { addDeptHref } from "@/dashboard/company-rules";
 import { loadBusiness } from "@/core/business";
 import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
+import { ROLE_LABELS } from "@/core/roles";
+import { bellRows, liveRows, minsWord, workingWord } from "@/dashboard/header-rules";
+import { companyHref } from "@/dashboard/company-rules";
 
 // a message to Avery (the Company page) or to a head (a department page) is a run on that page
 export const maxDuration = 120;
@@ -26,10 +28,9 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   const theme = jar.get("cr_theme")?.value === "dark" ? "dark" : "light";
   const open = needs(floor, floor.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
   const red = alerting(open);
-  const rail = floor.crew.map((a) => {
-    const st = stateOf(a, floor.agents[a.id], floor.runs, floor.spentToday[a.id] ?? 0);
-    return { a, st, badge: red.filter((n) => n.agentId === a.id).length };
-  });
+  // the top bar (slice 9): one working pill for the runs live now, and the bell's list of what needs you
+  const live = liveRows(floor.runs, floor.byId, org, floor.now);
+  const bell = bellRows(open);
   // runs from the last 10 minutes, so the refresher can poll while one is live and say when it ends
   const recent: RecentRun[] = floor.runs
     .filter((r) => floor.now - Date.parse(r.started_at) < 10 * 6e4)
@@ -63,17 +64,30 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             <span className="brand-mark">{initials(biz.name)}</span>
             <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}><span style={{ fontWeight: 700, fontSize: 17, letterSpacing: "-.02em" }}>{biz.name}</span><span style={{ fontSize: 12 }} className="muted">Mission control</span></span>
           </Link>
-          <nav className="rail" aria-label="Crew">
-            {rail.map(({ a, st, badge }) => <RailLink key={a.id} id={a.id} name={a.name} icon={a.icon} title={`${a.name} · ${a.role} · ${stateLook(st, floor.org.on).label}`} running={st === "running"} badge={badge} />)}
-          </nav>
           <div className="top-right">
-            <span className="wide-only"><ThemeToggle initial={theme} /></span>
-            <Link href="/everyone" className="round" title={red.length ? `${red.length} thing${red.length === 1 ? "" : "s"} need${red.length === 1 ? "s" : ""} you` : "Nothing needs you"} style={{ position: "relative" }}>
-              <Icon name="bell" />
-              {!!red.length && <span style={{ position: "absolute", top: 11, right: 12, width: 7, height: 7, borderRadius: 999, background: "var(--red)", border: "1.5px solid var(--soft)" }} />}
-            </Link>
-            <span className="date-pill"><Icon name="calendar" size={16} />{longDay(floor.now, floor.tz).replace(/^(\w{3})\w*/, "$1")}</span>
-            <span className="me" title={me.email}>{me.email.slice(0, 1).toUpperCase()}</span>
+            <HeaderPop label="What’s running now" className={"hp-live" + (live.length ? "" : " quiet")} trigger={<><i className="hp-pulse" /><span className="hp-n">{live.length || ""}</span><span className="hp-word">{workingWord(live.length)}</span></>}>
+              <h5>{live.length ? "Running now" : "Nothing is running"}</h5>
+              {live.map((r) => (
+                <Link key={r.id} href={r.href} className="hp-row" style={r.hue ? ({ "--hue": r.hue } as React.CSSProperties) : undefined}>
+                  <i /><b>{r.name} · {r.role}</b><em>{minsWord(r.mins)}</em><span>{r.dept ? `${r.dept}: its checklist posts in the chat.` : "Opens its runs."}</span>
+                </Link>
+              ))}
+              {!live.length && <span className="hp-foot">Agents show here while they work.</span>}
+            </HeaderPop>
+            <HeaderPop label={bell.rows.length ? "What needs you" : "Nothing needs you"} className="round hp-bell" trigger={<><Icon name="bell" />{red.length > 0 && <span className="hp-pip">{red.length}</span>}</>}>
+              <h5>{bell.rows.length ? "Needs you" : "Nothing needs you"}</h5>
+              {bell.rows.map((n) => (
+                <Link key={`${n.title}:${n.href}`} href={n.href} className={"hp-row" + (n.red ? " red" : "")}><i /><b>{n.title}</b>{n.sub && <span>{n.sub}</span>}</Link>
+              ))}
+              {bell.more > 0 && <span className="hp-foot">and {bell.more} more</span>}
+              <Link href={companyHref("approvals")} className="hp-mi">See everything on Company › Approvals</Link>
+            </HeaderPop>
+            <HeaderPop label="Your account" className="hp-me" panelClass="narrow" trigger={me.email.slice(0, 1).toUpperCase()}>
+              <div className="hp-who"><b>{me.email}</b>{ROLE_LABELS[me.role]}</div>
+              <div className="hp-theme"><ThemeToggle initial={theme} wide /></div>
+              <Link href="/settings" className="hp-mi"><Icon name="settings" size={16} />Settings</Link>
+              <SignOutButton look="menu" />
+            </HeaderPop>
             <MobileMenu alert={!!waiting}>
               <div className="sheet-group">
                 {nav.map((it) => <SideLink key={it.label} {...it} />)}
@@ -99,7 +113,6 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
             </div>
             <SideLink href="/status" match="/status" icon="circle-alert" label="Status" />
             <SideLink href="/settings" match="/settings*" icon="settings" label="Settings" />
-            <SignOutButton />
           </aside>
           <main className="main">{children}</main>
           <LiveRefresher runs={recent} />
