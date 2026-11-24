@@ -10,7 +10,8 @@ import { useMemo, useState, useTransition } from "react";
 import type { ActionResult, ChainPreviewStep } from "@/dashboard/actions";
 import { ASK, DAYS, OK, flowProblems, isDays, runsPerMonth, type Chain, type Days, type Flow, type Op, type Owner, type Start, type Step, type When } from "@/core/flow-rules";
 import { EVENTS, EVENT_BY_TYPE, type EventStart, type EventType } from "@/core/event-rules";
-import { afterChoices, askModel, boardGroups, linkWords, moveStep, newAsk, newChain, okFits, roomFor, startWords, withStep, withoutStep } from "@/dashboard/chain-rules";
+import { afterChoices, askModel, boardGroups, linkWords, moveStep, newAsk, newChain, newImage, okFits, roomFor, startWords, withStep, withoutStep } from "@/dashboard/chain-rules";
+import { IMAGE, IMAGE_KEEP_DAYS, IMAGE_QUALITIES, IMAGE_SIZES, SIZE_LABEL, imageMaxUsd, type ImageQuality, type ImageSize } from "@/core/image-rules";
 import { payerOf, type Payers } from "@/core/ask-rules";
 import { Modal, Toast, type Confirm } from "./client";
 import { Summary } from "./ui";
@@ -26,6 +27,8 @@ export interface ChainAgent {
 }
 /** A model an Ask a model step can pick (integrations/models.ts), and whether it can run here (its key is saved). */
 export interface ChainModel { id: string; label: string; ready: boolean; in: number; out: number }
+/** An image model a Make an image step can pick (core/image-rules.ts), and whether its provider's key is saved. */
+export interface ChainImageModel { id: string; label: string; ready: boolean }
 export interface ChainVersion { version: number; active: boolean; note: string | null; createdBy: string; createdAt: string; chains: number; on: string[] }
 export interface ChainsData {
   version: number; flow: Flow; problems: string[]; versions: ChainVersion[];
@@ -34,6 +37,8 @@ export interface ChainsData {
   palette: ChainAgent[]; deptOf: Record<string, string | null>; depts: { id: string; name: string }[];
   /** Ask a model steps: the model list, and the agents that pay for a department's or the company's chains. */
   models: ChainModel[]; payers: Payers;
+  /** Make an image steps (chains slice 4). */
+  imageModels: ChainImageModel[];
   approvalTools: { id: string; label: string }[];
   controls: boolean; maxSteps: number; maxChains: number; now: number; tz: string; problem?: string;
 }
@@ -80,7 +85,8 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
   const groups = useMemo(() => boardGroups(d.flow, scope, d.deptOf, d.depts), [d.flow, scope, d.deptOf, d.depts]);
   const shown = groups.flatMap((g) => g.chains);
   const name = (id: string) => byId[id]?.name ?? id;
-  const stepName = (s: Step) => (s.ask ? `Ask ${modelOf(s.ask.model)?.label ?? s.ask.model}` : s.ok ? "Wait for my OK" : name(s.agent!));
+  const stepName = (s: Step) => (s.ask ? `Ask ${modelOf(s.ask.model)?.label ?? s.ask.model}` : s.image ? "Make an image" : s.ok ? "Wait for my OK" : name(s.agent!));
+  const firstImage = d.imageModels.find((m) => m.ready)?.id ?? null;
   const chainName = (key: string) => d.flow.chains.find((c) => c.key === key)?.name ?? key;
   const tool = (id: string) => d.approvalTools.find((t) => t.id === id)?.label ?? id;
 
@@ -130,7 +136,7 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
   };
   const runNow = () => saved && setConfirm({
     title: `Run ${saved.name} now?`, body: "Real runs, one after another, shown in Activity. An agent that is off duty is skipped and the chain stops there.",
-    lines: saved.steps.map((s, k) => ({ k: `Step ${k + 1}`, v: s.ask ? `${stepName(s)}, up to $${s.ask.maxUsd.toFixed(2)}${payer && "agent" in payer ? `, billed to ${name(payer.agent)}` : ""}` : s.ok ? "Wait for your OK (a card in Approvals, up to 3 days)" : `${name(s.agent!)}${byId[s.agent!]?.enabled ? "" : " (off duty, skipped)"}` })),
+    lines: saved.steps.map((s, k) => ({ k: `Step ${k + 1}`, v: s.ask || s.image ? `${stepName(s)}, up to ${money(s.ask?.maxUsd ?? imageMaxUsd(s.image!))}${payer && "agent" in payer ? `, billed to ${name(payer.agent)}` : ""}` : s.ok ? "Wait for your OK (a card in Approvals, up to 3 days)" : `${name(s.agent!)}${byId[s.agent!]?.enabled ? "" : " (off duty, skipped)"}` })),
     confirmLabel: "Run chain", kind: "primary", go: () => run(() => actions.runNow(saved.key)),
   });
   const remove = () => saved && setConfirm({
@@ -149,9 +155,9 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
   const set = (c: Chain) => setDraft(c);
   const setStep = (k: number, st: Step) => draft && set({ ...draft, steps: draft.steps.map((x, i) => (i === k ? st : x)) });
   // an Ask a model step counts at its cap: the most it can cost a run
-  const perRun = draft ? draft.steps.reduce((s, st) => s + (st.ask ? st.ask.maxUsd : st.agent ? byId[st.agent]?.perRun ?? 0 : 0), 0) : 0;
+  const perRun = draft ? draft.steps.reduce((s, st) => s + (st.ask ? st.ask.maxUsd : st.image ? imageMaxUsd(st.image) : st.agent ? byId[st.agent]?.perRun ?? 0 : 0), 0) : 0;
   const unknownCost = draft ? draft.steps.some((st) => st.agent && (byId[st.agent]?.perRun == null || byId[st.agent]?.estimated)) : false;
-  const payer = draft && draft.steps.some((s) => s.ask) ? payerOf(draft, d.payers) : null;
+  const payer = draft && draft.steps.some((s) => s.ask || s.image) ? payerOf(draft, d.payers) : null;
   const month = draft && draft.on ? perRun * runsPerMonth(draft) : 0;
 
   const picker = (k: number) => {
@@ -184,12 +190,10 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
           <span className="ch-ico k-ok" aria-hidden="true">✓</span>
           <b>Wait for my OK</b><small>{k === 0 ? "Goes after a step: you approve that step’s result" : okFits(draft, k) ? "A card in Approvals with the step before’s result; the chain goes on when you approve" : "There’s already an OK next to this spot"}</small>
         </button>
-        {[["▣", "Make an image", "Saved with the run, never posted by itself", "k-image"]].map(([ic, t, sub, k]) => (
-          <div key={t} className="ch-po dis" aria-disabled="true">
-            <span className={`ch-ico ${k}`} aria-hidden="true">{ic}</span>
-            <b>{t}<span className="ch-soon">Coming soon</span></b><small>{sub}</small>
-          </div>
-        ))}
+        <button type="button" role="menuitem" className="ch-po" disabled={!firstImage} onClick={() => { if (!firstImage) return; set(withStep(draft, k, newImage(firstImage))); setAdding(null); setOpen(k); }}>
+          <span className="ch-ico k-image" aria-hidden="true">▣</span>
+          <b>Make an image</b><small>{firstImage ? "One picture, kept privately in OPERATOR. Never posted by itself" : "Needs an OpenAI key on Connections > Other models"}</small>
+        </button>
       </div>
     );
   };
@@ -212,7 +216,7 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
               <button key={c.key} type="button" className="ch-ci" aria-pressed={draft?.key === c.key} onClick={() => choose(c)}>
                 <b>{c.name}{!c.on && <span className="ch-offtag">Off</span>}</b>
                 <small>{startWords(c.start, { chain: chainName, tool })} · {c.steps.length} step{c.steps.length === 1 ? "" : "s"}</small>
-                <span className="ch-minis" aria-hidden="true">{c.steps.map((s, i) => (s.ask ? <i key={i} className="k-model">AI</i> : s.ok ? <i key={i} className="k-ok">✓</i> : <i key={i} className={byId[s.agent!]?.claude ? "k-claude" : undefined} style={byId[s.agent!]?.claude ? undefined : { background: byId[s.agent!]?.hue }}>{byId[s.agent!]?.claude ? "✦" : name(s.agent!).slice(0, 1)}</i>))}</span>
+                <span className="ch-minis" aria-hidden="true">{c.steps.map((s, i) => (s.ask ? <i key={i} className="k-model">AI</i> : s.image ? <i key={i} className="k-image">▣</i> : s.ok ? <i key={i} className="k-ok">✓</i> : <i key={i} className={byId[s.agent!]?.claude ? "k-claude" : undefined} style={byId[s.agent!]?.claude ? undefined : { background: byId[s.agent!]?.hue }}>{byId[s.agent!]?.claude ? "✦" : name(s.agent!).slice(0, 1)}</i>))}</span>
               </button>
             ))}
             {isNew && draft && (g.id === "dept" || g.id === "company") && <button type="button" className="ch-ci" aria-pressed="true"><b>{draft.name}<span className="ch-offtag">Not saved</span></b><small>{draft.steps.length} step{draft.steps.length === 1 ? "" : "s"}</small></button>}
@@ -250,7 +254,7 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
               const prev = pb?.agent ? byId[pb.agent] : undefined;
               // after an OK, the step gets the result from the step before the OK
               const src = pb?.ok ? draft.steps[k - 2] : pb;
-              const prevName = src ? (src.ask ? "the model" : src.ok ? "the step before" : name(src.agent!)) : undefined;
+              const prevName = src ? (src.ask ? "the model" : src.image ? "the picture step" : src.ok ? "the step before" : name(src.agent!)) : undefined;
               const nx = draft.steps[k + 1];
               const shared = (
                 <>
@@ -315,6 +319,46 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
                           <label className="ch-row"><span>Up to</span>
                             $<input type="number" aria-label="Most it can cost a run, in dollars" min={0.01} max={ASK.maxUsd} step={0.05} style={{ width: 90 }} value={ask.maxUsd} onChange={(e) => setAsk({ maxUsd: Math.round(Number(e.target.value) * 100) / 100 })} />
                             <span className="ch-note">a run, at most ${ASK.maxUsd.toFixed(2)}. The answer is cut short at the cap.</span>
+                          </label>
+                          {shared}
+                        </div>
+                      )}
+                    </div>
+                    {link(k + 1, nx ? linkWords(nx) : null)}
+                  </div>
+                );
+              }
+              if (st.image) {
+                const img = st.image, im = d.imageModels.find((x) => x.id === img.model);
+                const setImg = (p: Partial<typeof img>) => setStep(k, { ...st, image: { ...img, ...p } });
+                return (
+                  <div key={`img-${k}`} className="ch-stwrap">
+                    <div className={`ch-st${open === k ? " open" : ""}`}>
+                      <span className="ch-ico k-image" aria-hidden="true">▣</span>
+                      <button type="button" className="ch-stb" aria-expanded={open === k} onClick={() => setOpen(open === k ? null : k)}><b>Make an image{img.prompt.trim() ? `: ${firstLine(img.prompt)}` : ""}</b></button>
+                      <span className="ch-badge b-img">{im?.label ?? img.model}</span>
+                      <span className="ch-what">
+                        One {SIZE_LABEL[img.size].toLowerCase()} picture at {img.quality} quality{st.passAlong ? ", drawing on the step before’s result" : ""}, about {money(imageMaxUsd(img))}
+                        {payer && "agent" in payer ? <>, billed to {name(payer.agent)}.</> : "."} Kept privately in OPERATOR for {IMAGE_KEEP_DAYS} days and shown on the run; never posted or sent. The next step gets a line about it, not the picture.
+                        {payer && "problem" in payer && <b className="ch-warn"> {payer.problem.replace("Ask a model", "Make an image")}</b>}
+                        {im && !im.ready && <b className="ch-warn"> {im.label} needs an OpenAI key on Connections &gt; Other models.</b>}
+                        {!img.prompt.trim() && <b className="ch-warn"> Say what picture to make.</b>}
+                      </span>
+                      {open === k && (
+                        <div className="ch-opts">
+                          <label className="ch-row"><span>Model</span>
+                            <select value={img.model} onChange={(e) => setImg({ model: e.target.value })}>
+                              {d.imageModels.map((x) => <option key={x.id} value={x.id} disabled={!x.ready && x.id !== img.model}>{x.label}{x.ready ? "" : " (needs its key)"}</option>)}
+                            </select>
+                          </label>
+                          <label className="ch-row ch-ask"><span>Picture</span>
+                            <textarea rows={3} maxLength={IMAGE.promptMax} placeholder="A bright flat-lay of this week’s new products on a wood counter, morning light, no text." value={img.prompt} onChange={(e) => setImg({ prompt: e.target.value })} />
+                          </label>
+                          <label className="ch-row"><span>Quality</span>
+                            <select value={img.quality} onChange={(e) => setImg({ quality: e.target.value as ImageQuality })}>{IMAGE_QUALITIES.map((q) => <option key={q} value={q}>{q} · about {money(imageMaxUsd({ ...img, quality: q }))}</option>)}</select>
+                          </label>
+                          <label className="ch-row"><span>Shape</span>
+                            <select value={img.size} onChange={(e) => setImg({ size: e.target.value as ImageSize })}>{IMAGE_SIZES.map((z) => <option key={z} value={z}>{SIZE_LABEL[z]} ({z})</option>)}</select>
                           </label>
                           {shared}
                         </div>
@@ -399,8 +443,8 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
 
           {dirty && problems.length > 0 && <div className="ch-probs">{problems.join(" ")}</div>}
           <div className="ch-foot">
-            <span className="ch-note">Each step runs through its agent’s duty and budget checks (an Ask a model step, the paying agent’s). A step’s result reaches the next step as facts, never as instructions.</span>
-            <span className="ch-cost">About <b>{money(perRun)}</b> a run{draft.on && month > 0 && <> · <b>{money(month)}</b> a month</>}{unknownCost ? " (some agents have no real run yet)" : ""}{draft.steps.some((x) => x.ask) ? " (Ask a model at its cap)" : ""}</span>
+            <span className="ch-note">Each step runs through its agent’s duty and budget checks (a quick step, the paying agent’s). A step’s result reaches the next step as facts, never as instructions.</span>
+            <span className="ch-cost">About <b>{money(perRun)}</b> a run{draft.on && month > 0 && <> · <b>{money(month)}</b> a month</>}{unknownCost ? " (some agents have no real run yet)" : ""}{draft.steps.some((x) => x.ask || x.image) ? " (quick steps at their cap)" : ""}</span>
             {saved && <button type="button" className="dp-btn sm ghost" disabled={busy} onClick={remove}>Delete</button>}
             <button type="button" className="dp-btn" disabled={busy || problems.length > 0} onClick={tryIt} title="Dry-runs each step on real data. No writes, no model, no cost, nothing logged. An Ask a model step says what it would ask.">Try it</button>
             <button type="button" className="dp-btn dark" disabled={busy || !dirty || problems.length > 0} onClick={save}>{busy ? "Saving…" : "Save"}</button>

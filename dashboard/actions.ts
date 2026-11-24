@@ -28,6 +28,7 @@ import { flowWithStarts, readStored, startsWords } from "@/core/draft-starts-rul
 import { BUDGET_CEILING, NO_MODEL_KEYS, RUN_LIMITS, createBuiltAgent, activateSpecVersion, versionStarts, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { MODEL_LIST, modelDef } from "@/integrations/models";
 import { askWords, billedBy } from "@/core/ask-rules";
+import { imageMaxUsd, imageModel, SIZE_LABEL } from "@/core/image-rules";
 import { modelKeysReady, removeRoutine, routineState, saveRoutine } from "@/integrations/mcp";
 import { markLinked, moveIntoOperator as moveAgentIntoOperator, runsOn } from "@/core/claude-agents";
 import { readRunsOn, switchConfirm, switchKind } from "./runs-on-rules";
@@ -476,19 +477,23 @@ async function withChain(key: string, raw: unknown): Promise<{ now: Awaited<Retu
   const problems = flowProblems(next, crew);
   if (problems.length) return { problem: `Not saved: ${problems.slice(0, 5).join(" ")}` };
   // Ask a model steps (chains slice 2): an agent must be there to pay, and the model must be able to run here
+  // and Make an image steps (slice 4): the same, on the image model's provider key
   const asks = c.steps.flatMap((s) => (s.ask ? [s.ask] : []));
-  if (asks.length) {
+  const images = c.steps.flatMap((s) => (s.image ? [s.image] : []));
+  if (asks.length || images.length) {
     const payer = billedBy(c, await loadOrgChart());
-    if ("problem" in payer) return { problem: `Not saved: ${payer.problem}` };
+    if ("problem" in payer) return { problem: `Not saved: ${asks.length ? payer.problem : payer.problem.replace("Ask a model", "Make an image")}` };
     const keys = await modelKeysReady().catch(() => NO_MODEL_KEYS);
     const off = asks.find((a) => !modelReady(a.model, keys));
     if (off) return { problem: `Not saved: ${modelDef(off.model)?.label ?? off.model} needs its provider’s key on Connections > Other models.` };
+    const offImg = images.find((i) => { const m = imageModel(i.model); return !m || !keys[m.provider]; });
+    if (offImg) return { problem: `Not saved: ${imageModel(offImg.model)?.label ?? offImg.model} needs its provider’s key on Connections > Other models.` };
   }
   return { now, next };
 }
 
 /** A step in words: its agent's name, the Ask a model step, or Wait for my OK. */
-const stepLabel = async (s: Step) => (s.ask ? `Ask ${modelDef(s.ask.model)?.label ?? s.ask.model}` : s.ok ? "Wait for my OK" : nameOf(s.agent!));
+const stepLabel = async (s: Step) => (s.ask ? `Ask ${modelDef(s.ask.model)?.label ?? s.ask.model}` : s.image ? "Make an image" : s.ok ? "Wait for my OK" : nameOf(s.agent!));
 
 /**
  * Saves one chain (new or changed) as a new flow version, noted with where it was saved. A chain that starts running
@@ -586,7 +591,10 @@ export async function previewChain(raw: unknown): Promise<ActionResult & { steps
   for (let k = 0; k < c.steps.length; k++) {
     const s = c.steps[k], name = await stepLabel(s);
     let summary: string, status: "ok" | "failed" = "ok";
-    if (s.ok) {
+    if (s.image) {
+      // a dry run makes no picture: it says what would be asked, where and for how much
+      summary = `Would make one ${SIZE_LABEL[s.image.size].toLowerCase()} picture (${s.image.quality} quality) on ${imageModel(s.image.model)?.label ?? s.image.model}, about $${imageMaxUsd(s.image).toFixed(2)}: “${s.image.prompt.trim().slice(0, 200)}”${s.passAlong ? ", drawing on the step before’s result" : ""}. Kept privately in OPERATOR; nothing posted.`;
+    } else if (s.ok) {
       summary = `Would put the step before’s result on a card in Approvals${s.ok.note?.trim() ? ` (“${s.ok.note.trim().slice(0, 120)}”)` : ""} and wait up to 3 days. Approve goes on, reject stops the chain.`;
     } else if (s.ask) {
       // a dry run sends nothing to a model: it says what would be asked, where and for how much
@@ -604,9 +612,9 @@ export async function previewChain(raw: unknown): Promise<ActionResult & { steps
       const goes = when === "any" || (when === "ok" ? status === "ok" : status === "failed");
       next = !goes ? `${nn} would not run (${when === "ok" ? "only after a step that worked" : "only after a failure"}).`
         : `${nn} would run next${nxt.days && nxt.days !== "daily" ? ` ${dayWords(nxt.days)}` : ""}${nxt.notBefore ? `, not before ${nxt.notBefore}` : ""}${nxt.check ? `, if ${nxt.check.metric} ${nxt.check.op} ${nxt.check.value} (a dry run reports no numbers, so not tested)` : ""}${nxt.passAlong ? `, with ${name}’s summary passed along` : ""}.`;
-      if (!goes) { steps.push({ agent: s.agent ?? (s.ok ? "ok" : "ask"), name, summary, next }); break; }
+      if (!goes) { steps.push({ agent: s.agent ?? (s.ok ? "ok" : s.image ? "image" : "ask"), name, summary, next }); break; }
     }
-    steps.push({ agent: s.agent ?? (s.ok ? "ok" : "ask"), name, summary, next });
+    steps.push({ agent: s.agent ?? (s.ok ? "ok" : s.image ? "image" : "ask"), name, summary, next });
   }
   return { ok: true, text: `Previewed ${c.name}: ${steps.length} step${steps.length === 1 ? "" : "s"}. Nothing was written or sent.`, steps };
 }

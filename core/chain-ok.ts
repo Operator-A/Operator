@@ -7,6 +7,7 @@ import { loadFlow, type Chain } from "@/core/flow";
 import { readChainPayload, type ChainCtx } from "@/core/job-rules";
 import { keepFacts, okCard, okDept, okDoneWords, okDue, okStillHolds, type OkCard, type OkDecision, type OkFacts } from "@/core/chain-ok-rules";
 import { loadOrg, seatOf } from "@/core/org";
+import { imageLink } from "@/core/image-step";
 
 /**
  * Holds chain `c` at its Wait for my OK step: one row with how the chain was started, the step before's run and what
@@ -57,10 +58,15 @@ export async function expireOks(now = Date.now()): Promise<number> {
 
 /** The holds waiting on an approver, as cards, oldest first; null when the table isn't there yet. */
 export async function pendingOks(nameOf: (agent: string) => string): Promise<OkCard[] | null> {
-  const { data, error } = await db().from("chain_oks").select("id, chain_key, step, facts, department_id, created_at, due_at")
+  const { data, error } = await db().from("chain_oks").select("id, chain_key, step, facts, department_id, created_at, due_at, parent_run")
     .eq("status", "pending").gt("due_at", new Date().toISOString()).order("created_at", { ascending: true }).limit(100);
   if (error) return null;
   if (!data?.length) return [];
   const flow = await loadFlow(await loadCrew());
-  return data.map((r) => okCard(r as Parameters<typeof okCard>[0], flow.flow.chains.find((c) => c.key === r.chain_key), nameOf)).filter((x): x is OkCard => !!x);
+  const cards = data.map((r) => { const card = okCard(r as Parameters<typeof okCard>[0], flow.flow.chains.find((c) => c.key === r.chain_key), nameOf); return card ? { card, parent: r.parent_run as string } : null; }).filter((x): x is { card: OkCard; parent: string } => !!x);
+  // a card after a Make an image step shows its picture (chains slice 4)
+  return Promise.all(cards.map(async ({ card, parent }) => {
+    const c = flow.flow.chains.find((x) => x.key === card.chain);
+    return c?.steps[card.step - 1]?.image ? { ...card, image: await imageLink(parent).catch(() => null) } : card;
+  }));
 }
