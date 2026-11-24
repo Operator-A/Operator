@@ -111,10 +111,10 @@ assert.match(runner, /!c\.steps\[ctx\.step \+ 1\] && flow/, "followers start whe
 assert.match(runner, /continueChain\(origin, c, ctx, res\.runId, \{[^}]*\}, flow\.flow\)/);
 const actions = read("dashboard/actions.ts");
 const body = (fn: string) => actions.slice(actions.indexOf(`export async function ${fn}`), actions.indexOf("\n}\n", actions.indexOf(`export async function ${fn}`)));
-assert.match(body("saveChain"), /asRole\("owner"\)[\s\S]*withChain\(key, raw\)[\s\S]*flowLooser[\s\S]*controlsOn\(\)[\s\S]*!confirmed/, "only the owner saves a chain, merged into the saved flow; looser needs Controls and a confirm");
+assert.match(body("saveChain"), /asRole\("owner"\)[\s\S]*chainInFlow\(key, raw\)[\s\S]*flowLooser[\s\S]*controlsOn\(\)[\s\S]*!confirmed/, "only the owner saves a chain, merged into the saved flow; looser needs Controls and a confirm");
 assert.match(body("deleteChain"), /asRole\("owner"\)/);
-assert.match(actions, /start\$\{after\.length === 1 \? "s" : ""\} after/, "a chain another chain starts after can't be deleted out from under it");
-assert.match(body("previewChain"), /withChain\(key, raw\)/, "Try it checks the chain as it would be saved");
+assert.match(read("core/chain-save.ts"), /start\$\{after\.length === 1 \? "s" : ""\} after/, "a chain another chain starts after can't be deleted out from under it");
+assert.match(body("previewChain"), /chainInFlow\(key, raw\)/, "Try it checks the chain as it would be saved");
 assert.doesNotMatch(actions, /export async function saveCrewFlow/, "one chain at a time replaces saving the whole canvas");
 assert.ok(!existsSync("dashboard/components/CrewCanvas.tsx"), "the Settings canvas editor is gone");
 const schedPage = read("app/(room)/settings/schedule/page.tsx");

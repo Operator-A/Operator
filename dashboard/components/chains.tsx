@@ -10,7 +10,7 @@ import { useMemo, useState, useTransition } from "react";
 import type { ActionResult, ChainPreviewStep } from "@/dashboard/actions";
 import { ASK, DAYS, OK, flowProblems, isDays, runsPerMonth, type Chain, type Days, type Flow, type Op, type Owner, type Start, type Step, type When } from "@/core/flow-rules";
 import { EVENTS, EVENT_BY_TYPE, type EventStart, type EventType } from "@/core/event-rules";
-import { afterChoices, askModel, boardGroups, linkWords, moveStep, newAsk, newChain, newImage, okFits, roomFor, startWords, withStep, withoutStep } from "@/dashboard/chain-rules";
+import { afterChoices, askModel, boardGroups, placeOf, linkWords, moveStep, newAsk, newChain, newImage, okFits, roomFor, startWords, withStep, withoutStep } from "@/dashboard/chain-rules";
 import { IMAGE, IMAGE_KEEP_DAYS, IMAGE_QUALITIES, IMAGE_SIZES, SIZE_LABEL, imageMaxUsd, type ImageQuality, type ImageSize } from "@/core/image-rules";
 import { payerOf, type Payers } from "@/core/ask-rules";
 import { Modal, Toast, type Confirm } from "./client";
@@ -32,6 +32,8 @@ export interface ChainImageModel { id: string; label: string; ready: boolean }
 export interface ChainVersion { version: number; active: boolean; note: string | null; createdBy: string; createdAt: string; chains: number; on: string[] }
 export interface ChainsData {
   version: number; flow: Flow; problems: string[]; versions: ChainVersion[];
+  /** Chains drafted from Claude and waiting (card 435). */
+  drafts: ChainDraftView[];
   /** Next scheduled firings (ISO) of each saved chain. */
   next: Record<string, string[]>;
   palette: ChainAgent[]; deptOf: Record<string, string | null>; depts: { id: string; name: string }[];
@@ -42,8 +44,11 @@ export interface ChainsData {
   approvalTools: { id: string; label: string }[];
   controls: boolean; maxSteps: number; maxChains: number; now: number; tz: string; problem?: string;
 }
+/** A chain drafted from Claude (card 435), waiting for the owner: what it changes, and whether the chain moved since. */
+export interface ChainDraftView { id: string; key: string; chain: Chain; isNew: boolean; changes: string[]; note: string | null; by: string; at: string; stale: boolean }
 export interface ChainsActions {
-  save: (chain: Chain, place: string, confirmed: boolean) => Promise<ActionResult>;
+  save: (chain: Chain, place: string, confirmed: boolean, draftId?: string | null) => Promise<ActionResult>;
+  discardDraft?: (id: string) => Promise<ActionResult>;
   remove: (key: string) => Promise<ActionResult>;
   runNow: (key: string) => Promise<ActionResult>;
   preview: (chain: Chain) => Promise<ActionResult & { steps?: ChainPreviewStep[] }>;
@@ -56,6 +61,7 @@ const WHEN_LABEL: Record<When, string> = { ok: "if it worked", failed: "if it fa
 const DAY_LABEL: Record<string, string> = { daily: "Every day", weekdays: "Weekdays", mondays: "Mondays" };
 const money = (v: number) => (v === 0 ? "$0" : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`);
 const clock = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
+const when = (iso: string, tz: string) => new Date(iso).toLocaleString("en-US", { timeZone: tz, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const at = (iso: string, tz: string) => new Date(iso).toLocaleString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const asksConfirm = (r: ActionResult) => !r.ok && /^Confirm first/.test(r.text);
@@ -96,8 +102,14 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
     const owner: Owner | null = agent && byId[agent] ? { agent } : scope === "all" ? null : { dept: scope.dept };
     return newChain(d.flow, owner, first, agent && byId[agent] ? `${byId[agent].name}’s chain` : "New chain");
   };
-  const initial = (): Chain | null => (startWith ? fresh(startWith) : null) ?? d.flow.chains.find((c) => c.key === pick) ?? shown[0] ?? null;
+  // chains drafted from Claude (card 435) for this board: a department's own and its agents', or every one (Settings)
+  const waiting = useMemo(() => d.drafts.filter((w) => scope === "all" || (() => { const p = placeOf(w.chain, d.deptOf); return p.kind === "dept" && p.dept === scope.dept; })()), [d.drafts, scope, d.deptOf]);
+  const pickDraft = !startWith && pick ? waiting.find((w) => w.key === pick && !w.stale) ?? null : null;
+  const initial = (): Chain | null => (startWith ? fresh(startWith) : null) ?? pickDraft?.chain ?? d.flow.chains.find((c) => c.key === pick) ?? shown[0] ?? null;
   const [draft, setDraft] = useState<Chain | null>(initial);
+  /** The Claude draft open in the editor: Save then uses it (and it is gone after). */
+  const [fromDraft, setFromDraft] = useState<string | null>(pickDraft?.id ?? null);
+  const opened = fromDraft ? waiting.find((w) => w.id === fromDraft) ?? null : null;
   const saved = draft ? d.flow.chains.find((c) => c.key === draft.key) ?? null : null;
   const isNew = !!draft && !saved;
   const dirty = !!draft && (isNew || !same(saved, draft));
@@ -109,7 +121,7 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
   const [preview, setPreview] = useState<{ key: string; text: string; steps: ChainPreviewStep[] } | null>(null);
   const [busy, start] = useTransition();
 
-  const choose = (c: Chain | null) => { setDraft(c); setOpen(null); setAdding(null); setEditStart(false); setPreview(null); };
+  const choose = (c: Chain | null, draftId: string | null = null) => { setDraft(c); setFromDraft(draftId); setOpen(null); setAdding(null); setEditStart(false); setPreview(null); };
   const problems = useMemo(() => {
     if (!draft) return [];
     const flow = { chains: saved ? d.flow.chains.map((c) => (c.key === draft.key ? draft : c)) : [...d.flow.chains, draft] };
@@ -125,15 +137,19 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
     if (!draft) return;
     const go = (confirmed: boolean) => start(async () => {
       let r: ActionResult;
-      try { r = await actions.save(draft, place, confirmed); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
+      try { r = await actions.save(draft, place, confirmed, fromDraft); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
       if (!confirmed && asksConfirm(r)) {
         setConfirm({ title: `Save ${draft.name} and let it run on its own?`, body: "Saving never turns an agent on. Each step still checks that its agent is on duty and under its daily budget, and a skipped step stops the chain.", lines: [{ k: "Changes", v: r.text.replace(/^Confirm first: /, "") }], confirmLabel: "Save chain", kind: "dark", go: () => go(true) });
         return;
       }
       setToast(r);
+      if (r.ok && fromDraft) setFromDraft(null);
     });
     go(false);
   };
+  const discard = (w: ChainDraftView) => actions.discardDraft && run(() => actions.discardDraft!(w.id), (r) => {
+    if (r.ok) choose(d.flow.chains.find((c) => c.key === w.key) ?? shown[0] ?? null);
+  });
   const runNow = () => saved && setConfirm({
     title: `Run ${saved.name} now?`, body: "Real runs, one after another, shown in Activity. An agent that is off duty is skipped and the chain stops there.",
     lines: saved.steps.map((s, k) => ({ k: `Step ${k + 1}`, v: s.ask || s.image ? `${stepName(s)}, up to ${money(s.ask?.maxUsd ?? imageMaxUsd(s.image!))}${payer && "agent" in payer ? `, billed to ${name(payer.agent)}` : ""}` : s.ok ? "Wait for your OK (a card in Approvals, up to 3 days)" : `${name(s.agent!)}${byId[s.agent!]?.enabled ? "" : " (off duty, skipped)"}` })),
@@ -219,10 +235,21 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
                 <span className="ch-minis" aria-hidden="true">{c.steps.map((s, i) => (s.ask ? <i key={i} className="k-model">AI</i> : s.image ? <i key={i} className="k-image">▣</i> : s.ok ? <i key={i} className="k-ok">✓</i> : <i key={i} className={byId[s.agent!]?.claude ? "k-claude" : undefined} style={byId[s.agent!]?.claude ? undefined : { background: byId[s.agent!]?.hue }}>{byId[s.agent!]?.claude ? "✦" : name(s.agent!).slice(0, 1)}</i>))}</span>
               </button>
             ))}
-            {isNew && draft && (g.id === "dept" || g.id === "company") && <button type="button" className="ch-ci" aria-pressed="true"><b>{draft.name}<span className="ch-offtag">Not saved</span></b><small>{draft.steps.length} step{draft.steps.length === 1 ? "" : "s"}</small></button>}
+            {isNew && draft && !opened && (g.id === "dept" || g.id === "company") && <button type="button" className="ch-ci" aria-pressed="true"><b>{draft.name}<span className="ch-offtag">Not saved</span></b><small>{draft.steps.length} step{draft.steps.length === 1 ? "" : "s"}</small></button>}
             {!g.chains.length && !(isNew && (g.id === "dept" || g.id === "company")) && <span className="ch-note">None yet.</span>}
           </div>
         ))}
+        {waiting.length > 0 && (
+          <div className="ch-lgrp">
+            <div className="ch-grp">Drafts from Claude</div>
+            {waiting.map((w) => (
+              <button key={w.id} type="button" className="ch-ci ch-dci" aria-pressed={fromDraft === w.id} disabled={w.stale} title={w.stale ? `${chainName(w.key)} changed since Claude drafted this. Discard it, or ask Claude for a new one.` : undefined} onClick={() => choose(w.chain, w.id)}>
+                <b>{w.chain.name}<span className="ch-offtag ch-drafttag">{w.stale ? "Out of date" : w.isNew ? "New" : "Changes"}</span></b>
+                <small>{w.changes.length} change{w.changes.length === 1 ? "" : "s"} · {when(w.at, d.tz)}</small>
+              </button>
+            ))}
+          </div>
+        )}
         <button type="button" className="dp-btn ch-new" disabled={d.flow.chains.length >= d.maxChains || !d.palette.length} onClick={() => choose(fresh(undefined))}>+ New chain</button>
         {d.problem && <span className="ch-note">{d.problem}</span>}
         {!!d.problems.length && <span className="ch-note">Part of the saved chains was dropped and won’t run: {d.problems.join(" ")}</span>}
@@ -235,6 +262,19 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
             <label className="ch-tog">{draft.on ? "On" : "Off"}<button type="button" className={"switch" + (draft.on ? " on" : "")} aria-pressed={draft.on} aria-label={draft.on ? "Turn the chain off" : "Turn the chain on"} title={draft.on ? "Off: it then runs only with Run chain" : "On: it starts on its own while the org is on. Agents still need to be on duty."} onClick={() => set({ ...draft, on: !draft.on })}><span /></button></label>
             <button type="button" className="dp-btn sm" disabled={busy || !saved || !d.controls} onClick={runNow} title={!saved ? "Save the chain first" : !d.controls ? "Real runs are off on this OPERATOR" : dirty ? "Runs the saved version" : "Real runs of the saved chain"}>Run chain now</button>
           </div>
+
+          {opened && (
+            <div className="ch-draftbar" role="note">
+              <div className="ch-draftbar-h">
+                <b>Draft from Claude</b>
+                <span className="ch-note">{opened.by} · {when(opened.at, d.tz)}</span>
+                {actions.discardDraft && <button type="button" className="dp-btn sm ghost" disabled={busy} onClick={() => discard(opened)}>Discard</button>}
+              </div>
+              {opened.note && <span className="ch-draftnote">“{opened.note}”</span>}
+              <ul>{opened.changes.map((x, i) => <li key={i}>{x}</li>)}</ul>
+              <span className="ch-note">Nothing changes until you save it, with the same checks as any save.{opened.isNew ? " A new chain is saved off." : ""} You can change it first.</span>
+            </div>
+          )}
 
           <div className="ch-lane">
             <div className="ch-st start">
@@ -447,7 +487,7 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
             <span className="ch-cost">About <b>{money(perRun)}</b> a run{draft.on && month > 0 && <> · <b>{money(month)}</b> a month</>}{unknownCost ? " (some agents have no real run yet)" : ""}{draft.steps.some((x) => x.ask || x.image) ? " (quick steps at their cap)" : ""}</span>
             {saved && <button type="button" className="dp-btn sm ghost" disabled={busy} onClick={remove}>Delete</button>}
             <button type="button" className="dp-btn" disabled={busy || problems.length > 0} onClick={tryIt} title="Dry-runs each step on real data. No writes, no model, no cost, nothing logged. An Ask a model step says what it would ask.">Try it</button>
-            <button type="button" className="dp-btn dark" disabled={busy || !dirty || problems.length > 0} onClick={save}>{busy ? "Saving…" : "Save"}</button>
+            <button type="button" className="dp-btn dark" disabled={busy || !dirty || problems.length > 0} onClick={save}>{busy ? "Saving…" : opened ? "Use this draft" : "Save"}</button>
           </div>
           {saved && dirty && <span className="ch-note">Run chain now runs the saved version. Save to run your changes.</span>}
         </div>

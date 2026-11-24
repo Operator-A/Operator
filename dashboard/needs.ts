@@ -61,6 +61,8 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
   }
   // chains held at a Wait for my OK step (chains slice 3): each stops by itself after 3 days
   if (f.chainOks) out.push({ pri: "High", title: `${s(f.chainOks, "chain")} waiting for your OK`, sub: "Each shows the step before’s result. Approve and the chain goes on; no answer in 3 days stops it.", href: APPROVALS, n: f.chainOks, source: { from: "chain_ok" } });
+  // chains drafted from Claude (card 435): they change nothing until used, so they wait for the summary
+  if (f.chainDrafts) out.push({ pri: "Medium", title: `${s(f.chainDrafts, "chain draft")} from Claude`, sub: "New or changed chains Claude drafted. Open one on the Chains tab to use or discard it; nothing changes until you save it.", href: "/settings/schedule#chains", n: f.chainDrafts, source: { from: "chain_draft" } });
   // proposals: the four's kinds show as cards on the Company page; the rest are one line for later
   const kinds: Record<string, number> = {};
   for (const k of f.proposalKinds) kinds[k] = (kinds[k] ?? 0) + 1;

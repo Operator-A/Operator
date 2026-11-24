@@ -28,6 +28,9 @@ import { flowWithStarts, readStored, startsWords } from "@/core/draft-starts-rul
 import { BUDGET_CEILING, NO_MODEL_KEYS, RUN_LIMITS, createBuiltAgent, activateSpecVersion, versionStarts, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { MODEL_LIST, modelDef } from "@/integrations/models";
 import { askWords, billedBy } from "@/core/ask-rules";
+import { chainInFlow } from "@/core/chain-save";
+import { dropChainDraft, getChainDraft } from "@/core/chain-drafts";
+import { draftStale } from "@/core/chain-draft-rules";
 import { imageMaxUsd, imageModel, SIZE_LABEL } from "@/core/image-rules";
 import { modelKeysReady, removeRoutine, routineState, saveRoutine } from "@/integrations/mcp";
 import { markLinked, moveIntoOperator as moveAgentIntoOperator, runsOn } from "@/core/claude-agents";
@@ -456,42 +459,6 @@ export async function discardLessonLine(memoryId: string): Promise<ActionResult>
 // ---- Chains (chains slice 1, card 430): one chain saved from where it lives (a department's Chains tab, Settings >
 // Schedule), merged into the saved flow so two places never overwrite each other's chains.
 
-/**
- * The saved flow with one chain from the browser put in (by key: replaced, or added) or taken out (`raw` null),
- * checked against the crew. A chain that starts after it is taken out with it, said in the refusal instead.
- */
-async function withChain(key: string, raw: unknown): Promise<{ now: Awaited<ReturnType<typeof loadFlow>>; next: Flow } | { problem: string }> {
-  const crew = await loadCrew();
-  const now = await loadFlow(crew);
-  if (raw === null) {
-    const c = now.flow.chains.find((x) => x.key === key);
-    if (!c) return { problem: "That chain isn’t saved." };
-    const after = now.flow.chains.filter((x) => x.start.type === "after" && x.start.chain === key);
-    if (after.length) return { problem: `${after.map((x) => x.name).join(", ")} start${after.length === 1 ? "s" : ""} after ${c.name}. Change ${after.length === 1 ? "its" : "their"} start first.` };
-    return { now, next: { chains: now.flow.chains.filter((x) => x.key !== key) } };
-  }
-  const c = raw as Chain;
-  if (!c || typeof c !== "object" || c.key !== key) return { problem: "That isn’t a chain." };
-  const has = now.flow.chains.some((x) => x.key === key);
-  const next: Flow = { chains: has ? now.flow.chains.map((x) => (x.key === key ? c : x)) : [...now.flow.chains, c] };
-  const problems = flowProblems(next, crew);
-  if (problems.length) return { problem: `Not saved: ${problems.slice(0, 5).join(" ")}` };
-  // Ask a model steps (chains slice 2): an agent must be there to pay, and the model must be able to run here
-  // and Make an image steps (slice 4): the same, on the image model's provider key
-  const asks = c.steps.flatMap((s) => (s.ask ? [s.ask] : []));
-  const images = c.steps.flatMap((s) => (s.image ? [s.image] : []));
-  if (asks.length || images.length) {
-    const payer = billedBy(c, await loadOrgChart());
-    if ("problem" in payer) return { problem: `Not saved: ${asks.length ? payer.problem : payer.problem.replace("Ask a model", "Make an image")}` };
-    const keys = await modelKeysReady().catch(() => NO_MODEL_KEYS);
-    const off = asks.find((a) => !modelReady(a.model, keys));
-    if (off) return { problem: `Not saved: ${modelDef(off.model)?.label ?? off.model} needs its provider’s key on Connections > Other models.` };
-    const offImg = images.find((i) => { const m = imageModel(i.model); return !m || !keys[m.provider]; });
-    if (offImg) return { problem: `Not saved: ${imageModel(offImg.model)?.label ?? offImg.model} needs its provider’s key on Connections > Other models.` };
-  }
-  return { now, next };
-}
-
 /** A step in words: its agent's name, the Ask a model step, or Wait for my OK. */
 const stepLabel = async (s: Step) => (s.ask ? `Ask ${modelDef(s.ask.model)?.label ?? s.ask.model}` : s.image ? "Make an image" : s.ok ? "Wait for my OK" : nameOf(s.agent!));
 
@@ -500,21 +467,40 @@ const stepLabel = async (s: Step) => (s.ask ? `Ask ${modelDef(s.ask.model)?.labe
  * on its own, gains an agent or starts differently while on needs a confirm and DASHBOARD_CONTROLS=on (flowLooser).
  * Saving never turns an agent on: each run still goes through withRun, and an agent that is off duty is skipped.
  */
-export async function saveChain(raw: unknown, place: string, confirmed: boolean): Promise<ActionResult> {
+export async function saveChain(raw: unknown, place: string, confirmed: boolean, draftId?: string | null): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   const key = String((raw as Chain | null)?.key ?? "");
   try {
-    const got = await withChain(key, raw);
+    // a draft from Claude (card 435) is used through this same save; it must be of this chain and still fit the saved one
+    const fromDraft = draftId ? await getChainDraft(String(draftId)) : null;
+    if (draftId && !fromDraft) return { ok: false, text: "That draft is gone: it was used, discarded or older than 14 days." };
+    if (fromDraft && fromDraft.key !== key) return { ok: false, text: "That draft is of another chain." };
+    if (fromDraft && draftStale(fromDraft.base, (await loadFlow(await loadCrew())).flow.chains.find((c) => c.key === key) ?? null)) return { ok: false, text: `${fromDraft.chain.name} changed since Claude drafted this. Discard the draft, or ask Claude for a new one.` };
+    const got = await chainInFlow(key, raw);
     if ("problem" in got) return { ok: false, text: got.problem };
     if (JSON.stringify(got.now.flow) === JSON.stringify(got.next)) return { ok: false, text: "Nothing changed from the saved chain." };
     const looser = flowLooser(got.now.flow, got.next);
     if (looser.length && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} ${looser.join("; ")}.` };
     if (looser.length && !confirmed) return { ok: false, text: `Confirm first: ${looser.join("; ")}.` };
     const c = got.next.chains.find((x) => x.key === key)!;
-    const v = await saveFlowVersion(got.next, `${c.name}: saved from ${String(place ?? "").slice(0, 60) || "a Chains tab"}`, me.email, got.now.version);
+    const v = await saveFlowVersion(got.next, `${c.name}: saved from ${String(place ?? "").slice(0, 60) || "a Chains tab"}${fromDraft ? ", a draft from Claude" : ""}`, me.email, got.now.version);
     revalidatePath("/", "layout");
-    await audit(me, "save_chain", key, { version: v, chain: c.name });
+    if (fromDraft) await dropChainDraft(fromDraft.id);
+    await audit(me, "save_chain", key, { version: v, chain: c.name, ...(fromDraft ? { from_draft: fromDraft.id } : {}) });
     return { ok: true, text: c.on ? `${c.name} saved. It starts on its own while the org is on; an agent that is off duty is skipped and the chain stops there.` : `${c.name} saved. It’s off, so it runs only when you press Run chain.` };
+  } catch (e) { return fail(e); }
+}
+
+/** Discards a chain drafted from Claude (card 435). It changed nothing, so nothing else changes. */
+export async function discardChainDraft(id: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  try {
+    const d = await getChainDraft(String(id ?? ""));
+    if (!d) return { ok: false, text: "That draft is already gone." };
+    await dropChainDraft(d.id);
+    revalidatePath("/", "layout");
+    await audit(me, "discard_chain_draft", d.key, { draft: d.id, chain: d.chain.name });
+    return { ok: true, text: `Claude’s draft of ${d.chain.name} is discarded.` };
   } catch (e) { return fail(e); }
 }
 
@@ -522,7 +508,7 @@ export async function saveChain(raw: unknown, place: string, confirmed: boolean)
 export async function deleteChain(key: string): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   try {
-    const got = await withChain(String(key ?? ""), null);
+    const got = await chainInFlow(String(key ?? ""), null);
     if ("problem" in got) return { ok: false, text: got.problem };
     const name = got.now.flow.chains.find((x) => x.key === key)?.name ?? key;
     const v = await saveFlowVersion(got.next, `${name}: deleted`, me.email, got.now.version);
@@ -583,7 +569,7 @@ export interface ChainPreviewStep { agent: string; name: string; summary: string
 export async function previewChain(raw: unknown): Promise<ActionResult & { steps?: ChainPreviewStep[] }> {
   const { no } = await asRole("approver"); if (no) return no;
   const key = String((raw as Chain | null)?.key ?? "");
-  const got = await withChain(key, raw).catch((e) => ({ problem: e instanceof Error ? e.message : String(e) }));
+  const got = await chainInFlow(key, raw).catch((e) => ({ problem: e instanceof Error ? e.message : String(e) }));
   if ("problem" in got) return { ok: false, text: got.problem.replace(/^Not saved: /, "") };
   const c = got.next.chains.find((x) => x.key === key)!;
   const steps: ChainPreviewStep[] = [];

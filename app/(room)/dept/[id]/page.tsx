@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { deleteChain, goLive, previewChain, realRun, runChainNow, saveChain, setEnabled, tryBuilt } from "@/dashboard/actions";
+import { deleteChain, discardChainDraft, goLive, previewChain, realRun, runChainNow, saveChain, setEnabled, tryBuilt } from "@/dashboard/actions";
 import { changeInChat, hireInChat, proposalDecline } from "@/dashboard/proposalActions";
 import { deptHires } from "@/dashboard/hireCards";
 import { deptChanges } from "@/dashboard/changeCards";
@@ -181,7 +181,7 @@ async function Chains({ id, name, roster, tz, owner, chain, startWith }: P) {
   return (
     <div className="dp-scroll">
       <ChainsBoard d={d} scope={{ dept: id }} place={name} pick={chain} startWith={startWith} newAgentHref={owner ? newAgentHref(id) : undefined}
-        actions={{ save: saveChain, remove: deleteChain, runNow: runChainNow, preview: previewChain }} />
+        actions={{ save: saveChain, remove: deleteChain, runNow: runChainNow, preview: previewChain, discardDraft: discardChainDraft }} />
     </div>
   );
 }

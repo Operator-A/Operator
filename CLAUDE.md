@@ -142,7 +142,9 @@ shipping and refund confirmations.
   business through `withOrg` and reads the member and their role again. Tools that change anything only
   make drafts or proposals through the builder's and proposals' own code (an agent made there starts off
   duty with no actions), except `finish_run`, which only saves a Claude session's result onto the run of an
-  agent that runs in Claude that started it, once, labelled as the session's words. `update_agent` may also put actions the gateway allows that agent, and
+  agent that runs in Claude that started it, once, labelled as the session's words. `draft_chain` only keeps a draft
+  of a new or changed chain (a new one off, a changed one on or off as saved), which changes nothing until the owner
+  uses it through the Chains tab's own save and its confirm. `update_agent` may also put actions the gateway allows that agent, and
   when it starts (a schedule, by hand, a live event, after another agent), into a draft version. They change nothing
   until the owner's Go live, after a clean try, on a confirm that lists each one. No tool approves or rejects a card,
   makes a draft live, puts an agent on duty, turns the org on, grants a custom tool, raises a budget or cap, or changes

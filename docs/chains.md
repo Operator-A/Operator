@@ -105,7 +105,20 @@ Tests: `npm run check:runview`.
 
 OPERATOR's MCP server (`docs/operator-mcp.md`) reads chains: `list_chains` gives every saved chain in words
 (`core/chain-view-rules.ts`) plus the chain as saved, and `get_chain_run` gives one chain run as the run view, through
-the same reader as the run page (`core/chain-view.ts`). Slice 2 adds `draft_chain`: a draft that changes nothing until
-the owner uses it in OPERATOR, through the Chains tab's own save and its confirm.
+the same reader as the run page (`core/chain-view.ts`).
+
+Slice 2 (built) adds `draft_chain` (owners only): Claude sends one whole chain as JSON, in the shape `list_chains` gives
+under saved. It is checked by the same rules as the Save button (`core/chain-save.ts` `chainInFlow`: the flow's
+rules, someone to pay for quick steps, the models' keys) and kept as a row in `chain_drafts` (`core/chain-drafts.ts`)
+with the saved chain it was made from. It changes nothing by itself:
+
+- A new chain is drafted off; a changed chain keeps whether it is on as saved (`core/chain-draft-rules.ts`).
+- The Chains tab lists it under **Drafts from Claude**, and Waiting for you has a line. Opening one puts it in the
+  editor with a strip: who drafted it, when, Claude's note, what it changes line by line, and Discard.
+- **Use this draft** is the tab's own Save (`saveChain` with the draft's id), with the same checks and the same confirm
+  when the chain would run more on its own. The draft is deleted after the save.
+- If the saved chain changed since the draft was made, the draft is out of date: it can't be opened or used, only
+  discarded.
+- One draft per chain (a newer one replaces it), at most 10 waiting, deleted by the scheduler after 14 days.
 
 Tests: `npm run check:mcp-chains`.

@@ -33,7 +33,10 @@ import type { CrewMember, IntegrationId } from "./crew";
 import { buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
 import { runCostOf, type CostSpec } from "./cost";
 import { realCost } from "@/core/cost-rules";
-import type { ChainAgent, ChainImageModel, ChainModel, ChainsData } from "./components/chains";
+import type { ChainAgent, ChainDraftView, ChainImageModel, ChainModel, ChainsData } from "./components/chains";
+import { listChainDrafts } from "@/core/chain-drafts";
+import { draftChanges, draftStale } from "@/core/chain-draft-rules";
+import type { ChainNames } from "@/core/chain-view-rules";
 import { payers } from "@/core/ask-rules";
 import { NO_MODEL_KEYS, modelReady } from "@/core/agent-spec";
 import { MODEL_LIST } from "@/integrations/models";
@@ -140,6 +143,8 @@ export interface Counts {
   approvalOwners: { agent: string; dept: string | null }[];
   /** Chains held at a Wait for my OK step (chains slice 3); also counted in approvalsPending and approvalOwners (agent ""). */
   chainOks: number;
+  /** Chains drafted from Claude waiting to be used or discarded (card 435); 0 until that migration is applied. */
+  chainDrafts: number;
   /** Person's jobs from this week's head plans that the owner hasn't marked done (slice 4). */
   jobsForYou: { planId: string; head: string | null; title: string; href: string }[];
   /** Proposed lessons waiting for the owner's Keep, per agent; empty until the memory tables exist. */
@@ -307,9 +312,9 @@ export const getRoster = cache(async (): Promise<Roster> => {
 /** What waits on the owner (card 304): the counts behind the Company page's list and the Approvals badge. One round. */
 export const getCounts = cache(async (): Promise<Counts> => {
   await cookies();
-  const none: Counts = { photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], approvalOwners: [], chainOks: 0, jobsForYou: [], lessonsWaiting: {} };
+  const none: Counts = { photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], approvalOwners: [], chainOks: 0, chainDrafts: 0, jobsForYou: [], lessonsWaiting: {} };
   if (!health().supabase) { await requireSession(); return none; }
-  const [, ph, ap, pp, jobsForYou, lessonsWaiting, ok] = await Promise.all([
+  const [, ph, ap, pp, jobsForYou, lessonsWaiting, ok, cd] = await Promise.all([
     requireSession(),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
     // drafts still with their lead (slice 4) aren't waiting on the owner yet; the older shape until that migration is applied
@@ -320,9 +325,11 @@ export const getCounts = cache(async (): Promise<Counts> => {
     proposedLessons(),
     // chains waiting at a Wait for my OK step; none until that migration is applied
     db().from("chain_oks").select("department_id").eq("status", "pending").gt("due_at", new Date().toISOString()).limit(500),
+    // chains drafted from Claude (card 435); none until that migration is applied
+    db().from("chain_drafts").select("id", { count: "exact", head: true }).gt("expires_at", new Date().toISOString()),
   ]);
   const oks = ok.error ? [] : (ok.data ?? []).map((x) => ({ agent: "", dept: (x as { department_id: string | null }).department_id ?? null }));
-  return { photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? (oks.length || null) : (ap.count ?? 0) + oks.length, chainOks: oks.length, proposalsPending: pp.error ? null : pp.count ?? 0,
+  return { photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? (oks.length || null) : (ap.count ?? 0) + oks.length, chainOks: oks.length, chainDrafts: cd.error ? 0 : cd.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0,
     approvalTools: ap.error ? [] : (ap.data ?? []).map((x) => toolOfCard(x.agent_actions)), proposalKinds: pp.error ? [] : (pp.data ?? []).map((x) => String(x.kind)),
     approvalOwners: [...(ap.error ? [] : (ap.data ?? []).map((x) => { const o = x as { agent_id?: string; department_id?: string | null }; return { agent: o.agent_id ?? "", dept: o.department_id ?? null }; })), ...oks],
     jobsForYou, lessonsWaiting };
@@ -602,13 +609,26 @@ export async function getChains(r: Roster, tz: string, versions = false): Promis
     approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })),
     controls: controlsOn(), maxSteps: MAX_STEPS, maxChains: MAX_CHAINS, now: r.now, tz,
   };
-  const empty = { version: 0, flow: { chains: [] }, problems: [], versions: [], next: {} };
+  const empty = { version: 0, flow: { chains: [] }, problems: [], versions: [], next: {}, drafts: [] };
   if (!health().supabase) return { ...base, ...empty, problem: "Supabase isn’t set up, so there are no chains to show." };
   try {
-    const [active, all] = await Promise.all([loadFlow(r.palette), versions ? listFlowVersions(r.palette) : Promise.resolve([])]);
+    const [active, all, waiting] = await Promise.all([
+      loadFlow(r.palette), versions ? listFlowVersions(r.palette) : Promise.resolve([]),
+      // chains drafted from Claude (card 435); none until that migration is applied
+      listChainDrafts().catch(() => []),
+    ]);
     const next = Object.fromEntries(active.flow.chains.map((c) => [c.key, nextFirings(c, r.now, 3, tz).map((t) => new Date(t).toISOString())]));
+    const n: ChainNames = {
+      agent: (id) => palette.find((a) => a.id === id)?.name ?? id, dept: (id) => chart?.departments.find((d) => d.id === id)?.name ?? id,
+      chain: (key) => active.flow.chains.find((c) => c.key === key)?.name ?? key, tool: (id) => APPROVAL_LABELS[id] ?? id,
+      model: (id) => MODEL_LIST.find((m) => m.id === id)?.label ?? id, claude: (id) => !!palette.find((a) => a.id === id)?.claude,
+    };
+    const drafts: ChainDraftView[] = waiting.map((w) => {
+      const now = active.flow.chains.find((c) => c.key === w.key) ?? null;
+      return { id: w.id, key: w.key, chain: w.chain, isNew: !w.base, changes: draftChanges(w.base, w.chain, n), note: w.note, by: w.by, at: w.at, stale: draftStale(w.base, now) };
+    });
     return {
-      ...base, version: active.version, flow: active.flow, problems: active.problems, next,
+      ...base, version: active.version, flow: active.flow, problems: active.problems, next, drafts,
       versions: all.map((v) => ({ version: v.version, active: v.active, note: v.note, createdBy: v.createdBy, createdAt: v.createdAt, chains: v.flow.chains.length, on: v.flow.chains.filter((c) => c.on).map((c) => c.name) })),
     };
   } catch (e) {

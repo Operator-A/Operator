@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { expireOks } from "@/core/chain-ok";
 import { pruneImages } from "@/core/image-step";
+import { pruneChainDrafts } from "@/core/chain-drafts";
 import { orgTz } from "@/core/tz";
 import { loadCrew } from "@/agents/registry";
 import { claimFiring, resumeChain, startStep } from "@/core/chain";
@@ -77,6 +78,8 @@ async function schedule(origin: string, now: number) {
   const okExpired = await expireOks(now).catch((e) => { console.error("[dispatch] chain OKs", e instanceof Error ? e.message : e); return 0; });
   // Make an image pictures past their 90 days are deleted (chains slice 4); never stops the scheduler
   const imagesGone = await pruneImages(now).catch((e) => { console.error("[dispatch] chain images", e instanceof Error ? e.message : e); return 0; });
+  // chain drafts from Claude nobody used in 14 days are deleted (card 435); never stops the scheduler
+  const draftsGone = await pruneChainDrafts(now).catch((e) => { console.error("[dispatch] chain drafts", e instanceof Error ? e.message : e); return 0; });
   const stale = await failStale(now);
   // a step whose kicks kept failing is skipped once it is hours late, not run at the wrong time of day
   const missed = await failMissed(now);
@@ -90,5 +93,5 @@ async function schedule(origin: string, now: number) {
   // card 284: setup check findings skipped 3 weeks ago come back once as a head's proposal (code, no model), only while the org is on
   const rechecks = on ? await returnSkipped(now).catch((e) => { console.error("[dispatch] setup re-checks", e instanceof Error ? e.message : e); return []; }) : [];
   const alerted = await sendStatusAlerts(origin, now).catch((e) => { console.error("[dispatch] alerts", e instanceof Error ? e.message : e); return []; });
-  return { on, started, caughtUp, kicked: due.length, expired: expired.length, okExpired, imagesGone, stale, missed, trusted, brain, rechecks, alerted, problems: flow.problems };
+  return { on, started, caughtUp, kicked: due.length, expired: expired.length, okExpired, imagesGone, draftsGone, stale, missed, trusted, brain, rechecks, alerted, problems: flow.problems };
 }

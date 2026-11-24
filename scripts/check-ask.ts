@@ -118,8 +118,9 @@ async function main() {
   const step = read("core/ask-step.ts");
   assert.doesNotMatch(step, /callMcpTool|callWriteTool|callCustomTool|gateway/, "a quick step reaches no tool");
   const actions = read("dashboard/actions.ts");
-  const wc = actions.slice(actions.indexOf("async function withChain"), actions.indexOf("\n}\n", actions.indexOf("async function withChain")));
-  assert.match(wc, /billedBy\(c, await loadOrgChart\(\)\)/, "saving refuses a chain with no agent to pay");
+  const save = read("core/chain-save.ts");
+  const wc = save.slice(save.indexOf("export async function chainInFlow"), save.indexOf("\n}\n", save.indexOf("export async function chainInFlow")));
+  assert.match(wc, /billedBy\(c, await loadOrg\(\)\)/, "saving refuses a chain with no agent to pay");
   assert.match(wc, /modelReady\(a\.model, keys\)/, "saving refuses a model without its key");
   assert.match(actions, /Would \$\{askWords/, "Try it says what it would ask, and sends nothing");
   const lane = read("dashboard/components/chains.tsx");

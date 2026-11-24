@@ -1,7 +1,7 @@
 // Settings > Schedule (docs/org-schedule.md; moved from Crew > Schedule in department pages slice 11): the org switch,
 // your org's day (when each agent runs, what it costs, on or off), and every chain (chains slice 1: the same board as a
 // department's Chains tab, plus the company's chains and the versions).
-import { deleteChain, previewChain, rollBackFlow, runChainNow, saveChain, setAgentTime, setEnabled, turnOffOrg, turnOrgBackOn } from "@/dashboard/actions";
+import { deleteChain, discardChainDraft, previewChain, rollBackFlow, runChainNow, saveChain, setAgentTime, setEnabled, turnOffOrg, turnOrgBackOn } from "@/dashboard/actions";
 import { orgDay } from "@/dashboard/orgDay";
 import { OrgDay } from "@/dashboard/components/OrgDay";
 import { planOrgOn } from "@/dashboard/orgPlan";
@@ -42,7 +42,7 @@ async function Schedule({ f, pick, startWith }: { f: Awaited<ReturnType<typeof g
       <OrgDay day={day} controls={controlsOn()} orgOn={f.org.on} setTime={setAgentTime} setOn={setEnabled} />
       <section className="stack" id="chains" style={{ gap: 10 }}>
         <div className="card-h"><span className="card-t">Every chain</span><span className="sub" style={{ flex: 1 }}>The company’s chains, and each department’s (also on its Chains tab). Chains run only while the org is on, and a chain never turns an agent on.</span></div>
-        <ChainsBoard d={d} scope="all" place="Settings" pick={pick} startWith={startWith} actions={{ save: saveChain, remove: deleteChain, runNow: runChainNow, preview: previewChain, rollBack: rollBackFlow }} />
+        <ChainsBoard d={d} scope="all" place="Settings" pick={pick} startWith={startWith} actions={{ save: saveChain, remove: deleteChain, runNow: runChainNow, preview: previewChain, rollBack: rollBackFlow, discardDraft: discardChainDraft }} />
       </section>
     </>
   );
