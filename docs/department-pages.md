@@ -23,6 +23,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | 9 | A calmer top bar: one working pill, the bell's drop-down, your initial's menu | The agent rail, the date pill, the top bar's theme button, the sidebar's Sign out, Everyone |
 | 10 | Company > Approvals holds everything the Approvals page did | The Approvals menu item and page, the Proposals list, the department filter, the bookkeeper-only button and banner |
 | 11 | Company > Departments gets Cards and Chart; Schedule becomes a Settings section | The Crew menu item and page, its department chips and view switch |
+| 12 | Activity: Runs and Status on one page, a red dot in the menu while something is broken | The Runs and Status menu items and pages, the Runs table, the pinned Status link |
 
 ## Slice 1: the page
 
@@ -317,6 +318,24 @@ Mockup v19. Crew leaves the menu; what it held moves to where people look for it
 
 Tests: `npm run check:dept` (the redirects, the menu, the switch, the Schedule section, no link to `/crew` left),
 `check:org-canvas`, `check:settings-sections`, `check:speed`.
+
+## Slice 12: Activity
+
+Mockup v20. Runs and Status become one page, Activity (`/activity`), under the departments in the menu with
+Connections. A red dot sits on it only while something is broken: failed or late jobs, or a paused connection
+(`alertCount` in `core/status.ts`, three counts read with the frame).
+
+- **What needs a look**, first: each problem from `core/status-rules.ts` with its detail and Open; under it Status's five
+  counts (jobs late, jobs failed, runs failed, refused, paused) as one line. With nothing wrong it reads All clear.
+- **Runs**: department chips (each department's colour, plus Company for agents in none), result, how it started, and
+  search, all in the address (`dashboard/activity-rules.ts`; old `/runs?status=&trigger=&q=` links keep their filters).
+  Grouped by day; each opens its replay at `/runs/<id>`. The footer keeps the totals and the cost.
+- **Live events**, folded at the bottom.
+- `/runs` and `/status` only redirect. **Deletes:** both menu items and pages, the Runs table (`RunTable` and its
+  styles) and the Status link pinned above Settings.
+
+Tests: `npm run check:activity` (filters, departments, day groups, totals, the health line, redirects, the menu),
+`check:sidebar` (Activity and Connections scroll with the departments; Settings stays pinned).
 
 ## Move cards (card 370)
 

@@ -17,13 +17,15 @@ import { UNKNOWN_BUSINESS, initials } from "@/core/business-rules";
 import { ROLE_LABELS } from "@/core/roles";
 import { bellRows, liveRows, minsWord, workingWord } from "@/dashboard/header-rules";
 import { companyHref } from "@/dashboard/company-rules";
+import { ACTIVITY_HREF } from "@/dashboard/activity-rules";
+import { alertCount } from "@/core/status";
 
 // a message to Avery (the Company page) or to a head (a department page) is a run on that page
 export const maxDuration = 120;
 
 export default async function RoomLayout({ children }: { children: React.ReactNode }) {
   // one round for everything the frame shows (card 202, docs/speed.md); a bad session still redirects before anything is drawn
-  const [floor, jar, biz, me] = await Promise.all([getFloor(), cookies(), loadBusiness().catch(() => UNKNOWN_BUSINESS), requireSession()]);
+  const [floor, jar, biz, me, broken] = await Promise.all([getFloor(), cookies(), loadBusiness().catch(() => UNKNOWN_BUSINESS), requireSession(), alertCount().catch(() => 0)]);
   const org = floor.chart; // read once with the floor (card 302)
   const theme = jar.get("cr_theme")?.value === "dark" ? "dark" : "light";
   const open = needs(floor, floor.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
@@ -37,13 +39,17 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     .map((r) => ({ id: r.id, name: floor.byId[r.agent_id]?.name ?? r.agent_id, status: r.status, live: isLive(r, floor.now) }));
   // card 158: the badge counts only the four kinds that interrupt (dashboard/needs-rules.ts)
   const waiting = interruptCount(open);
-  // six places (docs/builder-flow.md, slice 5): Settings sits apart at the bottom of the sidebar
+  // Company first; Activity and Connections under the departments; Settings sits apart at the bottom of the sidebar
   const nav = [
     // Company carries the count of what interrupts you: its Approvals tab holds what the Approvals page did (slice 10)
     { href: "/", match: ["/", "/proposals*", "/agents/*", "/build*"], icon: "layout-dashboard", label: "Company", count: waiting ? String(waiting) : undefined },
-    { href: "/runs", match: "/runs*", icon: "history", label: "Runs" },
+  ];
+  // Activity is Runs and Status on one page (slice 12): a red dot only while something is broken
+  const more = [
+    { href: ACTIVITY_HREF, match: [ACTIVITY_HREF, "/runs*"], icon: "activity", label: "Activity", dot: broken ? `${broken} need${broken === 1 ? "s" : ""} a look` : undefined },
     { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: toConnect(floor.health, floor.grants), noteColor: "var(--ink2)" },
   ];
+  const moreList = <><span className="side-h6">More</span>{more.map((it) => <SideLink key={it.label} {...it} />)}</>;
   // each department under its own name, with its head and a red count of what waits on you there (docs/department-pages.md)
   const deptNeeds = org ? needsByDept(org.departments.map((d) => d.id), floor.approvalOwners.map((o) => o.dept)).byDept : {};
   const depts = (org?.departments ?? []).map((d, i) => {
@@ -92,8 +98,8 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
                 {nav.map((it) => <SideLink key={it.label} {...it} />)}
               </div>
               <div className="sheet-group">{deptList}</div>
+              <div className="sheet-group">{moreList}</div>
               <div className="sheet-group">
-                <SideLink href="/status" match="/status" icon="circle-alert" label="Status" />
                 <SideLink href="/settings" match="/settings*" icon="settings" label="Settings" />
                 <SignOutButton />
                 <div style={{ padding: "8px 12px 0" }}><ThemeToggle initial={theme} wide /></div>
@@ -103,14 +109,14 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
         </header>
         <div className="body">
           <aside className="side">
-            {/* the top places and departments scroll inside the panel when they don't fit; Status, Settings and Sign out stay pinned */}
+            {/* the top places and departments scroll inside the panel when they don't fit; Settings stays pinned */}
             <div className="side-scroll">
               <div className="side-group">
                 {nav.map((it) => <SideLink key={it.label} {...it} />)}
               </div>
               {deptGroup}
+              <div className="side-group">{moreList}</div>
             </div>
-            <SideLink href="/status" match="/status" icon="circle-alert" label="Status" />
             <SideLink href="/settings" match="/settings*" icon="settings" label="Settings" />
           </aside>
           <main className="main">{children}</main>

@@ -2,8 +2,9 @@
 // On the Company and department pages the workspace is exactly the window's height, so a sidebar taller
 // than the window (a short laptop, or many departments) used to run past its rounded panel and the app's
 // frame, taking Settings and Sign out with it. Now the top places and the departments list scroll inside
-// the panel and Status and Settings stay pinned at its bottom (Sign out is in your initial's menu, slice 9).
-// 1. Source: the layout wraps the nav and departments in .side-scroll; the pinned two sit after it.
+// the panel and Settings stays pinned at its bottom (Sign out is in your initial's menu, slice 9; Status became the top of
+// Activity, which scrolls with the rest, slice 12).
+// 1. Source: the layout wraps the nav, departments and More in .side-scroll; Settings sits after it.
 // 2. Layout: the real globals.css, the sidebar's markup and 12 departments, measured in Chromium at
 //    several desktop heights, on a full-height (Company) page and an ordinary page. Skipped, and said so,
 //    where Playwright isn't installed.
@@ -18,12 +19,13 @@ assert.ok(side.length > 0, "the layout still has the desktop sidebar");
 const scroll = side.indexOf('<div className="side-scroll">');
 assert.ok(scroll > 0, "the sidebar wraps its scrolling part in .side-scroll");
 assert.ok(side.indexOf("nav.map") > scroll && side.indexOf("{deptGroup}") > scroll, "the top places and departments are inside the scrolling part");
-const pinned = side.indexOf('label="Status"');
-assert.ok(pinned > side.indexOf("{deptGroup}"), "Status comes after the departments");
-assert.ok(side.indexOf('label="Settings"') > pinned, "Status, then Settings, stay at the bottom");
+const pinned = side.indexOf('label="Settings"');
+assert.ok(!side.includes('label="Status"') && !layout.includes('href="/status"'), "Status left the menu: it is the top of Activity (slice 12)");
+assert.ok(side.indexOf("{moreList}") > side.indexOf("{deptGroup}") && side.indexOf("{moreList}") < pinned, "Activity and Connections sit under the departments, inside the scrolling part");
+assert.ok(pinned > side.indexOf("{deptGroup}"), "Settings comes after the departments");
 assert.ok(!side.includes("<SignOutButton"), "Sign out moved to your initial's menu in the top bar (slice 9)");
-const between = side.slice(side.indexOf("{deptGroup}"), pinned);
-assert.match(between, /<\/div>\s*$/m, "the scrolling part closes before Status, so the bottom three are pinned outside it");
+const between = side.slice(side.indexOf("{moreList}"), pinned);
+assert.match(between, /<\/div>\s*<\/div>\s*$/m, "the scrolling part closes before Settings, so it is pinned outside it");
 assert.doesNotMatch(side, /side-spacer/, "no spacer: the scrolling part takes the free space");
 const rule = (sel: string) => css.match(new RegExp(`^\\${sel} \\{([^}]*)\\}`, "m"))?.[1] ?? "";
 assert.match(rule(".side"), /min-height: 0/, ".side can shrink to the workspace's height");
@@ -43,10 +45,11 @@ async function measure() {
   const depts = Array.from({ length: 12 }, (_, i) => `<a class="side-dept" style="--hue:#9AA4FF"><i class="hue"></i><span class="t">Department ${i + 1}<span class="sub">Lead · Head of it</span></span></a>`).join("");
   const sidebar = `<aside class="side">
       <div class="side-scroll">
-        <div class="side-group">${["Company", "Approvals", "Crew", "Runs", "Connections"].map(item).join("")}</div>
+        <div class="side-group">${["Company"].map(item).join("")}</div>
         <div class="side-group"><span class="side-h6">Departments</span>${depts}${item("Add a department")}</div>
+        <div class="side-group"><span class="side-h6">More</span>${["Activity", "Connections"].map(item).join("")}</div>
       </div>
-      ${item("Status")}<a class="side-item" id="last"><svg width="17" height="17"></svg><span style="flex:1;min-width:0;white-space:nowrap">Settings</span></a>
+      <a class="side-item" id="last"><svg width="17" height="17"></svg><span style="flex:1;min-width:0;white-space:nowrap">Settings</span></a>
     </aside>`;
   const page = (full: boolean) => `<!doctype html><html><head><style>${css}</style></head><body>
     <div class="page"><div class="ws"><header class="topbar" style="height:64px"></header>

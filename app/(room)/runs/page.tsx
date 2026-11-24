@@ -1,55 +1,12 @@
-import Link from "next/link";
-import { getRoster, getTz, type Run } from "@/dashboard/data";
-import { m4 } from "@/dashboard/format";
-import { RunTable } from "@/dashboard/components/RunTable";
+import { redirect } from "next/navigation";
+import { ACTIVITY_HREF } from "@/dashboard/activity-rules";
 
-type Q = { agent?: string; status?: string; trigger?: string; q?: string };
-
-// Runs (builder flow slice 5): the run log; each row opens its replay at /runs/<id>.
-export default async function Runs({ searchParams }: { searchParams: Promise<Q> }) {
+// Runs and Status are one page now, Activity (docs/department-pages.md, slice 12). Old links keep their filters;
+// an agent filter becomes that agent's department there. Each run's replay stays at /runs/<id>.
+export default async function Runs({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
-  const [roster, tz] = await Promise.all([getRoster(), getTz()]); // the crew and its runs only (card 304)
-  const f = { ...roster, tz };
-  const agent = f.crew.some((a) => a.id === sp.agent) ? sp.agent! : "all";
-  const status = ["ok", "failed", "skipped", "running"].includes(sp.status ?? "") ? sp.status! : "all";
-  const trigger = ["cron", "manual", "approval", "chain"].includes(sp.trigger ?? "") ? sp.trigger! : "all";
-  const q = (sp.q ?? "").trim().slice(0, 100);
-  const match = (r: Run) => (agent === "all" || r.agent_id === agent) && (status === "all" || r.status === status) && (trigger === "all" || r.trigger === trigger)
-    && (!q || `${r.summary ?? ""} ${r.error ?? ""}`.toLowerCase().includes(q.toLowerCase()));
-  const rows = f.runs.filter(match);
-  const href = (patch: Partial<Q>) => {
-    const p = new URLSearchParams();
-    const next = { agent, status, trigger, q, ...patch };
-    for (const [k, v] of Object.entries(next)) if (v && v !== "all") p.set(k, v);
-    const s = p.toString();
-    return s ? `/runs?${s}` : "/runs";
-  };
-  const seg = (key: keyof Q, cur: string, opts: [string, string][]) => (
-    <div className="seg">{opts.map(([v, l]) => <Link key={v} href={href({ [key]: v })} className={cur === v ? "on" : ""}>{l}</Link>)}</div>
-  );
-  const ok = rows.filter((r) => r.status === "ok").length, fl = rows.filter((r) => r.status === "failed").length, sk = rows.filter((r) => r.status === "skipped").length;
-
-  return (
-    <>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><h1 className="h1">Runs</h1><span style={{ fontSize: 13.5 }} className="muted">Every real run, every agent, last 60 days. Tap one to replay it. Dry runs and tries from the builder aren’t listed here.</span></div>
-      <div className="row wrap" style={{ gap: 14 }}>
-        {seg("agent", agent, [["all", "All agents"], ...f.crew.map((a) => [a.id, a.name] as [string, string])])}
-        {seg("status", status, [["all", "Any status"], ["ok", "OK"], ["failed", "Failed"], ["skipped", "Skipped"]])}
-        {seg("trigger", trigger, [["all", "Any trigger"], ["cron", "Schedule"], ["manual", "Manual"], ["approval", "Approval"], ["chain", "Chain"]])}
-        <form action="/runs" style={{ flex: 1, minWidth: 200, display: "flex" }}>
-          {agent !== "all" && <input type="hidden" name="agent" value={agent} />}
-          {status !== "all" && <input type="hidden" name="status" value={status} />}
-          {trigger !== "all" && <input type="hidden" name="trigger" value={trigger} />}
-          <input className="input" name="q" defaultValue={q} placeholder="Search summaries and errors" style={{ flex: 1, height: 38, fontSize: 13 }} />
-        </form>
-      </div>
-      {!f.ok && <div className="card" style={{ background: "var(--red-soft)", color: "var(--red-ink)" }}>{f.problem}</div>}
-      <RunTable tz={f.tz} runs={rows.slice(0, 300)} who={f.byId} foot={
-        <span className="row wrap" style={{ justifyContent: "space-between" }}>
-          <span>{rows.length} runs · {ok} OK · {fl} failed · {sk} skipped · {m4(rows.reduce((s, r) => s + r.cost_usd, 0))} spent</span>
-          {(agent !== "all" || status !== "all" || trigger !== "all" || q) && <Link href="/runs">Clear filters</Link>}
-        </span>
-      } />
-    </>
-  );
+  const p = new URLSearchParams();
+  for (const k of ["status", "trigger", "q"]) if (sp[k]) p.set(k, sp[k]!);
+  const s = p.toString();
+  redirect(s ? `${ACTIVITY_HREF}?${s}` : ACTIVITY_HREF);
 }

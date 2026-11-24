@@ -36,6 +36,21 @@ export async function readStatus(now = Date.now()): Promise<{ facts: StatusFacts
   return { facts, problems: statusProblems(facts, now) };
 }
 
+/**
+ * How many alert-level problems there are (failed jobs, late jobs, paused connections), for the red dot on
+ * Activity in the menu (department pages slice 12). Three counts, no rows; a table it can't read counts 0.
+ */
+export async function alertCount(now = Date.now()): Promise<number> {
+  const since = new Date(now - DAY).toISOString(), overdue = new Date(now - OVERDUE_MIN * 6e4).toISOString();
+  const n = (r: { count: number | null; error: unknown }) => (r.error ? 0 : r.count ?? 0);
+  const [dead, late, paused] = await Promise.all([
+    db().from("jobs").select("id", { count: "exact", head: true }).gte("failed_at", since),
+    db().from("jobs").select("id", { count: "exact", head: true }).is("claimed_at", null).is("done_at", null).is("failed_at", null).lt("run_after", overdue),
+    db().from("mcp_connections").select("id", { count: "exact", head: true }).not("paused_at", "is", null),
+  ]);
+  return (n(dead) ? 1 : 0) + (n(late) ? 1 : 0) + n(paused);
+}
+
 async function pausedConnections(): Promise<StatusFacts["paused"]> {
   const { data, error } = await db().from("mcp_connections").select("id, last_error").not("paused_at", "is", null);
   if (error) throw new Error(error.message);

@@ -69,7 +69,9 @@ https://claude.ai/artifact/8ec8poMoGrDtE3XY1axWrj, phase 6. With many orgs and q
 - Tracing never changes or stops the work: a span that can't be made or tagged is skipped.
 - `npm run check:traces` tests the filtering and cleaning, and that the four kinds of work are wrapped.
 
-## Status and alerts (`core/status.ts`, `core/status-rules.ts`, `/status`, `supabase/migrations/20261209090000_status_alerts.sql`)
+## Status and alerts (`core/status.ts`, `core/status-rules.ts`, the top of `/activity`, `supabase/migrations/20261209090000_status_alerts.sql`)
+
+Since department pages slice 12 the Status page is the top of Activity, and `/status` redirects there.
 
 - **One page, Status** (sidebar, above Settings), for everyone who can sign in. It lists what needs
   a look, worst first, each with a link to where it's fixed, and tiles for the counts.

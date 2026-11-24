@@ -71,6 +71,7 @@
     "check:square": "npx --yes tsx --conditions=react-server scripts/check-square.ts",
     "check:ee": "npx --yes tsx ee/check.ts",
     "check:all": "node scripts/check-all.mjs",
+    "check:activity": "npx --yes tsx scripts/check-activity.ts",
     "org:new": "npx --yes tsx --conditions=react-server --env-file=.env.local scripts/new-org.ts",
     "check": "npm run typecheck && npm run lint && npm run validate:graphql"
   },

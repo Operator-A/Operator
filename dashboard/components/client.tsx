@@ -40,7 +40,7 @@ export function MarkSeen({ agentId, at }: { agentId: string; at: number }) {
 }
 
 /** Sidebar link, active when the path matches (a trailing * matches a prefix) and, if given, the tab matches. */
-export function SideLink({ href, match, icon, label, note, noteColor, count, red }: { href: string; match: string | string[]; icon: string; label: string; note?: string; noteColor?: string; count?: string; red?: boolean }) {
+export function SideLink({ href, match, icon, label, note, noteColor, count, red, dot }: { href: string; match: string | string[]; icon: string; label: string; note?: string; noteColor?: string; count?: string; red?: boolean; dot?: string }) {
   const path = usePathname();
   const active = (Array.isArray(match) ? match : [match]).some((m) => (m.endsWith("*") ? path.startsWith(m.slice(0, -1)) : path === m));
   return (
@@ -49,6 +49,8 @@ export function SideLink({ href, match, icon, label, note, noteColor, count, red
       <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap" }}>{label}</span>
       {note && <span className="side-note" style={{ color: noteColor }}>{note}</span>}
       {count && <span className={"count" + (red ? " red" : "")}>{count}</span>}
+      {/* a red dot with no number: something is broken (Activity, slice 12); the title says what */}
+      {dot && <span className="side-dot" title={dot} aria-label={dot} />}
     </IntentLink>
   );
 }
