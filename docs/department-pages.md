@@ -372,3 +372,20 @@ department's chat as a change card with Department, Seat and Reports to, Now →
 Change something: a head can't file a move). Approve places the agent through `placeAgent`, the same path as
 Crew's Add to a department, and closes the seat it left when nothing sits under it (card 385). The agent
 sheet's Edit tab has a Department line with Move for an agent already placed. Detail and checks: docs/org-chart.md, "Adding an agent to a department".
+
+## New agent (card 420)
+
+The owner can build an agent by hand, outside the chat. **+ New agent** sits on each department's Agents tab (the
+department is preset) and under the department cards on Company > Departments (any department, or none). It opens
+the agent sheet blank (`?agent=new`, `dashboard/components/newAgentSheet.tsx`): name and role in the header, then
+Job, Runs on (models by maker, or a Claude routine), Reads (connected tools), When it runs (a schedule, after another
+agent finishes with its summary passed along, or only when asked), Can do by tool (all off; only actions open to any
+agent an approver grants), Department and seat, daily budget, and what a good result looks like.
+
+**Create** calls `createAgentByHand` (`dashboard/actions.ts`, owner only). The form is read in plain code
+(`dashboard/new-agent-rules.ts`, `npm run check:new-agent`), the spec is checked like any builder save, and the agent
+is created off duty as v1 (`createBuiltAgent`). Then, each through the code its sheet already uses: marked as running
+in Claude (`markLinked`), seated (`placeAgent`), given its budget (`setBuiltBudget`) and its start (`setAgentTime` or
+`followAgent`). Anything that doesn't take is said in the reply; nothing is half-hidden. **Create and try once** also
+starts one try in the background (Controls on; not for a Claude routine, which tries after its routine is connected).
+The sheet then opens as the new agent's own sheet. Nothing here puts an agent on duty. No database change.

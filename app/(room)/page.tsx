@@ -34,7 +34,7 @@ import { ApprovalCard, Tag } from "@/dashboard/components/approvalBits";
 import { DraftCard } from "@/dashboard/components/department";
 import { currentDraftView } from "@/dashboard/department";
 import { deptAgentIds, deptHue, headAgentId, needsByDept, tabHref } from "@/dashboard/dept-rules";
-import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, SCHEDULE_HREF, addDeptHref, companyHref, companyTab, deptView, deptViewHref, goalsWord, type CompanyTab, type DeptView } from "@/dashboard/company-rules";
+import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, SCHEDULE_HREF, addDeptHref, companyHref, madeAgentCompanyHref, newAgentCompanyHref, companyTab, deptView, deptViewHref, goalsWord, type CompanyTab, type DeptView } from "@/dashboard/company-rules";
 import { OrgChartPane } from "@/dashboard/components/orgChartPane";
 import { IntentLink } from "@/dashboard/components/intentLink";
 import { controlsOn } from "@/dashboard/session";
@@ -138,7 +138,7 @@ export default async function Company({ searchParams }: { searchParams: Promise<
         </div>
       </div>
       {/* the chief of staff and any agent in no department open their sheet here (slice 9, in place of Everyone) */}
-      {typeof sp.agent === "string" && <AgentSheetFor id={sp.agent} closeHref={companyHref(tab)} tz={f.tz} now={f.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} />}
+      {typeof sp.agent === "string" && <AgentSheetFor id={sp.agent} closeHref={companyHref(tab)} tz={f.tz} now={f.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} openHref={madeAgentCompanyHref()} />}
     </div>
   );
 }
@@ -255,7 +255,7 @@ function DeptViews({ dview }: { dview: DeptView }) {
   );
 }
 
-async function Departments({ f, spend, dview }: P) {
+async function Departments({ f, spend, dview, owner }: P) {
   const org = f.chart;
   if (dview !== "cards") return <div className="dp-scroll"><DeptViews dview={dview} /><OrgChartPane f={f} edit={dview === "edit"} /></div>;
   if (!org) return <div className="dp-scroll"><div className="dp-panel"><span className="dp-note">The org chart tables aren’t up to date: apply the org chart migrations.</span></div></div>;
@@ -289,6 +289,7 @@ async function Departments({ f, spend, dview }: P) {
       </div>
       <Unplaced f={f} />
       <Link href={addDeptHref()} className="dp-newline">{PLUS}<span><b>Add a department.</b> Avery interviews you in the chat (what to track, goals, which tools), then proposes a head, agents and a monthly cost for your OK.</span></Link>
+      {owner && <Link href={newAgentCompanyHref()} scroll={false} className="dp-newline">{PLUS}<span><b>New agent.</b> Build one yourself on a blank agent sheet: its job, what it runs on, reads, when it runs and where it sits. It starts off duty.</span></Link>}
     </div>
   );
 }

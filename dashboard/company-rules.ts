@@ -12,6 +12,9 @@ export const companyTab = (raw: unknown): CompanyTab => (COMPANY_TABS as readonl
 /** The tab's address: Chat is the page itself. */
 export const companyHref = (t: CompanyTab) => (t === "chat" ? "/" : `/?tab=${t}`);
 /** History and trust levels, folded at the foot of Company > Approvals (slice 10). */
+/** New agent (card 420) from Company > Departments, and where the new agent's sheet then opens ("{id}" for its id). */
+export const newAgentCompanyHref = () => `${companyHref("departments")}&agent=new`;
+export const madeAgentCompanyHref = () => `${companyHref("departments")}&agent={id}`;
 export const approvalsHistoryHref = () => `${companyHref("approvals")}#history`;
 
 /** Company > Departments shows cards (the default) or the living org chart, and the chart's editor (slice 11). */

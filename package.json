@@ -17,6 +17,7 @@
     "check:org-canvas": "npx --yes tsx scripts/check-org-canvas.ts",
     "check:dept": "npx --yes tsx scripts/check-dept.ts",
     "check:handoff": "npx --yes tsx scripts/check-handoff.ts",
+    "check:new-agent": "npx --yes tsx scripts/check-new-agent.ts",
     "check:header": "npx --yes tsx scripts/check-header.ts",
     "check:roster": "npx --yes tsx scripts/check-roster.ts",
     "check:reactions": "npx --yes tsx scripts/check-reactions.ts",

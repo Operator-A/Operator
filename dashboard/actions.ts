@@ -24,10 +24,13 @@ import { orgId, withOrg } from "@/core/tenancy";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, withAgentAfter, dayWords, type AgentTime, type Flow } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
 import { flowWithStarts, readStored, startsWords } from "@/core/draft-starts-rules";
-import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, versionStarts, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
+import { BUDGET_CEILING, NO_MODEL_KEYS, RUN_LIMITS, createBuiltAgent, activateSpecVersion, versionStarts, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { modelDef } from "@/integrations/models";
 import { modelKeysReady, removeRoutine, routineState, saveRoutine } from "@/integrations/mcp";
-import { moveIntoOperator as moveAgentIntoOperator, runsOn } from "@/core/claude-agents";
+import { markLinked, moveIntoOperator as moveAgentIntoOperator, runsOn } from "@/core/claude-agents";
+import { TOOLS as CATALOG } from "@/core/tools/catalog";
+import { loadOrg as loadOrgChart, placeAgent, seatTitleFor } from "@/core/org";
+import { closedActions, createdWords, jobLine, newSpecDraft, readNewAgent } from "./new-agent-rules";
 import { customMenu } from "@/core/tools/custom";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { lastTry } from "./builder";
@@ -878,4 +881,56 @@ export async function moveIntoOperator(agentId: string): Promise<ActionResult> {
   await audit(me, "move_into_operator", agentId);
   revalidatePath("/", "layout");
   return { ok: true, text: `${who.name} now runs in OPERATOR, off duty. Give it the reads its job needs, try it, and go live.` };
+}
+
+/**
+ * New agent (card 420): the owner builds an agent by hand on the blank agent sheet. The form is checked in code
+ * (dashboard/new-agent-rules.ts), its spec like any builder save (readSpec, model keys, tools turned on), and its
+ * actions only those open to any agent an approver grants. It is created off duty as v1 (createBuiltAgent), then
+ * marked as running in Claude, seated, given its start and budget, each through the same code and checks as its
+ * sheet. Nothing here puts it on duty. `tryIt` also starts one try in the background (Controls on).
+ */
+export async function createAgentByHand(raw: unknown, tryIt = false): Promise<ActionResult & { agentId?: string }> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const read = readNewAgent(raw, BUDGET_CEILING);
+  if ("problem" in read) return { ok: false, text: read.problem };
+  const f = read.form;
+  const closed = closedActions(f.tools, (id) => (CATALOG[id]?.kind === "action" ? (CATALOG[id].agents === "granted" ? "granted" : CATALOG[id].agents ?? null) : undefined));
+  if (closed.length) return { ok: false, text: `Not created. ${closed.map((id) => CATALOG[id]?.label ?? id).join(", ")} can’t be given to a new agent here.` };
+  const linked = f.runsOn.on === "claude";
+  if (tryIt && linked) return { ok: false, text: "An agent that runs in Claude tries once after its routine is connected. Press Create." };
+  if (tryIt && !controlsOn()) return { ok: false, text: `${CONTROLS_OFF} A try makes real model calls. Press Create instead.` };
+  try {
+    const got = await checkedDraft(newSpecDraft(f, "claude-haiku-5-5", { maxSteps: RUN_LIMITS.maxSteps.default, maxCostUsd: RUN_LIMITS.maxCostUsd.default }), "");
+    if ("error" in got) return { ok: false, text: `Not created. ${got.error}` };
+    // the department and seat, named before anything is made, so a wrong pick makes nothing
+    if (f.place) {
+      const org = await loadOrgChart();
+      const d = org?.departments.find((x) => x.id === f.place!.deptId);
+      if (!org || !d) return { ok: false, text: "Not created. That department isn’t on the chart any more." };
+      if (f.place.seatId && !org.seats.some((s) => s.id === f.place!.seatId && s.departmentId === d.id && s.holder === "open")) return { ok: false, text: "Not created. That seat isn’t open any more." };
+    }
+    if (f.start.kind === "after" && !(await crewAgent(f.start.agentId))) return { ok: false, text: "Not created. The agent it runs after isn’t on the crew." };
+    const id = await createBuiltAgent(got.spec, me.email, linked ? "Created by hand, runs in Claude" : "Created by hand on its sheet");
+    await audit(me, "create_agent", id, { name: got.spec.name, via: "new_agent_sheet", ...(linked ? { runs_on: "claude" } : {}) });
+    const misses: string[] = [];
+    const miss = (what: string, e: unknown) => misses.push(`${what} wasn’t set: ${e instanceof Error ? e.message : String(e)}`);
+    if (f.role) { const { error } = await db().from("agents").update({ role: f.role }).eq("id", id); if (error) miss("Its role", error.message); }
+    if (linked) { try { await markLinked(id, f.runsOn.on === "claude" ? f.runsOn.tools : []); } catch (e) { miss("Running in Claude", e); } }
+    let where: string | null = null;
+    if (f.place) {
+      try {
+        const r = await withActor(me.email, () => placeAgent(id, f.place!.deptId, { seatId: f.place!.seatId, title: seatTitleFor({ name: f.name, role: f.role }), sub: jobLine(f.job).slice(0, 120) }));
+        where = `in ${r.words}`;
+      } catch (e) { miss("Its seat", e); }
+    }
+    if (f.budget !== 1) { const r = await setBuiltBudget(id, f.budget); if (!r.ok) misses.push(`Its budget stays $1.00 a day: ${r.text}`); }
+    // its start, through the sheet's own actions; off duty, so it takes effect only once it is put on duty
+    if (f.start.kind === "schedule") { const r = await setAgentTime(id, { days: f.start.days, time: f.start.time }, true); if (!r.ok) misses.push(`Its schedule wasn’t set: ${r.text}`); }
+    if (f.start.kind === "after") { const r = await followAgent(id, f.start.agentId, f.start.passAlong, true); if (!r.ok) misses.push(`It doesn’t run after another agent yet: ${r.text}`); }
+    let tried: string | null = null;
+    if (tryIt) { const t = await startTry(id, f.name); tried = t.text; }
+    revalidatePath("/", "layout");
+    return { ok: true, text: createdWords(f.name, where, misses, tried), agentId: id };
+  } catch (e) { return fail(e); }
 }
