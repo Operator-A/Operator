@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { expireOks } from "@/core/chain-ok";
 import { orgTz } from "@/core/tz";
 import { loadCrew } from "@/agents/registry";
 import { claimFiring, resumeChain, startStep } from "@/core/chain";
@@ -71,6 +72,8 @@ async function schedule(origin: string, now: number) {
   await pruneEvents(now).catch((e) => console.error("[dispatch] prune events", e instanceof Error ? e.message : e));
   // chain steps in Claude with no result after 24 hours count as failed, and their chains go on; never stops the scheduler
   const expired = await expireWaits(now).then((xs) => Promise.all(xs.map((x) => resumeChain(origin, x.chain, x.runId, "failed")))).catch((e) => { console.error("[dispatch] claude waits", e instanceof Error ? e.message : e); return []; });
+  // Wait for my OK cards nobody answered in 3 days stop their chains (chains slice 3); never stops the scheduler
+  const okExpired = await expireOks(now).catch((e) => { console.error("[dispatch] chain OKs", e instanceof Error ? e.message : e); return 0; });
   const stale = await failStale(now);
   // a step whose kicks kept failing is skipped once it is hours late, not run at the wrong time of day
   const missed = await failMissed(now);
@@ -84,5 +87,5 @@ async function schedule(origin: string, now: number) {
   // card 284: setup check findings skipped 3 weeks ago come back once as a head's proposal (code, no model), only while the org is on
   const rechecks = on ? await returnSkipped(now).catch((e) => { console.error("[dispatch] setup re-checks", e instanceof Error ? e.message : e); return []; }) : [];
   const alerted = await sendStatusAlerts(origin, now).catch((e) => { console.error("[dispatch] alerts", e instanceof Error ? e.message : e); return []; });
-  return { on, started, caughtUp, kicked: due.length, expired: expired.length, stale, missed, trusted, brain, rechecks, alerted, problems: flow.problems };
+  return { on, started, caughtUp, kicked: due.length, expired: expired.length, okExpired, stale, missed, trusted, brain, rechecks, alerted, problems: flow.problems };
 }

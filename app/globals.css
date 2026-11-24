@@ -1478,6 +1478,7 @@ textarea.input { height: auto; min-height: 84px; padding: 12px 16px; border-radi
 :root[data-theme="dark"] .ch-board { --plum: #C49BFF; --plum-soft: #2C1F40; }
 .k-model { background: var(--plum-soft); color: var(--plum); }
 .ch-minis i.k-model { background: var(--plum-soft); color: var(--plum); font-size: 8px; }
+.ch-minis i.k-ok { background: var(--yel-soft); color: var(--yel-ink); }
 .ch-ask { align-items: flex-start; }
 .ch-ask textarea { flex: 1 1 260px; min-width: 0; border-radius: 10px; border: 1px solid var(--bd); background: var(--card); color: var(--ink); font: inherit; font-size: 13px; padding: 8px 10px; resize: vertical; }
 .k-image { background: var(--mint-soft); color: var(--mint-ink); }
@@ -1488,6 +1489,7 @@ textarea.input { height: auto; min-height: 84px; padding: 12px 16px; border-radi
 .ch-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; white-space: nowrap; align-self: center; border: 0; font-family: inherit; }
 .b-op { background: var(--report-soft); color: var(--report); }
 .b-cl { background: var(--acc-soft); color: var(--acc-ink); }
+.b-ok { background: var(--yel-soft); color: var(--yel-ink); }
 .b-free { background: var(--card); color: var(--ink2); }
 .ch-chg { cursor: pointer; }
 .ch-link { position: relative; padding: 4px 0 4px 28px; font-size: 12px; color: var(--mut); display: flex; align-items: center; gap: 8px; min-height: 34px; flex-wrap: wrap; }
@@ -1498,8 +1500,8 @@ textarea.input { height: auto; min-height: 84px; padding: 12px 16px; border-radi
 .ch-pick { position: absolute; z-index: 30; right: 0; top: 100%; width: 340px; max-width: calc(100vw - 32px); background: var(--card); border: 1px solid var(--bd); border-radius: 18px; box-shadow: 0 24px 40px -20px rgba(20, 20, 60, .45); padding: 8px; display: flex; flex-direction: column; gap: 2px; }
 .ch-po { display: grid; grid-template-columns: 34px 1fr; gap: 2px 10px; padding: 9px; border-radius: 12px; align-items: center; border: 0; background: none; font: inherit; color: var(--ink); text-align: left; cursor: pointer; }
 .ch-po:hover { background: var(--soft); text-decoration: none; }
-.ch-po.dis { cursor: default; opacity: .6; }
-.ch-po.dis:hover { background: none; }
+.ch-po.dis, .ch-po:disabled { cursor: default; opacity: .6; }
+.ch-po.dis:hover, .ch-po:disabled:hover { background: none; }
 .ch-po b { font-size: 13.5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .ch-po small { font-size: 12px; color: var(--mut); line-height: 1.35; }
 .ch-off, .ch-soon { font-size: 10px; padding: 1px 7px; border-radius: 99px; background: var(--soft); color: var(--mut); font-weight: 700; }

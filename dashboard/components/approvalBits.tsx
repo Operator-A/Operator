@@ -2,7 +2,8 @@
 // lead's note, the department tag, and the whole card. The Approvals page and a department's Approvals
 // tab draw the same card, so approving in either place is the same tap.
 import Link from "next/link";
-import { approve, reject } from "@/dashboard/actions";
+import { approve, decideChainOk, reject } from "@/dashboard/actions";
+import { leftWords, type OkCard } from "@/core/chain-ok-rules";
 import type { ApprovalItem, ApprovalsView, ReactRules } from "@/dashboard/data";
 import type { CrewMember } from "@/dashboard/crew";
 import { m2, md, when } from "@/dashboard/format";
@@ -304,6 +305,31 @@ export function ApprovalCard({ i, view, byId, tz, rules, look = "page", chatHref
         </div>
       </div>
       <Change i={i} />
+    </div>
+  );
+}
+
+/**
+ * A chain's Wait for my OK card (chains slice 3): the step before's result (data, cut in code), what runs next, and
+ * Approve or Reject. Shown with the drafts on the Company page and the chain's department; approving in either is the
+ * same tap. It holds a chain, not an action, so it has no trust level and is never promoted.
+ */
+export function ChainOkCard({ c, tz, chainHref }: { c: OkCard; tz: string; chainHref?: string }) {
+  const nums = Object.entries(c.facts.metrics);
+  return (
+    <div className="dp-ap">
+      <div className="dp-ap-h"><b>{c.chainName}</b>step {c.step + 1} of {c.steps} · {when(c.createdAt, tz)}<span className="kind">Chain</span></div>
+      <h4>{c.note ?? `Approve ${c.fromName}’s result to go on`}</h4>
+      <div className="dp-draft">
+        <span className="dp-note">{c.fromName}{c.facts.status && c.facts.status !== "ok" ? ` (${c.facts.status})` : ""} said:</span>
+        <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{c.facts.summary || "Nothing written."}</div>
+        {nums.length > 0 && <span className="dp-note">{nums.map(([k, v]) => `${k} ${v}`).join(" · ")}</span>}
+      </div>
+      <div className="dp-btns">
+        <ActionButton className="dp-btn go" action={decideChainOk.bind(null, c.id, "approve")}>{c.next ? `Approve, run ${c.next}` : "Approve"}</ActionButton>
+        <ActionButton className="dp-btn" action={decideChainOk.bind(null, c.id, "reject")}>Reject, stop the chain</ActionButton>
+      </div>
+      <span className="dp-note">Stops by itself {leftWords(c.dueAt)} if nobody answers.{chainHref && <> <Link href={chainHref} style={{ fontWeight: 600, color: "var(--ink2)", textDecoration: "underline" }}>See the chain</Link></>}</span>
     </div>
   );
 }

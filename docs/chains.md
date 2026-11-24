@@ -43,9 +43,29 @@ No migration: the step is JSON in `crew_flow`.
 
 Tests: `npm run check:ask`.
 
+## Slice 3: Wait for my OK (built)
+
+A step `{ ok: { note? } }` (`core/flow-rules.ts` `okProblems`, `OK`). It never goes first (there is nothing to approve),
+two never sit together, and it takes no check or pass along: the card always shows the step before's result.
+Dropping an agent from a chain (by hand only) takes an OK left first or doubled with it.
+
+- Running (`core/chain.ts`, `core/chain-ok.ts` `holdForOk`): no run, no model, no cost. Code keeps one `chain_oks` row
+  (migration `20270108090000_chain_oks.sql`, one per chain run and step): how the chain was started, the step
+  before's run, its summary and numbers cut in code (`keepFacts`), the department it shows in (`okDept`: the chain's
+  own, its owner agent's, or none for the company) and `due_at`, 3 days on. The chain stops there.
+- Deciding (`dashboard/actions.ts` `decideChainOk`, approvers only, audited): the row moves from pending once, and only
+  before `due_at`. Approve reads the saved chain again and, if that step is still a Wait for my OK
+  (`okStillHolds`), goes on with `continueChain` from it with the step before's run as the parent, so the next
+  step gets that result as facts and meets its own checks (chain on, org on, duty, budget). Reject stops the chain.
+- Expiry: the scheduler marks rows past `due_at` expired (`expireOks`); their chains stop.
+- Cards (`ChainOkCard` in `dashboard/components/approvalBits.tsx`): on Company > Approvals and the department's
+  Approvals tab, counted in the Approvals badge, the department's red count and the Company page's list. It holds a
+  chain, not an action: no trust level, never promoted, and nothing a run wrote can approve it.
+
+Tests: `npm run check:ok`.
+
 ## Next slices
 
-3. Wait for my OK: an approval card with the step before's result; approve to go on, reject to stop, 3 days to answer.
 4. Make an image: OpenAI or Gemini images on the business's keys, stored with the run (new storage and a database
    change, asked before applying).
 5. Run view: one chain run as a timeline of its steps.

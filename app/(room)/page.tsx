@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
-import { getApprovals, getFloor, requireSession, rulesFor, type ApprovalItem, type Floor } from "@/dashboard/data";
+import { getApprovals, getChainOks, getFloor, requireSession, rulesFor, type ApprovalItem, type Floor } from "@/dashboard/data";
+import { okChainHref } from "@/core/chain-ok-rules";
 import { goalsByDept, type GoalView } from "@/dashboard/goals";
 import { GOALS_MISSING } from "@/core/goals";
 import { interruptCount, needs, split } from "@/dashboard/needs";
@@ -30,7 +31,7 @@ import { deptRuns } from "@/dashboard/deptFeed";
 import { HeadChat } from "@/dashboard/components/headChat";
 import { DeptTabs } from "@/dashboard/components/deptTabs";
 import { GoalTiles } from "@/dashboard/components/goalTiles";
-import { ApprovalCard, Tag } from "@/dashboard/components/approvalBits";
+import { ApprovalCard, ChainOkCard, Tag } from "@/dashboard/components/approvalBits";
 import { DraftCard } from "@/dashboard/components/department";
 import { currentDraftView } from "@/dashboard/department";
 import { deptAgentIds, deptHue, headAgentId, needsByDept, tabHref } from "@/dashboard/dept-rules";
@@ -355,17 +356,18 @@ async function Approvals({ f, view, pending }: P) {
   if (!view) return <div className="dp-scroll"><div className="dp-panel"><span className="dp-note">The approvals tables aren’t there yet. Apply the gateway migration to your Supabase project.</span></div></div>;
   const all: ApprovalItem[] = [...view.pending, ...view.withLead];
   const controls = controlsOn();
-  const [rules, trust, blocker] = await Promise.all([
+  const [rules, trust, blocker, oks] = await Promise.all([
     rulesFor(all),
     trustView().catch((e): TrustView => ({ offers: [], scheduled: [], lines: [], undoMinutes: 30, problem: e instanceof Error ? e.message : String(e) })),
     !controls ? Promise.resolve("Real runs are off on this OPERATOR") : writeBlocker(),
+    getChainOks().then((x) => x ?? []),
   ]);
   const card = (i: ApprovalItem) => <ApprovalCard key={i.id} i={i} view={view} byId={f.byId} tz={f.tz} rules={rules} look="tab" chatHref={i.department_id ? tabHref(i.department_id, "chat") : "/"} />;
   const props = (pending ?? []).filter((p) => p.state === "pending");
   const decidedProps = (pending ?? []).filter((p) => p.state !== "pending").slice(0, 20);
   const from = (p: NonNullable<P["pending"]>[number]) => (p.from_agent ? f.byId[p.from_agent]?.name ?? p.from_agent : p.source === "claude" ? "Claude" : "You");
   const deptName = (id: string | null) => f.chart?.departments.find((d) => d.id === id)?.name ?? null;
-  const nothing = !all.length && !props.length && !trust.offers.length && !trust.scheduled.length && !view.waiting.length;
+  const nothing = !all.length && !oks.length && !props.length && !trust.offers.length && !trust.scheduled.length && !view.waiting.length;
   return (
     <div className="dp-scroll">
       {blocker && all.length > 0 && <div className="dp-panel co-blocked"><span className="dp-note">Approving records your decision. Nothing is written yet: {blocker}. Approved items stay approved and go out once that’s fixed.</span></div>}
@@ -393,7 +395,8 @@ async function Approvals({ f, view, pending }: P) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {nothing && <div className="dp-note" style={{ padding: "28px 16px", textAlign: "center", fontSize: 14 }}>Nothing is waiting for your OK.</div>}
-          {!view.pending.length && !nothing && <span className="dp-note">No drafts right now.</span>}
+          {!view.pending.length && !oks.length && !nothing && <span className="dp-note">No drafts right now.</span>}
+          {oks.map((c) => <ChainOkCard key={c.id} c={c} tz={f.tz} chainHref={okChainHref(c)} />)}
           {view.pending.map(card)}
           {view.withLead.length > 0 && <span className="dp-note">With the lead first ({view.withLead.length}): departments with “Lead checks drafts first” on. The lead adds a note or sends a draft back once; only your tap approves.</span>}
           {view.withLead.map(card)}

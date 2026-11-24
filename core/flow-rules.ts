@@ -76,10 +76,18 @@ export interface Ask { model: string; prompt: string; maxUsd: number }
 export const ASK = { promptMax: 2000, maxUsd: 1, defaultUsd: 0.1, outMax: 4000 } as const;
 const MODEL_ID = /^[a-z0-9][a-z0-9.-]{1,59}$/;
 
-/** A step: one of the crew (`agent`), or an Ask a model step (`ask`), never both. */
-export type Step = StepIf & ({ agent: string; ask?: undefined } | { ask: Ask; agent?: undefined });
-/** What a step is called in sentences: its agent, or "Ask a model". */
-export const stepName = (s: Step) => s.agent ?? "Ask a model";
+/**
+ * Wait for my OK (chains slice 3): a quick step that puts the step before's result on an approval card and holds the
+ * chain. Approve goes on to the next step (which gets the step before's result, as if the OK weren't there); reject
+ * stops the chain; no answer in OK_DAYS stops it too. It costs nothing and runs nothing, so it never goes first.
+ */
+export interface OkStep { note?: string }
+export const OK = { noteMax: 300, days: 3 } as const;
+
+/** A step: one of the crew (`agent`), an Ask a model step (`ask`) or a Wait for my OK step (`ok`), only one. */
+export type Step = StepIf & ({ agent: string; ask?: undefined; ok?: undefined } | { ask: Ask; agent?: undefined; ok?: undefined } | { ok: OkStep; agent?: undefined; ask?: undefined });
+/** What a step is called in sentences: its agent, "Ask a model" or "Wait for my OK". */
+export const stepName = (s: Step) => s.agent ?? (s.ask ? "Ask a model" : "Wait for my OK");
 
 export interface StepIf {
   /** How the step before must have ended. Ignored on the first step. */
@@ -190,9 +198,14 @@ function chainProblems(c: Chain, i: number, crew: Crew, keys: ReadonlySet<unknow
   c.steps.forEach((st: Step, k: number) => {
     const sat = `${at}, step ${k + 1}`;
     if (!st || typeof st !== "object") { out.push(`${sat}: unknown agent.`); return; }
+    if ([st.agent, st.ask, st.ok].filter((x) => x !== undefined).length > 1) { out.push(`${sat}: a step is one thing: an agent, Ask a model or Wait for my OK.`); return; }
     if (st.ask !== undefined) {
-      if (st.agent !== undefined) { out.push(`${sat}: a step is an agent or Ask a model, not both.`); return; }
       out.push(...askProblems(st.ask, crew).map((p) => `${sat}: ${p}`));
+    } else if (st.ok !== undefined) {
+      out.push(...okProblems(st.ok).map((p) => `${sat}: ${p}`));
+      if (k === 0) out.push(`${sat}: Wait for my OK needs a step before it, whose result you approve.`);
+      else if (c.steps[k - 1]?.ok !== undefined) out.push(`${sat}: one Wait for my OK after a step is enough.`);
+      if (st.check !== undefined || st.passAlong !== undefined) out.push(`${sat}: Wait for my OK always shows the step before’s result and takes no check.`);
     } else {
       if (!crew.ids.includes(st.agent)) { out.push(`${sat}: unknown agent.`); return; }
       if (seen.has(st.agent)) out.push(`${sat}: ${st.agent} is already in this chain. No loops.`); seen.add(st.agent);
@@ -223,6 +236,17 @@ export function askProblems(a: unknown, crew: Pick<Crew, "models">): string[] {
   if (typeof x.maxUsd !== "number" || !Number.isFinite(x.maxUsd) || x.maxUsd < 0.01 || x.maxUsd > ASK.maxUsd) out.push(`the cap is between $0.01 and $${ASK.maxUsd.toFixed(2)} a run.`);
   const extra = Object.keys(x).filter((k) => !["model", "prompt", "maxUsd"].includes(k));
   if (extra.length) out.push(`Ask a model takes a model, an instruction and a cap only (not ${extra.join(", ")}).`);
+  return out;
+}
+
+/** Why a Wait for my OK step can't be saved; [] when it is fine. */
+export function okProblems(o: unknown): string[] {
+  if (!o || typeof o !== "object" || Array.isArray(o)) return ["Wait for my OK takes an optional note only."];
+  const x = o as Record<string, unknown>;
+  const out: string[] = [];
+  if (x.note !== undefined && (typeof x.note !== "string" || x.note.length > OK.noteMax)) out.push(`the note is at most ${OK.noteMax} characters.`);
+  const extra = Object.keys(x).filter((k) => k !== "note");
+  if (extra.length) out.push(`Wait for my OK takes a note only (not ${extra.join(", ")}).`);
   return out;
 }
 
@@ -364,11 +388,13 @@ function dropStep(c: Chain, agent: string): Chain | null {
   const k = c.steps.findIndex((s) => s.agent === agent);
   if (k < 0) return c;
   const steps = c.steps.filter((_, i) => i !== k);
+  // an OK needs a step before it: one left first, or right after another OK, goes too
+  if (k > 0) { const kept = steps.filter((s, i) => !(s.ok && (i === 0 || steps[i - 1].ok))); return kept.length ? { ...c, steps: kept } : null; }
+  while (steps[0]?.ok) steps.shift();
   if (!steps.length) return null;
-  if (k > 0) return { ...c, steps };
   const [first, ...rest] = steps;
   const start: Start = c.start.type === "schedule" ? { type: "schedule", days: first.days ?? c.start.days, time: first.notBefore ?? c.start.time } : c.start;
-  return { ...c, start, steps: [first.ask ? { ask: first.ask } : { agent: first.agent }, ...rest] };
+  return { ...c, start, steps: [first.ask ? { ask: first.ask } : { agent: first.agent! }, ...rest] };
 }
 
 /**

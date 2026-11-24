@@ -4,7 +4,7 @@ import { deleteChain, goLive, previewChain, realRun, runChainNow, saveChain, set
 import { changeInChat, hireInChat, proposalDecline } from "@/dashboard/proposalActions";
 import { deptHires } from "@/dashboard/hireCards";
 import { deptChanges } from "@/dashboard/changeCards";
-import { getApprovals, getChains, getCounts, getOrgSwitch, getRoster, getTz, requireSession, rulesFor, type ApprovalItem, type ApprovalsView } from "@/dashboard/data";
+import { getApprovals, getChainOks, getChains, getCounts, getOrgSwitch, getRoster, getTz, requireSession, rulesFor, type ApprovalItem, type ApprovalsView } from "@/dashboard/data";
 import { ChainsBoard } from "@/dashboard/components/chains";
 import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, goalHref, headAgentId, hireHref, madeAgentHref, needsByDept, newAgentHref, settingsHref, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
 import { deptRuns } from "@/dashboard/deptFeed";
@@ -23,7 +23,8 @@ import { when } from "@/dashboard/format";
 import { controlsOn } from "@/dashboard/session";
 import { MODEL_LIST } from "@/integrations/models";
 import { ActionButton } from "@/dashboard/components/client";
-import { ApprovalCard } from "@/dashboard/components/approvalBits";
+import { ApprovalCard, ChainOkCard } from "@/dashboard/components/approvalBits";
+import { okChainHref } from "@/core/chain-ok-rules";
 import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
 import { readFill } from "@/dashboard/handoff-rules";
 import { DeptSettingsFor } from "@/dashboard/components/deptSettingsFor";
@@ -208,14 +209,16 @@ async function Approvals({ id, name, roster, tz }: P) {
   if (!view) return <div className="dp-scroll"><div className="dp-panel"><span className="dp-note">The approvals tables aren’t there yet. Apply the gateway migration to your Supabase project.</span></div></div>;
   const mine = (i: ApprovalItem) => i.department_id === id;
   const pending = view.pending.filter(mine), withLead = view.withLead.filter(mine);
-  const rules = await rulesFor([...pending, ...withLead]);
+  const [rules, allOks] = await Promise.all([rulesFor([...pending, ...withLead]), getChainOks()]);
+  const oks = (allOks ?? []).filter((c) => c.dept === id);
   const card = (i: ApprovalItem) => <ApprovalCard key={i.id} i={i} view={view} byId={roster.byId} tz={tz} rules={rules} look="tab" chatHref={tabHref(id, "chat")} />;
   return (
     <div className="dp-scroll">
       <div className="dp-panel">
         <div className="dp-panel-h"><h3>Waiting for your OK</h3><span className="sp" /><span className="dp-note">Everything {name}’s agents drafted, in one place. Approving here or in the chat is the same tap. <Link href={approvalsHistoryHref()} style={{ color: "var(--ink2)", textDecoration: "underline" }}>History and trust levels</Link></span></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {!pending.length && !withLead.length && <div className="dp-note" style={{ padding: "28px 16px", textAlign: "center", fontSize: 14 }}>Nothing from {name} is waiting for your OK.</div>}
+          {!pending.length && !withLead.length && !oks.length && <div className="dp-note" style={{ padding: "28px 16px", textAlign: "center", fontSize: 14 }}>Nothing from {name} is waiting for your OK.</div>}
+          {oks.map((c) => <ChainOkCard key={c.id} c={c} tz={tz} chainHref={okChainHref(c)} />)}
           {pending.map(card)}
           {withLead.length > 0 && <span className="dp-note">With the lead first ({withLead.length}): the lead adds a note or sends a draft back once; only your tap approves.</span>}
           {withLead.map(card)}

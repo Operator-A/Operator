@@ -16,6 +16,7 @@ import { waitsOnClaude } from "@/core/claude-agents";
 import { billedBy } from "@/core/ask-rules";
 import { runAsk } from "@/core/ask-step";
 import { loadOrg } from "@/core/org";
+import { holdForOk } from "@/core/chain-ok";
 
 export type { ChainCtx } from "@/core/job-rules";
 
@@ -76,6 +77,13 @@ export async function runChainStep(origin: string, ctx: ChainCtx): Promise<{ out
   const handoffNow = async () => (ctx.event && ctx.step === 0 ? await eventHandoff(ctx.event, ctx.held ?? 0) : step.passAlong ? await handoffFrom(ctx.parent) : null);
   const runChain = { chainId: ctx.chainId, key: ctx.key, step: ctx.step, parent: ctx.parent };
   const log = (w: string) => console.log(`[chain ${c.key}] ${w}`);
+  if (step.ok) {
+    // Wait for my OK (chains slice 3): no run and no cost. The card shows the step before's result; the chain goes on
+    // only from an approver's tap (decideChainOk), with that run handed on as the step before.
+    const outcome = await holdForOk(c, ctx, await handoffFrom(ctx.parent));
+    log(`step ${ctx.step + 1} ${outcome}`);
+    return { outcome };
+  }
   let go: () => Promise<Awaited<ReturnType<typeof withRun>>>;
   if (step.ask) {
     // Ask a model (chains slice 2): billed to the chain owner's agent, through withRun (its duty and daily budget)
@@ -85,7 +93,7 @@ export async function runChainStep(origin: string, ctx: ChainCtx): Promise<{ out
     const facts = await handoffNow();
     go = () => withRun(payer.agent, "chain", () => runAsk(ask, facts), { chain: runChain, quick: true });
   } else {
-    const found = await resolveAgent(step.agent);
+    const found = await resolveAgent(step.agent!);
     if (!found) return { outcome: `Skipped: ${step.agent} isn't an agent.` };
     // a manual-only agent runs in a chain only when the owner pressed Run chain
     if (found.manualOnly && !ctx.manual) return { outcome: "Skipped: this agent runs only by hand; start its chain with Run chain." };
