@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "@/dashboard/actions";
-import type { HireCardView } from "@/dashboard/hire-rules";
+import { NOTHING_READ, nothingReadNext, type HireCardView } from "@/dashboard/hire-rules";
 import { initialsOf } from "@/dashboard/dept-feed";
 import { Icon } from "./Icon";
 
@@ -94,7 +94,7 @@ export function HireCard({ c, dept, head, headTitle, controls, acts, trying, onT
             </dd>
           </dl>
           <div className="dp-cost"><b>{c.cost.big}</b><span>{c.cost.small}</span></div>
-          {!lc && stage === "failed" && c.why && <span className="dp-note">The latest try {c.why}.</span>}
+          {!lc && stage === "failed" && c.why && <span className="dp-note">The latest try {c.why}.{c.why === NOTHING_READ ? ` ${nothingReadNext(c.name)}` : ""}</span>}
           {lc && !done && <span className="dp-note">{lc.step === "ready" ? `Its Claude routine is connected. There’s nothing to try here: once ${c.name} is on duty, each run starts the routine and its result posts back on the run.`
             : lc.step === "paused" ? `Its Claude routine is paused: ${lc.paused}. Paste a new token on its sheet, then put it on duty.`
             : `There’s nothing to try here: ${c.name}’s work happens in your Claude routine. Connect the routine on its sheet, then put it on duty.`}</span>}

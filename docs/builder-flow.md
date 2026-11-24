@@ -13,7 +13,10 @@ The owner, Nov 13: the agent builder was confusing (Preview vs Compare, code vs 
 3. What it hands you: reports (email to the owner, Notion, saved for other agents, always on).
 4. Brain and budget: Quick / Balanced / Deep, a cost cap per run, step limit under Advanced. Save shows the agent map.
 5. Try it: runs the draft on today's data, plays on the map, sends and saves nothing, shows the result next to today's version.
-6. Go live: only after a try where every step worked. Approve the routine once; versions with Go back.
+6. Go live: only after a try where every step worked and at least one read worked. A try that reads nothing
+   leaves no steps for runs to follow, so it isn't clean: its card says so and offers Try again (fixed 2026-11-24).
+   An explore run that calls finish before any read is sent back once to read first (`READ_FIRST` in `core/runner.ts`).
+   Approve the routine once; versions with Go back.
 
 Flow feel: a card per step that slides in, a 6-segment progress bar that fills as you answer, a "so far" rail that grows into the map on save, Enter to continue, Esc to leave, reduce-motion respected.
 

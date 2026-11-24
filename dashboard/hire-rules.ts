@@ -85,6 +85,11 @@ export const linkedCostLine = (): { big: string; small: string } =>
 export const LINKED_READS: readonly string[] = ["Its routine’s connectors, set in Claude"];
 
 /** Where a created, off-duty agent is: from its latest try of the version it would go live with. */
+/** Why a finished try isn't clean when it read nothing: the end of "the latest try …". */
+export const NOTHING_READ = "didn’t call any of its tools, so there are no steps to save for its runs to follow";
+/** The next step under such a try, on the hire card. */
+export const nothingReadNext = (name: string) => `Press Try again. If ${name} still reads nothing, its tools may not reach its work: Change something to give it one that does.`;
+
 export function hireStage(t: { clean: boolean; status: string } | null): HireStage {
   if (!t) return "hired";
   if (t.status === "running") return "trying";
