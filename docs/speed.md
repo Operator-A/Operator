@@ -34,8 +34,7 @@ them fast. `npm run check:speed` enforces the rules marked (checked).
    the browser for 0 seconds by default, so every back-and-forth waited on the server again. `next.config.ts`
    sets `experimental.staleTimes` to 30 s (check:speed keeps it between 1 and 60). A save still shows fresh data
    at once: an action's `revalidatePath`, and the live-run refresher's `router.refresh()`, clear this cache.
-5. **Navigation loads on intent** (checked, card 301). The sidebar and phone menu (`SideLink`), crew chips
-   (`RailLink`), agent tabs (`AgentTabs`), Crew views and Settings sections use `IntentLink`
+5. **Navigation loads on intent** (checked, card 301). The sidebar and phone menu (`SideLink`), agent tabs (`AgentTabs`), Crew views and Settings sections use `IntentLink`
    (dashboard/components/intentLink.tsx): it loads the whole page, data too, the moment the pointer enters,
    a finger touches or the keyboard focuses the link, so the server starts before the click. Before that it
    pre-loads only up to the loading frame, so pages nobody points at cost nothing.

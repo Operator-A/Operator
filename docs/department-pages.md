@@ -20,6 +20,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | 6 | Change agents and goals by asking (change cards); the agent sheet's More detail | The step editor (`/build/[id]?edit`) and the Set a goal form |
 | 7 | Department settings on its page: name, monthly AI budget, emails a day, head checks drafts, rules, remove | Crew's department editor |
 | 8 | Avery's Company page: home, with Chat (Avery), Departments, Goals and Approvals | The Desk and the floating Avery panel |
+| 9 | A calmer top bar: one working pill, the bell's drop-down, your initial's menu | The agent rail, the date pill, the top bar's theme button, the sidebar's Sign out, Everyone |
 
 ## Slice 1: the page
 
@@ -43,6 +44,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
   desktop and in the phone's menu sheet.
 - **Everyone.** `/everyone`, opened by the bell: what needs you (the Desk's list), then every
   department's agents with their state and last run, then the company seat and agents in no department.
+  (Deleted in slice 9: the bell is a drop-down and Company > Departments lists agents in no department.)
 - **Crew canvas.** Opening a department on the canvas now shows its limits and an Open button for its
   page; the panel's goals, agents, rules and today's runs are gone (they are on the page). Clicking an
   agent on the canvas still shows what it does.
@@ -105,7 +107,7 @@ feed's order; the live route, the runner and the one approval path).
 
 - **One sheet for one agent.** Tapping an agent on a department's Agents tab or on Everyone opens its sheet
   (a drawer on the right on a computer, a bottom sheet on a phone). The sheet is in the address
-  (`/dept/[id]?tab=agents&agent=…`, or `/everyone?agent=…` for an agent with no department), so Back and a
+  (`/dept/[id]?tab=agents&agent=…`, or `/?tab=departments&agent=…` for an agent with no department, slice 9), so Back and a
   shared link work. `agentHref` in `dashboard/dept-rules.ts` picks the address. The header has the on duty
   toggle, the model, the next run and Run now.
 - **Runs.** The agent's last 60 days of runs, newest first, from the same reader as the department chat
@@ -252,6 +254,30 @@ confirm, emails stay under the company cap, the sheet never writes the database,
 Tests: `npm run check:dept` (the tabs and addresses, Avery's chat through `sendToAvery` and its checks, her
 runs in the chat, the shared counts, cards and tiles, setup still first, no Desk or floating panel left),
 `check:chat-ui`, `check:interrupts`, `check:speed` (the tabs and the day line stream behind Suspense).
+
+## Slice 9: a calmer top bar
+
+The first slice of the app audit (mockup v17). The top bar is the brand, then three drop-downs on the right
+(`HeaderPop` in `dashboard/components/client.tsx`; the rules in `dashboard/header-rules.ts`):
+
+- **Working pill.** In place of an icon per agent: "2 working" with a soft pulse while runs are live (running
+  and under 6 minutes old, the same rule as `isLive`), "All quiet" otherwise. Tapping it lists each live run,
+  newest first, with its department's colour and how long it has run, opening that department's chat (where
+  the run posts its checklist), or the agent's sheet when it has no department. On phones it is a round dot
+  with the count.
+- **Bell.** A drop-down of what needs you (`bellRows`): the kinds that interrupt first and marked red, then the
+  rest, at most 6 and "and N more", never "connect a tool" (card 189), and a link to Company > Approvals.
+- **Your initial.** Your email and role, Light or Dark, Settings, Sign out.
+- **Agents in no department.** The chief of staff and any agent without a department are listed under Not in
+  a department on Company > Departments, and open their sheet there (`agentHref`).
+- **Deletes.** The agent rail (`RailLink`, `.rail*`, `.badge`), the date pill, the top bar's theme button,
+  the sidebar's Sign out (the phone menu keeps it at the bottom) and the Everyone page.
+
+The menu items come next, each its own slice: Approvals into Company (10), Crew split (11), Activity (12).
+
+Tests: `npm run check:header` (the pill's words, which runs it lists and where each opens, the bell's order and
+cap, the three drop-downs and nothing they replaced), `check:dept`, `check:sidebar`, `check:signout`,
+`check:interrupts`, `check:speed`.
 
 ## Move cards (card 370)
 

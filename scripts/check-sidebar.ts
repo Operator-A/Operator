@@ -2,8 +2,8 @@
 // On the Company and department pages the workspace is exactly the window's height, so a sidebar taller
 // than the window (a short laptop, or many departments) used to run past its rounded panel and the app's
 // frame, taking Settings and Sign out with it. Now the top places and the departments list scroll inside
-// the panel and Status, Settings and Sign out stay pinned at its bottom.
-// 1. Source: the layout wraps the nav and departments in .side-scroll; the pinned three sit after it.
+// the panel and Status and Settings stay pinned at its bottom (Sign out is in your initial's menu, slice 9).
+// 1. Source: the layout wraps the nav and departments in .side-scroll; the pinned two sit after it.
 // 2. Layout: the real globals.css, the sidebar's markup and 12 departments, measured in Chromium at
 //    several desktop heights, on a full-height (Company) page and an ordinary page. Skipped, and said so,
 //    where Playwright isn't installed.
@@ -20,7 +20,8 @@ assert.ok(scroll > 0, "the sidebar wraps its scrolling part in .side-scroll");
 assert.ok(side.indexOf("nav.map") > scroll && side.indexOf("{deptGroup}") > scroll, "the top places and departments are inside the scrolling part");
 const pinned = side.indexOf('label="Status"');
 assert.ok(pinned > side.indexOf("{deptGroup}"), "Status comes after the departments");
-assert.ok(side.indexOf('label="Settings"') > pinned && side.indexOf("<SignOutButton") > side.indexOf('label="Settings"'), "Status, Settings, Sign out stay in that order at the bottom");
+assert.ok(side.indexOf('label="Settings"') > pinned, "Status, then Settings, stay at the bottom");
+assert.ok(!side.includes("<SignOutButton"), "Sign out moved to your initial's menu in the top bar (slice 9)");
 const between = side.slice(side.indexOf("{deptGroup}"), pinned);
 assert.match(between, /<\/div>\s*$/m, "the scrolling part closes before Status, so the bottom three are pinned outside it");
 assert.doesNotMatch(side, /side-spacer/, "no spacer: the scrolling part takes the free space");
@@ -45,7 +46,7 @@ async function measure() {
         <div class="side-group">${["Company", "Approvals", "Crew", "Runs", "Connections"].map(item).join("")}</div>
         <div class="side-group"><span class="side-h6">Departments</span>${depts}${item("Add a department")}</div>
       </div>
-      ${item("Status")}${item("Settings")}<form style="width:100%"><button type="submit" class="side-item" id="signout">Sign out</button></form>
+      ${item("Status")}<a class="side-item" id="last"><svg width="17" height="17"></svg><span style="flex:1;min-width:0;white-space:nowrap">Settings</span></a>
     </aside>`;
   const page = (full: boolean) => `<!doctype html><html><head><style>${css}</style></head><body>
     <div class="page"><div class="ws"><header class="topbar" style="height:64px"></header>
@@ -61,15 +62,15 @@ async function measure() {
         const m = await tab.evaluate(`(() => {
           const r = (el) => el.getBoundingClientRect().toJSON();
           const scroll = document.querySelector(".side-scroll");
-          return { side: r(document.querySelector(".side")), ws: r(document.querySelector(".ws")), out: r(document.querySelector("#signout")),
+          return { side: r(document.querySelector(".side")), ws: r(document.querySelector(".ws")), out: r(document.querySelector("#last")),
             scrolls: scroll.scrollHeight > scroll.clientHeight, docH: document.documentElement.scrollHeight, winH: innerHeight };
         })()`) as { side: DOMRect; ws: DOMRect; out: DOMRect; scrolls: boolean; docH: number; winH: number };
         const where = `${full ? "Company page" : "ordinary page"} at ${height}px`;
-        assert.ok(m.out.bottom <= m.side.bottom + 0.5, `${where}: Sign out is inside the sidebar panel (${m.out.bottom} > ${m.side.bottom})`);
+        assert.ok(m.out.bottom <= m.side.bottom + 0.5, `${where}: Settings is inside the sidebar panel (${m.out.bottom} > ${m.side.bottom})`);
         assert.ok(m.side.bottom <= m.ws.bottom + 0.5, `${where}: the sidebar panel is inside the app frame`);
         if (full) {
           assert.ok(m.docH <= m.winH + 1, `${where}: the page itself doesn't scroll (the header stays in view)`);
-          assert.ok(m.out.bottom <= m.winH, `${where}: Sign out is on screen`);
+          assert.ok(m.out.bottom <= m.winH, `${where}: Settings is on screen`);
           if (height <= 800) assert.ok(m.scrolls, `${where}: the department list scrolls instead`);
         }
         await tab.close();

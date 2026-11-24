@@ -11,10 +11,13 @@ export const TAB_LABEL: Record<DeptTab, string> = { chat: "Chat", agents: "Agent
 export const deptTab = (raw: unknown): DeptTab => (DEPT_TABS as readonly string[]).includes(String(raw)) ? (raw as DeptTab) : "chat";
 /** The tab's address: Chat is the page itself. */
 export const tabHref = (deptId: string, t: DeptTab) => (t === "chat" ? `/dept/${deptId}` : `/dept/${deptId}?tab=${t}`);
-/** Where an agent opens now that its own pages are gone (slice 4): its department's Agents tab with its sheet, else Everyone. */
+/**
+ * Where an agent opens now that its own pages are gone (slice 4): its department's Agents tab with its sheet,
+ * else (the chief of staff, or an agent in no department) the Company page's Departments tab with its sheet (slice 9).
+ */
 export function agentHref(o: Org | null, agentId: string, edit = false): string {
   const dept = o ? seatOf(o, agentId)?.departmentId : null;
-  const href = dept && o!.departments.some((d) => d.id === dept) ? sheetHref(dept, "agents", agentId) : `/everyone?agent=${encodeURIComponent(agentId)}`;
+  const href = dept && o!.departments.some((d) => d.id === dept) ? sheetHref(dept, "agents", agentId) : `/?tab=departments&agent=${encodeURIComponent(agentId)}`;
   return edit ? `${href}&edit=1` : href;
 }
 /** The department's chat with a goal ask typed in (slice 6): "Set a goal: ", or a change to the goal named. */

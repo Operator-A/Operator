@@ -2,7 +2,7 @@
 // The few interactive pieces: theme, nav highlighting, and confirm-then-act buttons.
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { SEEN_COOKIE, parseSeen } from "../seen";
 import { Icon } from "./Icon";
@@ -53,19 +53,34 @@ export function SideLink({ href, match, icon, label, note, noteColor, count, red
   );
 }
 
-export function RailLink({ id, name, title, icon, running, badge }: { id: string; name: string; title: string; icon: string; running?: boolean; badge?: number }) {
-  // an agent opens as its sheet (department pages slice 4); its chip stays selected while the sheet is open
-  const sel = useSearchParams().get("agent") === id;
-  const href = `/agents/${id}`;
+/**
+ * The top bar's three drop-downs (slice 9): the working pill, the bell and your initial. A button and a glass
+ * panel under it; the panel closes on a second tap, a tap outside, Escape, or following a link in it, and
+ * after navigating (it remembers the page it was opened on, like the phone menu).
+ */
+export function HeaderPop({ label, className, trigger, children, panelClass }: { label: string; className: string; trigger: React.ReactNode; children: React.ReactNode; panelClass?: string }) {
+  const here = usePathname() + "?" + useSearchParams().toString();
+  const [openOn, setOpenOn] = useState<string | null>(null);
+  const open = openOn === here;
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpenOn(null); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenOn(null); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
   return (
-    <IntentLink href={href} title={title} className={"rail-item" + (sel ? " sel" : "")} aria-current={sel ? "page" : undefined}>
-      <span className={"rail-av" + (sel ? " sel" : "") + (running ? " running" : "")}>
-        <Icon name={icon} size={20} />
-      </span>
-      <span className="rail-name">{name}</span>
-      <span className={"rail-dot" + (sel ? " sel" : "")} />
-      {!!badge && <span className="badge">{badge}</span>}
-    </IntentLink>
+    <div className="hp" ref={ref}>
+      <button type="button" className={className} aria-label={label} aria-haspopup="true" aria-expanded={open} onClick={() => setOpenOn(open ? null : here)}>{trigger}</button>
+      {open && (
+        <div className={"hp-pop" + (panelClass ? ` ${panelClass}` : "")} role="menu" aria-label={label}
+          onClick={(e) => { if ((e.target as HTMLElement).closest("a")) setOpenOn(null); }}>
+          {children}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -120,10 +120,10 @@ assert.deepEqual(feed.map((f) => f.id), ["r1", "t1", "r2"], "time order, oldest 
 assert.equal(feed[0].kind === "run" && feed[0].status, "ok", "a run seen twice keeps its newest copy");
 
 const read = (p: string) => readFileSync(p, "utf8");
-const layout = read("app/(room)/layout.tsx"), page = read("app/(room)/dept/[id]/page.tsx"), approvals = read("app/(room)/approvals/page.tsx"), everyone = read("app/(room)/everyone/page.tsx");
+const layout = read("app/(room)/layout.tsx"), page = read("app/(room)/dept/[id]/page.tsx"), approvals = read("app/(room)/approvals/page.tsx"), company = read("app/(room)/page.tsx");
 assert.ok(/needsByDept\(/.test(layout) && /href: `\/dept\/\$\{d\.id\}`/.test(layout), "the side menu lists each department with its red count");
-assert.ok(/href="\/everyone"/.test(layout), "the bell opens Everyone");
-assert.ok(/needsByDept\(/.test(page) && /needsByDept\(/.test(everyone), "the page and Everyone count with needsByDept");
+assert.ok(!existsSync("app/(room)/everyone/page.tsx") && !/\/everyone/.test(layout), "Everyone is gone (slice 9): the bell is a drop-down");
+assert.ok(/needsByDept\(/.test(page) && /needsByDept\(/.test(company), "the department page and the Company page count with needsByDept");
 assert.ok(/<ApprovalCard /.test(page) && /<ApprovalCard /.test(approvals), "a department's Approvals tab and the Approvals page draw the same card");
 assert.ok(!/approve\.bind/.test(page) && !/approve\.bind/.test(approvals), "only ApprovalCard binds Approve, so approving is one path");
 assert.ok(!/opened\.goals|opened\.rules|<Feed runs=\{d\.runs\.filter\(\(r\) => ids/.test(read("dashboard/components/OrgCanvas.tsx")), "the Crew canvas no longer has its own department panel");
@@ -147,8 +147,8 @@ assert.ok(/refresh-ok/.test(chat) && !/\bapprove\b(?! ?card)/i.test(chat.replace
 assert.equal(sheetHref("finance", "agents", "quinn"), "/dept/finance?tab=agents&agent=quinn");
 assert.equal(sheetHref("finance", "chat", "quinn"), "/dept/finance?agent=quinn");
 assert.equal(agentHref(org, "quinn"), "/dept/finance?tab=agents&agent=quinn", "an old agent link opens its sheet in its department");
-assert.equal(agentHref(org, "avery"), "/everyone?agent=avery", "an agent in no department opens on Everyone");
-assert.equal(agentHref(null, "quinn"), "/everyone?agent=quinn");
+assert.equal(agentHref(org, "avery"), "/?tab=departments&agent=avery", "an agent in no department opens on Company > Departments");
+assert.equal(agentHref(null, "quinn"), "/?tab=departments&agent=quinn");
 assert.equal(daysOf([0, 1, 2, 3, 4, 5, 6]), "daily");
 assert.equal(daysOf([5, 1, 2, 3, 4]), "weekdays");
 assert.equal(daysOf([1]), "mondays");
@@ -174,7 +174,7 @@ assert.ok(/export async function saveSpec[\s\S]*?asRole\("owner"\)[\s\S]*?saveSp
 assert.ok(/export async function goLive[\s\S]*?lastTry[\s\S]*?if \(!t\.clean\)/.test(actionsSrc), "a draft goes live only after a clean try");
 assert.ok(/disabled=\{busy \|\| !controls \|\| !d\.tried\?\.clean\}/.test(sheet), "Go live stays locked in the sheet until the try is clean");
 for (const f of ["app/(room)/agents/[id]/page.tsx", "app/(room)/build/[id]/page.tsx"]) assert.ok(/redirect\(agentHref\(roster\.chart, id, sp\.edit != null\)\)/.test(read(f)), `${f} opens the sheet, on Edit when asked`);
-assert.ok(/<AgentSheetFor id=\{sp\.agent\}/.test(page) && /<AgentSheetFor id=\{sp\.agent\}/.test(everyone), "the department page and Everyone open the sheet");
+assert.ok(/<AgentSheetFor id=\{sp\.agent\}/.test(page) && /<AgentSheetFor id=\{sp\.agent\}/.test(company), "the department page and the Company page open the sheet");
 
 // hiring in the chat (slice 5): the head suggests, code counts, only the owner's taps grant, a new agent starts off duty
 const tools = toolInfoOf({

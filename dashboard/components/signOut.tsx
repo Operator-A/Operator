@@ -1,14 +1,16 @@
-// Sign out from anywhere (card 204): the one button that ends a session, in the sidebar, the phone
+// Sign out from anywhere (card 204): the one button that ends a session, in your initial's menu, the phone
 // menu, setup's top bar and Settings. It posts to the existing signOut action, which deletes the
 // session cookie and goes to /login. A form, so it works before any script loads.
 import { signOut } from "@/dashboard/authActions";
 import { Icon } from "./Icon";
 
-/** `row` looks like a sidebar link (sidebar, phone menu); `button` is a small pill (setup, Settings). */
-export function SignOutButton({ look = "row" }: { look?: "row" | "button" }) {
+/** `row` looks like a sidebar link (phone menu); `menu` is a row in your initial's menu (slice 9); `button` is a small pill (setup, Settings). */
+export function SignOutButton({ look = "row" }: { look?: "row" | "menu" | "button" }) {
   return (
-    <form action={signOut} style={look === "row" ? { width: "100%" } : undefined}>
-      {look === "row" ? (
+    <form action={signOut} style={look !== "button" ? { width: "100%" } : undefined}>
+      {look === "menu" ? (
+        <button type="submit" className="hp-mi"><Icon name="log-out" size={16} />Sign out</button>
+      ) : look === "row" ? (
         <button type="submit" className="side-item"><Icon name="log-out" size={17} /><span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap" }}>Sign out</span></button>
       ) : (
         <button type="submit" className="btn outline sm signout-btn" aria-label="Sign out"><Icon name="log-out" size={15} /><span className="signout-word">Sign out</span></button>
