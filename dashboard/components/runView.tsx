@@ -1,9 +1,9 @@
 // Run view (chains slice 5, docs/chains.md): one chain run as a timeline of its steps, drawn in the lane of the
 // approved chains mockup: a card per step with where it ran, how it went, what it cost and what it said, and between
-// steps what was passed on. dashboard/run-view-rules.ts works it all out; this only draws it.
+// steps what was passed on. core/run-view-rules.ts works it all out; this only draws it.
 import Link from "next/link";
 import { m4, when } from "@/dashboard/format";
-import { STATE_LOOK, type Kind, type Timeline, type TimelineItem } from "@/dashboard/run-view-rules";
+import { STATE_LOOK, type Kind, type Timeline, type TimelineItem } from "@/core/run-view-rules";
 import { Summary } from "@/dashboard/components/ui";
 import { Icon } from "@/dashboard/components/Icon";
 
