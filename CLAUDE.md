@@ -101,8 +101,9 @@ shipping and refund confirmations.
   token is sealed in the vault for that one agent and opened only by `integrations/mcp.ts` (`fireRoutine`),
   and only `integrations/claude-routine.ts` calls the fire endpoint (lint and `check:claude-agents` enforce
   both). At most `ROUTINE_CAPS` fires an hour per agent and per business (start 25 and 90); only a 429 or 503
-  is retried, once; a refused token pauses the routine. It goes on duty only with its routine connected. Its
-  Claude connectors are labels, never granted in OPERATOR. What the session does with them is outside
+  is retried, once; a refused token pauses the routine. It goes on duty only with its routine connected. OPERATOR
+  asks only for the routine's trigger id and key and grants it nothing; the routine's connectors are set in Claude
+  and OPERATOR doesn't list them. What the session does with them is outside
   OPERATOR's gateway, and the agent's sheet says so; the session is asked to send anything outward through
   `propose`.
 - Every integration is an MCP server with a profile. A built-in server's profile is in

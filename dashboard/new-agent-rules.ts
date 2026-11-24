@@ -3,13 +3,13 @@
 // and hire cards save. The server action checks the spec again against code (readSpec, model keys, what each
 // action is open to) and creates the agent off duty as v1. Nothing here can put an agent on duty.
 import { daysOf, type Days } from "@/core/flow-rules";
-import { readClaudeTools } from "@/core/routine-rules";
+import { readRoutine } from "@/core/routine-rules";
 
 /** The address value that opens the blank sheet (?agent=new). Agent ids never take it: they start with a letter and "b_" or a known id. */
 export const NEW_AGENT = "new";
 
-/** Where the new agent runs: on a model in OPERATOR, or as one of the owner's Claude routines (connectors as labels). */
-export type NewRunsOn = { on: "operator"; model: string } | { on: "claude"; tools: string[] };
+/** Where the new agent runs: on a model in OPERATOR, or as one of the owner's Claude routines (its trigger id and key, or left to connect later). */
+export type NewRunsOn = { on: "operator"; model: string } | { on: "claude"; routine?: { routine: string; token: string } };
 /** When it runs: only when asked (Run now), on days at a time, or after another agent finishes in that agent's chain. */
 export type NewStart = { kind: "manual" } | { kind: "schedule"; days: Days; time: string } | { kind: "after"; agentId: string; passAlong: boolean };
 /** Where it sits: a department and an open seat there, or a new seat under the head (seatId null); null for no department. */
@@ -46,16 +46,22 @@ export function readNewAgent(raw: unknown, ceiling: number): { form: NewAgentFor
   const ro = (r.runsOn && typeof r.runsOn === "object" ? r.runsOn : {}) as Record<string, unknown>;
   let runsOn: NewRunsOn;
   if (ro.on === "claude") {
-    const t = readClaudeTools(Array.isArray(ro.tools) ? ro.tools.join(",") : ro.tools ?? "");
-    if ("problem" in t) return { problem: /^name the/.test(t.problem) ? "Name the Claude connectors it uses, like Gmail or Google Drive." : `${t.problem.replace(/^./, (m) => m.toUpperCase())}.` };
-    runsOn = { on: "claude", tools: t.tools };
+    const rt = (ro.routine && typeof ro.routine === "object" ? ro.routine : {}) as Record<string, unknown>;
+    const id = typeof rt.routine === "string" ? rt.routine.trim() : "", key = typeof rt.token === "string" ? rt.token.trim() : "";
+    if (!id && !key) runsOn = { on: "claude" };
+    else {
+      // both or neither: a trigger id without its key (or the other way) can't fire
+      const r2 = readRoutine(id, key);
+      if ("problem" in r2) return { problem: r2.problem };
+      runsOn = { on: "claude", routine: r2 };
+    }
   } else if (ro.on === "operator" && typeof ro.model === "string" && ro.model.trim()) runsOn = { on: "operator", model: ro.model.trim() };
   else return { problem: "Pick what it runs on." };
 
   const tools = Array.isArray(r.tools) ? [...new Set(r.tools.filter((x): x is string => typeof x === "string" && x.length > 0 && x.length <= 80))] : [];
   if (tools.length > NEW_LIMITS.tools) return { problem: `Pick at most ${NEW_LIMITS.tools} reads and actions.` };
-  // a Claude routine has no OPERATOR tools: its connectors are labels, granted in Claude, never here
-  if (runsOn.on === "claude" && tools.length) return { problem: "An agent that runs in Claude has no OPERATOR reads or actions. Name its Claude connectors instead." };
+  // a Claude routine has no OPERATOR tools: its connectors are set in Claude, never granted here
+  if (runsOn.on === "claude" && tools.length) return { problem: "An agent that runs in Claude has no OPERATOR reads or actions. Its routine’s connectors are set in Claude." };
   if (runsOn.on === "operator" && !tools.length) return { problem: "Pick at least one thing it reads." };
 
   const s = (r.start && typeof r.start === "object" ? r.start : {}) as Record<string, unknown>;

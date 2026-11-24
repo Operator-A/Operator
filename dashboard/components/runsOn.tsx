@@ -5,8 +5,8 @@
 // sheet. It only holds the choice: saving goes through the server (setRunsOn), which checks the role and the model.
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
-import { fillClaudeTools, makerOf, modelGroups, type PickModel, type RunsOnChoice } from "@/dashboard/runs-on-rules";
-import { CLAUDE_TOOLS } from "@/core/routine-rules";
+import { makerOf, modelGroups, type PickModel, type RunsOnChoice } from "@/dashboard/runs-on-rules";
+import { promptLine } from "@/core/routine-rules";
 
 const ROUTINE_MARK = "✦";
 
@@ -18,10 +18,8 @@ export function runsOnLabel(v: RunsOnChoice, models: readonly PickModel[]): { ma
   return { mark: mk?.mark ?? "?", name: m?.label ?? v.model, where: `In OPERATOR${mk ? ` · ${mk.name}` : ""}` };
 }
 
-export function RunsOnPicker({ value, onChange, models, disabled = false, claudeTools = [], labelId }: {
+export function RunsOnPicker({ value, onChange, models, disabled = false, labelId }: {
   value: RunsOnChoice; onChange: (v: RunsOnChoice) => void; models: readonly PickModel[]; disabled?: boolean;
-  /** The connector labels a switch to a routine starts with (the agent's own, or filled from its reads). */
-  claudeTools?: string[];
   /** The id of the field's label, for screen readers. */
   labelId?: string;
 }) {
@@ -77,7 +75,7 @@ export function RunsOnPicker({ value, onChange, models, disabled = false, claude
           <div className="ro-sep" />
           <div role="group" aria-label="In your Claude account">
             <div className="ro-grp">In your Claude account</div>
-            <button type="button" role="option" className="ro-opt" aria-selected={value.on === "claude"} onClick={() => pick(value.on === "claude" ? value : { on: "claude", tools: claudeTools })}>
+            <button type="button" role="option" className="ro-opt" aria-selected={value.on === "claude"} onClick={() => pick({ on: "claude" })}>
               {ROUTINE_MARK} A Claude routine<small>Your connectors, your account</small>
             </button>
           </div>
@@ -87,24 +85,27 @@ export function RunsOnPicker({ value, onChange, models, disabled = false, claude
   );
 }
 
-/** "Uses in Claude": the connector labels a Claude routine names. Labels only: nothing is granted in OPERATOR. */
-export function ClaudeToolsField({ tools, onChange, note = "Labels only: you give the routine these connectors on claude.ai.", disabled = false }: { tools: string[]; onChange: (t: string[]) => void; note?: string; disabled?: boolean }) {
-  const [adding, setAdding] = useState(false);
-  const [text, setText] = useState("");
-  const inputId = useId();
-  const add = () => { const next = fillClaudeTools([...tools, text]); if (next.length > tools.length) onChange(next); setText(""); setAdding(false); };
+/**
+ * A Claude routine's trigger and key (decided 2026-11-24: that's all OPERATOR needs; the routine's own connectors
+ * are set in Claude, never named here): the steps on claude.ai, the line to paste into its prompt, and the two fields.
+ * Only holds what was typed: the server checks both (readRoutine) and seals the token in the vault.
+ */
+export function RoutineFields({ name, value, onChange, disabled = false }: { name: string; value: { routine: string; token: string }; onChange: (v: { routine: string; token: string }) => void; disabled?: boolean }) {
+  const id = useId();
   return (
-    <div className="fld">
-      <span className="lbl">Uses in Claude</span>
-      <div className="dp-chipset">
-        {tools.map((t) => (
-          <span key={t} className="dp-chip">{t}<button type="button" className="ro-rm" aria-label={`Remove ${t}`} disabled={disabled} onClick={() => onChange(tools.filter((x) => x !== t))}>✕</button></span>
-        ))}
-        {adding
-          ? <span className="ro-add"><label htmlFor={inputId} className="sr-only">Connector name</label><input id={inputId} autoFocus maxLength={CLAUDE_TOOLS.maxLabel} placeholder="Google Drive" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } if (e.key === "Escape") { e.stopPropagation(); setAdding(false); } }} onBlur={() => (text.trim() ? add() : setAdding(false))} /></span>
-          : tools.length < CLAUDE_TOOLS.max && <button type="button" className="dp-chip addtrig" disabled={disabled} onClick={() => setAdding(true)}>+ Add</button>}
+    <>
+      <ol className="dp-note ro-steps">
+        <li>On claude.ai, open Routines and click New routine. Give it the connectors its job needs, and your OPERATOR connector, which it uses to post its result back here.</li>
+        <li>Paste this line into its prompt: <code style={{ userSelect: "all" }}>{promptLine(name.trim() || "this agent")}</code></li>
+        <li>Click Edit, then Trigger, then API, then Generate token. Copy the routine id (trig_…) and the token. Claude shows the token once.</li>
+      </ol>
+      <div className="ro-keys">
+        <label htmlFor={`${id}-r`} className="sr-only">Routine trigger id</label>
+        <input id={`${id}-r`} type="text" placeholder="Routine trigger id, trig_…" value={value.routine} disabled={disabled} autoComplete="off" spellCheck={false} onChange={(e) => onChange({ ...value, routine: e.target.value })} />
+        <label htmlFor={`${id}-t`} className="sr-only">Routine key</label>
+        <input id={`${id}-t`} placeholder="Routine key, sk-ant-oat01-…" type="password" value={value.token} disabled={disabled} autoComplete="off" spellCheck={false} onChange={(e) => onChange({ ...value, token: e.target.value })} />
       </div>
-      <span className="dp-note">{tools.length ? note : "Name at least one connector the routine uses, like Gmail or Google Drive."}</span>
-    </div>
+      <span className="dp-note">The key is locked away and never shown again. It can only start this one routine. OPERATOR grants the routine nothing: what it does with its connectors happens in Claude.</span>
+    </>
   );
 }

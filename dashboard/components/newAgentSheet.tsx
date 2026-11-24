@@ -8,7 +8,7 @@ import { useEffect, useState, useTransition } from "react";
 import type { NewSheetData } from "@/dashboard/agentSheet";
 import { NEW_LIMITS } from "@/dashboard/new-agent-rules";
 import type { RunsOnChoice } from "@/dashboard/runs-on-rules";
-import { ClaudeToolsField, RunsOnPicker } from "./runsOn";
+import { RoutineFields, RunsOnPicker } from "./runsOn";
 
 type Result = { ok: boolean; text: string; agentId?: string };
 
@@ -41,7 +41,7 @@ export function NewAgentSheet({ d, closeHref, openHref, controls, create }: {
   const firstDept = d.deptId ?? NONE;
   const spotFor = (dept: string) => { const s = d.places.find((p) => p.id === dept)?.spots[0]; return s ? s.seatId ?? NEW_SEAT : ""; };
   const [f, setF] = useState({
-    name: "", role: "", job: "", good: "", model: firstModel, claudeTools: [] as string[],
+    name: "", role: "", job: "", good: "", model: firstModel, routineId: "", routineKey: "",
     tools: [] as string[], when: "manual" as "manual" | "schedule" | "after",
     days: [1, 2, 3, 4, 5], time: "09:00", after: d.follow.find((o) => o.when)?.id ?? "", pass: true,
     dept: firstDept, spot: spotFor(firstDept), budget: d.budget.toFixed(2),
@@ -66,16 +66,16 @@ export function NewAgentSheet({ d, closeHref, openHref, controls, create }: {
   const place = d.places.find((p) => p.id === f.dept);
   const prev = d.follow.find((o) => o.id === f.after);
   const missing = !f.name.trim() ? "Give it a name and a job to create it." : !f.job.trim() ? "Give it a job to create it."
-    : routine ? (!f.claudeTools.length ? "Name the Claude connectors it uses." : null)
+    : routine ? (!f.routineId.trim() !== !f.routineKey.trim() ? "Paste both the routine trigger id and its key, or neither for now." : null)
     : !f.tools.some((t) => d.reads.some((r) => r.id === t)) ? "Pick at least one thing it reads." : null;
-  const choice: RunsOnChoice = routine ? { on: "claude", tools: f.claudeTools } : { on: "operator", model: f.model };
+  const choice: RunsOnChoice = routine ? { on: "claude" } : { on: "operator", model: f.model };
 
   function submit(tryIt: boolean) {
     start(async () => {
       try {
         const r = await create({
           name: f.name, role: f.role, job: f.job, good: f.good,
-          runsOn: routine ? { on: "claude", tools: f.claudeTools } : { on: "operator", model: f.model },
+          runsOn: routine ? { on: "claude", ...(f.routineId.trim() ? { routine: { routine: f.routineId, token: f.routineKey } } : {}) } : { on: "operator", model: f.model },
           tools: routine ? [] : f.tools,
           start: f.when === "schedule" ? { kind: "schedule", days: f.days, time: f.time } : f.when === "after" ? { kind: "after", agentId: f.after, passAlong: f.pass } : { kind: "manual" },
           place: f.dept ? { deptId: f.dept, seatId: f.spot === NEW_SEAT || !f.spot ? null : f.spot } : null,
@@ -114,9 +114,15 @@ export function NewAgentSheet({ d, closeHref, openHref, controls, create }: {
             <span className="dp-note">In your own words. The agent works from this.</span></div>
 
           <div className="fld"><span className="lbl" id="na-ro-l">Runs on</span>
-            <RunsOnPicker labelId="na-ro-l" models={d.models} disabled={busy} claudeTools={f.claudeTools} value={choice}
-              onChange={(v) => set(v.on === "claude" ? { model: ROUTINE, claudeTools: v.tools } : { model: v.model })} />
+            <RunsOnPicker labelId="na-ro-l" models={d.models} disabled={busy} value={choice}
+              onChange={(v) => set(v.on === "claude" ? { model: ROUTINE } : { model: v.model })} />
             <span className="dp-note">Models run in OPERATOR, with its reads, approval cards and caps. A Claude routine runs in your Claude account.</span></div>
+
+          {routine && (
+            <div className="fld"><span className="lbl">Its Claude routine</span>
+              <RoutineFields name={f.name} value={{ routine: f.routineId, token: f.routineKey }} disabled={busy} onChange={(v) => set({ routineId: v.routine, routineKey: v.token })} />
+              <span className="dp-note">Or leave both empty and paste them on its sheet later.</span></div>
+          )}
 
           {!routine && (
             <div className="fld"><span className="lbl">Reads</span>
@@ -154,7 +160,7 @@ export function NewAgentSheet({ d, closeHref, openHref, controls, create }: {
             <div className={`trow ag-when${f.when === "manual" ? " on" : ""}`}>
               <label className="trow-h"><input type="radio" name="na-when" checked={f.when === "manual"} onChange={() => set({ when: "manual" })} /><span className="ic">{HAND}</span>Only when you press Run now</label>
             </div>
-            <span className="dp-note">Pick one. A chain holds up to 3 agents. Nothing starts until you put it on duty.</span>
+            <span className="dp-note">Pick one. A chain holds up to 8 agents. Nothing starts until you put it on duty.</span>
           </div>
 
           {!routine && (
@@ -182,13 +188,6 @@ export function NewAgentSheet({ d, closeHref, openHref, controls, create }: {
                 </div>
               )}
               <span className="dp-note">Starts with nothing on. Only an approver can turn these on, checked again on the server.</span></div>
-          )}
-
-          {routine && (
-            <>
-              <ClaudeToolsField tools={f.claudeTools} disabled={busy} onChange={(t) => set({ claudeTools: t })} />
-              <span className="dp-note">OPERATOR grants nothing here, and what the routine does with them happens in Claude. After you create it, its sheet shows the line to paste into your routine and where to put the routine id and token.</span>
-            </>
           )}
 
           <div className="ag-two">

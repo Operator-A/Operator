@@ -7,10 +7,12 @@
 // Only Claude has a routine OPERATOR can start from outside and get the result back from (checked 2026-11-24:
 // OpenAI workspace agents can be started but their answer can't be read back; Gemini's scheduled tasks and Grok's
 // automations live only in their apps). Decided 2026-11-24: other makers' models run inside OPERATOR.
-import { CLAUDE_TOOLS, readClaudeTools } from "@/core/routine-rules";
 
-/** What the picker holds: a model in OPERATOR, or a Claude routine with the connectors it names (labels only). */
-export type RunsOnChoice = { on: "operator"; model: string } | { on: "claude"; tools: string[] };
+/**
+ * What the picker holds: a model in OPERATOR, or a Claude routine. A routine needs only its trigger and token
+ * (connected on the sheet); its own connectors are set in Claude and never named here (decided 2026-11-24).
+ */
+export type RunsOnChoice = { on: "operator"; model: string } | { on: "claude" };
 
 /** The model makers the picker groups by, in its order, from a model's provider id (integrations/models.ts). */
 export const MAKERS = [
@@ -35,21 +37,17 @@ export function modelGroups(models: readonly PickModel[]): { maker: (typeof MAKE
 
 /**
  * The choice sent from the browser, checked: a listed model that is ready (or the one the agent already runs on,
- * so an agent whose key went away can still be saved), or a Claude routine with valid connector labels.
+ * so an agent whose key went away can still be saved), or a Claude routine.
  */
 export function readRunsOn(raw: unknown, models: readonly PickModel[], current: string | null = null): RunsOnChoice | { problem: string } {
-  const r = (raw ?? {}) as { on?: unknown; model?: unknown; tools?: unknown };
+  const r = (raw ?? {}) as { on?: unknown; model?: unknown };
   if (r.on === "operator") {
     const m = models.find((x) => x.id === r.model);
     if (!m) return { problem: "That model isn’t one OPERATOR runs." };
     if (!m.ready && m.id !== current) return { problem: `${m.label} needs your ${makerOf(m.provider)?.name ?? m.provider} key on Connections first.` };
     return { on: "operator", model: m.id };
   }
-  if (r.on === "claude") {
-    const t = readClaudeTools(r.tools);
-    if ("problem" in t) return { problem: t.problem.replace(/^./, (c) => c.toUpperCase()) + "." };
-    return { on: "claude", tools: t.tools };
-  }
+  if (r.on === "claude") return { on: "claude" };
   return { problem: "Pick where it runs." };
 }
 
@@ -85,42 +83,3 @@ export function switchConfirm(kind: SwitchKind, name: string): string | null {
   if (kind === "to_operator") return `Confirm first: ${name} goes off duty and runs in OPERATOR once you try it and go live.`;
   return null;
 }
-
-/** "Uses in Claude", filled in from the tools behind its reads (connection names, no duplicates, within the limits). */
-export function fillClaudeTools(connNames: readonly string[]): string[] {
-  const out: string[] = [];
-  for (const n of connNames) {
-    const t = n.trim();
-    if (!t || out.some((x) => x.toLowerCase() === t.toLowerCase())) continue;
-    if (!("tools" in readClaudeTools([t]))) continue;
-    out.push(t);
-    if (out.length === CLAUDE_TOOLS.max) break;
-  }
-  return out;
-}
-
-export interface ConnLite { id: string; name: string; connected: boolean }
-export type MatchState = "ok" | "warn" | "none";
-export interface ToolMatch { label: string; state: MatchState; conn: string | null; what: string }
-
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-/** The words that name a service ("Google Calendar" and "Calendar" match; "Google" alone matches nothing). */
-const words = (s: string) => norm(s).split(" ").filter((w) => w.length > 2 && w !== "google" && w !== "online" && w !== "ads" && w !== "the");
-
-/**
- * Each Claude connector label matched to one of OPERATOR's connections by name: works here (connected), can
- * be connected here, or none here. A label never grants anything; this only tells the owner what moving loses.
- */
-export function matchClaudeTools(labels: readonly string[], conns: readonly ConnLite[]): ToolMatch[] {
-  return labels.map((label) => {
-    const l = norm(label), lw = words(label);
-    const hit = conns.find((c) => norm(c.name) === l)
-      ?? conns.find((c) => { const cw = words(c.name); return cw.length > 0 && lw.length > 0 && (cw.every((w) => lw.includes(w)) || lw.every((w) => cw.includes(w))); });
-    if (!hit) return { label, state: "none" as const, conn: null, what: "No OPERATOR tool for this yet. Look for one on Connections, under Find a tool." };
-    return hit.connected
-      ? { label, state: "ok" as const, conn: hit.id, what: `Connected in OPERATOR: give it ${hit.name} reads below.` }
-      : { label, state: "warn" as const, conn: hit.id, what: `Not connected here yet: connect ${hit.name} on Connections.` };
-  });
-}
-
-export const MATCH_WORD: Record<MatchState, string> = { ok: "Works here", warn: "Connect first", none: "None here" };
