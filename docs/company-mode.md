@@ -161,7 +161,7 @@ the tools and the measures share one copy), `integrations/shopify/orders.ts` `or
 
 - Hires, new departments and goal changes show on the Desk in **Needs you**; tool grants, new tools
   and retirements wait under Avery's summary (card 158, "What interrupts you" below). Both open
-  **Proposals** (`/proposals`), and the Approvals page leads with a card for them when any wait.
+  **Proposals** (now on Company > Approvals, under Proposals to decide).
 - **Proposals** (`/proposals`): Waiting on you, a link to the tools asked for on **Find a tool**,
   and Decided lately with what each yes or no did. (The Build list and Mark built were replaced by
   Find a tool in custom servers slice 3, `docs/custom-servers.md`.)

@@ -90,7 +90,7 @@ function waiting(v: BriefView): Item[] {
   if (v.approvals?.pending) {
     const h = v.approvals.oldestHours;
     const age = h == null ? "" : h < 1 ? ", oldest under an hour" : h < 48 ? `, oldest ${plural(Math.round(h), "hour")}` : `, oldest ${plural(Math.round(h / 24), "day")}`;
-    out.push({ text: `${plural(v.approvals.pending, "approval")} waiting for your OK${age}`, href: base && `${base}/approvals` });
+    out.push({ text: `${plural(v.approvals.pending, "approval")} waiting for your OK${age}`, href: base && `${base}/?tab=approvals` });
   }
   if (v.newDrafts) out.push({ text: `${plural(v.newDrafts, "new lead draft")} in Gmail to review`, href: "https://mail.google.com/mail/#drafts" });
   for (const r of v.runs.filter((r) => r.status === "failed")) {

@@ -48,7 +48,6 @@ const NOT_AUDITED: Record<string, string> = {
   setupToCompany: "leaves the setup wrap-up for the Company page; changes nothing else",
   previewChain: "dry runs only",
   applyWaiting: "applies approvals already audited",
-  queueQuinn: "queues a run that withRun logs",
   react: "feedback on a run, kept as a reaction",
   editMemoryLine: "memory keeps its own timeline with the actor",
   forgetMemoryLine: "memory keeps its own timeline with the actor",

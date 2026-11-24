@@ -136,7 +136,7 @@ Receipt attachment, category and memo on a Mercury transaction that already exis
 1. Quinn saves proposals on `expense_docs` (`proposal_*`) and, at the end of a real run,
    calls `queueBookkeeperProposals`: one `agent_actions` row (`proposed`) and one `approvals`
    row (`pending`) per charge. The Control Room's "Check for Quinn's proposals" does the same.
-2. An approver approves or rejects in the Control Room (`/approvals`). Pending items older than
+2. An approver approves or rejects in the Control Room (Company > Approvals, `/?tab=approvals`). Pending items older than
    `policies.approval_expiry_hours` (72) expire as stale.
 3. Applying needs the gateway's Mercury sign-ins on Connections (Mercury writes for category and
    memo, Mercury receipt files for the file), `DASHBOARD_CONTROLS=on`, and the agent on duty

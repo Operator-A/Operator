@@ -38,7 +38,7 @@ export function statusProblems(f: StatusFacts, now = Date.now()): Problem[] {
   }
   for (const p of f.paused) out.push({ key: `paused:${keyPart(p.id)}`, level: "alert", title: `${p.name} is paused`, detail: `${p.why ? `${p.why.slice(0, 200)}. ` : ""}${p.custom ? "Open it on Connections to accept the change or resume it." : "Sign in again (or paste a new key) on Connections."} Agents that use it skip those tools until then.`, href: "/connections" });
   if (f.failedRuns.count) out.push({ key: "failed_runs", level: "warn", title: `${plural(f.failedRuns.count, "run")} failed in the last day`, detail: f.failedRuns.agents.length ? `By ${f.failedRuns.agents.slice(0, 6).join(", ")}.` : "", href: "/runs" });
-  if (f.refused.count) out.push({ key: "refused", level: "warn", title: `${plural(f.refused.count, "proposal")} refused by the gateway in the last day`, detail: f.refused.latest ? `Latest: ${f.refused.latest.slice(0, 200)}` : "Over a cap, or to someone agents may not contact or pay.", href: "/approvals" });
+  if (f.refused.count) out.push({ key: "refused", level: "warn", title: `${plural(f.refused.count, "proposal")} refused by the gateway in the last day`, detail: f.refused.latest ? `Latest: ${f.refused.latest.slice(0, 200)}` : "Over a cap, or to someone agents may not contact or pay.", href: "/?tab=approvals#history" });
   for (const u of f.unread) out.push({ key: `unread:${keyPart(u)}`, level: "warn", title: `Couldn’t check ${u}`, detail: "Its migration may not be applied yet.", href: "/status" });
   return out;
 }
