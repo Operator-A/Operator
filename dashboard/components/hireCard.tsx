@@ -3,6 +3,9 @@
 // the head filed shows Hire and try once: the owner's tap creates the agent off duty with only the actions
 // they turned on, then runs its first try (the existing tryBuilt). An agent that was never put on duty shows
 // Try once, then Put on duty after a clean try (the existing goLive and setEnabled, each checking again).
+// An agent that runs in Claude has no try and no cost a run here: its card says so, links to its sheet to
+// connect the routine, then offers Put on duty (setEnabled, which checks the routine again).
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import type { ActionResult } from "@/dashboard/actions";
 import type { HireCardView } from "@/dashboard/hire-rules";
@@ -52,8 +55,17 @@ export function HireCard({ c, dept, head, headTitle, controls, acts, trying, onT
     return d.ok ? { ok: true, text: `${c.name} is on duty · ${c.when === "Only when you ask" ? "runs when you press Run now" : c.when.toLowerCase()}` } : d;
   });
 
+  // an agent that runs in Claude: no try; on duty straight away once its routine is connected
+  const linkedOnDuty = () => run(async () => {
+    const d = await acts.duty(c.agentId!, true);
+    if (d.ok) setDone(true);
+    return d.ok ? { ok: true, text: `${c.name} is on duty · ${c.when === "Only when you ask" ? "press Run now on its sheet to start your Claude routine" : `${c.when.toLowerCase()}, each run starts your Claude routine`}` } : d;
+  });
+  const lc = c.claude;
+
   const stage = trying && c.stage !== "proposed" ? "trying" : c.stage;
   const kicker = stage === "proposed" ? (c.fromApp ? "New agent from Claude · needs your OK" : "New agent · needs your OK")
+    : lc ? (c.fromApp ? "New agent from Claude · runs in Claude · off duty" : "Runs in Claude · off duty")
     : stage === "trying" ? "First try · working" : stage === "clean" ? "First try worked" : stage === "failed" ? "First try · needs another go" : c.fromApp ? "New agent from Claude · off duty" : "Hired · off duty";
   const off = !controls ? "Real runs are off on this OPERATOR" : undefined;
 
@@ -82,8 +94,19 @@ export function HireCard({ c, dept, head, headTitle, controls, acts, trying, onT
             </dd>
           </dl>
           <div className="dp-cost"><b>{c.cost.big}</b><span>{c.cost.small}</span></div>
-          {stage === "failed" && c.why && <span className="dp-note">The latest try {c.why}.</span>}
-          {!done && !later && (
+          {!lc && stage === "failed" && c.why && <span className="dp-note">The latest try {c.why}.</span>}
+          {lc && !done && <span className="dp-note">{lc.step === "ready" ? `Its Claude routine is connected. There’s nothing to try here: once ${c.name} is on duty, each run starts the routine and its result posts back on the run.`
+            : lc.step === "paused" ? `Its Claude routine is paused: ${lc.paused}. Paste a new token on its sheet, then put it on duty.`
+            : `There’s nothing to try here: ${c.name}’s work happens in your Claude routine. Connect the routine on its sheet, then put it on duty.`}</span>}
+          {lc && !done && (
+            <div className="dp-btns">
+              {lc.step === "ready"
+                ? <button type="button" className="dp-btn dark" disabled={busy || !controls} title={off} onClick={linkedOnDuty}>{busy ? "Putting on duty…" : `Put ${c.name} on duty`}</button>
+                : <Link className="dp-btn dark" href={lc.sheet ?? `?agent=${encodeURIComponent(c.agentId ?? "")}`} scroll={false}>{lc.step === "paused" ? "Fix its routine" : "Connect its Claude routine"}</Link>}
+              <button type="button" className="dp-btn" disabled={busy} onClick={() => onChange(`Change ${c.name}: `)}>Change something</button>
+            </div>
+          )}
+          {!lc && !done && !later && (
             <div className="dp-btns">
               {stage === "proposed" && <button type="button" className="dp-btn dark" disabled={busy || !controls} title={off} onClick={hire}>{busy ? "Hiring…" : `Hire ${c.name} and try once`}</button>}
               {(stage === "hired" || stage === "failed") && <button type="button" className="dp-btn dark" disabled={busy || !controls} title={off} onClick={tryOnce}>{busy ? "Trying…" : stage === "failed" ? "Try again" : "Try once"}</button>}

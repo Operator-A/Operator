@@ -90,7 +90,7 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
     if (!el) return;
     const f = requestAnimationFrame(() => requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight })));
     return () => cancelAnimationFrame(f);
-  }, [items.length, busy, going]);
+  }, [items.length, busy, going, tried.length]);
 
   // runs as they happen: poll often while one is going, now and then otherwise
   const liveUrl = liveAt === undefined ? `/dept/${deptId}/live` : liveAt;
