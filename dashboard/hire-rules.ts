@@ -81,8 +81,8 @@ export function linkedStep(r: { connected: boolean; paused: string | null } | nu
 export const linkedCostLine = (): { big: string; small: string } =>
   ({ big: "In Claude", small: "each run starts your Claude routine, so OPERATOR adds no model cost. It counts toward your Claude plan." });
 
-/** What it reads, on its card: the Claude connectors it names, as labels (never granted in OPERATOR). */
-export const linkedReads = (tools: readonly string[]): string[] => tools.map((t) => `${t} · in Claude`);
+/** What it reads, on its card: whatever its routine's own connectors reach, set in Claude (never granted in OPERATOR). */
+export const LINKED_READS: readonly string[] = ["Its routine’s connectors, set in Claude"];
 
 /** Where a created, off-duty agent is: from its latest try of the version it would go live with. */
 export function hireStage(t: { clean: boolean; status: string } | null): HireStage {

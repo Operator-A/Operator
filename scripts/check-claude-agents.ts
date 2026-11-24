@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
-  CLAUDE_TOOLS, FINISH, NO_RESULT, ROUTINE_API, chainWaits, waitExpired, ROUTINE_CAPS, afterFire, finishable, fireFits, fireNote, fireStart, isRunsOn, promptLine, readClaudeTools, readFinish, readRoutine, readSession, routineVaultId,
+  FINISH, NO_RESULT, ROUTINE_API, chainWaits, waitExpired, ROUTINE_CAPS, afterFire, finishable, fireFits, fireNote, fireStart, isRunsOn, promptLine, readFinish, readRoutine, readSession, routineVaultId,
 } from "../core/routine-rules";
 
 const read = (p: string) => readFileSync(p, "utf8");
@@ -27,13 +27,6 @@ assert.deepEqual(readRoutine(` ${ROUTINE} `, ` ${TOKEN} `), { routine: ROUTINE, 
 assert.match((readRoutine("routine_1", TOKEN) as { problem: string }).problem, /starts with trig_/);
 assert.match((readRoutine(ROUTINE, "sk-ant-api03-abc") as { problem: string }).problem, /sk-ant-oat01-/, "an API key isn't a routine token");
 assert.match((readRoutine(`${ROUTINE}/../x`, TOKEN) as { problem: string }).problem, /trig_/, "an id can't change the path");
-
-// ---- the Claude connectors Claude names: labels only
-assert.deepEqual(readClaudeTools("Google Drive, Slack, Google Drive"), { tools: ["Google Drive", "Slack"] });
-assert.match((readClaudeTools("") as { problem: string }).problem, /name the Claude connectors/);
-assert.match((readClaudeTools(Array.from({ length: CLAUDE_TOOLS.max + 1 }, (_, i) => `Tool ${i}`).join(",")) as { problem: string }).problem, /at most 8/);
-assert.match((readClaudeTools("<script>alert(1)</script>") as { problem: string }).problem, /isn’t a connector name/);
-assert.match((readClaudeTools("x".repeat(41)) as { problem: string }).problem, /isn’t a connector name/);
 
 // ---- caps: under Anthropic's 30 per routine and 100 per account an hour
 assert.ok(ROUTINE_CAPS.perAgentHour < 30 && ROUTINE_CAPS.perOrgHour < 100);

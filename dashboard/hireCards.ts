@@ -12,7 +12,7 @@ import { billing, monthCostOf } from "@/dashboard/cost";
 import { builderMenu, builderModelKeys, customMenuFor, lastTry } from "@/dashboard/builder";
 import type { Roster } from "@/dashboard/data";
 import { deptAgentIds, sheetHref } from "@/dashboard/dept-rules";
-import { hireCostLine, hireRuns, hireStage, hireWhenWords, linkedCostLine, linkedReads, linkedStep, newAgent, type HireCardView, type HireChoice, type LinkedCard } from "@/dashboard/hire-rules";
+import { hireCostLine, hireRuns, hireStage, hireWhenWords, linkedCostLine, LINKED_READS, linkedStep, newAgent, type HireCardView, type HireChoice, type LinkedCard } from "@/dashboard/hire-rules";
 import { routineState } from "@/integrations/mcp";
 import { schedWords } from "@/dashboard/schedule";
 
@@ -42,7 +42,7 @@ export async function deptHires(deptId: string, roster: Roster): Promise<{ cards
     seated.length ? db().from("agent_defs").select("agent_id, version, spec, created_by, created_at").eq("active", true).in("agent_id", seated) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     seated.length ? db().from("agent_playbooks").select("agent_id").eq("status", "approved").in("agent_id", seated) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     // agents that run in Claude (live events slice 2): no try here, their routine instead
-    seated.length ? db().from("agents").select("id, runs_on, claude_tools").in("id", seated) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    seated.length ? db().from("agents").select("id, runs_on").in("id", seated) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     customMenuFor(), builderModelKeys(), billing(),
   ]);
   const menu = builderMenu(roster.crew, undefined, custom, keys);
@@ -74,8 +74,7 @@ export async function deptHires(deptId: string, roster: Roster): Promise<{ cards
   const approved = new Set((books.data ?? []).map((b) => b.agent_id as string));
   const fresh = new Set<string>();
   const defRows = (defs.data ?? []) as { agent_id: string; version: number; spec: unknown; created_by: string | null; created_at: string }[];
-  const inClaude = new Map(((where.data ?? []) as { id: string; runs_on?: string | null; claude_tools?: string[] | null }[])
-    .filter((a) => a.runs_on === "claude").map((a) => [a.id, a.claude_tools ?? []]));
+  const inClaude = new Set(((where.data ?? []) as { id: string; runs_on?: string | null }[]).filter((a) => a.runs_on === "claude").map((a) => a.id));
   const [tries, routines] = await Promise.all([
     Promise.all(defRows.map((d) => (inClaude.has(d.agent_id) ? null : lastTry(d.agent_id, d.version).catch(() => null)))),
     Promise.all(defRows.map((d): Promise<LinkedCard | null> => (inClaude.has(d.agent_id) ? routineState(d.agent_id).then(linkedStep, () => linkedStep(null)).then((l) => ({ ...l, sheet: sheetHref(deptId, "chat", d.agent_id) })) : Promise.resolve(null)))),
@@ -93,7 +92,7 @@ export async function deptHires(deptId: string, roster: Roster): Promise<{ cards
     cards.push({
       key: `a:${d.agent_id}`, proposalId: null, agentId: d.agent_id, name: spec.name, seat: seat?.title ?? crew?.role ?? "", job: spec.mandate,
       reportsTo: boss ? (boss.holder === "agent" && boss.agentId ? `${roster.byId[boss.agentId]?.name ?? boss.title} (${dept.name})` : boss.holder === "owner" ? "You" : boss.title) : headName,
-      reads: linked ? linkedReads(inClaude.get(d.agent_id) ?? []) : readsOf(spec.tools), can: spec.tools.filter((x) => TOOLS[x]?.kind === "action").map(choice),
+      reads: linked ? [...LINKED_READS] : readsOf(spec.tools), can: spec.tools.filter((x) => TOOLS[x]?.kind === "action").map(choice),
       when: crew?.schedule && crew.schedule.kind !== "manual" ? schedWords(crew.schedule) : "Only when you ask",
       cost: linked ? linkedCostLine() : hireCostLine(monthCostOf(costOf(spec), null, crew?.schedule && crew.schedule.kind !== "manual" ? hireRuns(crew.schedule.kind) : 0, bill), budget),
       stage: linked ? "hired" : hireStage(t), why: t && !t.clean ? t.why : null, version: d.version,

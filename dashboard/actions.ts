@@ -913,22 +913,15 @@ export async function setRunsOn(agentId: string, raw: unknown, confirmed: boolea
     const to = readRunsOn(raw, models, current);
     if ("problem" in to) return { ok: false, text: to.problem };
     const kind = switchKind({ on: where.on, model: current }, to);
-    if (kind === "same" && to.on === "claude") {
-      // only its connector labels changed
-      await markLinked(agentId, to.tools);
-      await audit(me, "claude_tools", agentId, { tools: to.tools });
-      revalidatePath("/", "layout");
-      return { ok: true, text: `Saved what ${who.name} uses in Claude.` };
-    }
     if (kind === "same" || kind === "model") return { ok: true, text: "" };
     const ask = switchConfirm(kind, who.name);
     if (ask && !confirmed) return { ok: false, text: ask };
     const { error } = await db().from("agents").update({ enabled: false }).eq("id", agentId);
     if (error) throw new Error(error.message);
     const toClaude = to.on === "claude";
-    if (to.on === "claude") await markLinked(agentId, to.tools);
+    if (to.on === "claude") await markLinked(agentId);
     else await moveAgentIntoOperator(agentId);
-    await audit(me, toClaude ? "move_into_claude" : "move_into_operator", agentId, to.on === "claude" ? { tools: to.tools } : { model: to.model });
+    await audit(me, toClaude ? "move_into_claude" : "move_into_operator", agentId, to.on === "claude" ? {} : { model: to.model });
     revalidatePath("/", "layout");
     return { ok: true, text: toClaude
       ? `${who.name} now runs in Claude, off duty. Connect its routine below, then put it on duty.`
@@ -969,7 +962,13 @@ export async function createAgentByHand(raw: unknown, tryIt = false): Promise<Ac
     const misses: string[] = [];
     const miss = (what: string, e: unknown) => misses.push(`${what} wasn’t set: ${e instanceof Error ? e.message : String(e)}`);
     if (f.role) { const { error } = await db().from("agents").update({ role: f.role }).eq("id", id); if (error) miss("Its role", error.message); }
-    if (linked) { try { await markLinked(id, f.runsOn.on === "claude" ? f.runsOn.tools : []); } catch (e) { miss("Running in Claude", e); } }
+    if (linked) {
+      try {
+        await markLinked(id);
+        // its trigger and key, when typed on the New agent sheet: sealed the same way as on its sheet (routineSave)
+        if (f.runsOn.on === "claude" && f.runsOn.routine) { await saveRoutine(id, f.runsOn.routine.routine, f.runsOn.routine.token); await audit(me, "routine_save", id); }
+      } catch (e) { miss("Its Claude routine", e); }
+    }
     let where: string | null = null;
     if (f.place) {
       try {

@@ -16,10 +16,8 @@ import { BUDGET_CEILING, RUN_LIMITS, specLooser, versionStarts, type AgentSpec }
 import { readStored, startsWords } from "@/core/draft-starts-rules";
 import { runsOn } from "@/core/claude-agents";
 import { chainHref, newChainHref } from "@/dashboard/chain-rules";
-import { promptLine } from "@/core/routine-rules";
 import { routineState, type RoutineState } from "@/integrations/mcp";
 import { CONNECTIONS } from "@/dashboard/connections";
-import { fillClaudeTools, matchClaudeTools, type ToolMatch } from "@/dashboard/runs-on-rules";
 import { agentHref } from "@/dashboard/dept-rules";
 import { canGroups, chainsOf, fillQuery, headRows, upTo, type CanChoice, type CanGroup, type HandChain, type HeadRow, type UpTo } from "@/dashboard/handoff-rules";
 
@@ -65,25 +63,11 @@ export interface SheetData {
   others: { id: string; name: string; outputName: string }[];
   reports: SheetChoice[];
   limits: { maxSteps: { min: number; max: number }; maxCostUsd: { min: number; max: number } };
-  /** An agent that runs in Claude (docs/live-events.md, slice 2): its Claude connectors, routine and the prompt line to paste. */
-  claude: { tools: string[]; routine: RoutineState; prompt: string } | null;
-  /** Runs on (card 405): "Uses in Claude" filled from the tools it has, for a move to a Claude routine. */
-  claudeFill: string[];
-  /** Runs on (card 405): for an agent in Claude, each of its connectors matched to an OPERATOR tool, for a move back. */
-  claudeMatch: ToolMatch[] | null;
+  /** An agent that runs in Claude (docs/live-events.md, slice 2): its routine (the sheet draws the line to paste from its name). */
+  claude: { routine: RoutineState } | null;
 }
 
 const READ_KINDS = new Set(["read", "calculate"]);
-
-/** OPERATOR's own sources (other agents, the Control Room, math in code): never a Claude connector. */
-const BUILT_IN = new Set<string>(CONNECTIONS.filter((c) => c.builtIn).map((c) => c.id));
-
-/** Each connection the menu's tools come from, connected when any of its tools is. */
-function conns(tools: readonly { conn: unknown; connected: boolean }[], name: (c: string) => string) {
-  const by = new Map<string, boolean>();
-  for (const t of tools) { const c = String(t.conn); by.set(c, (by.get(c) ?? false) || t.connected); }
-  return [...by].map(([id, connected]) => ({ id, name: name(id), connected }));
-}
 
 export async function agentSheet(id: string): Promise<SheetData | null> {
   if (!/^[a-z0-9_]{1,60}$/.test(id)) return null;
@@ -99,7 +83,7 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
     runsOn(id),
   ]);
   const claude = where.on === "claude"
-    ? { tools: where.tools, routine: await routineState(id).catch(() => ({ connected: false, routine: null, paused: "Can’t be read right now.", connectedAt: null })), prompt: promptLine(a.name) }
+    ? { routine: await routineState(id).catch(() => ({ connected: false, routine: null, paused: "Can’t be read right now.", connectedAt: null })) }
     : null;
   const menu = builderMenu(roster.crew, undefined, custom, keys);
   const working = b?.draft ?? b?.active ?? null;
@@ -161,8 +145,6 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
       .map((t) => ({ id: t.id, label: t.label, on: has.has(t.id), ready: t.connected, why: t.connected ? undefined : "Not connected" })),
     limits: { maxSteps: { min: RUN_LIMITS.maxSteps.min, max: RUN_LIMITS.maxSteps.max }, maxCostUsd: { min: RUN_LIMITS.maxCostUsd.min, max: RUN_LIMITS.maxCostUsd.max } },
     claude,
-    claudeFill: fillClaudeTools(tools.filter((t) => has.has(t.id) && !BUILT_IN.has(String(t.conn))).map((t) => connName(String(t.conn)))),
-    claudeMatch: claude ? matchClaudeTools(claude.tools, conns(tools.filter((t) => !BUILT_IN.has(String(t.conn))), connName)) : null,
   };
 }
 

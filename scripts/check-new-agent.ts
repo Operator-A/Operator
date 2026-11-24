@@ -50,13 +50,17 @@ assert.deepEqual(ok({ ...base, start: { kind: "whenever" } }).start, { kind: "ma
 // ---- no department
 assert.equal(ok({ ...base, place: null }).place, null);
 
-// ---- a Claude routine: connectors as labels, never OPERATOR tools
-const linked = ok({ ...base, tools: [], runsOn: { on: "claude", tools: ["Gmail", " Google Calendar ", "Gmail"] } });
-assert.deepEqual(linked.runsOn, { on: "claude", tools: ["Gmail", "Google Calendar"] });
+// ---- a Claude routine: its trigger id and key (or neither, for later), never OPERATOR tools or connector labels
+const RT = `trig_${"A1".repeat(10)}`, KEY = ["sk", "ant", "oat01", "x".repeat(40)].join("-");
+const linked = ok({ ...base, tools: [], runsOn: { on: "claude", routine: { routine: ` ${RT} `, token: KEY } } });
+assert.deepEqual(linked.runsOn, { on: "claude", routine: { routine: RT, token: KEY } });
 assert.deepEqual(linked.tools, []);
-bad({ ...base, runsOn: { on: "claude", tools: ["Gmail"] } }, /no OPERATOR reads/);
-bad({ ...base, tools: [], runsOn: { on: "claude", tools: [] } }, /Claude connectors/);
-bad({ ...base, tools: [], runsOn: { on: "claude", tools: ["<script>"] } }, /connector name/);
+assert.deepEqual(ok({ ...base, tools: [], runsOn: { on: "claude" } }).runsOn, { on: "claude" }, "the routine can be connected later on its sheet");
+assert.deepEqual(ok({ ...base, tools: [], runsOn: { on: "claude", tools: ["Gmail"] } }).runsOn, { on: "claude" }, "connector labels are ignored");
+bad({ ...base, runsOn: { on: "claude" } }, /no OPERATOR reads/);
+bad({ ...base, tools: [], runsOn: { on: "claude", routine: { routine: RT, token: "" } } }, /sk-ant-oat01-/);
+bad({ ...base, tools: [], runsOn: { on: "claude", routine: { routine: "", token: KEY } } }, /trig_/);
+bad({ ...base, tools: [], runsOn: { on: "claude", routine: { routine: "trig_../x", token: KEY } } }, /trig_/);
 
 // ---- the v1 spec: the builder's shape, its job as the directive, a short job line, the role as its output's name
 assert.equal(jobLine("Find customers due a tune-up. Draft a reminder for each."), "Find customers due a tune-up.");

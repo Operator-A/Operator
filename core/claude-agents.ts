@@ -19,11 +19,11 @@ export interface ClaudeSession {
   chain?: ChainCtx | null;
 }
 
-/** Where an agent runs, and the Claude connectors it names. An agent row before the migration runs in OPERATOR. */
-export async function runsOn(agentId: string): Promise<{ on: RunsOn; tools: string[] }> {
-  const { data, error } = await db().from("agents").select("runs_on, claude_tools").eq("id", agentId).maybeSingle();
-  if (error || !data) return { on: "operator", tools: [] };
-  return { on: data.runs_on === "claude" ? "claude" : "operator", tools: (data.claude_tools as string[] | null) ?? [] };
+/** Where an agent runs. An agent row before the migration runs in OPERATOR. */
+export async function runsOn(agentId: string): Promise<{ on: RunsOn }> {
+  const { data, error } = await db().from("agents").select("runs_on").eq("id", agentId).maybeSingle();
+  if (error || !data) return { on: "operator" };
+  return { on: data.runs_on === "claude" ? "claude" : "operator" };
 }
 
 /** Fires in the last hour, for this agent and for the whole business. */
@@ -121,9 +121,12 @@ export async function waitsOnClaude(runId: string): Promise<boolean> {
   return !!(data?.claude_session as ClaudeSession | null)?.chain;
 }
 
-/** A linked agent made from Claude: where it runs and the connectors it names. */
-export async function markLinked(agentId: string, tools: string[]): Promise<void> {
-  const { error } = await db().from("agents").update({ runs_on: "claude", claude_tools: tools }).eq("id", agentId);
+/**
+ * A linked agent: it runs as the owner's Claude routine. Its routine id and token are all OPERATOR needs; the routine's
+ * own connectors are set on claude.ai and never named or granted here (decided 2026-11-24). Clears the old labels.
+ */
+export async function markLinked(agentId: string): Promise<void> {
+  const { error } = await db().from("agents").update({ runs_on: "claude", claude_tools: [] }).eq("id", agentId);
   if (error) throw new Error(error.message);
 }
 

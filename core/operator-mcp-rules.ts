@@ -103,8 +103,7 @@ export const OP_TOOLS: readonly OpTool[] = [
     inputSchema: { type: "object", properties: {
       name: text(80, "The agent's name."), ...SPEC_PROPS,
       seat: text(60, "An open seat's title from get_company, to put the agent in it."),
-      runs_on: { type: "string", enum: ["operator", "claude"], description: "operator (default): it runs in OPERATOR with the tools above. claude: it needs a connector only Claude has, so OPERATOR shows it and fires one of the owner's Claude routines for each run; leave tools empty and name claude_tools." },
-      claude_tools: text(400, "runs_on claude: the Claude connectors it uses, comma separated (at most 8), like Google Drive, Slack. Shown in OPERATOR as labels; never granted there."),
+      runs_on: { type: "string", enum: ["operator", "claude"], description: "operator (default): it runs in OPERATOR with the tools above. claude: it needs a connector only Claude has, so OPERATOR shows it and fires one of the owner's Claude routines for each run; leave tools empty. Its routine's connectors are set in Claude, never in OPERATOR." },
     }, additionalProperties: false, required: ["name", "job", "directive", "good_result"] } },
   { name: "update_agent", title: "Change an agent", kind: "draft", min: "owner",
     description: "Saves a change to an agent as a new draft version. What runs today doesn't change until a person tries the draft and goes live in OPERATOR; Go live lists every action the draft adds, and any change to when it runs. Read the agent with get_agent first and pass the version you read; if it changed since, read it again. Only the fields you pass change. Actions change only through add_actions and drop_actions; reports and tools from servers the owner added carry over as they are.",

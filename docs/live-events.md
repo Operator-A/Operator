@@ -63,10 +63,10 @@ owner's Claude routines and link to the Claude session. It can also be run by ha
 
 ### Making one
 
-- `create_agent` takes `runs_on: "claude"` and `claude_tools` (the Claude connectors it uses, labels only, at
-  most 8). It gets no OPERATOR tools. It lands off duty like every agent made from Claude, and the answer
+- `create_agent` takes `runs_on: "claude"`. It gets no OPERATOR tools, and OPERATOR doesn't list the routine's
+  connectors: they are set in Claude (decided 2026-11-24; the old `claude_tools` labels are gone). It lands off duty like every agent made from Claude, and the answer
   carries the line to paste into the routine's prompt.
-- The owner makes a routine on claude.ai with those connectors and that line, adds an API trigger,
+- The owner makes a routine on claude.ai with the connectors its job needs and that line, adds an API trigger,
   generates its token, and pastes the routine id (`trig_…`) and token on the agent's sheet (Edit tab). The
   token is sealed in the vault on its own row (`routineVaultId`), bound to that agent; only
   `integrations/mcp.ts` opens it. Anthropic has no API to make a routine or its token, so this is by hand.
@@ -103,11 +103,10 @@ the business's own keys), then "A Claude routine". Picking the other side shows 
 stops; Save asks once, and `setRunsOn` (owner only) does the switch. Either way the agent goes off duty and keeps
 its runs, history, schedule and chains.
 
-- Into a Claude routine: "Uses in Claude" starts from the tools behind its reads (labels only). Its reads and
+- Into a Claude routine: OPERATOR asks for nothing but the routine's trigger id and key. Its reads and
   can do stay in its versions but aren't used, and no action is carried into Claude. Connect the routine, then
   put it on duty.
-- Back into OPERATOR: its routine token is forgotten. Each Claude connector is matched by name to an OPERATOR
-  connection (works here, connect first, none here). It needs reads, a clean try and an approved playbook,
+- Back into OPERATOR: its routine token is forgotten. It needs reads, a clean try and an approved playbook,
   like any agent. Forget token takes it off duty too.
 
 Only Claude has a routine OPERATOR can start from outside and get the result back from (checked 2026-11-24:
@@ -124,12 +123,12 @@ The chain doesn't move on when the routine starts: it goes on when the session p
 
 ### Database (`20270106090000_claude_agents.sql`)
 
-`agents.runs_on` (`operator` or `claude`), `agents.claude_tools` (labels), `agent_runs.claude_session` (the
+`agents.runs_on` (`operator` or `claude`), `agents.claude_tools` (no longer written or read; always empty), `agent_runs.claude_session` (the
 session id and link, when it was fired, and once finished, its status and result).
 
 ### Tests
 
-`npm run check:claude-agents`: routine id and token shapes, connector labels, the vault row id, caps, retry
+`npm run check:claude-agents`: routine id and token shapes, the vault row id, caps, retry
 rules, the session link (claude.ai only), the note (hand-off marked as data, cut), finish_run's input and
 once-only rule, and source rules (one file fires, only `integrations/mcp.ts` reaches it, no redirect, a
 refused token pauses, the caps are checked before every fire). `check:operator-mcp` covers `finish_run` and

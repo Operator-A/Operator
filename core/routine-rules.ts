@@ -54,9 +54,6 @@ export function waitExpired(s: { chain?: unknown; finished_at?: string | null; f
   return Number.isFinite(at) && now - at > FINISH.withinHours * 3600_000;
 }
 
-/** Labels for the connectors the Claude session will use, shown on the sheet. Never granted in OPERATOR. */
-export const CLAUDE_TOOLS = { max: 8, maxLabel: 40 } as const;
-
 /** The connection row a linked agent's routine is sealed on (mcp_connections.id, `^[a-z][a-z0-9_]{1,30}$`). */
 export function routineVaultId(agentId: string): string {
   // FNV-1a, 64 bits: short and stable; the row also keeps the agent id, checked on every read
@@ -72,17 +69,6 @@ export function readRoutine(routine: unknown, token: unknown): { routine: string
   if (!ROUTINE_ID.test(r)) return { problem: "That isn’t a routine id: it starts with trig_ (on claude.ai, open the routine, then Edit > Trigger > API)." };
   if (!ROUTINE_TOKEN.test(t)) return { problem: "That isn’t a routine token: it starts with sk-ant-oat01- and is shown once, when you generate it." };
   return { routine: r, token: t };
-}
-
-/** The connector labels Claude named for a linked agent: plain words, at most CLAUDE_TOOLS.max, no duplicates. */
-export function readClaudeTools(raw: unknown): { tools: string[] } | { problem: string } {
-  const parts = (typeof raw === "string" ? raw.split(",") : Array.isArray(raw) ? raw : []).map((x) => (typeof x === "string" ? x.trim() : ""));
-  const tools = [...new Set(parts.filter(Boolean))];
-  if (!tools.length) return { problem: "name the Claude connectors it uses (claude_tools), like Google Drive or Slack" };
-  if (tools.length > CLAUDE_TOOLS.max) return { problem: `at most ${CLAUDE_TOOLS.max} Claude connectors` };
-  const bad = tools.find((t) => t.length > CLAUDE_TOOLS.maxLabel || !/^[\p{L}\p{N}][\p{L}\p{N} .&+'/()-]*$/u.test(t));
-  if (bad) return { problem: `“${bad.slice(0, 40)}” isn’t a connector name (plain words, ${CLAUDE_TOOLS.maxLabel} characters at most)` };
-  return { tools };
 }
 
 /** Whether another fire fits under OPERATOR's caps, given the fires in the last hour. */

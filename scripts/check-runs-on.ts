@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  MAKERS, MATCH_WORD, fillClaudeTools, makerOf, matchClaudeTools, modelGroups, readRunsOn, switchConfirm, switchKind, switchWords, type PickModel,
+  MAKERS, makerOf, modelGroups, readRunsOn, switchConfirm, switchKind, switchWords, type PickModel,
 } from "../dashboard/runs-on-rules";
 import { MODEL_LIST } from "../integrations/models";
 
@@ -33,9 +33,8 @@ assert.deepEqual(readRunsOn({ on: "operator", model: "gpt-6.2-sol" }, MODELS), {
 assert.match(problem(readRunsOn({ on: "operator", model: "grok-4.7" }, MODELS)), /Grok key on Connections/, "a model without its key is refused");
 assert.deepEqual(readRunsOn({ on: "operator", model: "grok-4.7" }, MODELS, "grok-4.7"), { on: "operator", model: "grok-4.7" }, "the model it already runs on still saves after its key went away");
 assert.match(problem(readRunsOn({ on: "operator", model: "gpt-9" }, MODELS)), /isn’t one OPERATOR runs/);
-assert.deepEqual(readRunsOn({ on: "claude", tools: ["Gmail", " Slack ", "Gmail"] }, MODELS), { on: "claude", tools: ["Gmail", "Slack"] });
-assert.match(problem(readRunsOn({ on: "claude", tools: [] }, MODELS)), /^Name the Claude connectors/, "a routine names at least one connector");
-assert.match(problem(readRunsOn({ on: "claude", tools: ["<script>"] }, MODELS)), /isn’t a connector name/);
+assert.deepEqual(readRunsOn({ on: "claude" }, MODELS), { on: "claude" }, "a routine names no connectors (decided 2026-11-24)");
+assert.deepEqual(readRunsOn({ on: "claude", tools: ["Gmail"] }, MODELS), { on: "claude" }, "old connector labels are ignored");
 assert.match(problem(readRunsOn({ on: "openai_workspace" }, MODELS)), /Pick where it runs/, "only OPERATOR or a Claude routine (decided 2026-11-24)");
 assert.match(problem(readRunsOn(null, MODELS)), /Pick where it runs/);
 
@@ -43,10 +42,10 @@ assert.match(problem(readRunsOn(null, MODELS)), /Pick where it runs/);
 const op = { on: "operator" as const, model: "claude-sonnet-5-5" };
 assert.equal(switchKind(op, { on: "operator", model: "claude-sonnet-5-5" }), "same");
 assert.equal(switchKind(op, { on: "operator", model: "gpt-6.2-sol" }), "model", "a new model is a draft, not a switch");
-assert.equal(switchKind(op, { on: "claude", tools: ["Gmail"] }), "to_claude");
+assert.equal(switchKind(op, { on: "claude" }), "to_claude");
 const cl = { on: "claude" as const, model: "claude-sonnet-5-5" };
 assert.equal(switchKind(cl, { on: "operator", model: "claude-sonnet-5-5" }), "to_operator", "back into OPERATOR on the model it had");
-assert.equal(switchKind(cl, { on: "claude", tools: ["Slack"] }), "same");
+assert.equal(switchKind(cl, { on: "claude" }), "same");
 assert.equal(switchWords("model", "Morgan"), null);
 assert.equal(switchWords("same", "Morgan"), null);
 const toC = switchWords("to_claude", "Morgan")!;
@@ -57,23 +56,6 @@ assert.match(switchWords("to_operator", "Sage")!.stops, /forgets the token/);
 assert.match(switchConfirm("to_claude", "Morgan")!, /^Confirm first: Morgan goes off duty/, "the sheet's confirm pattern");
 assert.match(switchConfirm("to_operator", "Sage")!, /^Confirm first: Sage goes off duty/);
 assert.equal(switchConfirm("model", "Morgan"), null);
-
-// ---- "Uses in Claude", filled from its reads' tools
-assert.deepEqual(fillClaudeTools(["Mercury", "Shopify", "mercury", "", "Shopify"]), ["Mercury", "Shopify"]);
-assert.equal(fillClaudeTools(Array.from({ length: 12 }, (_, i) => `Tool ${i}`)).length, 8, "at most CLAUDE_TOOLS.max");
-assert.deepEqual(fillClaudeTools(["<b>"]), [], "not a connector name");
-
-// ---- matching Claude connector labels to OPERATOR's tools
-const CONNS = [
-  { id: "gmail", name: "Gmail", connected: true },
-  { id: "mercury", name: "Mercury", connected: false },
-  { id: "calendar", name: "Google Calendar", connected: true },
-  { id: "ga4", name: "Google Analytics", connected: false },
-];
-const m = matchClaudeTools(["Gmail", "Mercury", "Calendar", "Slack", "Google"], CONNS);
-assert.deepEqual(m.map((x) => x.state), ["ok", "warn", "ok", "none", "none"], "connected, can be connected, none; a bare maker name matches nothing");
-assert.deepEqual(m.map((x) => x.conn), ["gmail", "mercury", "calendar", null, null]);
-assert.equal(MATCH_WORD.none, "None here");
 
 // ---- source: the server action, the sheet and the old button
 const actions = read("dashboard/actions.ts");
@@ -87,6 +69,16 @@ const sheet = read("dashboard/components/agentSheet.tsx");
 assert.match(sheet, /<RunsOnPicker /, "the Edit tab uses the picker");
 assert.doesNotMatch(sheet, /id="ag-model"/, "the old model dropdown is gone");
 assert.doesNotMatch(sheet, /Move into OPERATOR/, "the old button is gone");
-assert.doesNotMatch(read("dashboard/components/runsOn.tsx"), /router\.refresh\(/);
+const ro = read("dashboard/components/runsOn.tsx");
+assert.doesNotMatch(ro, /router\.refresh\(/);
+// a routine takes only its trigger id and key; what it uses is set in Claude (decided 2026-11-24)
+assert.match(ro, /export function RoutineFields/);
+assert.match(ro, /Routine trigger id/);
+assert.match(ro, /type="password"/, "the key field hides what's typed");
+for (const f of ["dashboard/components/runsOn.tsx", "dashboard/components/agentSheet.tsx", "dashboard/components/newAgentSheet.tsx"]) {
+  assert.doesNotMatch(read(f), /Uses in Claude|claudeTools|ClaudeToolsField/, `${f} asks for no connector labels`);
+  assert.doesNotMatch(read(f), /up to 3 agents/, `${f} says a chain holds 8`);
+}
+assert.match(read("dashboard/components/newAgentSheet.tsx"), /<RoutineFields /, "the new agent sheet takes the routine's id and key");
 
 console.log("check:runs-on ok");

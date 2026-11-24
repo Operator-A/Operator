@@ -9,7 +9,7 @@ import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from 
 import { deptReach, headDirective } from "../core/head-chat-rules";
 import { resolveRuleWho, deptNamed } from "../core/chat-rules";
 import type { Org } from "../core/org-rules";
-import { allowedGrants, hireCostLine, hireRuns, hireStage, hireWhenWords, linkedCostLine, linkedReads, linkedStep, newAgent, tryInFeed } from "../dashboard/hire-rules";
+import { allowedGrants, hireCostLine, hireRuns, hireStage, hireWhenWords, linkedCostLine, LINKED_READS, linkedStep, newAgent, tryInFeed } from "../dashboard/hire-rules";
 import { hireWhen, planProposal, toolInfoOf } from "../core/proposal-rules";
 import { changeRows, changeStage, goalRows, goalTitle, keepDecided, moveRows, savedVersionOf } from "../dashboard/change-rules";
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -216,7 +216,7 @@ assert.deepEqual(linkedStep({ connected: false, paused: null }), { step: "connec
 assert.deepEqual(linkedStep({ connected: true, paused: "Token refused." }), { step: "paused", paused: "Token refused." });
 assert.deepEqual(linkedStep({ connected: true, paused: null }), { step: "ready", paused: null });
 assert.ok(!/\$\d/.test(linkedCostLine().big + linkedCostLine().small), "the card of an agent that runs in Claude shows no price a run");
-assert.deepEqual(linkedReads(["Gmail", "Shopify"]), ["Gmail · in Claude", "Shopify · in Claude"]);
+assert.deepEqual([...LINKED_READS], ["Its routine’s connectors, set in Claude"], "a card names no connectors for a routine");
 assert.equal(hireHref("finance", { title: "Collections", sub: "late invoices" }), `/dept/finance?say=${encodeURIComponent("Hire an agent for the Collections seat: late invoices.")}`);
 
 const proposalsSrc = read("core/proposals.ts"), pActs = read("dashboard/proposalActions.ts"), hireCard = read("dashboard/components/hireCard.tsx");
