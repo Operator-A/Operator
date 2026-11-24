@@ -206,7 +206,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false 
                     ? <span style={{ fontSize: 14 }}>{d.claude.routine.paused ? `Paused: ${d.claude.routine.paused}` : `Connected: ${d.claude.routine.routine ?? "routine"}`}</span>
                     : <span className="dp-note">Not connected yet. Nothing runs until it is.</span>}
                   <ol className="dp-note" style={{ paddingLeft: 18, margin: "6px 0" }}>
-                    <li>On claude.ai, open Routines and click New routine. Give it the connectors above.</li>
+                    <li>On claude.ai, open Routines and click New routine. Give it the connectors above and your OPERATOR connector, which it uses to post its result back here.</li>
                     <li>Paste this line into its prompt: <code style={{ userSelect: "all" }}>{d.claude.prompt}</code></li>
                     <li>Click Edit, then Trigger, then API, then Generate token. Copy the routine id (trig_…) and the token. Claude shows the token once.</li>
                   </ol>

@@ -9,7 +9,7 @@ import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from 
 import { deptReach, headDirective } from "../core/head-chat-rules";
 import { resolveRuleWho, deptNamed } from "../core/chat-rules";
 import type { Org } from "../core/org-rules";
-import { allowedGrants, hireCostLine, hireRuns, hireStage, hireWhenWords, newAgent, tryInFeed } from "../dashboard/hire-rules";
+import { allowedGrants, hireCostLine, hireRuns, hireStage, hireWhenWords, linkedCostLine, linkedReads, linkedStep, newAgent, tryInFeed } from "../dashboard/hire-rules";
 import { hireWhen, planProposal, toolInfoOf } from "../core/proposal-rules";
 import { changeRows, changeStage, goalRows, goalTitle, keepDecided, moveRows, savedVersionOf } from "../dashboard/change-rules";
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -210,6 +210,13 @@ assert.equal(hireStage({ clean: true, status: "ok" }), "clean"); assert.equal(hi
 assert.ok(newAgent({ enabled: false, approvedRoutine: false, hasSpec: true }) && !newAgent({ enabled: true, approvedRoutine: false, hasSpec: true }) && !newAgent({ enabled: false, approvedRoutine: true, hasSpec: true }), "a card stays only until the agent has been put on duty");
 assert.ok(tryInFeed("preview", "ivy", new Set(["ivy"])) && !tryInFeed("preview", "quinn", new Set(["ivy"])) && !inFeed("preview"), "only a new agent's first try posts in the chat");
 assert.equal(runTitle("preview"), "First try");
+// an agent that runs in Claude (decided 2026-11-24): no try and no cost a run on its card; connect the routine, then on duty
+assert.deepEqual(linkedStep(null), { step: "connect", paused: null }, "a routine that can't be read asks to connect");
+assert.deepEqual(linkedStep({ connected: false, paused: null }), { step: "connect", paused: null });
+assert.deepEqual(linkedStep({ connected: true, paused: "Token refused." }), { step: "paused", paused: "Token refused." });
+assert.deepEqual(linkedStep({ connected: true, paused: null }), { step: "ready", paused: null });
+assert.ok(!/\$\d/.test(linkedCostLine().big + linkedCostLine().small), "the card of an agent that runs in Claude shows no price a run");
+assert.deepEqual(linkedReads(["Gmail", "Shopify"]), ["Gmail · in Claude", "Shopify · in Claude"]);
 assert.equal(hireHref("finance", { title: "Collections", sub: "late invoices" }), `/dept/finance?say=${encodeURIComponent("Hire an agent for the Collections seat: late invoices.")}`);
 
 const proposalsSrc = read("core/proposals.ts"), pActs = read("dashboard/proposalActions.ts"), hireCard = read("dashboard/components/hireCard.tsx");
@@ -218,6 +225,9 @@ assert.ok(/export function hireDraft[\s\S]*?p\.can \?\? \[\]\)\.includes\(g\) &&
 assert.ok(/export async function hireInChat[\s\S]*?asRole\("owner"\)[\s\S]*?acceptProposal\(id, \{ grants: asked \}\)/.test(pActs), "Hire is the owner's tap and goes through the proposal's own path");
 assert.ok(!/tryBuilt|runExplore|withRun/.test(pActs.replace(/^\s*(\/\/|\*|\/\*\*).*$/gm, "")), "hiring itself runs no model; the first try is the existing tryBuilt");
 assert.ok(/acts\.goLive\([\s\S]*?acts\.duty\(/.test(hireCard) && /stage === "clean" && <button/.test(hireCard), "Put on duty is offered only after a clean try, through Go live then on duty");
+assert.ok(/lc \? \(c\.fromApp[\s\S]*?\{!lc && !done && !later && \(/.test(hireCard) && !/onClick=\{linkedOnDuty\}[^\n]*tryOnce/.test(hireCard), "a card of an agent that runs in Claude offers no Try once");
+assert.ok(/const linkedOnDuty = \(\) => run\(async \(\) => \{\s*const d = await acts\.duty\(c\.agentId!, true\)/.test(hireCard) && /lc\.step === "ready"\s*\? <button[^\n]*onClick=\{linkedOnDuty\}/.test(hireCard), "Put on duty of an agent that runs in Claude goes through setEnabled (which checks its routine), only once the routine is connected");
+assert.ok(/inClaude\.has\(d\.agent_id\) \? null : lastTry/.test(read("dashboard/hireCards.ts")) && /linked \? linkedCostLine\(\)/.test(read("dashboard/hireCards.ts")), "hire cards read the routine, not a try or a price, for an agent that runs in Claude");
 assert.ok(!/db\(\)|agent_defs|activateSpecVersion/.test(hireCard + read("dashboard/components/headChat.tsx")), "the card never writes the database itself");
 for (const f of ["app/(room)/crew/page.tsx", "app/(room)/dept/[id]/page.tsx", "app/(room)/proposals/[id]/page.tsx", "dashboard/org.ts"]) assert.ok(!/build\/new/.test(read(f)), `${f} has no link to the old new-agent screens`);
 

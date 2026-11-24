@@ -38,6 +38,11 @@ export interface HireCardView {
   version: number | null;
   /** Claude (or another connected app) drafted it, rather than the head. */
   fromApp: boolean;
+  /**
+   * It runs in Claude (docs/live-events.md, slice 2): there is no try in OPERATOR, so the card offers
+   * connecting its routine, then Put on duty. Null for an agent that runs in OPERATOR, and for a hire.
+   */
+  claude: LinkedCard | null;
   at: string;
 }
 
@@ -56,6 +61,28 @@ export function hireCostLine(c: MonthCost, dept: { name: string; budget: number 
   if (!c.runsPerMonth) return { big: usd(c.perRun), small: `a run · it runs only when you ask, so $0 a month until then.${inside}` };
   return { big: usd(c.month), small: `a month · about ${usd(c.perRun)} a run, ${c.runsPerMonth} runs.${inside}` };
 }
+
+/** Where an agent that runs in Claude is on its card: its routine has to be connected before it goes on duty. */
+export type LinkedStep = "connect" | "paused" | "ready";
+export interface LinkedCard {
+  step: LinkedStep; paused: string | null;
+  /** Its sheet in this department's chat (?agent=), where the routine is connected; set by dashboard/hireCards.ts. */
+  sheet?: string;
+}
+
+/** The card's step from the routine as integrations/mcp.ts routineState reads it (null: it couldn't be read). */
+export function linkedStep(r: { connected: boolean; paused: string | null } | null): LinkedCard {
+  if (!r || !r.connected) return { step: "connect", paused: null };
+  if (r.paused) return { step: "paused", paused: r.paused };
+  return { step: "ready", paused: null };
+}
+
+/** An agent that runs in Claude has no OPERATOR cost a run: each run starts the owner's Claude routine. */
+export const linkedCostLine = (): { big: string; small: string } =>
+  ({ big: "In Claude", small: "each run starts your Claude routine, so OPERATOR adds no model cost. It counts toward your Claude plan." });
+
+/** What it reads, on its card: the Claude connectors it names, as labels (never granted in OPERATOR). */
+export const linkedReads = (tools: readonly string[]): string[] => tools.map((t) => `${t} · in Claude`);
 
 /** Where a created, off-duty agent is: from its latest try of the version it would go live with. */
 export function hireStage(t: { clean: boolean; status: string } | null): HireStage {

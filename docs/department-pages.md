@@ -166,6 +166,10 @@ and makes a version; Go live needs a clean try, in code and on the button; the o
   (`newAgent`). After a clean try the card offers Put on duty, which is the existing `goLive` (needs the clean
   try, approves the routine the try saved) and then `setEnabled`. A try that wasn't clean says why and offers
   Try again. Agents drafted from Claude through the Operator connector get the same card.
+- **An agent that runs in Claude** (`runs_on = 'claude'`, docs/live-events.md) has no try and no cost a run in
+  OPERATOR, so its card has neither: it lists its Claude connectors as labels, says each run starts the owner's
+  Claude routine, and offers Connect its Claude routine (its sheet) until the routine is connected, then Put on
+  duty, which is `setEnabled` alone (it checks the routine again; there is no routine for Go live to approve).
 - **Links.** Open seats, Crew's New agent and a proposal's Change it open the department's chat with the hire
   typed in (`hireHref`, `?say=`).
 - **Deletes.** `/build/new`, `createBuilt`, `proposalCreate`, the builder's templates and its create mode. The
