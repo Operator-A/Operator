@@ -1,5 +1,5 @@
 "use client";
-// Crew > Canvas (docs/crew-canvas.md): the org chart as a living thing. You, the company seat and a
+// Company > Departments > Chart (was Crew > Canvas) (docs/crew-canvas.md): the org chart as a living thing. You, the company seat and a
 // column per department, each seat a small card. Columns float, lines curve, and a run from today
 // travels up its line as a pulse. Opening a department clears the rest away and shows what its
 // agents last did. Read only: it calls no action, and every box and line comes from
@@ -319,7 +319,7 @@ function Panel({ d, opened, picked, pick }: { d: CanvasData; opened: CanvasDept 
         <DeptLimits d={opened} />
         <Link href={`/dept/${opened.id}`} className="btn dark sm" style={{ alignSelf: "flex-start" }}>Open {opened.name}<Icon name="chevron-right" size={14} /></Link>
         <span className="sub">Its agents, goals and what waits on you are on its page. Click an agent here to see what it does.</span>
-        <Link href="/crew?view=edit" className="lc-link"><Icon name="pencil" size={13} />Edit seats, budget and rules</Link>
+        <Link href="/?tab=departments&view=edit" className="lc-link"><Icon name="pencil" size={13} />Edit seats, budget and rules</Link>
       </aside>
     );
   }

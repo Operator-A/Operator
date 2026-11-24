@@ -137,6 +137,6 @@ export async function openJobsThisWeek(): Promise<{ planId: string; head: string
   const goalOf = (dept: string) => (goals ?? []).find((g) => g.department_id === dept)?.id as string | undefined;
   return data.flatMap((p) => openJobs((p.items ?? []) as PlanItem[]).map((i) => {
     const goal = goalOf(p.department_id as string);
-    return { planId: p.id as string, head: p.head_agent as string | null, title: i.title, href: goal ? `/goals/${goal}` : "/crew" };
+    return { planId: p.id as string, head: p.head_agent as string | null, title: i.title, href: goal ? `/goals/${goal}` : "/?tab=departments&view=chart" };
   }));
 }

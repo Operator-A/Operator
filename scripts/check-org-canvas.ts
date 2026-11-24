@@ -227,14 +227,14 @@ assert.deepEqual(moveLines(full, "care"), [], "a department with no agents says 
 assert.deepEqual(moveLines(full, "gone"), []);
 
 // ---- files: the canvas is the Crew page, it changes nothing, and the folding it replaced is gone
-const canvas = read("dashboard/components/OrgCanvas.tsx"), chart = read("dashboard/components/OrgChart.tsx"), css = read("app/globals.css"), page = read("app/(room)/crew/page.tsx");
+const canvas = read("dashboard/components/OrgCanvas.tsx"), chart = read("dashboard/components/OrgChart.tsx"), css = read("app/globals.css"), page = read("dashboard/components/orgChartPane.tsx");
 assert.match(canvas, /^"use client";/, "the canvas runs in the browser");
 assert.ok(!/router\.refresh\(|\.refresh\(\)/.test(canvas), "the canvas never refreshes the page");
 assert.ok(!/from "@\/app\/|actions"/.test(canvas), "the canvas calls no server action: Edit chart changes things");
 assert.ok(!/Math\.random\(/.test(canvas), "nothing on the canvas is random: the same crew draws the same way");
 assert.match(canvas, /prefers-reduced-motion/, "the canvas holds still for people who ask for less motion");
-assert.match(page, /<OrgCanvas d=\{canvasData\(/, "Crew draws the canvas from canvasData");
-assert.match(page, /view=edit|"edit"/, "Edit chart is its own view");
+assert.match(page, /<OrgCanvas d=\{canvasData\(/, "Company › Departments › Chart draws the canvas from canvasData");
+assert.match(read("dashboard/company-rules.ts"), /DEPT_VIEWS = \["cards", "chart", "edit"\]/, "Edit chart is its own view");
 for (const gone of ["org-fold", "org-sum", "org-team", "org-faces", "org-more", "org-z"]) {
   assert.ok(!css.includes(`.${gone}`), `the style .${gone} is gone`);
   assert.ok(!chart.includes(gone) && !canvas.includes(gone), `no component uses ${gone}`);

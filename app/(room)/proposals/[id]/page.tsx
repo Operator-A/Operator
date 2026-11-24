@@ -156,7 +156,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
               <span className="card-t">Decided</span>
               <span style={{ fontSize: 13.5, lineHeight: 1.55 }}>{pr.outcome ?? pr.state}</span>
               {pr.kind === "new_tool" && pr.state === "accepted" && <Link href={`/connections/find?for=${pr.id}`}>Find a tool for it ›</Link>}
-              {pr.result_ref && pr.kind === "department" && <Link href="/crew">See it on the org chart ›</Link>}
+              {pr.result_ref && pr.kind === "department" && <Link href="/?tab=departments&view=chart">See it on the org chart ›</Link>}
               {pr.result_ref && pr.kind !== "new_tool" && pr.kind !== "department" && <Link href={`/agents/${pr.result_ref}`}>Open {names[pr.result_ref] ?? "the agent"} ›</Link>}
             </>
           )}

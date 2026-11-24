@@ -14,6 +14,14 @@ export const companyHref = (t: CompanyTab) => (t === "chat" ? "/" : `/?tab=${t}`
 /** History and trust levels, folded at the foot of Company > Approvals (slice 10). */
 export const approvalsHistoryHref = () => `${companyHref("approvals")}#history`;
 
+/** Company > Departments shows cards (the default) or the living org chart, and the chart's editor (slice 11). */
+export const DEPT_VIEWS = ["cards", "chart", "edit"] as const;
+export type DeptView = (typeof DEPT_VIEWS)[number];
+export const deptView = (raw: unknown): DeptView => (DEPT_VIEWS as readonly string[]).includes(String(raw)) ? (raw as DeptView) : "cards";
+export const deptViewHref = (v: DeptView) => (v === "cards" ? companyHref("departments") : `${companyHref("departments")}&view=${v}`);
+/** The org switch, your org's day and the chains: a Settings section (slice 11; was Crew > Schedule). */
+export const SCHEDULE_HREF = "/settings/schedule";
+
 /** What "Add a department" types into Avery's chat: her department interview starts from it. */
 export const ADD_DEPT_SAY = "Add a department for ";
 export const addDeptHref = () => `/?say=${encodeURIComponent(ADD_DEPT_SAY)}`;

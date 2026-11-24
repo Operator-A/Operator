@@ -79,7 +79,7 @@ export function orgView(f: Floor, org: Org, x: DeptExtras, proposals: Record<str
   const byId = new Map(all.map((a) => [a.id, a]));
   const view = (s: Seat, depth: number): SeatView => ({
     id: s.id, title: s.title, sub: s.sub, holder: s.holder,
-    agent: s.holder === "agent" && s.agentId ? byId.get(s.agentId) ?? { id: s.agentId, name: s.agentId, role: "Not found", href: "/crew", icon: "cpu", hue: null, look: OFF_LOOK, last: "", state: "missing", job: "", writes: null, summary: null, lastRunId: null } : null,
+    agent: s.holder === "agent" && s.agentId ? byId.get(s.agentId) ?? { id: s.agentId, name: s.agentId, role: "Not found", href: "/?tab=departments&view=chart", icon: "cpu", hue: null, look: OFF_LOOK, last: "", state: "missing", job: "", writes: null, summary: null, lastRunId: null } : null,
     kids: depth > 6 ? [] : childrenOf(org, s.id).map((c) => view(c, depth + 1)),
     proposals: proposals[s.id] ?? [],
   });

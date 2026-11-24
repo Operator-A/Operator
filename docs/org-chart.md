@@ -93,6 +93,8 @@ Lowering or setting a limit applies straight away. Raising or removing one needs
 
 ## How Crew draws it now
 
+Since department pages slice 11, Crew is Company > Departments > Chart, and Edit chart is "Edit seats and who sits where" (`?view=edit`).
+
 Since 2026-11-22 Crew (`/crew`) draws the chart as the living canvas (`docs/crew-canvas.md`), on
 desktop and on a phone, and the phone folding that was here is gone with the read-only chart it
 folded. The structured chart described above is **Edit chart** (`/crew?view=edit`): every seat and

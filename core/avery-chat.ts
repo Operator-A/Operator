@@ -65,7 +65,7 @@ async function frontDoor(): Promise<{ org: Org; agentId: string; spec: AgentSpec
   const org = await loadOrg();
   if (!org) return { problem: "The org chart isn't set up, so there is no company seat for Avery." };
   const seat = companySeat(org);
-  if (!seat || seat.holder !== "agent" || !seat.agentId) return { problem: "Nobody holds the company seat. Put Avery in it on Crew > Org chart." };
+  if (!seat || seat.holder !== "agent" || !seat.agentId) return { problem: "Nobody holds the company seat. Put Avery in it on Company › Departments › Chart › Edit seats." };
   const loaded = await loadSpec(seat.agentId);
   if (!loaded) return { problem: "The agent in the company seat has no saved version." };
   return { org, agentId: seat.agentId, spec: loaded.spec };

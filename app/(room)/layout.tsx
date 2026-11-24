@@ -40,8 +40,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   // six places (docs/builder-flow.md, slice 5): Settings sits apart at the bottom of the sidebar
   const nav = [
     // Company carries the count of what interrupts you: its Approvals tab holds what the Approvals page did (slice 10)
-    { href: "/", match: ["/", "/proposals*"], icon: "layout-dashboard", label: "Company", count: waiting ? String(waiting) : undefined },
-    { href: "/crew", match: ["/crew", "/agents/*", "/build*"], icon: "users", label: "Crew", count: `${floor.crew.length}` },
+    { href: "/", match: ["/", "/proposals*", "/agents/*", "/build*"], icon: "layout-dashboard", label: "Company", count: waiting ? String(waiting) : undefined },
     { href: "/runs", match: "/runs*", icon: "history", label: "Runs" },
     { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: toConnect(floor.health, floor.grants), noteColor: "var(--ink2)" },
   ];

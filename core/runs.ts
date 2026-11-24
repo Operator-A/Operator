@@ -73,7 +73,7 @@ async function deptBlocked(agentId: string): Promise<string | null> {
   if (!at || !why) return null;
   try {
     if ((await hasEmail()) && (await claimBudgetAlert(at.dept.id))) {
-      const line = `${why} Its agents’ runs are skipped at $0 until next month, or until you raise the budget on Crew > Org chart (Edit chart, then Edit on ${at.dept.name}).`;
+      const line = `${why} Its agents’ runs are skipped at $0 until next month, or until you raise the budget in ${at.dept.name}’s settings (the gear on its page).`;
       await emailOwner(`${at.dept.name} reached its monthly AI budget`, `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`, line);
     }
   } catch { /* an alert that can't be sent never changes the skip */ }

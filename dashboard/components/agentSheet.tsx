@@ -241,9 +241,9 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false 
               {pick && (
                 <div className="picker">
                   <button type="button" disabled={!f.manual} onClick={() => { set({ manual: false }); setPick(false); }}>On a schedule{!f.manual && <small>Set</small>}</button>
-                  <Link href="/crew?view=schedule">After another agent finishes<small>Crew &gt; Schedule</small></Link>
-                  <Link href="/crew?view=schedule">When you approve a draft<small>Crew &gt; Schedule</small></Link>
-                  <Link href="/crew?view=schedule">When a live event comes in, like a new order<small>Crew &gt; Schedule</small></Link>
+                  <Link href="/settings/schedule">After another agent finishes<small>Settings &gt; Schedule</small></Link>
+                  <Link href="/settings/schedule">When you approve a draft<small>Settings &gt; Schedule</small></Link>
+                  <Link href="/settings/schedule">When a live event comes in, like a new order<small>Settings &gt; Schedule</small></Link>
                 </div>
               )}
               <span className="dp-tog on" style={{ alignSelf: "flex-start" }}><i />Also when I ask (Run now)</span>

@@ -2,7 +2,7 @@
 // who works in a department, on a small chart. No database, no network. Run: npm run check:dept
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
-import { COMPANY_TABS, companyTab, companyHref, addDeptHref, approvalsHistoryHref, ADD_DEPT_SAY, goalsWord } from "../dashboard/company-rules";
+import { COMPANY_TABS, companyTab, companyHref, addDeptHref, approvalsHistoryHref, ADD_DEPT_SAY, goalsWord, deptView, deptViewHref, SCHEDULE_HREF } from "../dashboard/company-rules";
 import { readFileSync } from "node:fs";
 import { DEPT_TABS, agentHref, goalHref, hireHref, settingsHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
 import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from "../core/flow-rules";
@@ -12,7 +12,8 @@ import type { Org } from "../core/org-rules";
 import { allowedGrants, hireCostLine, hireRuns, hireStage, hireWhenWords, newAgent, tryInFeed } from "../dashboard/hire-rules";
 import { hireWhen, planProposal, toolInfoOf } from "../core/proposal-rules";
 import { changeRows, changeStage, goalRows, goalTitle, keepDecided, moveRows, savedVersionOf } from "../dashboard/change-rules";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { checklist, dayLabel, goalNumber, inFeed, mergeFeed, resultText, runFoot, runState, runTitle, type FeedRun } from "../dashboard/dept-feed";
 
 const org: Org = {
@@ -316,8 +317,8 @@ const cards = read("dashboard/changeCards.ts");
 assert.ok(/"move_agent"/.test(cards) && /kind: "move"/.test(cards), "moves into a department show as its change cards");
 assert.ok(/c\.kind !== "move"/.test(read("dashboard/components/changeCard.tsx")), "a move card has no Change something (a head can't file a move)");
 assert.ok(/pr\.kind !== "move_agent"/.test(read("dashboard/proposalActions.ts")), "Approve on a move card goes through changeInChat");
-const crew = read("app/(room)/crew/page.tsx");
-assert.ok(/<NotInDepartment agents=\{v\.offChart\}/.test(crew) && /orgPlaceAgent/.test(crew), "Crew adds an agent in no department to one");
+const crew = read("dashboard/components/orgChartPane.tsx");
+assert.ok(/<NotInDepartment agents=\{v\.offChart\}/.test(crew) && /orgPlaceAgent/.test(crew), "the Departments chart adds an agent in no department to one");
 assert.ok(!/step 1/.test(crew) && !/step 1/.test(chartSrc), "no pointer to the builder's deleted seat picker");
 assert.ok(/asRole\("owner"\)/.test(orgActs.slice(orgActs.indexOf("export async function orgPlaceAgent"))), "adding to a department is the owner's");
 
@@ -336,4 +337,25 @@ console.log("check:dept ok");
   assert.match(company, /export const maxDuration = 300/, "the Company page gives Approve all and Apply now the same time the Approvals page had");
   assert.ok(!/Quinn/.test(pane) && !/Quinn/.test(needsSrc) && !/queueQuinn/.test(actions), "no agent of one business is named in the shared app");
   assert.ok(!/href: "\/(approvals|proposals)"/.test(needsSrc), "what needs you links to Company > Approvals");
+}
+
+const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : [p]; });
+// slice 11: Crew split into Company > Departments (Cards / Chart / Edit) and Settings > Schedule
+{
+  assert.equal(deptView("chart"), "chart");
+  assert.equal(deptView("edit"), "edit");
+  assert.equal(deptView("schedule"), "cards", "an unknown view is Cards");
+  assert.equal(deptViewHref("cards"), "/?tab=departments");
+  assert.equal(deptViewHref("chart"), "/?tab=departments&view=chart");
+  assert.equal(SCHEDULE_HREF, "/settings/schedule");
+  const crewPage = read("app/(room)/crew/page.tsx"), layout = read("app/(room)/layout.tsx"), company = read("app/(room)/page.tsx");
+  assert.ok(/redirect\(/.test(crewPage) && /SCHEDULE_HREF/.test(crewPage) && !/OrgCanvas|OrgDay|<nav/.test(crewPage), "/crew only sends old links on");
+  assert.ok(!/href: "\/crew"/.test(layout) && /label: "Company"/.test(layout), "Crew left the menu");
+  assert.ok(/<OrgChartPane f=\{f\} edit=\{dview === "edit"\}/.test(company) && /aria-label="Departments view"/.test(company), "Company > Departments has the Cards / Chart switch and the chart");
+  assert.ok(/SCHEDULE_HREF\} className="dp-pill co-org"/.test(company) && /!f\.org\.on &&/.test(company), "an org that is off shows the Turn on pill");
+  const sched = read("app/(room)/settings/schedule/page.tsx");
+  for (const bit of ["<OrgSwitch", "<OrgDay", "<CrewCanvas"]) assert.ok(sched.includes(bit), `Settings > Schedule has ${bit}`);
+  assert.ok(/slug: "schedule"/.test(read("dashboard/settings-sections.ts")), "Schedule is a Settings section");
+  for (const f of [...walk("app"), ...walk("dashboard"), ...walk("core")].filter((x) => /\.tsx?$/.test(x) && !x.includes(join("crew", "page.tsx"))))
+    assert.ok(!/["'`]\/crew(\b|\?|["'`])/.test(read(f)), `${f}: no link to /crew left`);
 }

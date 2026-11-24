@@ -1,4 +1,6 @@
-# Turn on the org: Crew > Schedule
+# Turn on the org: Settings > Schedule
+
+Since department pages slice 11 this is Settings > Schedule (`/settings/schedule`); it was Crew > Schedule, and the text below keeps the old name where it tells the history.
 
 Build Board card 100. Design (approved by the owner 2026-11-16): https://claude.ai/artifact/4KoN9VrHvJ48hiQJqQhrxB
 

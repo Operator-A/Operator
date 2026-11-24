@@ -22,6 +22,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | 8 | Avery's Company page: home, with Chat (Avery), Departments, Goals and Approvals | The Desk and the floating Avery panel |
 | 9 | A calmer top bar: one working pill, the bell's drop-down, your initial's menu | The agent rail, the date pill, the top bar's theme button, the sidebar's Sign out, Everyone |
 | 10 | Company > Approvals holds everything the Approvals page did | The Approvals menu item and page, the Proposals list, the department filter, the bookkeeper-only button and banner |
+| 11 | Company > Departments gets Cards and Chart; Schedule becomes a Settings section | The Crew menu item and page, its department chips and view switch |
 
 ## Slice 1: the page
 
@@ -298,6 +299,24 @@ links to Company > Approvals. The tab, top to bottom:
   queues them after each run) and the Mercury-only banner; the receipt-photo line no longer names an agent.
 
 Tests: `npm run check:dept` (the redirects, the menu, every piece the old page had, no agent of one business named).
+
+## Slice 11: Crew split
+
+Mockup v19. Crew leaves the menu; what it held moves to where people look for it:
+
+- **Company > Departments** gets a Cards / Chart switch (`?view=chart`). Cards is the grid it always had. Chart is the
+  living canvas (`docs/crew-canvas.md`) with "Not in a department yet" under it, and "Edit seats and who sits where"
+  opens the structured chart (`?view=edit`, `docs/org-chart.md`). Both live in `OrgChartPane` and stream in inside the
+  tab's Suspense.
+- **Settings > Schedule** (`/settings/schedule`, after Business) holds the org switch, your org's day and the chains,
+  the same pieces Crew > Schedule had (`docs/org-schedule.md`).
+- While the org is off, the Company header shows a small "Org is off · Turn on" pill that opens Settings > Schedule.
+- `/crew` only sends old links on: `?view=schedule` to Settings > Schedule, `?view=edit` to the edit chart, anything else
+  to the chart. Every link in the app, the agents' messages and Avery's chat now name the new places.
+- **Deletes.** The Crew menu item and page, its department chips (each department has its own page) and its view switch.
+
+Tests: `npm run check:dept` (the redirects, the menu, the switch, the Schedule section, no link to `/crew` left),
+`check:org-canvas`, `check:settings-sections`, `check:speed`.
 
 ## Move cards (card 370)
 
