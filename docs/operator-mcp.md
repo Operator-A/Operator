@@ -77,7 +77,7 @@ carries `WWW-Authenticate` with the resource metadata address, so Claude can sig
 | `list_agents` | Each agent's job, department, duty, model, live version, waiting draft, 30-day runs and cost, spend this month, last run | `/crew` |
 | `get_agent` | One agent's live version and waiting draft in full, with version numbers | `/agents/<id>` |
 | `list_runs` | Recent runs (not tries or chats), with cost, summary and link | `/runs/<id>` |
-| `list_waiting` | Pending approval cards and proposals, in words | `/approvals`, `/proposals/<id>` |
+| `list_waiting` | Pending approval cards and proposals, in words | `/?tab=approvals`, `/proposals/<id>` |
 | `list_tools` | Tools an agent can be given and whether each service is connected; actions apart, marked approver-only | `/connections` |
 | `list_brains` | Models an agent can run on, with prices | |
 | `get_run` (slice 3) | One run in full, tries included: status, cost, summary, each step | `/runs/<id>` |

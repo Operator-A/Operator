@@ -13,7 +13,7 @@ import { db } from "@/core/db";
 import { withRun } from "@/core/runs";
 import { discardLesson, editMemory, forgetMemory, keepLesson } from "@/core/memory";
 import { saveReaction } from "@/core/reactions";
-import { applyApproved, cancelScheduled, decide, decideWithTrust, loadCaps, queueBookkeeperProposals, retry } from "@/core/gateway";
+import { applyApproved, cancelScheduled, decide, decideWithTrust, loadCaps, retry } from "@/core/gateway";
 import { acceptOffer, declineOffer, demote } from "@/core/trust";
 import { LEVEL_WORDS, isRejectKind } from "@/core/trust-rules";
 import { TOOLS as WRITE_TOOLS } from "@/core/gateway/policy";
@@ -347,15 +347,6 @@ export async function retryAction(actionId: string): Promise<ActionResult> {
   } catch (e) { return fail(e); }
 }
 
-/** Turns Quinn's saved proposals into approvals. Writes only Supabase, never Mercury. */
-export async function queueQuinn(): Promise<ActionResult> {
-  const { no } = await asRole("owner"); if (no) return no;
-  try {
-    const r = await queueBookkeeperProposals(null);
-    revalidatePath("/", "layout");
-    return { ok: true, text: r.queued || r.refused ? `${r.queued} new approval${r.queued === 1 ? "" : "s"} from Quinn${r.refused ? `, ${r.refused} refused by the gateway (see the log)` : ""}.` : "No new proposals from Quinn." };
-  } catch (e) { return fail(e); }
-}
 
 // ---- Memory. Teaching, editing and forgetting spend nothing and wake nothing, so they need only the login.
 

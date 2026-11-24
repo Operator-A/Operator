@@ -30,13 +30,18 @@ import { deptRuns } from "@/dashboard/deptFeed";
 import { HeadChat } from "@/dashboard/components/headChat";
 import { DeptTabs } from "@/dashboard/components/deptTabs";
 import { GoalTiles } from "@/dashboard/components/goalTiles";
-import { ApprovalCard } from "@/dashboard/components/approvalBits";
+import { ApprovalCard, Tag } from "@/dashboard/components/approvalBits";
 import { DraftCard } from "@/dashboard/components/department";
 import { currentDraftView } from "@/dashboard/department";
 import { deptAgentIds, deptHue, headAgentId, needsByDept, tabHref } from "@/dashboard/dept-rules";
 import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, addDeptHref, companyHref, companyTab, goalsWord, type CompanyTab } from "@/dashboard/company-rules";
 import { controlsOn } from "@/dashboard/session";
 import { SkelLine } from "@/dashboard/components/skeletons";
+import { ActionButton } from "@/dashboard/components/client";
+import { acceptPromotion, applyWaiting, approveAll, cancelAction, declinePromotion, retryAction, trustToDraft } from "@/dashboard/actions";
+import { trustView, type TrustView } from "@/dashboard/trust";
+import { writeBlocker } from "@/core/gateway";
+import { KIND_WORDS } from "@/core/proposal-rules";
 import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
 import { agentHref } from "@/dashboard/dept-rules";
 import { seatOf } from "@/core/org-rules";
@@ -73,6 +78,9 @@ function goalLine(p: Extract<ProposalPlan, { kind: "goal" }>, dept?: string | nu
   return `${dept ?? "A department"} · ${what}`;
 }
 
+// approving, Approve all and Apply now on the Approvals tab call the outside service once or twice per change
+export const maxDuration = 300;
+
 export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; agent?: string; edit?: string }> }) {
   const jar = await cookies(); // per request only, so nothing here is read at build time (no database)
   const [f, setup, me, sp, biz] = await Promise.all([getFloor(), inSetup(), requireSession(), searchParams, loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
@@ -90,13 +98,13 @@ export default async function Company({ searchParams }: { searchParams: Promise<
     chiefId && !f.byId[chiefId] ? agentNames([chiefId]).catch(() => ({} as Record<string, string>)) : Promise.resolve({} as Record<string, string>),
     monthSpendByAgent(f.crew.map((a) => a.id)).catch(() => ({} as Record<string, number>)),
     tab === "approvals" ? getApprovals().catch(() => null) : Promise.resolve(null),
-    tab === "approvals" ? listProposals(["pending"], 12).catch(() => null) : Promise.resolve(null),
+    tab === "approvals" ? listProposals(["pending", "accepted", "declined", "built", "failed"], 60).catch(() => null) : Promise.resolve(null),
   ]);
   const chief = (chiefId && (f.byId[chiefId]?.name ?? named[chiefId])) || "Avery";
   const spent = Object.values(spend).reduce((t, x) => t + x, 0);
   const budgets = org?.departments.map((d) => d.monthlyBudgetUsd) ?? [];
   const budget = budgets.length && budgets.every((b) => b != null) ? budgets.reduce((t: number, b) => t + (b ?? 0), 0) : null;
-  const apCount = view ? view.pending.length + view.withLead.length + (pending ?? []).filter((p) => interruptKind({ from: "proposal", kind: p.kind })).length : undefined;
+  const apCount = view ? view.pending.length + view.withLead.length + (pending ?? []).filter((p) => p.state === "pending" && interruptKind({ from: "proposal", kind: p.kind })).length : undefined;
   const needsWord = `${waiting} need${waiting === 1 ? "s" : ""} you`;
   const depts = org?.departments.length ?? 0;
 
@@ -315,25 +323,133 @@ async function Goals({ f }: P) {
 }
 
 /** Every draft in the company waiting on an approver, the same card and tap as the Approvals page and each department. */
+/**
+ * Everything waiting on the owner, from every department (slice 10, in place of the Approvals page): an earned-trust
+ * offer, drafts (Approve all), the lead's queue, proposals, what goes out on earned trust inside its undo window, what
+ * was approved but not applied, then history and trust levels folded away.
+ */
 async function Approvals({ f, view, pending }: P) {
   if (!view) return <div className="dp-scroll"><div className="dp-panel"><span className="dp-note">The approvals tables aren’t there yet. Apply the gateway migration to your Supabase project.</span></div></div>;
   const all: ApprovalItem[] = [...view.pending, ...view.withLead];
-  const rules = await rulesFor(all);
+  const controls = controlsOn();
+  const [rules, trust, blocker] = await Promise.all([
+    rulesFor(all),
+    trustView().catch((e): TrustView => ({ offers: [], scheduled: [], lines: [], undoMinutes: 30, problem: e instanceof Error ? e.message : String(e) })),
+    !controls ? Promise.resolve("Real runs are off on this OPERATOR") : writeBlocker(),
+  ]);
   const card = (i: ApprovalItem) => <ApprovalCard key={i.id} i={i} view={view} byId={f.byId} tz={f.tz} rules={rules} look="tab" chatHref={i.department_id ? tabHref(i.department_id, "chat") : "/"} />;
-  const props = (pending ?? []).filter((p) => interruptKind({ from: "proposal", kind: p.kind }));
+  const props = (pending ?? []).filter((p) => p.state === "pending");
+  const decidedProps = (pending ?? []).filter((p) => p.state !== "pending").slice(0, 20);
+  const from = (p: NonNullable<P["pending"]>[number]) => (p.from_agent ? f.byId[p.from_agent]?.name ?? p.from_agent : p.source === "claude" ? "Claude" : "You");
+  const deptName = (id: string | null) => f.chart?.departments.find((d) => d.id === id)?.name ?? null;
+  const nothing = !all.length && !props.length && !trust.offers.length && !trust.scheduled.length && !view.waiting.length;
   return (
     <div className="dp-scroll">
+      {blocker && all.length > 0 && <div className="dp-panel co-blocked"><span className="dp-note">Approving records your decision. Nothing is written yet: {blocker}. Approved items stay approved and go out once that’s fixed.</span></div>}
+      {trust.offers.map((o) => (
+        <div key={`${o.agentId}:${o.tool}`} className="dp-panel co-offer">
+          <div className="dp-panel-h"><h3>Earned trust</h3><span className="sp" /><span className="dp-note">Asked only after 28 of the last 30 went through unedited</span></div>
+          <span className="co-offer-t">{o.text}</span>
+          <span className="dp-note">Caps, refusals and fresh checks still apply to every one. A “wrong” later drops it straight back to Draft.</span>
+          <div className="dp-btns">
+            <ActionButton className="dp-btn go" action={acceptPromotion.bind(null, o.agentId, o.tool)}>Yes, promote</ActionButton>
+            <ActionButton className="dp-btn" action={declinePromotion.bind(null, o.agentId, o.tool)}>Not yet</ActionButton>
+          </div>
+        </div>
+      ))}
       <div className="dp-panel">
-        <div className="dp-panel-h"><h3>Waiting for your OK</h3><span className="sp" /><span className="dp-note">Every department’s drafts in one list. Each also sits in its department’s chat, and approving in either place is the same tap. <Link href="/approvals" style={{ color: "var(--ink2)", textDecoration: "underline" }}>History and trust levels</Link></span></div>
+        <div className="dp-panel-h">
+          <h3>Waiting for your OK</h3><span className="sp" />
+          {view.pending.length > 1 && (
+            <ActionButton className="dp-btn sm" action={approveAll.bind(null, view.pending.map((i) => i.id))}
+              confirm={{ title: `Approve all ${view.pending.length}?`, body: blocker ? `Your approvals are recorded. Nothing is written until this is fixed: ${blocker}.` : "Each one is checked again right before it is written, exactly as when you approve it alone.", lines: [{ k: "Drafts", v: String(view.pending.length) }], confirmLabel: "Approve all" }}>
+              Approve all {view.pending.length}
+            </ActionButton>
+          )}
+          <span className="dp-note co-full">Every department’s drafts in one list. Each also sits in its department’s chat, and approving in either place is the same tap.</span>
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {!all.length && !props.length && <div className="dp-note" style={{ padding: "28px 16px", textAlign: "center", fontSize: 14 }}>Nothing is waiting for your OK.</div>}
-          {props.map((p) => (
-            <div key={p.id} className="dp-ap"><div className="dp-ap-h"><b>{p.title}</b></div><span className="dp-note">{firstSentence(p.why, 220)}</span><div className="dp-btns"><Link href={`/proposals/${p.id}`} className="dp-btn dark">Review</Link></div></div>
-          ))}
+          {nothing && <div className="dp-note" style={{ padding: "28px 16px", textAlign: "center", fontSize: 14 }}>Nothing is waiting for your OK.</div>}
+          {!view.pending.length && !nothing && <span className="dp-note">No drafts right now.</span>}
           {view.pending.map(card)}
-          {view.withLead.length > 0 && <span className="dp-note">With the lead first ({view.withLead.length}): the lead adds a note or sends a draft back once; only your tap approves.</span>}
+          {view.withLead.length > 0 && <span className="dp-note">With the lead first ({view.withLead.length}): departments with “Lead checks drafts first” on. The lead adds a note or sends a draft back once; only your tap approves.</span>}
           {view.withLead.map(card)}
         </div>
+      </div>
+      {props.length > 0 && (
+        <div className="dp-panel">
+          <div className="dp-panel-h"><h3>Proposals to decide</h3><span className="sp" /><span className="dp-note">Hires, departments, goal changes, tools and retirements. Nothing happens until you say yes.</span></div>
+          <div className="co-rows">
+            {props.map((p) => (
+              <div key={p.id} className="co-row"><span><b>{p.title}</b><br /><small>{KIND_WORDS[p.kind]} · from {from(p)}{deptName(p.department_id) ? ` · ${deptName(p.department_id)}` : ""}</small></span><Link href={`/proposals/${p.id}`} className="dp-btn sm">Open</Link></div>
+            ))}
+          </div>
+        </div>
+      )}
+      {trust.scheduled.length > 0 && (
+        <div className="dp-panel">
+          <div className="dp-panel-h"><h3>Going out on earned trust</h3><span className="sp" /><span className="dp-note">Each goes by itself when its {trust.undoMinutes}-minute undo window ends (checked every 15 minutes). Cancel writes nothing.</span></div>
+          <div className="co-rows">
+            {trust.scheduled.map((a) => (
+              <div key={a.id} className="co-row"><span>{a.name} · {a.what}: {a.label}</span><small>after {when(a.executeAfter, f.tz)}</small>
+                <ActionButton className="dp-btn sm" action={cancelAction.bind(null, a.id, "not_now")}>Cancel</ActionButton>
+                <ActionButton className="dp-btn sm" action={cancelAction.bind(null, a.id, "wrong")} title="Cancels it and drops this kind back to Draft">Cancel, it’s wrong</ActionButton>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {view.waiting.length > 0 && (
+        <div className="dp-panel">
+          <div className="dp-panel-h"><h3>Approved, not applied yet</h3><span className="sp" />
+            <ActionButton className="dp-btn sm" disabled={!controls} title={!controls ? "Real runs are off on this OPERATOR" : undefined} action={applyWaiting}
+              confirm={{ title: "Apply approved changes?", body: "Each one is checked again first. Each runs as its agent, so it’s skipped while that agent is off duty.", confirmLabel: "Apply now" }}>Apply now</ActionButton>
+          </div>
+          <div className="co-rows">
+            {view.waiting.map((i) => (
+              <div key={i.id} className="co-row"><span>{i.title}{i.action_reason && <small> · {i.action_reason}</small>}</span><Tag s={i.action_status} />
+                {i.action_status === "failed" && <ActionButton className="dp-btn sm" disabled={!controls} action={retryAction.bind(null, i.action_id)}>Retry</ActionButton>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="dp-panel" id="history">
+        <details className="co-hist">
+          <summary>History and trust levels</summary>
+          <h5>Trust levels</h5>
+          <span className="dp-note">Earned per agent and kind of action: 28 of the last 30 approved unedited, then you confirm.</span>
+          {trust.problem && <span className="dp-note">{trust.problem}</span>}
+          <div className="co-rows">
+            {!trust.lines.length && <span className="dp-note">No kinds of action yet.</span>}
+            {trust.lines.map((l) => (
+              <div key={`${l.agentId}:${l.tool}`} className="co-row"><span><b>{l.name} · {l.what}</b> <small>· {l.levelWords}</small><br /><small>{l.words}{l.reason && l.level === "draft" && l.changedAt ? ` Last change: ${l.reason}` : ""}</small></span>
+                {l.level !== "draft" && <ActionButton className="dp-btn sm" action={trustToDraft.bind(null, l.agentId, l.tool)}>Back to Draft</ActionButton>}
+              </div>
+            ))}
+          </div>
+          <h5>Decided</h5>
+          <div className="co-rows">
+            {!view.decided.length && <span className="dp-note">Nothing decided yet.</span>}
+            {view.decided.map((i) => (
+              <div key={i.id} className="co-row"><span>{i.title}{i.action_reason && <small> · {i.action_reason}</small>}</span><small>{i.decided_at ? when(i.decided_at, f.tz) : ""}</small><Tag s={i.status === "expired" ? "expired" : i.action_status} /></div>
+            ))}
+            {decidedProps.map((p) => (
+              <Link key={p.id} href={`/proposals/${p.id}`} className="co-row"><span>{p.title}<small> · {KIND_WORDS[p.kind]}</small></span><small>{when(p.created_at, f.tz)}</small><Tag s={p.state} /></Link>
+            ))}
+          </div>
+          <h5>Gateway log</h5>
+          <span className="dp-note">Every write an agent asked for, allowed or refused.</span>
+          <div className="co-rows">
+            {!view.log.length && <span className="dp-note">No actions yet.</span>}
+            {view.log.map((g) => (
+              <div key={g.id} className="co-row"><span><b>{f.byId[g.agent_id]?.name ?? g.agent_id}</b> · <code>{g.tool}</code> · {g.action_type}{g.reason && <small> · {g.reason}</small>}</span><small>{when(g.created_at, f.tz)}</small><Tag s={g.status} />
+                {g.exec_run_id && <Link href={`/runs/${g.exec_run_id}`} className="dp-note">run</Link>}
+              </div>
+            ))}
+          </div>
+          <Link href="/connections/find#requests" className="dp-note co-link">Tools your heads asked for, and how many times, are on Find a tool ›</Link>
+        </details>
       </div>
     </div>
   );

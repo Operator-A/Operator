@@ -11,6 +11,8 @@ export const COMPANY_TAB_LABEL: Record<CompanyTab, string> = { chat: "Chat", dep
 export const companyTab = (raw: unknown): CompanyTab => (COMPANY_TABS as readonly string[]).includes(String(raw)) ? (raw as CompanyTab) : "chat";
 /** The tab's address: Chat is the page itself. */
 export const companyHref = (t: CompanyTab) => (t === "chat" ? "/" : `/?tab=${t}`);
+/** History and trust levels, folded at the foot of Company > Approvals (slice 10). */
+export const approvalsHistoryHref = () => `${companyHref("approvals")}#history`;
 
 /** What "Add a department" types into Avery's chat: her department interview starts from it. */
 export const ADD_DEPT_SAY = "Add a department for ";

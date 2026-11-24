@@ -2,7 +2,7 @@
 // who works in a department, on a small chart. No database, no network. Run: npm run check:dept
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
-import { COMPANY_TABS, companyTab, companyHref, addDeptHref, ADD_DEPT_SAY, goalsWord } from "../dashboard/company-rules";
+import { COMPANY_TABS, companyTab, companyHref, addDeptHref, approvalsHistoryHref, ADD_DEPT_SAY, goalsWord } from "../dashboard/company-rules";
 import { readFileSync } from "node:fs";
 import { DEPT_TABS, agentHref, goalHref, hireHref, settingsHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
 import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from "../core/flow-rules";
@@ -120,12 +120,12 @@ assert.deepEqual(feed.map((f) => f.id), ["r1", "t1", "r2"], "time order, oldest 
 assert.equal(feed[0].kind === "run" && feed[0].status, "ok", "a run seen twice keeps its newest copy");
 
 const read = (p: string) => readFileSync(p, "utf8");
-const layout = read("app/(room)/layout.tsx"), page = read("app/(room)/dept/[id]/page.tsx"), approvals = read("app/(room)/approvals/page.tsx"), company = read("app/(room)/page.tsx");
+const layout = read("app/(room)/layout.tsx"), page = read("app/(room)/dept/[id]/page.tsx"), company = read("app/(room)/page.tsx");
 assert.ok(/needsByDept\(/.test(layout) && /href: `\/dept\/\$\{d\.id\}`/.test(layout), "the side menu lists each department with its red count");
 assert.ok(!existsSync("app/(room)/everyone/page.tsx") && !/\/everyone/.test(layout), "Everyone is gone (slice 9): the bell is a drop-down");
 assert.ok(/needsByDept\(/.test(page) && /needsByDept\(/.test(company), "the department page and the Company page count with needsByDept");
-assert.ok(/<ApprovalCard /.test(page) && /<ApprovalCard /.test(approvals), "a department's Approvals tab and the Approvals page draw the same card");
-assert.ok(!/approve\.bind/.test(page) && !/approve\.bind/.test(approvals), "only ApprovalCard binds Approve, so approving is one path");
+assert.ok(/<ApprovalCard /.test(page) && /<ApprovalCard /.test(company), "a department's Approvals tab and the Company page's draw the same card");
+assert.ok(!/approve\.bind/.test(page) && !/approve\.bind/.test(company), "only ApprovalCard binds Approve, so approving is one path");
 assert.ok(!/opened\.goals|opened\.rules|<Feed runs=\{d\.runs\.filter\(\(r\) => ids/.test(read("dashboard/components/OrgCanvas.tsx")), "the Crew canvas no longer has its own department panel");
 
 const headChat = read("core/head-chat.ts"), actions = read("dashboard/chatActions.ts");
@@ -322,3 +322,18 @@ assert.ok(!/step 1/.test(crew) && !/step 1/.test(chartSrc), "no pointer to the b
 assert.ok(/asRole\("owner"\)/.test(orgActs.slice(orgActs.indexOf("export async function orgPlaceAgent"))), "adding to a department is the owner's");
 
 console.log("check:dept ok");
+
+// slice 10: the Approvals page's whole job moved to Company > Approvals; the menu item and the coffee-shop bits went
+{
+  assert.equal(approvalsHistoryHref(), "/?tab=approvals#history");
+  const company = read("app/(room)/page.tsx"), layout = read("app/(room)/layout.tsx"), needsSrc = read("dashboard/needs.ts"), actions = read("dashboard/actions.ts");
+  for (const p of ["app/(room)/approvals/page.tsx", "app/(room)/proposals/page.tsx"])
+    assert.match(read(p), /redirect\(companyHref\("approvals"\)\)/, `${p} only sends old links to Company > Approvals`);
+  assert.ok(!/href: "\/approvals"/.test(layout) && /label: "Company", count: waiting/.test(layout), "Approvals left the menu; Company carries its count");
+  const pane = company.slice(company.indexOf("async function Approvals("));
+  for (const bit of ["acceptPromotion.bind", "declinePromotion.bind", "approveAll.bind", "cancelAction.bind", "action={applyWaiting}", "retryAction.bind", "trustToDraft.bind", "view.log.map", "view.decided.map", 'id="history"', "Proposals to decide"])
+    assert.ok(pane.includes(bit), `Company > Approvals has what the Approvals page had: ${bit}`);
+  assert.match(company, /export const maxDuration = 300/, "the Company page gives Approve all and Apply now the same time the Approvals page had");
+  assert.ok(!/Quinn/.test(pane) && !/Quinn/.test(needsSrc) && !/queueQuinn/.test(actions), "no agent of one business is named in the shared app");
+  assert.ok(!/href: "\/(approvals|proposals)"/.test(needsSrc), "what needs you links to Company > Approvals");
+}

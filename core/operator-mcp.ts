@@ -300,11 +300,11 @@ async function listWaiting(origin: string): Promise<ToolAnswer> {
   const names = await agentNames([...new Set([...(ap.data ?? []).map((a) => a.agent_id as string), ...(props ?? []).flatMap((p) => (p.from_agent ? [p.from_agent] : []))])]);
   const body = {
     approval_cards: (ap.data ?? []).map((a) => ({ title: clip(a.title, 200), from: names[a.agent_id] ?? a.agent_id, since: a.created_at })),
-    approvals_link: `${origin}/approvals`,
+    approvals_link: `${origin}/?tab=approvals`,
     proposals: (props ?? []).map((p) => ({ title: clip(p.title, 200), kind: p.kind, from: p.from_agent ? names[p.from_agent] ?? p.from_agent : p.source === "claude" ? "Claude" : "the owner", why: clip(p.why, 240), since: p.created_at, link: `${origin}/proposals/${p.id}` })),
     note: "Only a person decides these, in OPERATOR.",
   };
-  return { text: answerText(body, `${origin}/approvals`) };
+  return { text: answerText(body, `${origin}/?tab=approvals`) };
 }
 
 /** Whether the services a tool needs are connected and not paused; null when it needs none. */

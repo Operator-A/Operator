@@ -21,6 +21,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | 7 | Department settings on its page: name, monthly AI budget, emails a day, head checks drafts, rules, remove | Crew's department editor |
 | 8 | Avery's Company page: home, with Chat (Avery), Departments, Goals and Approvals | The Desk and the floating Avery panel |
 | 9 | A calmer top bar: one working pill, the bell's drop-down, your initial's menu | The agent rail, the date pill, the top bar's theme button, the sidebar's Sign out, Everyone |
+| 10 | Company > Approvals holds everything the Approvals page did | The Approvals menu item and page, the Proposals list, the department filter, the bookkeeper-only button and banner |
 
 ## Slice 1: the page
 
@@ -278,6 +279,25 @@ The menu items come next, each its own slice: Approvals into Company (10), Crew 
 Tests: `npm run check:header` (the pill's words, which runs it lists and where each opens, the bell's order and
 cap, the three drop-downs and nothing they replaced), `check:dept`, `check:sidebar`, `check:signout`,
 `check:interrupts`, `check:speed`.
+
+## Slice 10: Approvals on the Company page
+
+Mockup v18. Approvals leaves the menu; Company carries its red count, and `/approvals` and `/proposals` only send old
+links to Company > Approvals. The tab, top to bottom:
+
+- **Earned trust.** A card for each offer (28 of the last 30 unedited): Yes, promote / Not yet, the same actions as before.
+- **Waiting for your OK.** Every department's drafts as `ApprovalCard`, with Approve all; then the lead's queue.
+- **Proposals to decide.** Every pending proposal, each opening its own page (`/proposals/[id]` stays).
+- **Going out on earned trust.** What runs by itself when its undo window ends: Cancel, or Cancel, it's wrong.
+- **Approved, not applied yet.** Apply now and Retry.
+- **History and trust levels** (folded, `#history`): trust levels with Back to Draft, decided cards and proposals, the
+  gateway log. A department's "History and trust levels" link opens it.
+- When writes are blocked (real runs off, a missing sign-in), one generic note says approving records the decision.
+- **Deletes.** The Approvals page and its department filter (each department has its own tab), the Proposals list, and
+  the leftovers of one business: the button that queued one bookkeeper's proposals by hand (the books sync already
+  queues them after each run) and the Mercury-only banner; the receipt-photo line no longer names an agent.
+
+Tests: `npm run check:dept` (the redirects, the menu, every piece the old page had, no agent of one business named).
 
 ## Move cards (card 370)
 

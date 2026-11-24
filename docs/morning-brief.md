@@ -14,7 +14,7 @@ yesterday's revenue. With no daily numbers yet: `Thu: <focus>`.
 
 1. **Today's focus.** The action, the reason, and one button to the Control Room.
 2. **Waiting on you.** Only lines that are true today, each linked where a link exists:
-   - approvals pending, with the age of the oldest → Control Room `/approvals`
+   - approvals pending, with the age of the oldest → Control Room Company > Approvals (`/?tab=approvals`)
    - lead email drafts put in Gmail in the last 24 hours → Gmail drafts
    - failed agent runs in the last 24 hours → that run in the Control Room
    - open orders by Shopify's own fulfillment status: to ship, partly shipped, and on hold (by order number)

@@ -55,7 +55,7 @@ function FindingRow({ f, i, tile, canEdit, owner, onChange }: { f: Finding; i: n
         </div>
       )}
       {f.fix_run && f.fix_run.status !== "running" && (
-        <span className="soft-box" role="status" style={{ fontSize: 13 }}>{f.fix_run.note}{f.fix_run.status === "done" && f.fix_run.staged > 0 && <> <Link href="/approvals">Open Approvals</Link></>}</span>
+        <span className="soft-box" role="status" style={{ fontSize: 13 }}>{f.fix_run.note}{f.fix_run.status === "done" && f.fix_run.staged > 0 && <> <Link href="/?tab=approvals">Open Approvals</Link></>}</span>
       )}
       {bad && <span className="soft-box" role="status" style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red-ink)" }}>{bad}{grant && <> <Link href={grant}>Give an agent this action</Link></>}</span>}
     </li>

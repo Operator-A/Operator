@@ -500,6 +500,26 @@ h1, h2, h3, p { margin: 0; }
 .co-later small { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--mut); }
 .co-later ul { margin: 0; padding-left: 18px; }
 .co-later a { color: inherit; }
+/* Company > Approvals holds everything the Approvals page did (slice 10, mockup v18) */
+.dp-btn.sm { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 10px; }
+.co-full { flex-basis: 100%; }
+.co-offer { border-left: 4px solid var(--mint-ink); }
+.co-offer-t { font-size: 14.5px; font-weight: 600; line-height: 1.45; }
+.co-blocked { background: var(--yel-soft); border-color: transparent; }
+.co-blocked .dp-note { color: var(--yel-ink); font-size: 13px; }
+.co-rows { display: flex; flex-direction: column; }
+.co-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--bd); font-size: 13px; color: var(--ink); }
+.co-row:first-child { border-top: 0; }
+a.co-row:hover { text-decoration: none; background: var(--soft); }
+.co-row > span:first-child { flex: 1; min-width: 200px; line-height: 1.45; }
+.co-row small { color: var(--mut); font-size: 12px; }
+.co-row b { font-weight: 600; }
+.co-hist > summary { cursor: pointer; list-style: none; padding: 2px; font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.co-hist > summary::-webkit-details-marker { display: none; }
+.co-hist > summary::before { content: "›"; display: inline-block; transition: transform .2s; color: var(--mut); }
+.co-hist[open] > summary::before { transform: rotate(90deg); }
+.co-hist h5 { margin: 16px 0 2px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); }
+.co-link { display: inline-block; margin-top: 12px; text-decoration: underline; }
 /* five words wide on a phone: the tabs drop their grey counts and some padding so Departments fits */
 @media (max-width: 760px) { .dp.co .dp-tabs { grid-template-columns: .7fr 1.45fr .8fr 1.25fr; } .dp.co .dp-tabs a .c:not(.red) { display: none; } }
 .dp-gear:hover { color: var(--ink); text-decoration: none; }

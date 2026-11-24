@@ -26,6 +26,7 @@ import { ApprovalCard } from "@/dashboard/components/approvalBits";
 import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
 import { DeptSettingsFor } from "@/dashboard/components/deptSettingsFor";
 import { GoalTiles } from "@/dashboard/components/goalTiles";
+import { approvalsHistoryHref } from "@/dashboard/company-rules";
 
 const GEAR = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" /></svg>;
 
@@ -195,7 +196,7 @@ async function Approvals({ id, name, roster, tz }: P) {
   return (
     <div className="dp-scroll">
       <div className="dp-panel">
-        <div className="dp-panel-h"><h3>Waiting for your OK</h3><span className="sp" /><span className="dp-note">Everything {name}’s agents drafted, in one place. Approving here or in the chat is the same tap. <Link href={`/approvals?dept=${id}`} style={{ color: "var(--ink2)", textDecoration: "underline" }}>History and trust levels</Link></span></div>
+        <div className="dp-panel-h"><h3>Waiting for your OK</h3><span className="sp" /><span className="dp-note">Everything {name}’s agents drafted, in one place. Approving here or in the chat is the same tap. <Link href={approvalsHistoryHref()} style={{ color: "var(--ink2)", textDecoration: "underline" }}>History and trust levels</Link></span></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {!pending.length && !withLead.length && <div className="dp-note" style={{ padding: "28px 16px", textAlign: "center", fontSize: 14 }}>Nothing from {name} is waiting for your OK.</div>}
           {pending.map(card)}

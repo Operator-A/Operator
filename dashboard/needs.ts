@@ -6,6 +6,7 @@ import type { Floor } from "./data";
 import type { Seen } from "./seen";
 import { stateOf } from "./status";
 import { INTERRUPTS, interruptKind, type Interrupt, type Source } from "./needs-rules";
+import { companyHref } from "./company-rules";
 
 export type Priority = "High" | "Medium" | "Low";
 /**
@@ -15,6 +16,8 @@ export type Priority = "High" | "Medium" | "Low";
 export interface Need { pri: Priority; title: string; sub: string; href: string; agentId?: string; run?: boolean; source: Source; interrupt: Interrupt | null; n: number }
 type Item = Omit<Need, "interrupt" | "n"> & { n?: number };
 
+// what waits on you lives on Company > Approvals (slice 10)
+const APPROVALS = companyHref("approvals");
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const APPROVAL_SUB: Record<Interrupt, string> = {
   first_time: "Kinds of action your agents haven’t earned trust for yet. Nothing goes out until you approve.",
@@ -54,7 +57,7 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
   for (const tool of f.approvalTools) { const k = interruptKind({ from: "approval", tool }) ?? "later"; cards[k] = (cards[k] ?? 0) + 1; }
   for (const k of INTERRUPTS) {
     const n = cards[k];
-    if (n) out.push({ pri: "High", title: `${s(n, "approval")} waiting for your OK`, sub: APPROVAL_SUB[k], href: "/approvals", n, source: { from: "approval", tool: f.approvalTools.find((t) => interruptKind({ from: "approval", tool: t }) === k) ?? "" } });
+    if (n) out.push({ pri: "High", title: `${s(n, "approval")} waiting for your OK`, sub: APPROVAL_SUB[k], href: APPROVALS, n, source: { from: "approval", tool: f.approvalTools.find((t) => interruptKind({ from: "approval", tool: t }) === k) ?? "" } });
   }
   // proposals: the four's kinds show as cards on the Company page; the rest are one line for later
   const kinds: Record<string, number> = {};
@@ -62,11 +65,11 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
   for (const k of INTERRUPTS) {
     const n = Object.entries(kinds).filter(([kind]) => interruptKind({ from: "proposal", kind }) === k).reduce((t, [, c]) => t + c, 0);
     const kind = Object.keys(kinds).find((x) => interruptKind({ from: "proposal", kind: x }) === k);
-    if (n && kind) out.push({ pri: "High", title: s(n, PROPOSAL_LINE[k][0]), sub: PROPOSAL_LINE[k][1], href: "/proposals", n, source: { from: "proposal", kind } });
+    if (n && kind) out.push({ pri: "High", title: s(n, PROPOSAL_LINE[k][0]), sub: PROPOSAL_LINE[k][1], href: APPROVALS, n, source: { from: "proposal", kind } });
   }
   const laterKinds = Object.entries(kinds).filter(([kind]) => !interruptKind({ from: "proposal", kind }));
   const later = laterKinds.reduce((t, [, c]) => t + c, 0);
-  if (later) out.push({ pri: "Medium", title: `${s(later, "proposal")} to decide`, sub: "Tool grants, new tools and retirements. Nothing happens until you say yes.", href: "/proposals", n: later, source: { from: "proposal", kind: laterKinds[0][0] } });
+  if (later) out.push({ pri: "Medium", title: `${s(later, "proposal")} to decide`, sub: "Tool grants, new tools and retirements. Nothing happens until you say yes.", href: APPROVALS, n: later, source: { from: "proposal", kind: laterKinds[0][0] } });
   for (const j of f.jobsForYou) {
     const head = j.head ? f.byId[j.head]?.name ?? j.head : "A head";
     out.push({ pri: "Low", title: j.title, sub: `A job for you in ${head}’s plan this week. Mark it done on the goal page.`, href: j.href, ...(j.head ? { agentId: j.head } : {}), source: { from: "job" } });
@@ -75,7 +78,7 @@ export function needs(f: Floor, now = Date.now(), seen: Seen = {}): Need[] {
     const a = f.byId[agentId];
     if (a && n) out.push({ pri: "Low", title: `Review ${n} lesson${n === 1 ? "" : "s"} for ${a.name}`, sub: "Proposed from your rejections. Keep, edit or discard each one.", href: `/agents/${agentId}?tab=memory`, agentId, source: { from: "lesson" } });
   }
-  if (f.photosWaiting) out.push({ pri: "Medium", title: `${f.photosWaiting} charge${f.photosWaiting === 1 ? "" : "s"} need a receipt photo`, sub: "Quinn couldn’t find a receipt. The list is on Quinn’s profile and the latest Books page in Notion.", href: "/agents/bookkeeper", agentId: "bookkeeper", source: { from: "photos" } });
+  if (f.photosWaiting) out.push({ pri: "Medium", title: `${f.photosWaiting} charge${f.photosWaiting === 1 ? "" : "s"} need a receipt photo`, sub: "The bookkeeper couldn’t find a receipt for these. The list is in its latest run and the latest Books page in Notion.", href: "/agents/bookkeeper", agentId: "bookkeeper", source: { from: "photos" } });
   for (const c of CONNECTIONS) {
     for (const k of c.checks) {
       if (f.health[k.key] || k.key === "supabase") continue;

@@ -114,7 +114,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
   return (
     <>
       <div className="stack" style={{ gap: 8 }}>
-        <span className="sub"><Link href="/approvals">Approvals</Link> › <Link href="/proposals">Proposals</Link> › {KIND_WORDS[pr.kind]}</span>
+        <span className="sub"><Link href="/?tab=approvals">Company › Approvals</Link> › {KIND_WORDS[pr.kind]}</span>
         <span className="sub">From {fromName}{dept ? ` · ${dept.name}` : ""} · {when(pr.created_at, tz)}{pr.state !== "pending" && pr.decided_at ? ` · decided ${when(pr.decided_at, tz)}` : ""}</span>
         <h1 className="h1">{pr.title}</h1>
       </div>
