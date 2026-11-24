@@ -65,7 +65,7 @@ assert.ok(!/export function RailLink/.test(client) && /export function HeaderPop
 assert.ok(!/^\.(rail|rail-item|rail-av|rail-dot|date-pill|me|badge) /m.test(css), "the rail, date pill and old initial styles are gone");
 assert.ok(/^\.hp-pop \{/m.test(css) && /prefers-reduced-motion: reduce\) \{ \.hp-pulse/.test(css), "the drop-down is styled and holds still when motion is reduced");
 assert.ok(!existsSync("app/(room)/everyone/page.tsx"), "Everyone is gone: the bell's drop-down and Company > Departments replace it");
-const phoneMenu = layout.slice(layout.indexOf("<MobileMenu"), layout.indexOf("</MobileMenu>"));
-assert.ok(/<SignOutButton \/>/.test(phoneMenu), "on phones Sign out stays at the bottom of the menu");
+const phoneMe = layout.slice(layout.indexOf('<div className="side-me phone-only">'), layout.indexOf("</SideMenu>"));
+assert.ok(/<SignOutButton \/>/.test(phoneMe), "on phones Sign out stays at the bottom of the menu");
 
 console.log("check:header ok");

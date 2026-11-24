@@ -5,7 +5,7 @@ import { getFloor, requireSession } from "@/dashboard/data";
 import { alerting, interruptCount, needs } from "@/dashboard/needs";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import { isLive } from "@/dashboard/status";
-import { HeaderPop, LiveRefresher, MobileMenu, SideLink, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
+import { HeaderPop, LiveRefresher, MenuButton, MenuRoot, SideLink, SideMenu, ThemeToggle, type RecentRun } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { SignOutButton } from "@/dashboard/components/signOut";
 import { headOf } from "@/core/org";
@@ -64,7 +64,10 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   return (
     <div className="page">
       <div className="ws">
+        <MenuRoot>
         <header className="topbar">
+          {/* phones: the menu button at the left opens the sidebar below as a drawer from the left */}
+          <MenuButton alert={!!waiting} />
           <Link href="/" className="brand">
             <span className="brand-mark">{initials(biz.name)}</span>
             <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}><span style={{ fontWeight: 700, fontSize: 17, letterSpacing: "-.02em" }}>{biz.name}</span><span style={{ fontSize: 12 }} className="muted">Mission control</span></span>
@@ -93,22 +96,10 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
               <Link href="/settings" className="hp-mi"><Icon name="settings" size={16} />Settings</Link>
               <SignOutButton look="menu" />
             </HeaderPop>
-            <MobileMenu alert={!!waiting}>
-              <div className="sheet-group">
-                {nav.map((it) => <SideLink key={it.label} {...it} />)}
-              </div>
-              <div className="sheet-group">{deptList}</div>
-              <div className="sheet-group">{moreList}</div>
-              <div className="sheet-group">
-                <SideLink href="/settings" match="/settings*" icon="settings" label="Settings" />
-                <SignOutButton />
-                <div style={{ padding: "8px 12px 0" }}><ThemeToggle initial={theme} wide /></div>
-              </div>
-            </MobileMenu>
           </div>
         </header>
         <div className="body">
-          <aside className="side">
+          <SideMenu>
             {/* the top places and departments scroll inside the panel when they don't fit; Settings stays pinned */}
             <div className="side-scroll">
               <div className="side-group">
@@ -118,10 +109,17 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
               <div className="side-group">{moreList}</div>
             </div>
             <SideLink href="/settings" match="/settings*" icon="settings" label="Settings" />
-          </aside>
+            {/* phones: your initial's menu is hidden in the top bar, so who you are, light or dark and Sign out end the drawer */}
+            <div className="side-me phone-only">
+              <div className="hp-who"><b>{me.email}</b>{ROLE_LABELS[me.role]}</div>
+              <ThemeToggle initial={theme} wide />
+              <SignOutButton />
+            </div>
+          </SideMenu>
           <main className="main">{children}</main>
           <LiveRefresher runs={recent} />
         </div>
+        </MenuRoot>
       </div>
     </div>
   );

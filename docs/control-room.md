@@ -46,7 +46,7 @@ No sample data ships. Where the design used sample numbers, the build shows the 
 
 ### Phones
 
-At 860px and narrower (`app/globals.css`, last block): one sticky top bar with the bell and a menu button (`MobileMenu` in `dashboard/components/client.tsx`) that opens the full navigation as a sheet; the crew rail turns into labeled agent chips that stay visible on every screen (switching agent keeps the current tab, on desktop too); outer frames drop away; the run log stacks each run; the agent map stacks its columns; two-column sections become one; Connections stacks its tiles and the opened connection. Desktop is unchanged. Phone screenshots: project files `agents-repo/control-room-screens/mobile/`.
+At 860px and narrower (`app/globals.css`, last block): one sticky top bar with a menu button at its left, the working dot and the bell; the menu button (`MenuButton`) slides the sidebar itself (`SideMenu`, both in `dashboard/components/client.tsx`) in from the left over a dimmed page, with who you are, light or dark and Sign out at its foot (decided 2026-11-24; it closes on the dim, Escape, a swipe left, a link, or navigating; `npm run check:sidebar` measures it closed and open); the crew rail turns into labeled agent chips that stay visible on every screen (switching agent keeps the current tab, on desktop too); outer frames drop away; the run log stacks each run; the agent map stacks its columns; two-column sections become one; Connections stacks its tiles and the opened connection. Desktop is unchanged. Phone screenshots: project files `agents-repo/control-room-screens/mobile/`.
 
 ## 4. Safety rules for the UI
 
