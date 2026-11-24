@@ -112,6 +112,8 @@ export interface Roster {
   byId: Record<string, CrewMember>;
   /** The agents a chain may pick, for Crew > Schedule and the chain actions. */
   palette: Crew;
+  /** The active flow's chains (read once here), for the agent sheet's hand-offs (card 400). */
+  chains: Chain[];
 }
 
 /** What waits on the owner (card 304): getCounts. */
@@ -247,7 +249,7 @@ export const getOrgSwitch = cache(async (): Promise<OrgState> => {
 export const getRoster = cache(async (): Promise<Roster> => {
   await cookies();
   const now = Date.now();
-  const empty: Roster = { ok: false, now, agents: {}, runs: [], spentToday: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, chart: null };
+  const empty: Roster = { ok: false, now, agents: {}, runs: [], spentToday: {}, grants: {}, liveVersion: {}, ...buildCrew([]), palette: { ids: [], manualOnly: new Set() }, chains: [], chart: null };
   if (!health().supabase) { await requireSession(); return { ...empty, problem: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so there is nothing to show yet." }; }
   const since = new Date(now - 60 * 864e5).toISOString();
   // one round (card 302): the org comes from the signed session cookie, so the reads need not wait for the check;
@@ -288,7 +290,7 @@ export const getRoster = cache(async (): Promise<Roster> => {
   const tools = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, { label: t.label, kind: t.kind }]));
   const seatTitle = (id: string) => org?.seats.find((x) => x.holder === "agent" && x.agentId === id)?.title ?? null;
   const roster = buildCrew(live.map((x) => memberOf(x, specs[x.id], { tools, cost: runCostOf(costSpecs[x.id], realCost(runs, x.id)), seatTitle: seatTitle(x.id), chains })));
-  return { ok: true, now, agents, runs, spentToday, grants, liveVersion, ...roster, palette, chart: org };
+  return { ok: true, now, agents, runs, spentToday, grants, liveVersion, ...roster, palette, chains, chart: org };
 });
 
 /** What waits on the owner (card 304): the counts behind the Company page's list and the Approvals badge. One round. */

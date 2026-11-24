@@ -45,6 +45,7 @@ import { trustView, type TrustView } from "@/dashboard/trust";
 import { writeBlocker } from "@/core/gateway";
 import { KIND_WORDS } from "@/core/proposal-rules";
 import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
+import { readFill } from "@/dashboard/handoff-rules";
 import { agentHref } from "@/dashboard/dept-rules";
 import { seatOf } from "@/core/org-rules";
 import { stateLook, stateOf } from "@/dashboard/status";
@@ -83,7 +84,7 @@ function goalLine(p: Extract<ProposalPlan, { kind: "goal" }>, dept?: string | nu
 // approving, Approve all and Apply now on the Approvals tab call the outside service once or twice per change
 export const maxDuration = 300;
 
-export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; agent?: string; edit?: string; view?: string }> }) {
+export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; agent?: string; edit?: string; view?: string; at?: string; days?: string }> }) {
   const jar = await cookies(); // per request only, so nothing here is read at build time (no database)
   const [f, setup, me, sp, biz] = await Promise.all([getFloor(), inSetup(), requireSession(), searchParams, loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
   // a new business starts with setup (card 151, docs/setup.md), not an empty Company page
@@ -137,7 +138,7 @@ export default async function Company({ searchParams }: { searchParams: Promise<
         </div>
       </div>
       {/* the chief of staff and any agent in no department open their sheet here (slice 9, in place of Everyone) */}
-      {typeof sp.agent === "string" && <AgentSheetFor id={sp.agent} closeHref={companyHref(tab)} tz={f.tz} now={f.now} edit={sp.edit != null} />}
+      {typeof sp.agent === "string" && <AgentSheetFor id={sp.agent} closeHref={companyHref(tab)} tz={f.tz} now={f.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} />}
     </div>
   );
 }

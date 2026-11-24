@@ -24,6 +24,7 @@ import { MODEL_LIST } from "@/integrations/models";
 import { ActionButton } from "@/dashboard/components/client";
 import { ApprovalCard } from "@/dashboard/components/approvalBits";
 import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
+import { readFill } from "@/dashboard/handoff-rules";
 import { DeptSettingsFor } from "@/dashboard/components/deptSettingsFor";
 import { GoalTiles } from "@/dashboard/components/goalTiles";
 import { approvalsHistoryHref } from "@/dashboard/company-rules";
@@ -39,7 +40,7 @@ const NO_ORG = "The org chart tables aren’t up to date: apply the org chart mi
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 
-export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; edit?: string; settings?: string }> }) {
+export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; edit?: string; settings?: string; at?: string; days?: string }> }) {
   // the pieces this page shows, in one round (card 304): the crew and its runs, what waits on you, the time zone, the org switch
   const [{ id }, sp, roster, counts, tz, org] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch()]);
   const chart = roster.chart;
@@ -81,7 +82,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
         </div>
       </div>
       {sp.settings != null && !sp.agent && <DeptSettingsFor chart={chart} id={id} closeHref={tabHref(id, tab)} names={Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]))} />}
-      {sp.agent && <AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} />}
+      {sp.agent && <AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} />}
     </div>
   );
 }
