@@ -174,7 +174,7 @@ assert.ok(!/activateSpecVersion|agent_defs|db\(\)/.test(sheet + sheetFor), "the 
 assert.ok(/export async function saveSpec[\s\S]*?asRole\("owner"\)[\s\S]*?saveSpecVersion/.test(actionsSrc), "a changed job, model, reads or can do (grants) saves a draft, and only the owner can");
 assert.ok(/export async function goLive[\s\S]*?lastTry[\s\S]*?if \(!t\.clean\)/.test(actionsSrc), "a draft goes live only after a clean try");
 assert.ok(/disabled=\{busy \|\| !controls \|\| !d\.tried\?\.clean\}/.test(sheet), "Go live stays locked in the sheet until the try is clean");
-for (const f of ["app/(room)/agents/[id]/page.tsx", "app/(room)/build/[id]/page.tsx"]) assert.ok(/redirect\(agentHref\(roster\.chart, id, sp\.edit != null\)\)/.test(read(f)), `${f} opens the sheet, on Edit when asked`);
+for (const f of ["app/(room)/agents/[id]/page.tsx"]) assert.ok(/redirect\(agentHref\(roster\.chart, id, sp\.edit != null\)\)/.test(read(f)), `${f} opens the sheet, on Edit when asked`);
 assert.ok(/<AgentSheetFor id=\{sp\.agent\}/.test(page) && /<AgentSheetFor id=\{sp\.agent\}/.test(company), "the department page and the Company page open the sheet");
 
 // hiring in the chat (slice 5): the head suggests, code counts, only the owner's taps grant, a new agent starts off duty
@@ -358,4 +358,14 @@ const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = 
   assert.ok(/slug: "schedule"/.test(read("dashboard/settings-sections.ts")), "Schedule is a Settings section");
   for (const f of [...walk("app"), ...walk("dashboard"), ...walk("core")].filter((x) => /\.tsx?$/.test(x) && !x.includes(join("crew", "page.tsx"))))
     assert.ok(!/["'`]\/crew(\b|\?|["'`])/.test(read(f)), `${f}: no link to /crew left`);
+}
+
+// slice 13: the old pages that only redirected are gone; an agent's lasting address and the newest moves stay
+{
+  for (const p of ["app/(room)/build/page.tsx", "app/(room)/build/[id]/page.tsx", "app/(room)/integrations/page.tsx", "app/(room)/access/page.tsx"])
+    assert.ok(!existsSync(p), `${p} is gone`);
+  for (const f of [...walk("app"), ...walk("dashboard"), ...walk("core")].filter((x) => /\.tsx?$/.test(x)))
+    assert.ok(!/["'`]\/(build|integrations|access)(\/|\?|["'`])/.test(read(f)), `${f}: no link to a deleted page`);
+  assert.ok(existsSync("app/(room)/agents/[id]/page.tsx"), "an agent's lasting address stays: results, lessons and the agent map link to it");
+  for (const p of ["approvals", "proposals", "crew", "runs", "status"]) assert.ok(existsSync(`app/(room)/${p}/page.tsx`), `/${p} still sends this month's emails and bookmarks on`);
 }
