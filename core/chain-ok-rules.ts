@@ -45,6 +45,8 @@ export function okStillHolds(c: Chain | undefined, step: number): string | null 
 export interface OkCard {
   id: string; chain: string; chainName: string; step: number; steps: number; note: string | null;
   facts: OkFacts; fromName: string; next: string | null; dept: string | null; createdAt: string; dueAt: string;
+  /** A short signed link to the picture the step before made (a Make an image step, chains slice 4), when it made one. */
+  image?: string | null;
 }
 
 /** The card for a pending row, from the saved chain (null when the chain or the step is gone, so it isn't shown as live). */

@@ -26,7 +26,7 @@ assert.match(why({ ask: { ...ask, prompt: "x".repeat(ASK.promptMax + 1) } }), /a
 assert.match(why({ ask: { ...ask, maxUsd: 0 } }), /between \$0\.01 and \$1\.00/);
 assert.match(why({ ask: { ...ask, maxUsd: 5 } }), /between \$0\.01 and \$1\.00/, "the cap in code is the most a step may spend");
 assert.match(why({ ask: { ...ask, tools: ["shop_orders"] } as never }), /a model, an instruction and a cap only \(not tools\)/, "no tools can ride along");
-assert.match(why({ ask, agent: "rowan" } as never), /a step is one thing: an agent, Ask a model or Wait for my OK/);
+assert.match(why({ ask, agent: "rowan" } as never), /a step is one thing: an agent, Ask a model, Make an image or Wait for my OK/);
 assert.match(why({ ask, check: { metric: "orders", op: ">", value: 0 } }), /sloane doesn't report orders/);
 assert.match(flowProblems({ chains: [chain([{ ask }, { agent: "rowan", check: { metric: "orders", op: ">", value: 0 } }])] }, crew).join(" "), /Ask a model doesn't report orders/, "a model's answer has no numbers to check");
 assert.deepEqual(askProblems(ask, {}), [], "without the model list, any well-formed id passes in the browser; the server checks the list");
@@ -68,7 +68,7 @@ assert.deepEqual(payerOf(chain([{ ask }], { owner: { dept: "marketing" } }), pay
 // ---- a cap that rises on a chain that's on needs a confirm
 const was = { chains: [chain([{ agent: "sloane" }, { ask, passAlong: true }])] };
 assert.deepEqual(flowLooser(was, was), []);
-assert.match(flowLooser(was, { chains: [chain([{ agent: "sloane" }, { ask: { ...ask, maxUsd: 0.5 }, passAlong: true }])] }).join(" "), /up to \$0\.50 a run on Ask a model \(was \$0\.10\)/);
+assert.match(flowLooser(was, { chains: [chain([{ agent: "sloane" }, { ask: { ...ask, maxUsd: 0.5 }, passAlong: true }])] }).join(" "), /up to \$0\.50 a run on quick steps \(was \$0\.10\)/);
 assert.match(flowLooser(was, { chains: [chain([{ agent: "sloane" }, { ask, passAlong: true }, { ask }])] }).join(" "), /\$0\.20/, "another Ask a model step raises it too");
 assert.deepEqual(flowLooser(was, { chains: [chain([{ agent: "sloane" }, { ask: { ...ask, maxUsd: 0.05 }, passAlong: true }])] }), [], "lowering the cap never asks");
 

@@ -14,6 +14,7 @@
 // agent on. Inbound email and web pages never choose what runs next: only the saved flow does.
 import { localAt, localDate, nextDay } from "@/core/time";
 import { eventStartProblems, type EventStart } from "@/core/event-rules";
+import { imageMaxUsd, imageProblems, type Img } from "@/core/image-rules";
 
 export const MAX_STEPS = 8;
 /** How many chains in a row "after another chain finishes" may start from one run, so a mistake can't loop. */
@@ -84,10 +85,21 @@ const MODEL_ID = /^[a-z0-9][a-z0-9.-]{1,59}$/;
 export interface OkStep { note?: string }
 export const OK = { noteMax: 300, days: 3 } as const;
 
-/** A step: one of the crew (`agent`), an Ask a model step (`ask`) or a Wait for my OK step (`ok`), only one. */
-export type Step = StepIf & ({ agent: string; ask?: undefined; ok?: undefined } | { ask: Ask; agent?: undefined; ok?: undefined } | { ok: OkStep; agent?: undefined; ask?: undefined });
-/** What a step is called in sentences: its agent, "Ask a model" or "Wait for my OK". */
-export const stepName = (s: Step) => s.agent ?? (s.ask ? "Ask a model" : "Wait for my OK");
+export type { Img } from "@/core/image-rules";
+
+/**
+ * A step: one of the crew (`agent`), an Ask a model step (`ask`), a Wait for my OK step (`ok`) or, from chains
+ * slice 4, a Make an image step (`image`, core/image-rules.ts); only one.
+ */
+export type Step = StepIf & (
+  | { agent: string; ask?: undefined; ok?: undefined; image?: undefined }
+  | { ask: Ask; agent?: undefined; ok?: undefined; image?: undefined }
+  | { ok: OkStep; agent?: undefined; ask?: undefined; image?: undefined }
+  | { image: Img; agent?: undefined; ask?: undefined; ok?: undefined });
+/** What a step is called in sentences: its agent, "Ask a model", "Make an image" or "Wait for my OK". */
+export const stepName = (s: Step) => s.agent ?? (s.ask ? "Ask a model" : s.image ? "Make an image" : "Wait for my OK");
+/** The most a quick step can cost a run (Ask a model at its cap, Make an image at its price); 0 for agents and OKs. */
+export const quickCap = (s: Step) => s.ask?.maxUsd ?? (s.image ? imageMaxUsd(s.image) : 0);
 
 export interface StepIf {
   /** How the step before must have ended. Ignored on the first step. */
@@ -198,8 +210,10 @@ function chainProblems(c: Chain, i: number, crew: Crew, keys: ReadonlySet<unknow
   c.steps.forEach((st: Step, k: number) => {
     const sat = `${at}, step ${k + 1}`;
     if (!st || typeof st !== "object") { out.push(`${sat}: unknown agent.`); return; }
-    if ([st.agent, st.ask, st.ok].filter((x) => x !== undefined).length > 1) { out.push(`${sat}: a step is one thing: an agent, Ask a model or Wait for my OK.`); return; }
-    if (st.ask !== undefined) {
+    if ([st.agent, st.ask, st.ok, st.image].filter((x) => x !== undefined).length > 1) { out.push(`${sat}: a step is one thing: an agent, Ask a model, Make an image or Wait for my OK.`); return; }
+    if (st.image !== undefined) {
+      out.push(...imageProblems(st.image).map((p) => `${sat}: ${p}`));
+    } else if (st.ask !== undefined) {
       out.push(...askProblems(st.ask, crew).map((p) => `${sat}: ${p}`));
     } else if (st.ok !== undefined) {
       out.push(...okProblems(st.ok).map((p) => `${sat}: ${p}`));
@@ -365,8 +379,9 @@ export function flowLooser(now: Flow, next: Flow): string[] {
       const added = c.steps.flatMap((s) => (s.agent && !was.steps.some((w) => w.agent === s.agent) ? [s.agent] : []));
       if (added.length) out.push(`${c.name} now also runs ${added.join(", ")}`);
       // Ask a model steps spend on their own: a higher total cap a run is looser (chains slice 2)
-      const capOf = (x: Chain) => x.steps.reduce((t, s) => t + (s.ask?.maxUsd ?? 0), 0);
-      if (capOf(c) > capOf(was) + 1e-9) out.push(`${c.name} may now spend up to $${capOf(c).toFixed(2)} a run on Ask a model (was $${capOf(was).toFixed(2)})`);
+      // and so do Make an image steps (slice 4), at their price
+      const capOf = (x: Chain) => x.steps.reduce((t, s) => t + quickCap(s), 0);
+      if (capOf(c) > capOf(was) + 1e-9) out.push(`${c.name} may now spend up to $${capOf(c).toFixed(2)} a run on quick steps (was $${capOf(was).toFixed(2)})`);
       if (c.start.type !== was.start.type || JSON.stringify(c.start) !== JSON.stringify(was.start)) out.push(`${c.name} starts at a different time or on a different event`);
     }
   }
@@ -394,7 +409,7 @@ function dropStep(c: Chain, agent: string): Chain | null {
   if (!steps.length) return null;
   const [first, ...rest] = steps;
   const start: Start = c.start.type === "schedule" ? { type: "schedule", days: first.days ?? c.start.days, time: first.notBefore ?? c.start.time } : c.start;
-  return { ...c, start, steps: [first.ask ? { ask: first.ask } : { agent: first.agent! }, ...rest] };
+  return { ...c, start, steps: [first.ask ? { ask: first.ask } : first.image ? { image: first.image } : { agent: first.agent! }, ...rest] };
 }
 
 /**

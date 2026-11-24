@@ -1,6 +1,8 @@
 import "server-only";
 // Everything the Control Room reads. Server only: the service-role client never reaches
 // the browser, and every function checks the login first.
+import { imageLink } from "@/core/image-step";
+import { IMAGE_MODELS } from "@/core/image-rules";
 import { pendingOks } from "@/core/chain-ok";
 import type { OkCard } from "@/core/chain-ok-rules";
 import { orgTz } from "@/core/tz";
@@ -29,7 +31,7 @@ import type { CrewMember, IntegrationId } from "./crew";
 import { buildCrew, memberOf, type RosterRow, type RosterSpec } from "./roster";
 import { runCostOf, type CostSpec } from "./cost";
 import { realCost } from "@/core/cost-rules";
-import type { ChainAgent, ChainModel, ChainsData } from "./components/chains";
+import type { ChainAgent, ChainImageModel, ChainModel, ChainsData } from "./components/chains";
 import { payers } from "@/core/ask-rules";
 import { NO_MODEL_KEYS, modelReady } from "@/core/agent-spec";
 import { MODEL_LIST } from "@/integrations/models";
@@ -324,6 +326,13 @@ export const getCounts = cache(async (): Promise<Counts> => {
     jobsForYou, lessonsWaiting };
 });
 
+/** The picture a Make an image step made in this run (chains slice 4), as a 10-minute signed link; null when none. */
+export async function getRunImage(runId: string): Promise<string | null> {
+  await requireSession();
+  if (!health().supabase || !UUID.test(runId)) return null;
+  return imageLink(runId).catch(() => null);
+}
+
 /** Chains held at a Wait for my OK step, as cards (chains slice 3); null when that table isn't there yet. */
 export const getChainOks = cache(async (): Promise<OkCard[] | null> => {
   await requireSession();
@@ -584,8 +593,10 @@ export async function getChains(r: Roster, tz: string, versions = false): Promis
   // Ask a model steps (chains slice 2): the models and whether each can run here, and who pays for a chain's steps
   const keys = await modelKeysReady().catch(() => NO_MODEL_KEYS);
   const models: ChainModel[] = MODEL_LIST.map((m) => ({ id: m.id, label: m.label, ready: modelReady(m.id, keys), in: m.in, out: m.out }));
+  // Make an image steps (slice 4): the image models and whether each can run here (its provider's key is saved)
+  const imageModels: ChainImageModel[] = IMAGE_MODELS.map((m) => ({ id: m.id, label: m.label, ready: !!keys[m.provider] }));
   const base = {
-    palette, deptOf, depts: (chart?.departments ?? []).map((d) => ({ id: d.id, name: d.name })), models, payers: payers(chart),
+    palette, deptOf, depts: (chart?.departments ?? []).map((d) => ({ id: d.id, name: d.name })), models, imageModels, payers: payers(chart),
     approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })),
     controls: controlsOn(), maxSteps: MAX_STEPS, maxChains: MAX_CHAINS, now: r.now, tz,
   };

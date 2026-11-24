@@ -123,3 +123,44 @@ export function modelClient(model: string): ModelClient {
   if (!m) throw new Error(`No price for ${model} in integrations/models.ts`);
   return m.provider === "anthropic" ? claudeClient() : providerClient(m.provider);
 }
+
+/** One picture back from an image model (chains slice 4): its bytes and the provider's own counts, for the cost in code. */
+export interface ImageResult { bytes: Uint8Array; usage: { textIn: number; imageOut: number } }
+export interface ImageClient { make(req: { model: string; prompt: string; size: string; quality: string }): Promise<ImageResult> }
+
+/** Where each provider makes pictures. Only OpenAI's image models are on the list (core/image-rules.ts). */
+const IMAGE_URL: Partial<Record<ModelProvider, string>> = { openai: "https://api.openai.com/v1/images/generations" };
+
+/**
+ * An image model on the business's own key for its provider, opened for this one request, like providerClient: never
+ * follows a redirect, never puts the key in an error, pauses a refused key. One picture per request.
+ */
+export const imageClient = (provider: ModelProvider, deps: ProviderDeps = LIVE): ImageClient => ({
+  async make(req) {
+    const p = PROVIDER_BY_ID[provider], url = IMAGE_URL[provider];
+    if (!url) throw new Error(`OPERATOR doesn’t make pictures on ${p.name} yet.`);
+    const key = await deps.key(provider);
+    if (!key) throw new Error(`No ${p.name} key on Connections > Other models, or it is paused. Paste one there to make pictures on ${req.model}.`);
+    let res: Response;
+    try {
+      res = await deps.fetch(url, {
+        method: "POST", headers: { [p.check.header]: `${p.check.prefix}${key}`, "content-type": "application/json" },
+        body: JSON.stringify({ model: req.model, prompt: req.prompt, size: req.size, quality: req.quality, n: 1, output_format: "png" }),
+        cache: "no-store", redirect: "error", signal: AbortSignal.timeout(240_000),
+      });
+    } catch (e) { throw new Error(`${p.name} couldn't be reached: ${scrubSecrets(e instanceof Error ? e.message : String(e), [key]).slice(0, 160)}`); }
+    if (!res.ok) {
+      const said = scrubSecrets(await res.text().catch(() => ""), [key]).slice(0, 200);
+      if (keyRefused(res.status)) {
+        await deps.pause(provider, `${p.name} refused the key (${res.status}) making a picture`, key);
+        throw new Error(`${p.name} refused the key (${res.status}), so it is paused. Paste a working key on Connections > Other models.`);
+      }
+      throw new Error(`${p.name} answered ${res.status}: ${said}`);
+    }
+    const json = await res.json() as { data?: { b64_json?: string }[]; usage?: { output_tokens?: number; input_tokens?: number; input_tokens_details?: { text_tokens?: number } } };
+    const b64 = json.data?.[0]?.b64_json;
+    if (!b64) throw new Error(`${p.name} sent no picture back.`);
+    const u = json.usage ?? {};
+    return { bytes: new Uint8Array(Buffer.from(b64, "base64")), usage: { textIn: u.input_tokens_details?.text_tokens ?? u.input_tokens ?? 0, imageOut: u.output_tokens ?? 0 } };
+  },
+});

@@ -323,6 +323,8 @@ export function ChainOkCard({ c, tz, chainHref }: { c: OkCard; tz: string; chain
       <div className="dp-draft">
         <span className="dp-note">{c.fromName}{c.facts.status && c.facts.status !== "ok" ? ` (${c.facts.status})` : ""} said:</span>
         <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{c.facts.summary || "Nothing written."}</div>
+        {/* eslint-disable-next-line @next/next/no-img-element -- a short signed link to a private picture, not a static asset */}
+        {c.image && <a href={c.image} target="_blank" rel="noreferrer"><img src={c.image} alt="The picture to approve" style={{ display: "block", width: "100%", maxWidth: 420, marginTop: 8, borderRadius: 12, border: "1px solid var(--bd)" }} /></a>}
         {nums.length > 0 && <span className="dp-note">{nums.map(([k, v]) => `${k} ${v}`).join(" · ")}</span>}
       </div>
       <div className="dp-btns">

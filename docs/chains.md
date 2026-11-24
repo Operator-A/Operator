@@ -64,8 +64,25 @@ Dropping an agent from a chain (by hand only) takes an OK left first or doubled 
 
 Tests: `npm run check:ok`.
 
+## Slice 4: Make an image (built)
+
+Decided 2026-11-24: pictures are kept in OPERATOR, private per business. A step
+`{ image: { model, prompt, quality, size } }` (`core/image-rules.ts`): one model on `IMAGE_MODELS` (GPT Image 2.5
+Flare, on the business's own OpenAI key), an instruction up to 1,500 characters, low, medium or high quality, square,
+wide or tall. Its price is worked out in code from the provider's picture tokens ($30 per million) and the prompt
+($5 per million), and counts toward the chain's quick-step total that needs a confirm when it rises (`flowLooser`).
+
+- Running (`core/chain.ts`, `core/image-step.ts` `runImage`): billed like Ask a model, through `withRun` as the
+  paying agent (`billedBy`, quick). One request through `imageClient` in `integrations/llm.ts` (the only file that
+  opens model keys; no redirects, the key never in an error, a refused key paused). The step before's result, when
+  passed along, is added as notes cut to 1,000 characters. The cost is the provider's own counts at our prices.
+- Keeping: the private `chain-images` bucket, at `<org>/<run>.png`, with a `chain_images` row (migration
+  `20270109090000_chain_images.sql`), deleted by the scheduler after 90 days (`pruneImages`). Read only through
+  10-minute signed links: on the run page, and on a Wait for my OK card right after the step.
+- The picture is never posted, sent or attached anywhere. A later step gets only a line saying a picture was made.
+
+Tests: `npm run check:image`.
+
 ## Next slices
 
-4. Make an image: OpenAI or Gemini images on the business's keys, stored with the run (new storage and a database
-   change, asked before applying).
 5. Run view: one chain run as a timeline of its steps.

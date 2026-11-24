@@ -1479,6 +1479,7 @@ textarea.input { height: auto; min-height: 84px; padding: 12px 16px; border-radi
 .k-model { background: var(--plum-soft); color: var(--plum); }
 .ch-minis i.k-model { background: var(--plum-soft); color: var(--plum); font-size: 8px; }
 .ch-minis i.k-ok { background: var(--yel-soft); color: var(--yel-ink); }
+.ch-minis i.k-image { background: var(--mint-soft); color: var(--mint-ink); font-size: 8px; }
 .ch-ask { align-items: flex-start; }
 .ch-ask textarea { flex: 1 1 260px; min-width: 0; border-radius: 10px; border: 1px solid var(--bd); background: var(--card); color: var(--ink); font: inherit; font-size: 13px; padding: 8px 10px; resize: vertical; }
 .k-image { background: var(--mint-soft); color: var(--mint-ink); }
@@ -1490,6 +1491,7 @@ textarea.input { height: auto; min-height: 84px; padding: 12px 16px; border-radi
 .b-op { background: var(--report-soft); color: var(--report); }
 .b-cl { background: var(--acc-soft); color: var(--acc-ink); }
 .b-ok { background: var(--yel-soft); color: var(--yel-ink); }
+.b-img { background: var(--mint-soft); color: var(--mint-ink); }
 .b-free { background: var(--card); color: var(--ink2); }
 .ch-chg { cursor: pointer; }
 .ch-link { position: relative; padding: 4px 0 4px 28px; font-size: 12px; color: var(--mut); display: flex; align-items: center; gap: 8px; min-height: 34px; flex-wrap: wrap; }

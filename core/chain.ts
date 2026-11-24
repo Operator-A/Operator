@@ -17,6 +17,7 @@ import { billedBy } from "@/core/ask-rules";
 import { runAsk } from "@/core/ask-step";
 import { loadOrg } from "@/core/org";
 import { holdForOk } from "@/core/chain-ok";
+import { runImage } from "@/core/image-step";
 
 export type { ChainCtx } from "@/core/job-rules";
 
@@ -85,7 +86,14 @@ export async function runChainStep(origin: string, ctx: ChainCtx): Promise<{ out
     return { outcome };
   }
   let go: () => Promise<Awaited<ReturnType<typeof withRun>>>;
-  if (step.ask) {
+  if (step.image) {
+    // Make an image (chains slice 4): billed like Ask a model; the picture is kept privately for this business
+    const img = step.image;
+    const payer = billedBy(c, await loadOrg());
+    if ("problem" in payer) return { outcome: `Skipped: ${payer.problem.replace("Ask a model", "Make an image")}` };
+    const facts = await handoffNow();
+    go = () => withRun(payer.agent, "chain", (runId) => runImage(img, facts, runId, c.key), { chain: runChain, quick: true });
+  } else if (step.ask) {
     // Ask a model (chains slice 2): billed to the chain owner's agent, through withRun (its duty and daily budget)
     const ask = step.ask;
     const payer = billedBy(c, await loadOrg());

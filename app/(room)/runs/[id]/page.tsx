@@ -8,7 +8,7 @@ import { notFound } from "next/navigation";
 import { costUsd, MODELS } from "@/integrations/anthropic";
 import { MODEL_LIST } from "@/integrations/models";
 import { dryRun, react } from "@/dashboard/actions";
-import { getChainRuns, getFloor, getReactRules, getRun, getRunReactions, leadItemsOfRun } from "@/dashboard/data";
+import { getChainRuns, getFloor, getReactRules, getRun, getRunImage, getRunReactions, leadItemsOfRun } from "@/dashboard/data";
 import { ReactBar } from "@/dashboard/components/react";
 import { dur, m4, num, utcStr, when } from "@/dashboard/format";
 import { RUN_LOOK } from "@/dashboard/status";
@@ -30,10 +30,12 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const others = f.runs.filter((r) => r.agent_id === a.id && r.status !== "skipped" && r.id !== run.id).slice(0, 6);
   const has = (tool: string) => (f.grants[a.id] ?? []).includes(tool);
   const reactable = run.status === "ok" || run.status === "failed";
-  const [items, mf, steps, said, rules, custom, chain, asked] = await Promise.all([
+  const [items, mf, steps, said, rules, custom, chain, asked, picture] = await Promise.all([
     has("report_leads") ? leadItemsOfRun(run.id) : null, mapFor(a.id), mapSteps(run.id),
     reactable ? getRunReactions(run.id) : Promise.resolve({} as Awaited<ReturnType<typeof getRunReactions>>), reactable ? getReactRules(a.id) : null,
     customMenuFor(), run.trigger === "chain" ? getChainRuns(run.id) : null, run.trigger === "chat" ? askedIn(run.id).catch(() => null) : null,
+    // a Make an image step's picture (chains slice 4), through a short signed link
+    run.trigger === "chain" ? getRunImage(run.id) : null,
   ]);
   const leads = items ? items.length : null;
   const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.crew, f.health, custom), schedule: null, chain: null, usedBy: mf.usedBy, run: mapRunOf(run, steps, f.tz) });
@@ -167,6 +169,8 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
         <div className="card" style={{ gap: 12 }}>
           <span className="card-t">Summary</span>
           <span style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}><Summary text={run.summary ?? (run.status === "running" ? "Working now…" : "No summary.")} /></span>
+          {/* eslint-disable-next-line @next/next/no-img-element -- a short signed link to a private picture, not a static asset */}
+          {picture && <a href={picture} target="_blank" rel="noreferrer"><img src={picture} alt="The picture this step made" style={{ width: "100%", maxWidth: 520, borderRadius: 14, border: "1px solid var(--bd)" }} /></a>}
           {run.error && <div style={{ padding: "12px 14px", borderRadius: 14, background: "var(--red-soft)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, color: "var(--red-ink)", overflowWrap: "anywhere" }}>{run.error}</div>}
           {leads != null && <div className="row wrap" style={{ gap: 6 }}><span className="pill sm" style={{ background: "var(--soft)", fontWeight: 500 }}>{leads} leads on the leads list</span></div>}
           <div className="row wrap"><DryRun action={dryRun.bind(null, a.id)} /></div>
