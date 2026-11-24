@@ -21,7 +21,7 @@ export type Source =
   /** An approval card. `promoted` is true once its action type has earned trust (card 7; none has yet). */
   | { from: "approval"; tool: string; promoted?: boolean }
   | { from: "proposal"; kind: string }
-  | { from: "run_failed" | "run_stuck" | "budget" | "database" | "connection" | "lesson" | "photos" | "job" | "chain_ok" };
+  | { from: "run_failed" | "run_stuck" | "budget" | "database" | "connection" | "lesson" | "photos" | "job" | "chain_ok" | "chain_draft" };
 
 /** Which of the four it is, or null: it waits for the summary. */
 export function interruptKind(s: Source, money: ReadonlySet<string> = MONEY_TOOLS): Interrupt | null {

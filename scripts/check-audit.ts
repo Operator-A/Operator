@@ -15,7 +15,7 @@ const AUDITED = [
   // caps, vendors, suppressions
   "setCap", "addVendor", "suppressEmail",
   // the builder and the flow
-  "saveSpec", "goBack", "setBuiltBudget", "goLive", "saveChain", "deleteChain", "rollBackFlow",
+  "saveSpec", "goBack", "setBuiltBudget", "goLive", "saveChain", "deleteChain", "discardChainDraft", "rollBackFlow",
   // Connections
   "mcpDisconnect", "mcpSaveKey", "claudeSaveKey", "claudeRemoveKey", "modelSaveKey", "modelRemoveKey", "hookSaveSecret", "hookRemove", "vaultReseal", "klaviyoPickList", "ga4PickProperty", "metaSetTarget", "customAdd", "customScopes", "customKey", "customToolOn", "customToolOff", "customNumber", "customPause", "customRemove",
   // people and roles

@@ -19,7 +19,7 @@ const ORG = "0e1a7c4e-0002-4000-8000-000000000002", GRANT = "0e1a7c4e-00aa-4000-
 
 const run = async () => {
   // ---- the tool list: reads for every member, draft writes for owners only
-  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains", "get_run", "list_chains", "get_chain_run"], DRAFTS = ["create_agent", "update_agent", "propose"], FINISHES = ["finish_run"], TRIES = ["try_agent"];
+  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains", "get_run", "list_chains", "get_chain_run"], DRAFTS = ["create_agent", "update_agent", "draft_chain", "propose"], FINISHES = ["finish_run"], TRIES = ["try_agent"];
   assert.deepEqual(OP_TOOLS.map((t) => t.name), [...READS, ...DRAFTS, ...FINISHES, ...TRIES]);
   // live events slice 2: a Claude session posts its result onto the run OPERATOR started, owners only
   assert.ok(OP_TOOLS.filter((t) => FINISHES.includes(t.name)).every((t) => t.kind === "finish" && t.min === "owner"), "finishing a run is for owners only");

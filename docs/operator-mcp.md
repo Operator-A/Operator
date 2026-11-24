@@ -28,6 +28,8 @@ the place people decide.
    was set up in a Claude project into OPERATOR.
 4. **Actions and starts in a draft** (built, below): `update_agent` puts actions and when the agent starts into a
    draft that applies only at the owner's Go live.
+5. **Chains** (card 435, built): `list_chains` and `get_chain_run` read chains; `draft_chain` drafts a new or changed
+   chain that the owner uses or discards on the Chains tab (`docs/chains.md`).
 
 ## Slice 1: connect and read
 
@@ -116,13 +118,14 @@ Vercel Authentication for Claude to connect.
 
 ## Slice 2: draft writes (owner only)
 
-Three tools, offered only when the connected member is an owner (read again on every call). Each one
+Four tools, offered only when the connected member is an owner (read again on every call). Each one
 writes through the code the Control Room already uses, so nothing new can go live, act or spend:
 
 | Tool | Goes through | Lands as | Link back |
 |---|---|---|---|
 | `create_agent` | `createBuiltAgent` | A new agent, v1, **off duty**, $1 a day, no schedule, no actions. Optionally in an open seat (`setHolder`). | `/agents/<id>` |
 | `update_agent` | `saveSpecVersion` | A **draft version**. What runs today doesn't change until a person tries it and goes live. | `/agents/<id>` |
+| `draft_chain` (card 435) | `chainInFlow` (the Chains tab's Save checks), then `saveChainDraft` | A **chain draft** under Drafts from Claude on the Chains tab. A new chain is drafted off; a changed one keeps on or off as saved. Nothing changes until the owner uses it through the tab's own Save and its confirm, or discards it. One per chain (a newer one replaces it), at most 10 waiting, deleted after 14 days. | `/settings/schedule?chain=<key>#chains` |
 | `propose` | `fileProposal` (source `claude`) | A **proposal** on Proposals, decided by a person. Same checks as a head's proposal: no actions. | `/proposals/<id>` |
 
 Rules, in code:
