@@ -24,6 +24,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | 10 | Company > Approvals holds everything the Approvals page did | The Approvals menu item and page, the Proposals list, the department filter, the bookkeeper-only button and banner |
 | 11 | Company > Departments gets Cards and Chart; Schedule becomes a Settings section | The Crew menu item and page, its department chips and view switch |
 | 12 | Activity: Runs and Status on one page, a red dot in the menu while something is broken | The Runs and Status menu items and pages, the Runs table, the pinned Status link |
+| 13 | Nothing new | The pages that only redirected: `/build`, `/build/[id]`, `/integrations`, `/access` |
 
 ## Slice 1: the page
 
@@ -336,6 +337,18 @@ Connections. A red dot sits on it only while something is broken: failed or late
 
 Tests: `npm run check:activity` (filters, departments, day groups, totals, the health line, redirects, the menu),
 `check:sidebar` (Activity and Connections scroll with the departments; Settings stays pinned).
+
+## Slice 13: the old redirects go
+
+The pages that only sent old links on, from before the department pages, are deleted: `/build`, `/build/[id]` (the
+builder), `/integrations` and `/access` (both became Connections). Nothing in the app linked to them.
+
+Two kinds stay. `/agents/<id>` is an agent's lasting address: approval results, lessons, the agent map and the
+connections list link to it, and it works out the agent's department when opened, so it follows the agent when it
+moves. The newest moves (`/approvals`, `/proposals`, `/crew`, `/runs`, `/status`, slices 10 to 12) keep redirecting
+for about a month, while this month's morning emails and bookmarks still point at them; then they go too.
+
+Tests: `npm run check:dept` (the pages are gone, nothing links to them, the ones that stay are there).
 
 ## Move cards (card 370)
 

@@ -42,7 +42,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   // Company first; Activity and Connections under the departments; Settings sits apart at the bottom of the sidebar
   const nav = [
     // Company carries the count of what interrupts you: its Approvals tab holds what the Approvals page did (slice 10)
-    { href: "/", match: ["/", "/proposals*", "/agents/*", "/build*"], icon: "layout-dashboard", label: "Company", count: waiting ? String(waiting) : undefined },
+    { href: "/", match: ["/", "/proposals*", "/agents/*"], icon: "layout-dashboard", label: "Company", count: waiting ? String(waiting) : undefined },
   ];
   // Activity is Runs and Status on one page (slice 12): a red dot only while something is broken
   const more = [

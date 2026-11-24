@@ -139,7 +139,7 @@ const dataSrc = read("dashboard/data.ts");
 for (const [piece, tz] of [["getTz", true], ["getRoster", false], ["getCounts", false], ["getOrgSwitch", false]] as const) {
   for (const p of floorRounds(dataSrc, piece, tz)) problems.push(`dashboard/data.ts: ${piece} ${p}. Send them with its other reads in one round (card 302).`);
 }
-for (const f of ["app/(room)/layout.tsx", "app/(room)/page.tsx", "dashboard/components/orgChartPane.tsx", "app/(room)/agents/[id]/page.tsx", "app/(room)/build/[id]/page.tsx"]) {
+for (const f of ["app/(room)/layout.tsx", "app/(room)/page.tsx", "dashboard/components/orgChartPane.tsx", "app/(room)/agents/[id]/page.tsx"]) {
   if (/\bloadOrg\(/.test(read(f))) problems.push(`${f}: reads the org chart again; use the floor's (f.chart), read in the same round (card 302).`);
 }
 for (const f of ["app"].filter(existsSync).flatMap(walk).filter((x) => x.startsWith(join("app", "(room)")))) {
