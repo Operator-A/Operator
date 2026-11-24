@@ -437,6 +437,10 @@ h1, h2, h3, p { margin: 0; }
 .ag-more-b { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
 .ag .dp-chip .rm { width: 18px; height: 18px; margin: 0 -4px 0 4px; font-size: 10px; }
 .ag .ag-link { gap: 6px; padding: 8px; }
+.ag .ag-move { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; animation: dpPop .3s both; }
+.ag .ag-move select { min-width: 0; }
+.ag .ag-move .row2 { grid-column: 1 / -1; }
+@media (max-width: 520px) { .ag .ag-move { grid-template-columns: 1fr; } }
 .ag .ag-link input { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--card); border: 1px solid var(--bd); border-radius: 10px; padding: 8px 10px; }
 .ag .ag-link .dp-btn { align-self: flex-start; }
 .ag .days { display: flex; gap: 5px; flex-wrap: wrap; }

@@ -355,4 +355,5 @@ Tests: `npm run check:dept` (the pages are gone, nothing links to them, the ones
 Asked in Avery's chat to put an agent in a department, Avery files a `move_agent` proposal; it shows in that
 department's chat as a change card with Department, Seat and Reports to, Now → New, and Approve / Not now (no
 Change something: a head can't file a move). Approve places the agent through `placeAgent`, the same path as
-Crew's Add to a department. Detail and checks: docs/org-chart.md, "Adding an agent to a department".
+Crew's Add to a department, and closes the seat it left when nothing sits under it (card 385). The agent
+sheet's Edit tab has a Department line with Move for an agent already placed. Detail and checks: docs/org-chart.md, "Adding an agent to a department".

@@ -8,7 +8,7 @@ import { spendByAgent } from "@/core/usage";
 import { localDate, startOf } from "@/core/time";
 import { orgTz } from "@/core/tz";
 import {
-  MAX_DEPARTMENTS, MAX_DEPTH, checkerOf, MAX_SEATS, agentsIn, childrenOf, planPlacement, cleanSub, cleanTitle, deptBudgetChange, deptEmailChange, depthOf, deptOf, deptSlug, headOf,
+  MAX_DEPARTMENTS, MAX_DEPTH, checkerOf, MAX_SEATS, agentsIn, childrenOf, planPlacement, seatToClose, cleanSub, cleanTitle, deptBudgetChange, deptEmailChange, depthOf, deptOf, deptSlug, headOf,
   type Department, type Holder, type Org, type Seat,
 } from "@/core/org-rules";
 
@@ -154,21 +154,25 @@ export async function setHolder(seatId: string, holder: Holder, agentId: string 
 
 /**
  * Adds an agent to a department (card 370): into the open seat named, or a new seat under the head called
- * `title`. Its old seat, if it had one, opens (setHolder). Returns where it sits now, in words. The caller
- * has checked the agent id is one the Control Room knows.
+ * `title`. Its old seat, if it had one, opens (setHolder), and closes when nothing sits under it and it isn't a
+ * head (card 385, seatToClose). Returns where it sits now, in words. The caller has checked the agent id is one
+ * the Control Room knows.
  */
-export async function placeAgent(agentId: string, deptId: string, opts: { seatId?: string | null; title: string; sub?: string }): Promise<{ seatId: string; words: string }> {
+export async function placeAgent(agentId: string, deptId: string, opts: { seatId?: string | null; title: string; sub?: string }): Promise<{ seatId: string; words: string; closed: string | null }> {
   const o = await mustLoad();
   const plan = planPlacement(o, agentId, deptId, opts.seatId ?? null, opts.title);
   if ("problem" in plan) throw new Error(plan.problem);
   const dept = o.departments.find((d) => d.id === deptId)!;
+  const leaving = seatToClose(o, agentId, "seatId" in plan ? plan.seatId : null);
+  // a seat closes only if it is still open and empty once the agent has left it; if not, it simply stays open
+  const close = async () => (leaving ? removeSeat(leaving.id).then(() => leaving.title, () => null) : null);
   if ("seatId" in plan) {
     await setHolder(plan.seatId, "agent", agentId);
-    return { seatId: plan.seatId, words: `the ${o.seats.find((s) => s.id === plan.seatId)!.title} seat in ${dept.name}` };
+    return { seatId: plan.seatId, words: `the ${o.seats.find((s) => s.id === plan.seatId)!.title} seat in ${dept.name}`, closed: await close() };
   }
   const seatId = await addSeat(plan.parentId, plan.title, opts.sub ?? "");
   try { await setHolder(seatId, "agent", agentId); } catch (e) { await removeSeat(seatId).catch(() => undefined); throw e; }
-  return { seatId, words: `a new ${plan.title} seat in ${dept.name}` };
+  return { seatId, words: `a new ${plan.title} seat in ${dept.name}`, closed: await close() };
 }
 
 /** Takes an agent off the chart: its seat opens. */

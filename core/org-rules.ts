@@ -300,6 +300,22 @@ export function placeSpots(o: Org, deptId: string): PlaceSpot[] {
 /** What a new seat for an agent is called: its role, or its name when it has no role of its own. */
 export const seatTitleFor = (a: { name: string; role?: string | null }) => cleanTitle(a.role && a.role !== "Built in the app" ? a.role : a.name) || "Agent";
 
+/**
+ * The seat an agent leaves behind when it moves into seat `to`, if that seat should close (card 385): it is in a
+ * department, isn't the head seat, and nothing sits under it. Null when it stays (or the agent had no seat).
+ */
+export function seatToClose(o: Org, agentId: string, to: string | null): Seat | null {
+  const was = seatOf(o, agentId);
+  if (!was || was.id === to || was.departmentId == null) return null;
+  if (headOf(o, was.departmentId)?.id === was.id) return null;
+  if (childrenOf(o, was.id).length) return null;
+  return was;
+}
+
+/** What the owner is told after a move: where the agent sits now, and the old seat that closed, if one did. */
+export const placedWords = (name: string, at: { words: string; closed: string | null }) =>
+  `${name} is in ${at.words} now.${at.closed ? ` Its old ${at.closed} seat is closed.` : ""} Nothing else about it changed.`;
+
 export type Placement = { seatId: string } | { parentId: string; title: string };
 
 /**

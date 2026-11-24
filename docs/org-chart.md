@@ -125,7 +125,16 @@ Approve (owner only, no Controls needed, like any seat change) runs `placeAgent`
 into the same department again replaces the waiting card.
 
 **What doesn't change.** Where an agent sits still gives it nothing: no tool, action, budget, schedule or
-duty change. Its old seat, if it had one, opens. No table or migration.
+duty change. Its old seat, if it had one, opens (card 385: or closes, below). No table or migration.
+
+**Moving a placed agent (card 385, 2026-11-24).** Crew only lists agents in no department, so an agent put in
+the wrong one had to go through Edit chart. The agent sheet's Edit tab now has a Department line with Move,
+offering the same places as Crew (`placeSpots`); in its own department only its open seats (a new seat there
+is still Edit chart's job), and nothing for the company seat's agent. Move calls `orgPlaceAgent`. On every
+move, from Crew, the sheet or an approved move card, `placeAgent` closes the seat the agent left when it is a
+department seat, isn't the head seat and nothing sits under it (`seatToClose`, then the Edit chart's own
+`removeSeat`); otherwise it stays open. The reply says which (`placedWords`). Edit chart's own Who sits here
+still only opens the old seat.
 
 **Checks.** `check:org` (places and placements), `check:proposals` (move_agent words; a head's tool can't
 file it), `check:dept` (move card lines, Crew wiring, owner only), `check:interrupts`, `check:audit`.

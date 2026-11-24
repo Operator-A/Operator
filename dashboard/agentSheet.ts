@@ -4,7 +4,7 @@ import "server-only";
 // being worked on (a draft, else the live one), what code offers it, and its latest try.
 import { db } from "@/core/db";
 import { daySet } from "@/core/flow-rules";
-import { headOf, reportsTo, seatOf } from "@/core/org";
+import { headOf, placeSpots, reportsTo, seatOf, type PlaceSpot } from "@/core/org";
 import { TOOLS } from "@/core/tools/catalog";
 import { builderMenu, builderModelKeys, customMenuFor, getBuilder } from "@/dashboard/builder";
 import { getRoster, getTz } from "@/dashboard/data";
@@ -34,6 +34,11 @@ export interface SheetData {
   reads: SheetChoice[]; can: SheetChoice[]; models: SheetChoice[];
   budget: number; ceiling: number; monthAtPace: number;
   boss: string | null;
+  /**
+   * Where it can move (card 385): each department and its places, the same as Crew's picker. In its own department
+   * only open seats (a new seat there is Edit chart's job). Null for the company seat's agent or with no chart.
+   */
+  places: { id: string; name: string; spots: PlaceSpot[] }[] | null;
   /** The head of its department, whom the owner can also ask in the chat. */
   head: string | null;
   remembers: { id: string; text: string; shared: boolean }[];
@@ -103,6 +108,9 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
     reads, can,
     models: menu.models.map((m) => ({ id: m.id, label: m.label, on: m.id === spec?.model, ready: m.ready, why: m.ready ? undefined : `Add a ${m.providerName} key on Connections` })),
     budget: b?.budget ?? 0, ceiling: BUDGET_CEILING, monthAtPace: Math.round(spent30 * 100) / 100,
+    places: chart && !(seat && seat.departmentId == null)
+      ? chart.departments.map((x) => ({ id: x.id, name: x.name, spots: placeSpots(chart, x.id).filter((p) => x.id !== dept?.id || p.seatId) }))
+      : null,
     boss: bossName ? (dept && boss?.departmentId === dept.id ? `${bossName} (${dept.name})` : bossName) : null,
     head,
     remembers: (b?.standards ?? []).map((x) => ({ id: x.id, text: x.text, shared: x.grp !== "standing_order" })),
