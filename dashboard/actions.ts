@@ -25,9 +25,10 @@ import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, sav
 import { ANNOTATE } from "@/core/gateway";
 import { flowWithStarts, readStored, startsWords } from "@/core/draft-starts-rules";
 import { BUDGET_CEILING, NO_MODEL_KEYS, activateSpecVersion, versionStarts, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
-import { modelDef } from "@/integrations/models";
+import { MODEL_LIST, modelDef } from "@/integrations/models";
 import { modelKeysReady, removeRoutine, routineState, saveRoutine } from "@/integrations/mcp";
-import { moveIntoOperator as moveAgentIntoOperator, runsOn } from "@/core/claude-agents";
+import { markLinked, moveIntoOperator as moveAgentIntoOperator, runsOn } from "@/core/claude-agents";
+import { readRunsOn, switchConfirm, switchKind } from "./runs-on-rules";
 import { customMenu } from "@/core/tools/custom";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { lastTry } from "./builder";
@@ -862,20 +863,41 @@ export async function routineRemove(agentId: string): Promise<ActionResult> {
 }
 
 /**
- * Move into OPERATOR: the same agent runs on the runner from now on, keeping its runs and history, once its
- * reads are connected here. It goes off duty: it needs a try and an approved playbook like any agent.
+ * Where it runs (card 405, the Runs on picker): moves an agent to a Claude routine, or back into OPERATOR. Owner
+ * only, since a routine starts sessions on the owner's Claude account. Either way it goes off duty and keeps its
+ * runs, history, schedule and chains; its saved reads and can do stay in its versions (unused while in Claude, and
+ * never carried there). A new model inside OPERATOR isn't this: it is a draft version (saveSpec), tried, then live.
  */
-export async function moveIntoOperator(agentId: string): Promise<ActionResult> {
+export async function setRunsOn(agentId: string, raw: unknown, confirmed: boolean): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   const who = await crewAgent(agentId);
   if (!who) return { ok: false, text: "Unknown agent." };
-  if ((await runsOn(agentId)).on !== "claude") return { ok: false, text: `${who.name} already runs in OPERATOR.` };
   try {
+    const [where, spec, keys] = await Promise.all([runsOn(agentId), loadSpec(agentId), modelKeysReady()]);
+    const current = spec?.spec.model ?? null;
+    const models = MODEL_LIST.map((m) => ({ id: m.id, label: m.label, provider: m.provider, ready: modelReady(m.id, keys) }));
+    const to = readRunsOn(raw, models, current);
+    if ("problem" in to) return { ok: false, text: to.problem };
+    const kind = switchKind({ on: where.on, model: current }, to);
+    if (kind === "same" && to.on === "claude") {
+      // only its connector labels changed
+      await markLinked(agentId, to.tools);
+      await audit(me, "claude_tools", agentId, { tools: to.tools });
+      revalidatePath("/", "layout");
+      return { ok: true, text: `Saved what ${who.name} uses in Claude.` };
+    }
+    if (kind === "same" || kind === "model") return { ok: true, text: "" };
+    const ask = switchConfirm(kind, who.name);
+    if (ask && !confirmed) return { ok: false, text: ask };
     const { error } = await db().from("agents").update({ enabled: false }).eq("id", agentId);
     if (error) throw new Error(error.message);
-    await moveAgentIntoOperator(agentId);
+    const toClaude = to.on === "claude";
+    if (to.on === "claude") await markLinked(agentId, to.tools);
+    else await moveAgentIntoOperator(agentId);
+    await audit(me, toClaude ? "move_into_claude" : "move_into_operator", agentId, to.on === "claude" ? { tools: to.tools } : { model: to.model });
+    revalidatePath("/", "layout");
+    return { ok: true, text: toClaude
+      ? `${who.name} now runs in Claude, off duty. Connect its routine below, then put it on duty.`
+      : `${who.name} now runs in OPERATOR, off duty. Give it the reads its job needs, try it, and go live.` };
   } catch (e) { return fail(e); }
-  await audit(me, "move_into_operator", agentId);
-  revalidatePath("/", "layout");
-  return { ok: true, text: `${who.name} now runs in OPERATOR, off duty. Give it the reads its job needs, try it, and go live.` };
 }

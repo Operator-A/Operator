@@ -8,11 +8,16 @@ import { db } from "@/core/db";
 import { env } from "@/core/env";
 import { loadSpec } from "@/core/agent-spec";
 import { fireRoutine, removeRoutine } from "@/integrations/mcp";
-import { fireFits, fireNote, fireStart, finishable, ROUTINE_CAPS, type RunsOn } from "@/core/routine-rules";
+import { fireFits, fireNote, fireStart, finishable, FINISH, NO_RESULT, ROUTINE_CAPS, type RunsOn } from "@/core/routine-rules";
+import { readChainPayload, type ChainCtx } from "@/core/job-rules";
 import type { RunResult } from "@/core/runs";
 import type { Handoff } from "@/core/chain";
 
-export interface ClaudeSession { id: string; url: string; fired_at: string; finished_at?: string | null; result?: string | null; status?: "ok" | "failed" | null }
+export interface ClaudeSession {
+  id: string; url: string; fired_at: string; finished_at?: string | null; result?: string | null; status?: "ok" | "failed" | null;
+  /** The chain step this run is (card 405): the chain waits for the session's result, then goes on from here. */
+  chain?: ChainCtx | null;
+}
 
 /** Where an agent runs, and the Claude connectors it names. An agent row before the migration runs in OPERATOR. */
 export async function runsOn(agentId: string): Promise<{ on: RunsOn; tools: string[] }> {
@@ -39,7 +44,7 @@ async function firesLastHour(agentId: string): Promise<{ agent: number; org: num
  * One run of a linked agent, inside withRun: fires its routine and saves the session on the run. The run ends
  * "ok" once the session started; its result arrives when the session calls finish_run.
  */
-export async function fireLinked(agentId: string, runId: string | undefined, handoff: Handoff | null | undefined, origin = env.dashboardUrl ?? ""): Promise<RunResult> {
+export async function fireLinked(agentId: string, runId: string | undefined, handoff: Handoff | null | undefined, origin = env.dashboardUrl ?? "", chain: ChainCtx | null = null): Promise<RunResult> {
   if (!runId) return { status: "skipped", summary: "A linked agent runs only as a logged run." };
   const n = await firesLastHour(agentId);
   if (!fireFits(n.agent, n.org)) return { status: "skipped", summary: `Not fired: OPERATOR fires Claude routines at most ${ROUTINE_CAPS.perAgentHour} times an hour per agent and ${ROUTINE_CAPS.perOrgHour} per business.` };
@@ -60,17 +65,17 @@ export async function fireLinked(agentId: string, runId: string | undefined, han
     if (got.mayHaveStarted) return { status: "ok", summary: `[Claude] ${got.problem}` };
     throw new Error(got.problem);
   }
-  const session: ClaudeSession = { id: got.session.id, url: got.session.url, fired_at: new Date().toISOString(), finished_at: null, result: null, status: null };
+  const session: ClaudeSession = { id: got.session.id, url: got.session.url, fired_at: new Date().toISOString(), finished_at: null, result: null, status: null, ...(chain ? { chain } : {}) };
   const { error } = await db().from("agent_runs").update({ claude_session: session }).eq("id", runId);
   if (error) console.error("[claude-agents] session", error.message);
-  return { status: "ok", summary: `[Claude] Started in Claude: ${got.session.url}. Its result shows here when the session calls finish_run.` };
+  return { status: "ok", summary: `[Claude] Started in Claude: ${got.session.url}. Its result shows here when the session calls finish_run.${chain ? " The chain goes on once it does." : ""}` };
 }
 
 /**
  * Takes a Claude session's result onto its run (finish_run). Only a run of a linked agent that started a
  * session, once, within FINISH.withinHours. The result is the session's words: data, labelled as such.
  */
-export async function finishRun(runId: string, status: "ok" | "failed", result: string): Promise<{ agentId: string } | { problem: string }> {
+export async function finishRun(runId: string, status: "ok" | "failed", result: string): Promise<{ agentId: string; chain: ChainCtx | null } | { problem: string }> {
   const { data, error } = await db().from("agent_runs").select("id, agent_id, claude_session").eq("id", runId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return { problem: "There is no run with that id in this business." };
@@ -79,11 +84,41 @@ export async function finishRun(runId: string, status: "ok" | "failed", result: 
   if (why) return { problem: why };
   const at = new Date().toISOString();
   const next: ClaudeSession = { ...s!, finished_at: at, result, status };
-  const { error: e2 } = await db().from("agent_runs").update({
+  const { data: done, error: e2 } = await db().from("agent_runs").update({
     claude_session: next, status, summary: `[Claude, written by the session] ${result}`, ...(status === "failed" ? { error: result.slice(0, 500) } : {}),
-  }).eq("id", runId).is("claude_session->>finished_at", null);
+  }).eq("id", runId).is("claude_session->>finished_at", null).select("id");
   if (e2) throw new Error(e2.message);
-  return { agentId: data.agent_id as string };
+  if (!done?.length) return { problem: "That run already has its result." };
+  return { agentId: data.agent_id as string, chain: readChainPayload(s!.chain) };
+}
+
+/**
+ * Chain steps in Claude whose session posted nothing within FINISH.withinHours (card 405): each is finished as
+ * failed, once, and returned so the scheduler can go on with its chain. At most `limit` a call.
+ */
+export async function expireWaits(now = Date.now(), limit = 20): Promise<{ runId: string; chain: ChainCtx }[]> {
+  const before = new Date(now - FINISH.withinHours * 3600_000).toISOString();
+  const { data, error } = await db().from("agent_runs").select("id, claude_session")
+    .not("claude_session->chain", "is", null).is("claude_session->>finished_at", null).lt("started_at", before).limit(limit);
+  if (error) throw new Error(error.message);
+  const out: { runId: string; chain: ChainCtx }[] = [];
+  for (const r of data ?? []) {
+    const s = r.claude_session as ClaudeSession;
+    const chain = readChainPayload(s.chain);
+    if (!chain) continue;
+    const next: ClaudeSession = { ...s, finished_at: new Date(now).toISOString(), status: "failed", result: null };
+    const { data: done, error: e2 } = await db().from("agent_runs").update({ claude_session: next, status: "failed", error: NO_RESULT, summary: `[Claude] ${NO_RESULT}` })
+      .eq("id", r.id).is("claude_session->>finished_at", null).select("id");
+    if (e2) throw new Error(e2.message);
+    if (done?.length) out.push({ runId: r.id as string, chain });
+  }
+  return out;
+}
+
+/** Whether this run is a chain step in Claude still waiting on its session (the chain goes on from finish_run). */
+export async function waitsOnClaude(runId: string): Promise<boolean> {
+  const { data } = await db().from("agent_runs").select("claude_session").eq("id", runId).maybeSingle();
+  return !!(data?.claude_session as ClaudeSession | null)?.chain;
 }
 
 /** A linked agent made from Claude: where it runs and the connectors it names. */

@@ -12,6 +12,7 @@ import { enqueue, kick } from "@/core/jobs";
 import { orgOn } from "@/core/org-switch";
 import { withRun } from "@/core/runs";
 import { eventSummary, isEventType, type EventFacts } from "@/core/event-rules";
+import { waitsOnClaude } from "@/core/claude-agents";
 
 export type { ChainCtx } from "@/core/job-rules";
 
@@ -57,7 +58,12 @@ export async function runChainStep(origin: string, ctx: ChainCtx): Promise<{ out
   const handoff = ctx.event && ctx.step === 0 ? await eventHandoff(ctx.event, ctx.held ?? 0) : step.passAlong ? await handoffFrom(ctx.parent) : null;
   const log = (w: string) => console.log(`[chain ${c.key}] ${w}`);
   try {
-    const res = await withRun(found.id, "chain", (runId, memory) => found.job({ runId, memory, handoff }), { chain: { chainId: ctx.chainId, key: ctx.key, step: ctx.step, parent: ctx.parent } });
+    const res = await withRun(found.id, "chain", (runId, memory) => found.job({ runId, memory, handoff, chain: ctx }), { chain: { chainId: ctx.chainId, key: ctx.key, step: ctx.step, parent: ctx.parent } });
+    // a step in Claude (card 405): the chain goes on when its session posts a result (finish_run), or fails after 24 hours
+    if (await waitsOnClaude(res.runId)) {
+      log(`step ${ctx.step + 1} waits for its Claude session`);
+      return { outcome: `Run ${res.status}. Started in Claude: the chain goes on when its session posts a result.`, runId: res.runId };
+    }
     const then = await continueChain(origin, c, ctx, res.runId, { status: res.status, metrics: res.metrics }).catch((e) => `The next step couldn't start: ${e instanceof Error ? e.message : e}`);
     log(then);
     return { outcome: `Run ${res.status}. ${then}`, runId: res.runId };
@@ -71,6 +77,20 @@ export async function runChainStep(origin: string, ctx: ChainCtx): Promise<{ out
     if (then) log(then);
     return { outcome: `Run failed: ${why} ${then}`.trim(), runId: data?.id as string | undefined, failed: true };
   }
+}
+
+/**
+ * Goes on with a chain after a step in Claude ended (card 405): its session posted a result with finish_run, or
+ * none came within 24 hours (failed). The chain is read from the saved flow again; the step's own ctx keeps how
+ * the chain was started (Run chain or not), so the next step meets the same checks it would have.
+ */
+export async function resumeChain(origin: string, ctx: ChainCtx, runId: string, status: "ok" | "failed"): Promise<string> {
+  const flow = await loadFlow(await loadCrew());
+  const c = flow.flow.chains.find((x) => x.key === ctx.key);
+  if (!c) return "The chain isn't in the saved crew flow any more.";
+  const then = await continueChain(origin, c, ctx, runId, { status });
+  console.log(`[chain ${c.key}] after Claude: ${then}`);
+  return then;
 }
 
 /** Claims a scheduled firing; false when another call already started it. */
