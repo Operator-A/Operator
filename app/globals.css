@@ -775,10 +775,33 @@ a.co-row:hover { text-decoration: none; background: var(--soft); }
 .ted-warn { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 16px; background: var(--yel-soft); color: var(--yel-ink); font-size: 13px; line-height: 1.5; }
 
 /* Chain replay (run page): each step of the chain run, this run highlighted */
-.chain-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
-.chain-step { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--bd); background: var(--card); color: var(--ink); }
-.chain-step:hover { text-decoration: none; border-color: var(--mut2); }
-.chain-step.here { border-color: var(--acc); background: var(--acc-soft); }
+/* Run view (chains slice 5): one chain run as the chains lane, a card per step */
+.rv { --plum: #8A4FD6; --plum-soft: #F1E8FD; }
+:root[data-theme="dark"] .rv { --plum: #C49BFF; --plum-soft: #2C1F40; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .rv { --plum: #C49BFF; --plum-soft: #2C1F40; } }
+.rv-st { color: var(--ink); }
+a.rv-st:hover { text-decoration: none; border-color: var(--mut); }
+.rv-st.here { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+.rv-st.s-off { background: var(--soft); }
+.rv-t { display: flex; flex-direction: column; align-self: center; min-width: 0; }
+.rv-t b { font-size: 14px; overflow-wrap: anywhere; }
+.rv-t small { font-size: 12px; color: var(--mut); }
+.rv-what { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rv-said { overflow-wrap: anywhere; }
+.rv-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; }
+.rv-state.t-ok { color: var(--mint-ink); } .rv-state.t-ok .dot { background: var(--mint-ink); }
+.rv-state.t-bad { color: var(--red-ink); } .rv-state.t-bad .dot { background: var(--red-ink); }
+.rv-state.t-wait { color: var(--yel-ink); } .rv-state.t-wait .dot { background: var(--yel-ink); }
+.rv-state.t-off { color: var(--mut); } .rv-state.t-off .dot { background: var(--mut); }
+.rv-img img { display: block; width: 160px; max-width: 100%; border-radius: 12px; border: 1px solid var(--bd); }
+.rv-passed { color: var(--ink2); overflow-wrap: anywhere; flex: 1 1 200px; min-width: 0; }
+.rv-end { font-size: 13px; color: var(--ink2); }
+@media (max-width: 860px) {
+  .rv .ch-st { grid-template-columns: 30px 1fr; }
+  .rv .ch-st .ch-badge { grid-column: 2; justify-self: start; }
+  .rv .ch-ico { width: 30px; height: 30px; grid-row: span 1; }
+  .rv .ch-what { grid-column: 1 / -1; }
+}
 
 /* money and email caps (Settings) */
 .guard-cap { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--bd); }

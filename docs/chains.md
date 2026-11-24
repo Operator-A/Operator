@@ -83,6 +83,20 @@ wide or tall. Its price is worked out in code from the provider's picture tokens
 
 Tests: `npm run check:image`.
 
-## Next slices
+## Slice 5: Run view (built)
 
-5. Run view: one chain run as a timeline of its steps.
+The run page of any run in a chain shows the whole chain run as the chains lane: a card per step, top to bottom
+(`dashboard/run-view-rules.ts` `timeline`, drawn by `dashboard/components/runView.tsx`).
+
+- Each step: its name, where it ran (OPERATOR and its model, your Claude routine, the model asked, the image model on
+  your key, or Approvals), how it went, when, what it cost and what it said. A picture a Make an image step made
+  shows as a thumbnail through a short signed link. A Wait for my OK step shows who decided and when, or when it
+  stops by itself.
+- Between steps, what was passed on: the words handed to the next step, a line that a picture was made (never the
+  picture), that the result went on the OK card, or nothing when the next step doesn't take it.
+- The chain's total, worked out in code, and one line on how it ended: every step ran, still running, waiting for
+  your OK, or where and why it stopped (failed, skipped, rejected, nobody answered, or the next step's conditions).
+- Read from the chain as saved now plus this chain run's `agent_runs` and `chain_oks` rows (`getChainRuns`). When
+  the chain can't be read, the runs alone are shown. A retried step shows its latest run.
+
+Tests: `npm run check:runview`.

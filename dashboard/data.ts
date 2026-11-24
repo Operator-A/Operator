@@ -2,6 +2,9 @@ import "server-only";
 // Everything the Control Room reads. Server only: the service-role client never reaches
 // the browser, and every function checks the login first.
 import { imageLink } from "@/core/image-step";
+import type { Step } from "@/core/flow-rules";
+import { when } from "@/dashboard/format";
+import { timeline as buildTimeline, type Timeline, type TimelineOk, type TimelineRun } from "@/dashboard/run-view-rules";
 import { IMAGE_MODELS } from "@/core/image-rules";
 import { pendingOks } from "@/core/chain-ok";
 import type { OkCard } from "@/core/chain-ok-rules";
@@ -615,25 +618,43 @@ export async function getChains(r: Roster, tz: string, versions = false): Promis
   }
 }
 
-export interface ChainRun { id: string; step: number; agentId: string; status: RunStatus; startedAt: string; endedAt: string | null; costUsd: number; summary: string | null }
-
-/** Every run of the chain run this run belongs to, in step order; null when it isn't in a chain (or the columns aren't there yet). */
-export async function getChainRuns(runId: string): Promise<{ chainId: string; key: string; name: string; steps: string[]; runs: ChainRun[] } | null> {
+/**
+ * The run view of the chain run this run belongs to (chains slice 5): its steps as a timeline, with where each ran,
+ * what it cost and what it passed on, plus a short signed link to each picture it made. Null when the run isn't in a
+ * chain (or the columns aren't there yet).
+ */
+export async function getChainRuns(runId: string, tz: string): Promise<{ chainId: string; key: string; name: string; timeline: Timeline; images: Record<string, string> } | null> {
   await requireSession();
   if (!UUID.test(runId) || !health().supabase) return null;
   const { data: me, error } = await db().from("agent_runs").select("chain_id, chain_key").eq("id", runId).maybeSingle();
   if (error || !me?.chain_id) return null;
-  const { data } = await db().from("agent_runs").select("id, agent_id, chain_step, status, started_at, ended_at, cost_usd, summary, error").eq("chain_id", me.chain_id).order("chain_step").order("started_at");
-  let name = me.chain_key as string, steps: string[] = [];
+  const [{ data }, oks, r, where] = await Promise.all([
+    db().from("agent_runs").select("id, agent_id, chain_step, status, started_at, ended_at, cost_usd, summary, error").eq("chain_id", me.chain_id).order("chain_step").order("started_at"),
+    // the Wait for my OK holds of this chain run; none when that table isn't there yet
+    db().from("chain_oks").select("step, status, decided_by, decided_at, created_at, due_at").eq("chain_id", me.chain_id).then((x) => x.data ?? [], () => []),
+    getRoster(),
+    db().from("agents").select("id, runs_on, model").then((x) => x.data ?? [], () => []),
+  ]);
+  let name = me.chain_key as string, steps: Step[] = [];
   try {
-    const flow = await loadFlow((await getRoster()).palette);
+    const flow = await loadFlow(r.palette);
     const c = flow.flow.chains.find((x) => x.key === me.chain_key);
-    if (c) { name = c.name; steps = c.steps.map((s) => s.agent ?? "Ask a model"); }
+    if (c) { name = c.name; steps = c.steps; }
   } catch { /* the flow can't be read: show the runs alone */ }
-  return {
-    chainId: me.chain_id as string, key: me.chain_key as string, name, steps,
-    runs: (data ?? []).map((r) => ({ id: r.id, step: Number(r.chain_step ?? 0), agentId: r.agent_id, status: r.status as RunStatus, startedAt: r.started_at, endedAt: r.ended_at, costUsd: Number(r.cost_usd ?? 0), summary: (r.summary ?? r.error ?? null) as string | null })),
-  };
+  const runs: TimelineRun[] = (data ?? []).map((x) => ({ id: x.id, step: Number(x.chain_step ?? 0), agentId: x.agent_id, status: x.status as RunStatus, startedAt: x.started_at, endedAt: x.ended_at, costUsd: Number(x.cost_usd ?? 0), summary: (x.summary ?? x.error ?? null) as string | null }));
+  const rows = new Map((where as { id: string; runs_on: string | null; model: string | null }[]).map((a) => [a.id, a]));
+  const label = (id: string) => MODEL_LIST.find((m) => m.id === id)?.label ?? id;
+  const timeline = buildTimeline(steps, runs, (oks as { step: number; status: TimelineOk["status"]; decided_by: string | null; decided_at: string | null; created_at: string; due_at: string }[]).map((o) => ({ step: o.step, status: o.status, decidedBy: o.decided_by, decidedAt: o.decided_at, createdAt: o.created_at, dueAt: o.due_at })), {
+    agent: (id) => r.byId[id]?.name ?? id,
+    claude: (id) => rows.get(id)?.runs_on === "claude",
+    agentModel: (id) => { const m = r.byId[id]?.model ?? rows.get(id)?.model ?? r.agents[id]?.model; return m ? label(m) : null; },
+    model: label,
+  }, (iso) => when(iso, tz));
+  // each picture a Make an image step kept, through a short signed link (slice 4)
+  const made = timeline.items.filter((i) => i.kind === "image" && i.runId && i.state === "ok");
+  const links = await Promise.all(made.map((i) => imageLink(i.runId!).catch(() => null)));
+  const images = Object.fromEntries(made.flatMap((i, k) => (links[k] ? [[i.runId!, links[k]!]] : [])));
+  return { chainId: me.chain_id as string, key: me.chain_key as string, name, timeline, images };
 }
 
 // ---- Vendors and suppressed addresses (Settings). Null when the caps migration isn't applied yet.
