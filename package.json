@@ -37,6 +37,7 @@
     "check:runs-on": "npx --yes tsx --conditions=react-server scripts/check-runs-on.ts",
     "check:chains": "npx --yes tsx scripts/check-chains.ts",
     "check:ask": "npx --yes tsx --conditions=react-server scripts/check-ask.ts",
+    "check:ok": "npx --yes tsx scripts/check-ok.ts",
     "check:templates": "npx --yes tsx --conditions=react-server scripts/check-templates.ts",
     "check:install": "npx --yes tsx --conditions=react-server scripts/check-install.ts",
     "check:audit": "npx --yes tsx scripts/check-audit.ts",

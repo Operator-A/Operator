@@ -26,7 +26,7 @@ assert.match(why({ ask: { ...ask, prompt: "x".repeat(ASK.promptMax + 1) } }), /a
 assert.match(why({ ask: { ...ask, maxUsd: 0 } }), /between \$0\.01 and \$1\.00/);
 assert.match(why({ ask: { ...ask, maxUsd: 5 } }), /between \$0\.01 and \$1\.00/, "the cap in code is the most a step may spend");
 assert.match(why({ ask: { ...ask, tools: ["shop_orders"] } as never }), /a model, an instruction and a cap only \(not tools\)/, "no tools can ride along");
-assert.match(why({ ask, agent: "rowan" } as never), /an agent or Ask a model, not both/);
+assert.match(why({ ask, agent: "rowan" } as never), /a step is one thing: an agent, Ask a model or Wait for my OK/);
 assert.match(why({ ask, check: { metric: "orders", op: ">", value: 0 } }), /sloane doesn't report orders/);
 assert.match(flowProblems({ chains: [chain([{ ask }, { agent: "rowan", check: { metric: "orders", op: ">", value: 0 } }])] }, crew).join(" "), /Ask a model doesn't report orders/, "a model's answer has no numbers to check");
 assert.deepEqual(askProblems(ask, {}), [], "without the model list, any well-formed id passes in the browser; the server checks the list");

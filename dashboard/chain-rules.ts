@@ -1,7 +1,7 @@
 // Chains where they live (chains slice 1, card 430): which chains a department page's Chains tab, an agent's sheet
 // and Settings > Schedule list, the words between steps, and a new chain. Pure: no database, no network, so
 // `npm run check:chains` tests it. The chains themselves, their checks and how they run are core/flow-rules.ts.
-import { ASK, chainOwner, dayWords, MAX_STEPS, type Ask, type Chain, type Days, type Flow, type Owner, type Start, type Step } from "@/core/flow-rules";
+import { ASK, chainOwner, dayWords, MAX_STEPS, type Ask, type OkStep, type Chain, type Days, type Flow, type Owner, type Start, type Step } from "@/core/flow-rules";
 import { eventStartWords } from "@/core/event-rules";
 import { t12 } from "./format";
 
@@ -87,13 +87,19 @@ export function askModel(models: readonly { id: string; ready: boolean; out: num
 }
 
 /**
- * A step added at `at` (after step at-1): an agent (its id) or an Ask a model step. A step after another waits for it
- * to work and gets its result.
+ * Whether a Wait for my OK step (chains slice 3) can go in at `at`: it needs a step before it to approve, and one OK
+ * next to another would ask twice.
  */
-export function withStep(c: Chain, at: number, what: string | Ask): Chain {
+export const okFits = (c: Chain, at: number) => at > 0 && !c.steps[at - 1]?.ok && !c.steps[at]?.ok;
+
+/**
+ * A step added at `at` (after step at-1): an agent (its id), an Ask a model step, or a Wait for my OK step. A step
+ * after another waits for it to work and gets its result; an OK always shows the step before's result.
+ */
+export function withStep(c: Chain, at: number, what: string | Ask | { ok: OkStep }): Chain {
   const steps = [...c.steps];
-  const body: Step = typeof what === "string" ? { agent: what } : { ask: what };
-  steps.splice(at, 0, at === 0 ? body : { ...body, when: "ok", passAlong: true });
+  const body: Step = typeof what === "string" ? { agent: what } : "ok" in what ? { ok: what.ok } : { ask: what };
+  steps.splice(at, 0, at === 0 ? body : body.ok ? { ...body, when: "ok" } : { ...body, when: "ok", passAlong: true });
   // a new first step: the one it pushed down waits for it
   if (at === 0 && steps[1]) steps[1] = { when: "ok", passAlong: true, ...steps[1] };
   return { ...c, steps };

@@ -19,7 +19,8 @@ import { LEVEL_WORDS, isRejectKind } from "@/core/trust-rules";
 import { TOOLS as WRITE_TOOLS } from "@/core/gateway/policy";
 import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { env } from "@/core/env";
-import { approvalDecided, startStep } from "@/core/chain";
+import { approvalDecided, continueChain, startStep } from "@/core/chain";
+import { decideOk } from "@/core/chain-ok";
 import { orgId, withOrg } from "@/core/tenancy";
 import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, withAgentAfter, dayWords, type AgentTime, type Chain, type Flow, type Step } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
@@ -349,6 +350,24 @@ export async function reject(approvalId: string, reason?: string, scope?: string
   } catch (e) { return fail(e); }
 }
 
+/**
+ * Decides a chain's Wait for my OK card (chains slice 3). Approve goes on with the chain from that step, the step
+ * before's result handed on; reject stops it. Once only, and not after its 3 days.
+ */
+export async function decideChainOk(id: string, decision: "approve" | "reject"): Promise<ActionResult> {
+  const { me, no } = await asRole("approver"); if (no) return no;
+  if (!UUID.test(id) || (decision !== "approve" && decision !== "reject")) return { ok: false, text: "Unknown card." };
+  try {
+    const origin = await selfOrigin();
+    const d = await decideOk(id, decision, me.email, (c, ctx, parent, flow) => continueChain(origin, c, ctx, parent, { status: "ok" }, flow));
+    revalidatePath("/", "layout");
+    if (!d) return { ok: false, text: "That card was already decided or ran out of time." };
+    const approved = decision === "approve";
+    await audit(me, approved ? "chain_ok_approve" : "chain_ok_reject", id, { chain: d.chain });
+    return { ok: true, text: d.text };
+  } catch (e) { revalidatePath("/", "layout"); return fail(e); }
+}
+
 export async function approveAll(approvalIds: string[]): Promise<ActionResult> {
   const { me, no } = await asRole("approver"); if (no) return no;
   const ids = approvalIds.filter((i) => UUID.test(i)).slice(0, 200);
@@ -468,8 +487,8 @@ async function withChain(key: string, raw: unknown): Promise<{ now: Awaited<Retu
   return { now, next };
 }
 
-/** A step in words: its agent's name, or the Ask a model step. */
-const stepLabel = async (s: Step) => (s.ask ? `Ask ${modelDef(s.ask.model)?.label ?? s.ask.model}` : nameOf(s.agent));
+/** A step in words: its agent's name, the Ask a model step, or Wait for my OK. */
+const stepLabel = async (s: Step) => (s.ask ? `Ask ${modelDef(s.ask.model)?.label ?? s.ask.model}` : s.ok ? "Wait for my OK" : nameOf(s.agent!));
 
 /**
  * Saves one chain (new or changed) as a new flow version, noted with where it was saved. A chain that starts running
@@ -567,12 +586,14 @@ export async function previewChain(raw: unknown): Promise<ActionResult & { steps
   for (let k = 0; k < c.steps.length; k++) {
     const s = c.steps[k], name = await stepLabel(s);
     let summary: string, status: "ok" | "failed" = "ok";
-    if (s.ask) {
+    if (s.ok) {
+      summary = `Would put the step before’s result on a card in Approvals${s.ok.note?.trim() ? ` (“${s.ok.note.trim().slice(0, 120)}”)` : ""} and wait up to 3 days. Approve goes on, reject stops the chain.`;
+    } else if (s.ask) {
       // a dry run sends nothing to a model: it says what would be asked, where and for how much
       const who = payer && "agent" in payer ? await nameOf(payer.agent) : null;
       summary = `Would ${askWords(s.ask, modelDef(s.ask.model)?.label ?? s.ask.model, who).replace(/^Ask/, "ask")}: “${s.ask.prompt.trim().slice(0, 200)}”${s.passAlong ? ", with the step before’s result as facts" : ""}. No tools, nothing sent.`;
     } else {
-      try { summary = (await jobOf(s.agent)({ dryRun: true })).summary; }
+      try { summary = (await jobOf(s.agent!)({ dryRun: true })).summary; }
       catch (e) { status = "failed"; summary = `Dry run failed: ${e instanceof Error ? e.message : String(e)}`; }
     }
     const nxt = c.steps[k + 1];
@@ -583,9 +604,9 @@ export async function previewChain(raw: unknown): Promise<ActionResult & { steps
       const goes = when === "any" || (when === "ok" ? status === "ok" : status === "failed");
       next = !goes ? `${nn} would not run (${when === "ok" ? "only after a step that worked" : "only after a failure"}).`
         : `${nn} would run next${nxt.days && nxt.days !== "daily" ? ` ${dayWords(nxt.days)}` : ""}${nxt.notBefore ? `, not before ${nxt.notBefore}` : ""}${nxt.check ? `, if ${nxt.check.metric} ${nxt.check.op} ${nxt.check.value} (a dry run reports no numbers, so not tested)` : ""}${nxt.passAlong ? `, with ${name}’s summary passed along` : ""}.`;
-      if (!goes) { steps.push({ agent: s.agent ?? "ask", name, summary, next }); break; }
+      if (!goes) { steps.push({ agent: s.agent ?? (s.ok ? "ok" : "ask"), name, summary, next }); break; }
     }
-    steps.push({ agent: s.agent ?? "ask", name, summary, next });
+    steps.push({ agent: s.agent ?? (s.ok ? "ok" : "ask"), name, summary, next });
   }
   return { ok: true, text: `Previewed ${c.name}: ${steps.length} step${steps.length === 1 ? "" : "s"}. Nothing was written or sent.`, steps };
 }

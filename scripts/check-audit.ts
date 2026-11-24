@@ -9,7 +9,7 @@ const AUDITED = [
   // uploaded exports (card 160)
   "exportUpload", "exportRemove",
   // approvals and the gateway
-  "approve", "reject", "approveAll", "retryAction", "acceptPromotion", "declinePromotion", "trustToDraft", "cancelAction",
+  "approve", "reject", "approveAll", "decideChainOk", "retryAction", "acceptPromotion", "declinePromotion", "trustToDraft", "cancelAction",
   // the org switch, duty, schedules and real runs (they spend money)
   "turnOrgBackOn", "startFirstJob", "turnOffOrg", "setEnabled", "setAgentTime", "followAgent", "createAgentByHand", "realRun", "runChainNow", "tryBuilt",
   // caps, vendors, suppressions

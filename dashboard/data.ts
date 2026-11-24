@@ -1,6 +1,8 @@
 import "server-only";
 // Everything the Control Room reads. Server only: the service-role client never reaches
 // the browser, and every function checks the login first.
+import { pendingOks } from "@/core/chain-ok";
+import type { OkCard } from "@/core/chain-ok-rules";
 import { orgTz } from "@/core/tz";
 import { DEFAULT_TZ } from "@/core/time";
 import { cache } from "react";
@@ -132,6 +134,8 @@ export interface Counts {
   proposalKinds: string[];
   /** Who made each approval waiting on the owner and its department (null: not in one), for the red counts on each department and agent (docs/department-pages.md). */
   approvalOwners: { agent: string; dept: string | null }[];
+  /** Chains held at a Wait for my OK step (chains slice 3); also counted in approvalsPending and approvalOwners (agent ""). */
+  chainOks: number;
   /** Person's jobs from this week's head plans that the owner hasn't marked done (slice 4). */
   jobsForYou: { planId: string; head: string | null; title: string; href: string }[];
   /** Proposed lessons waiting for the owner's Keep, per agent; empty until the memory tables exist. */
@@ -299,9 +303,9 @@ export const getRoster = cache(async (): Promise<Roster> => {
 /** What waits on the owner (card 304): the counts behind the Company page's list and the Approvals badge. One round. */
 export const getCounts = cache(async (): Promise<Counts> => {
   await cookies();
-  const none: Counts = { photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], approvalOwners: [], jobsForYou: [], lessonsWaiting: {} };
+  const none: Counts = { photosWaiting: null, approvalsPending: null, proposalsPending: null, approvalTools: [], proposalKinds: [], approvalOwners: [], chainOks: 0, jobsForYou: [], lessonsWaiting: {} };
   if (!health().supabase) { await requireSession(); return none; }
-  const [, ph, ap, pp, jobsForYou, lessonsWaiting] = await Promise.all([
+  const [, ph, ap, pp, jobsForYou, lessonsWaiting, ok] = await Promise.all([
     requireSession(),
     db().from("expense_docs").select("id", { count: "exact", head: true }).eq("status", "needs_photo"),
     // drafts still with their lead (slice 4) aren't waiting on the owner yet; the older shape until that migration is applied
@@ -310,11 +314,22 @@ export const getCounts = cache(async (): Promise<Counts> => {
     db().from("proposals").select("kind", { count: "exact" }).eq("state", "pending").limit(500),
     openJobsThisWeek().catch(() => []),
     proposedLessons(),
+    // chains waiting at a Wait for my OK step; none until that migration is applied
+    db().from("chain_oks").select("department_id").eq("status", "pending").gt("due_at", new Date().toISOString()).limit(500),
   ]);
-  return { photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? null : ap.count ?? 0, proposalsPending: pp.error ? null : pp.count ?? 0,
+  const oks = ok.error ? [] : (ok.data ?? []).map((x) => ({ agent: "", dept: (x as { department_id: string | null }).department_id ?? null }));
+  return { photosWaiting: ph.error ? null : ph.count ?? 0, approvalsPending: ap.error ? (oks.length || null) : (ap.count ?? 0) + oks.length, chainOks: oks.length, proposalsPending: pp.error ? null : pp.count ?? 0,
     approvalTools: ap.error ? [] : (ap.data ?? []).map((x) => toolOfCard(x.agent_actions)), proposalKinds: pp.error ? [] : (pp.data ?? []).map((x) => String(x.kind)),
-    approvalOwners: ap.error ? [] : (ap.data ?? []).map((x) => { const o = x as { agent_id?: string; department_id?: string | null }; return { agent: o.agent_id ?? "", dept: o.department_id ?? null }; }),
+    approvalOwners: [...(ap.error ? [] : (ap.data ?? []).map((x) => { const o = x as { agent_id?: string; department_id?: string | null }; return { agent: o.agent_id ?? "", dept: o.department_id ?? null }; })), ...oks],
     jobsForYou, lessonsWaiting };
+});
+
+/** Chains held at a Wait for my OK step, as cards (chains slice 3); null when that table isn't there yet. */
+export const getChainOks = cache(async (): Promise<OkCard[] | null> => {
+  await requireSession();
+  if (!health().supabase) return null;
+  const r = await getRoster();
+  return pendingOks((id) => r.byId[id]?.name ?? id).catch(() => null);
 });
 
 /** The crew with what is set up and the time zone (card 304): for pages that show agents and tools but nothing waiting on the owner. */
