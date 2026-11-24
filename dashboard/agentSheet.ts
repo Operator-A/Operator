@@ -160,3 +160,39 @@ export async function agentSheet(id: string): Promise<SheetData | null> {
     claudeMatch: claude ? matchClaudeTools(claude.tools, conns(tools.filter((t) => !BUILT_IN.has(String(t.conn))), connName)) : null,
   };
 }
+
+/** The blank sheet (card 420): what a new agent may be given, read the same way as an agent's Edit tab. */
+export interface NewSheetData {
+  /** The department the button was pressed in, preset on the form; null on Company. */
+  deptId: string | null;
+  models: (SheetChoice & { provider: string })[];
+  reads: SheetChoice[];
+  canBy: { shown: CanGroup[]; later: CanGroup[] };
+  follow: { id: string; name: string; when: string | null }[];
+  /** Every department and its places; empty with no chart. */
+  places: { id: string; name: string; head: string | null; spots: PlaceSpot[] }[];
+  budget: number; ceiling: number;
+}
+
+/** Null when the department named isn't on the chart. */
+export async function newAgentSheet(deptId: string | null): Promise<NewSheetData | null> {
+  const [roster, custom, keys] = await Promise.all([getRoster(), customMenuFor(), builderModelKeys()]);
+  const chart = roster.chart;
+  if (deptId && !chart?.departments.some((x) => x.id === deptId)) return null;
+  const menu = builderMenu(roster.crew, undefined, custom, keys);
+  const connName = (c: string) => CONNECTIONS.find((x) => x.id === c)?.name ?? custom.conns.find((x) => x.id === c)?.name ?? c;
+  // an agent that doesn't exist yet may be given only actions open to any agent an approver grants
+  const can = menu.tools.filter((t) => t.kind === "action" && t.agents === "granted")
+    .map((t) => ({ id: t.id, label: TOOLS[t.id]?.label ?? t.label, on: false, ready: t.connected, why: t.connected ? undefined : "Not connected", conn: String(t.conn) }));
+  const headName = (id: string) => { const h = chart ? headOf(chart, id) : null; return h?.holder === "agent" && h.agentId ? roster.byId[h.agentId]?.name ?? null : h?.holder === "owner" ? "You" : null; };
+  return {
+    deptId,
+    models: menu.models.map((m) => ({ id: m.id, label: m.label, provider: m.provider, on: false, ready: m.ready, why: m.ready ? undefined : `Add a ${m.providerName} key on Connections` })),
+    reads: menu.tools.filter((t) => READ_KINDS.has(t.kind) && t.connected && t.grantable && !t.seat && !TOOLS[t.id]?.codeOnly && t.id !== "agent_output" && t.id !== "notion_read_page")
+      .map((t) => ({ id: t.id, label: t.label, on: false, ready: true })),
+    canBy: canGroups(can, connName),
+    follow: roster.crew.map((x) => ({ id: x.id, name: x.name, when: x.schedule && x.schedule.kind !== "manual" && x.schedule.time ? schedWords(x.schedule) : null })),
+    places: chart ? chart.departments.map((x) => ({ id: x.id, name: x.name, head: headName(x.id), spots: placeSpots(chart, x.id) })) : [],
+    budget: 1, ceiling: BUDGET_CEILING,
+  };
+}

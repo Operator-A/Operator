@@ -4,8 +4,8 @@ import { goLive, realRun, setEnabled, tryBuilt } from "@/dashboard/actions";
 import { changeInChat, hireInChat, proposalDecline } from "@/dashboard/proposalActions";
 import { deptHires } from "@/dashboard/hireCards";
 import { deptChanges } from "@/dashboard/changeCards";
-import { getApprovals, getCounts, getOrgSwitch, getRoster, getTz, rulesFor, type ApprovalItem, type ApprovalsView } from "@/dashboard/data";
-import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, goalHref, headAgentId, hireHref, needsByDept, settingsHref, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
+import { getApprovals, getCounts, getOrgSwitch, getRoster, getTz, requireSession, rulesFor, type ApprovalItem, type ApprovalsView } from "@/dashboard/data";
+import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, goalHref, headAgentId, hireHref, madeAgentHref, needsByDept, newAgentHref, settingsHref, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
 import { deptRuns } from "@/dashboard/deptFeed";
 import { HEAD_CHAT_MISSING, headHistory } from "@/core/head-chat";
 import { sendToHead } from "@/dashboard/chatActions";
@@ -42,7 +42,7 @@ const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke=
 
 export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; edit?: string; settings?: string; at?: string; days?: string }> }) {
   // the pieces this page shows, in one round (card 304): the crew and its runs, what waits on you, the time zone, the org switch
-  const [{ id }, sp, roster, counts, tz, org] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch()]);
+  const [{ id }, sp, roster, counts, tz, org, me] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch(), requireSession()]);
   const chart = roster.chart;
   if (!chart) return <div className="card"><span className="sub">{NO_ORG}</span></div>;
   const index = chart.departments.findIndex((d) => d.id === id);
@@ -78,18 +78,18 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
           count: t === "agents" ? ids.length : t === "goals" ? goalCount : t === "approvals" ? waiting : undefined, red: t === "approvals",
         }))} />
         <div className="dp-pane" key={tab}>
-          <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} goals={goals} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} />
+          <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} />
         </div>
       </div>
       {sp.settings != null && !sp.agent && <DeptSettingsFor chart={chart} id={id} closeHref={tabHref(id, tab)} names={Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]))} />}
-      {sp.agent && <AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} />}
+      {sp.agent && <AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} dept={id} openHref={madeAgentHref(id)} />}
     </div>
   );
 }
 
 type Roster = Awaited<ReturnType<typeof getRoster>>;
 type Counts = Awaited<ReturnType<typeof getCounts>>;
-type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; goals?: Record<string, GoalView[]> | null; say?: string };
+type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; owner?: boolean; goals?: Record<string, GoalView[]> | null; say?: string };
 
 async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
   if (tab === "goals") return <Goals {...p} />;
@@ -126,7 +126,7 @@ async function Chat({ id, name, title, roster, tz, say }: P) {
 }
 
 /** Who works here, as rows: state, the model it runs on, its last run and result, what needs you, its next run, Run now. */
-function Agents({ id, name, roster, counts, tz, orgOn }: P) {
+function Agents({ id, name, roster, counts, tz, orgOn, owner }: P) {
   const chart = roster.chart!;
   const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
   const head = headOf(chart, id);
@@ -136,7 +136,7 @@ function Agents({ id, name, roster, counts, tz, orgOn }: P) {
   return (
     <div className="dp-scroll">
       <div className="dp-panel">
-        <div className="dp-panel-h"><h3>{name} agents</h3><span className="sp" /><span className="dp-note">Tap an agent to see its runs or edit it.</span></div>
+        <div className="dp-panel-h"><h3>{name} agents</h3><span className="sp" /><span className="dp-note">Tap an agent to see its runs or edit it.</span>{owner && <Link href={newAgentHref(id)} scroll={false} className="dp-btn dark sm">+ New agent</Link>}</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {ids.map((aid) => {
             const a = roster.byId[aid];
@@ -163,7 +163,7 @@ function Agents({ id, name, roster, counts, tz, orgOn }: P) {
         {open.map((x) => (
           <Link key={x.id} href={hireHref(id, x)} className="dp-newline">{PLUS}<span><b>{x.title} is open.</b> Ask {headName} to hire for it{x.sub ? `: ${x.sub}` : ""}.</span></Link>
         ))}
-        {!ids.length && !open.length && <span className="dp-note">No agents in {name} yet. Ask {headName} in the chat to hire one.</span>}
+        {!ids.length && !open.length && <span className="dp-note">No agents in {name} yet. Ask {headName} in the chat to hire one{owner ? ", or press New agent to build one yourself" : ""}.</span>}
       </div>
     </div>
   );

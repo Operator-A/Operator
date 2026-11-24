@@ -30,6 +30,9 @@ export const hireHref = (deptId: string, seat?: { title: string; sub?: string | 
 /** A tab with the department's settings open over it (slice 7): in the address, so back closes it. */
 export const settingsHref = (deptId: string, t: DeptTab) => `${tabHref(deptId, t)}${t === "chat" ? "?" : "&"}settings=1`;
 export const sheetHref = (deptId: string, t: DeptTab, agentId: string) => `${tabHref(deptId, t)}${t === "chat" ? "?" : "&"}agent=${encodeURIComponent(agentId)}`;
+/** New agent (card 420): the blank sheet on a department's Agents tab, and where the new agent's sheet then opens ("{id}" for its id). */
+export const newAgentHref = (deptId: string) => sheetHref(deptId, "agents", "new");
+export const madeAgentHref = (deptId: string) => `${tabHref(deptId, "agents")}&agent={id}`;
 
 /**
  * The red count on each department: approvals waiting on the owner, by the department stamped on
