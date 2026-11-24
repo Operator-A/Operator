@@ -1,5 +1,5 @@
 "use client";
-// Crew > Edit chart (docs/org-chart.md, docs/crew-canvas.md): the structured chart for changing things.
+// Company > Departments > Edit seats (was Crew > Edit chart) (docs/org-chart.md, docs/crew-canvas.md): the structured chart for changing things.
 // You on top, the company seat, then each department with its head and the seats under it. Every
 // seat is a button: rename it, add seats under it, pick who sits there or remove it. A department's
 // name, budget, email cap, rules and lead checks are its settings on its own page (department pages slice 7).
@@ -41,7 +41,7 @@ export function OrgChart({ v, actions, notInDept }: { v: OrgView; actions: OrgAc
         <span className="ink2" style={{ flex: "1 1 300px", fontSize: 13, lineHeight: 1.5 }}>
           Click a seat or a department to change it. A seat gives an agent nothing by itself: what it can read or do is still its own setup.
         </span>
-        <Link href="/crew" className="btn dark sm"><Icon name="check" size={14} />Done editing</Link>
+        <Link href="/?tab=departments&view=chart" className="btn dark sm"><Icon name="check" size={14} />Done editing</Link>
       </div>
 
       {v.problems.length > 0 && <div className="card" style={{ borderLeft: "4px solid var(--red)", gap: 4 }}>{v.problems.map((p) => <span key={p} style={{ fontSize: 13 }}>{p}</span>)}</div>}

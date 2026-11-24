@@ -90,7 +90,7 @@ for (const k of ["dynamic", "static"] as const) {
   const v = stale[k];
   if (v === null || v < 1 || v > 60) problems.push(`next.config.ts: experimental.staleTimes.${k} should be 1 to 60 seconds (is ${v ?? "unset"}), so pages just seen come back at once without showing old numbers (card 301).`);
 }
-// 6. Navigation starts loading on intent (card 301): the sidebar, crew chips, agent tabs, Crew views and Settings
+// 6. Navigation starts loading on intent (card 301): the sidebar, crew chips, agent tabs, the Departments views and Settings
 //    sections use IntentLink, which loads the whole page on hover, touch or focus. A plain Link there waits for the click.
 export function plainLinks(src: string): number[] {
   return src.split("\n").flatMap((line, i) => (/<Link\b/.test(line) ? [i + 1] : []));
@@ -100,7 +100,7 @@ const NAV: [string, RegExp][] = [
   ["dashboard/components/client.tsx", /export function SideLink\b[\s\S]*?\n\}/g],
   ["dashboard/components/deptTabs.tsx", /export function DeptTabs\b[\s\S]*?\n\}/g],
   ["dashboard/components/settingsNav.tsx", /export function SettingsNav\b[\s\S]*?\n\}/g],
-  ["app/(room)/crew/page.tsx", /<nav className="seg" aria-label="Crew view">[\s\S]*?<\/nav>/g],
+  ["app/(room)/page.tsx", /<nav className="co-vseg" aria-label="Departments view">[\s\S]*?<\/nav>/g],
 ];
 for (const [f, part] of NAV) {
   const parts = [...read(f).matchAll(part)].map((m) => m[0]);
@@ -139,7 +139,7 @@ const dataSrc = read("dashboard/data.ts");
 for (const [piece, tz] of [["getTz", true], ["getRoster", false], ["getCounts", false], ["getOrgSwitch", false]] as const) {
   for (const p of floorRounds(dataSrc, piece, tz)) problems.push(`dashboard/data.ts: ${piece} ${p}. Send them with its other reads in one round (card 302).`);
 }
-for (const f of ["app/(room)/layout.tsx", "app/(room)/page.tsx", "app/(room)/crew/page.tsx", "app/(room)/agents/[id]/page.tsx", "app/(room)/build/[id]/page.tsx"]) {
+for (const f of ["app/(room)/layout.tsx", "app/(room)/page.tsx", "dashboard/components/orgChartPane.tsx", "app/(room)/agents/[id]/page.tsx", "app/(room)/build/[id]/page.tsx"]) {
   if (/\bloadOrg\(/.test(read(f))) problems.push(`${f}: reads the org chart again; use the floor's (f.chart), read in the same round (card 302).`);
 }
 for (const f of ["app"].filter(existsSync).flatMap(walk).filter((x) => x.startsWith(join("app", "(room)")))) {
@@ -154,16 +154,16 @@ const home = read("app/(room)/page.tsx");
 if (!SUSPENDED("<Pane\\b").test(home) || !SUSPENDED("<TodayLine\\b").test(home) || /export default async function Company[\s\S]*?await goalsByDept\([\s\S]*?\n\}\n/.test(home.split("\ntype P = ")[0])) problems.push("app/(room)/page.tsx: the Company page's tabs and its day line (goal numbers read from the tools) should stream in behind <Suspense> (Pane, TodayLine), not hold up the title and tabs (card 303).");
 const conn = read("app/(room)/connections/page.tsx");
 if (!SUSPENDED("<SelDetail\\b").test(conn) || !SUSPENDED("<ClaudeCard\\b").test(conn)) problems.push("app/(room)/connections/page.tsx: a connection's detail (SelDetail) and ClaudeCard call services; each should sit in <Suspense> (card 303).");
-if (!SUSPENDED("\\{view === \"schedule\" \\? <Schedule\\b").test(read("app/(room)/crew/page.tsx"))) problems.push("app/(room)/crew/page.tsx: the chart (goal numbers from the tools) should stream in behind <Suspense> under the title and views (card 303).");
+if (!/<Pane tab=\{tab\} dview=\{dview\}/.test(home) || !/dview !== "cards"\) return [\s\S]{0,120}<OrgChartPane\b/.test(home)) problems.push("app/(room)/page.tsx: the org chart (goal numbers from the tools) should stream in inside the suspended Pane under the title and views (card 303).");
 
 // 9. Each page reads only what it shows (card 304): the floor is pieces (the crew and its runs, what waits on the owner,
 //    which tools are set up, the time zone, the org switch), each read once per request. Only the pages that show all of
-//    it (the frame, the Desk, an agent, a run's replay, Crew, Everyone) and the first-job action ask for the whole floor; the rest
+//    it (the frame, the Company page, an agent, a run's replay, Settings > Schedule) and the first-job action ask for the whole floor; the rest
 //    name their pieces (getRoster, getCrewFloor, getTz, ...).
 assert.ok(floorIsPieces(`export const getFloor = cache(async (): Promise<Floor> => {\n  const [a, b, c, d, e] = await Promise.all([getRoster(), getCounts(), getHealth(), getTz(), getOrgSwitch()]);\n  return x;\n});`));
 assert.ok(!floorIsPieces(`export const getFloor = cache(async (): Promise<Floor> => {\n  const [a, b] = await Promise.all([getRoster(), db().from("x").select("y")]);\n  return x;\n});`));
 if (!floorIsPieces(dataSrc)) problems.push("dashboard/data.ts: getFloor should be its pieces (getRoster, getCounts, getHealth, getTz, getOrgSwitch) in one round, reading nothing itself (card 304).");
-const WHOLE_FLOOR = new Set(["app/(room)/layout.tsx", "app/(room)/page.tsx", "app/(room)/agents/[id]/page.tsx", "app/(room)/runs/[id]/page.tsx", "app/(room)/crew/page.tsx", "app/(room)/everyone/page.tsx", "dashboard/actions.ts", "dashboard/data.ts"].map((x) => join(...x.split("/"))));
+const WHOLE_FLOOR = new Set(["app/(room)/layout.tsx", "app/(room)/page.tsx", "app/(room)/agents/[id]/page.tsx", "app/(room)/runs/[id]/page.tsx", "app/(room)/settings/schedule/page.tsx", "dashboard/actions.ts", "dashboard/data.ts"].map((x) => join(...x.split("/"))));
 for (const f of ["app", "dashboard"].filter(existsSync).flatMap(walk).filter((x) => /\.tsx?$/.test(x) && !WHOLE_FLOOR.has(x))) {
   if (/\bgetFloor\(\)/.test(readFileSync(f, "utf8"))) problems.push(`${f}: reads the whole floor; ask for only the pieces this page shows (getRoster, getCrewFloor, getTz, getCounts, getHealth, getOrgSwitch; card 304).`);
 }

@@ -357,7 +357,7 @@ export async function acceptProposal(id: string, opts: { grants?: readonly strin
       const { acceptDepartment } = await import("@/core/departments");
       const r = await acceptDepartment(p.draft, id, "the owner (new department)");
       await close(id, "accepted", r.text, r.deptId);
-      return { text: r.text, href: "/crew" };
+      return { text: r.text, href: "/?tab=departments&view=chart" };
     }
     if (p.kind === "goal") {
       // card 158: through the Goals page's own paths, checked again against the goals as they are now
@@ -410,7 +410,7 @@ export async function acceptProposal(id: string, opts: { grants?: readonly strin
     if (below(org, s.id).length) throw new Error("That seat has seats under it. Remove those first.");
     await removeSeat(s.id);
     await close(id, "accepted", `The ${s.title} seat is closed.`);
-    return { text: `The ${s.title} seat is closed.`, href: "/crew" };
+    return { text: `The ${s.title} seat is closed.`, href: "/?tab=departments&view=chart" };
   } catch (e) {
     throw e instanceof Error ? e : new Error(String(e));
   }

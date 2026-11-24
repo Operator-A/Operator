@@ -63,7 +63,7 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
   return (
     <>
       <div className="stack" style={{ gap: 8 }}>
-        <span className="sub"><Link href="/crew">Crew</Link> › {v.deptName} › Goal</span>
+        <span className="sub"><Link href="/?tab=departments">Company › Departments</Link> › {v.deptName} › Goal</span>
         <div className="row wrap" style={{ gap: 10 }}>
           <Pill look={GOAL_LOOK[v.status]} />
           <span className="sub">Set by you {day(g.created_at)} · owned by {v.owner}{g.due_on ? ` · due ${day(g.due_on)}` : ""}{g.state === "done" ? " · marked done" : ""}</span>

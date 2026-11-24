@@ -5,6 +5,7 @@
 // agent in it follows, and Remove. It is in the address (?settings=1), so back closes it. Every change goes
 // through the same owner-only server actions, with their checks: raising a limit asks to confirm first.
 import { useRouter } from "next/navigation";
+import { deptViewHref } from "@/dashboard/company-rules";
 import { useEffect, useState, useTransition } from "react";
 
 type Result = { ok: boolean; text: string };
@@ -127,7 +128,7 @@ export function DeptSettings({ d, closeHref, act }: { d: DeptSettingsData; close
             <span className="dp-note">Loaded from each agent’s next run. A rule adds a do or don’t; it never raises a cap or gives access. You can also ask {d.head ?? "the head"} in the chat to add one.</span></div>
           <div className="fld"><span className="lbl">Remove</span>
             {sure && d.removable
-              ? <div className="dp-btns"><button type="button" className="dp-btn ds-danger-btn" disabled={busy} onClick={() => go(act.remove, () => router.push("/crew"))}>Remove {d.name} for good</button><button type="button" className="dp-btn" disabled={busy} onClick={() => setSure(false)}>Keep it</button></div>
+              ? <div className="dp-btns"><button type="button" className="dp-btn ds-danger-btn" disabled={busy} onClick={() => go(act.remove, () => router.push(deptViewHref("cards")))}>Remove {d.name} for good</button><button type="button" className="dp-btn" disabled={busy} onClick={() => setSure(false)}>Keep it</button></div>
               : <button type="button" className="ds-danger" disabled={busy || !d.removable} onClick={() => setSure(true)}>Remove {d.name}</button>}
             <span className="dp-note">{d.removable ? "Its seats go with it. Nothing else changes." : `Only a department with every seat open can be removed. Move ${d.agents.length ? list(d.agents) : "everyone"} out first, on Crew.`}</span></div>
         </div>

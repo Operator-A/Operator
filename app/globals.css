@@ -520,6 +520,15 @@ a.co-row:hover { text-decoration: none; background: var(--soft); }
 .co-hist[open] > summary::before { transform: rotate(90deg); }
 .co-hist h5 { margin: 16px 0 2px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); }
 .co-link { display: inline-block; margin-top: 12px; text-decoration: underline; }
+/* Company > Departments: cards or the living chart (slice 11, mockup v19) */
+.co-dtools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.co-dtools .sp { flex: 1; }
+.co-vseg { display: inline-flex; background: var(--soft); border-radius: 99px; padding: 3px; gap: 2px; }
+.co-vseg a { padding: 6px 14px; border-radius: 99px; font-size: 12.5px; font-weight: 700; color: var(--mut); }
+.co-vseg a:hover { text-decoration: none; color: var(--ink); }
+.co-vseg a.on { background: var(--card); color: var(--ink); box-shadow: var(--sh); }
+.co-linkbtn { font-size: 12.5px; font-weight: 700; color: var(--ink2); text-decoration: underline; padding: 4px; }
+.dp-pill.co-org { background: var(--yel-soft); color: var(--yel-ink); border-color: transparent; }
 /* five words wide on a phone: the tabs drop their grey counts and some padding so Departments fits */
 @media (max-width: 760px) { .dp.co .dp-tabs { grid-template-columns: .7fr 1.45fr .8fr 1.25fr; } .dp.co .dp-tabs a .c:not(.red) { display: none; } }
 .dp-gear:hover { color: var(--ink); text-decoration: none; }

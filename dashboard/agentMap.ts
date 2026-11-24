@@ -141,7 +141,7 @@ export function mapOf(x: MapInput): AgentMapModel {
   const up = x.org?.reportsTo ?? null;
   const reportsTo: MapNode[] = x.org == null ? []
     : !up ? [{ id: "up:none", kicker: "Not on the org chart", title: "", sub: "Seat it on Crew so its result reaches a head", href: null, look: "dashed", state: null }]
-    : [{ id: "up", kicker: up.open ? "Open seat" : "Reads it", title: up.title, sub: up.sub, href: up.agentId ? `/agents/${up.agentId}` : "/crew", look: up.open ? "dashed" : "plain", state: null }];
+    : [{ id: "up", kicker: up.open ? "Open seat" : "Reads it", title: up.title, sub: up.sub, href: up.agentId ? `/agents/${up.agentId}` : "/?tab=departments&view=chart", look: up.open ? "dashed" : "plain", state: null }];
 
   const byCol: Record<ColKey, MapNode[]> = { when: [when], reads: cap(reads, "reads"), thinks: [brain], hands: cap(hands, "hands"), usedBy: cap(usedBy, "usedBy"), reportsTo };
   const cols = MAP_COLS.filter((c) => byCol[c.key].length).map((c) => ({ ...c, nodes: byCol[c.key] }));

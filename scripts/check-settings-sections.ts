@@ -18,9 +18,9 @@ assert.ok(existsSync(join(ROOT, "layout.tsx")), "the section menu lives in the s
 assert.match(read(join(ROOT, "layout.tsx")), /<SettingsNav sections=\{menu\} \/>/);
 
 // the menu: core first, the paid layer's in the middle, the audit log last; clashes and odd slugs are dropped
-assert.deepEqual(sectionMenu([]).map((s) => s.slug), ["", "business", "people", "apps", "limits", "audit"]);
+assert.deepEqual(sectionMenu([]).map((s) => s.slug), ["", "business", "schedule", "people", "apps", "limits", "audit"]);
 const withExtra = sectionMenu([{ slug: "billing", label: "Billing", hint: "" }, { slug: "people", label: "Clash", hint: "" }, { slug: "../x", label: "Odd", hint: "" }]);
-assert.deepEqual(withExtra.map((s) => s.slug), ["", "business", "people", "apps", "limits", "billing", "audit"], "extras go after the core sections, before the audit log");
+assert.deepEqual(withExtra.map((s) => s.slug), ["", "business", "schedule", "people", "apps", "limits", "billing", "audit"], "extras go after the core sections, before the audit log");
 assert.equal(withExtra.find((s) => s.slug === "people")?.label, "People", "an extension never replaces a core section");
 assert.deepEqual(none.settingsSections, [], "the open edition has no extra sections");
 assert.match(read(join(ROOT, "[section]", "page.tsx")), /if \(!s\) notFound\(\);/, "an unknown section is not found");

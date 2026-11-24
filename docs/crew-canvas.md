@@ -1,5 +1,7 @@
 # The living Crew canvas
 
+Since department pages slice 11 the canvas is Company > Departments > Chart (`/?tab=departments&view=chart`); the Crew page, its chips and its view switch are gone, and Schedule is a Settings section.
+
 The owner, 2026-11-22: the Crew page should look alive and let you dig into each department. Keep the colours and glass of the setup pages. The chart should move and show how the agents work with each other, and it must keep the shape of an org chart. Each agent is a small card, not a letter in a circle. Approved mockup: https://claude.ai/artifact/UxUex8bXDMGk8CSEwEpi7r. Status lives on the Build Board.
 
 **Rule for every slice: it deletes what it replaces in the same PR.**

@@ -173,7 +173,7 @@ export async function setupStartEmpty(): Promise<ActionResult & { href?: string 
     await finishSetup();
     await audit(me, "finish_setup", "empty");
     revalidatePath("/", "layout");
-    return { ok: true, href: "/", text: "Setup finished. Add departments on Crew > Org chart, or ask Avery to hire." };
+    return { ok: true, href: "/", text: "Setup finished. Add departments or ask Avery to hire, both from the Company page." };
   } catch (e) { return fail(e); }
 }
 

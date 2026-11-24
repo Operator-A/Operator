@@ -34,7 +34,9 @@ import { ApprovalCard, Tag } from "@/dashboard/components/approvalBits";
 import { DraftCard } from "@/dashboard/components/department";
 import { currentDraftView } from "@/dashboard/department";
 import { deptAgentIds, deptHue, headAgentId, needsByDept, tabHref } from "@/dashboard/dept-rules";
-import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, addDeptHref, companyHref, companyTab, goalsWord, type CompanyTab } from "@/dashboard/company-rules";
+import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, SCHEDULE_HREF, addDeptHref, companyHref, companyTab, deptView, deptViewHref, goalsWord, type CompanyTab, type DeptView } from "@/dashboard/company-rules";
+import { OrgChartPane } from "@/dashboard/components/orgChartPane";
+import { IntentLink } from "@/dashboard/components/intentLink";
 import { controlsOn } from "@/dashboard/session";
 import { SkelLine } from "@/dashboard/components/skeletons";
 import { ActionButton } from "@/dashboard/components/client";
@@ -81,12 +83,14 @@ function goalLine(p: Extract<ProposalPlan, { kind: "goal" }>, dept?: string | nu
 // approving, Approve all and Apply now on the Approvals tab call the outside service once or twice per change
 export const maxDuration = 300;
 
-export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; agent?: string; edit?: string }> }) {
+export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; agent?: string; edit?: string; view?: string }> }) {
   const jar = await cookies(); // per request only, so nothing here is read at build time (no database)
   const [f, setup, me, sp, biz] = await Promise.all([getFloor(), inSetup(), requireSession(), searchParams, loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
   // a new business starts with setup (card 151, docs/setup.md), not an empty Company page
   if (setup) redirect("/start");
   const tab = companyTab(sp.tab);
+  const dview = deptView(sp.view);
+  const paneKey = `${tab}:${dview}`; // a new view streams in afresh
   const org = f.chart;
   const open = needs(f, f.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
   // the same count as the bell and the menu's Approvals: only the four kinds that interrupt (card 158)
@@ -117,6 +121,8 @@ export default async function Company({ searchParams }: { searchParams: Promise<
         <div className="dp-stat">
           <span className="dp-pill">AI spend {usd(spent)}{budget != null ? ` of ${usd(budget)}` : ""} this month</span>
           {waiting > 0 && <Link href={companyHref("approvals")} className="dp-pill warn">{needsWord}</Link>}
+          {/* while the org is off nothing starts on its own: turning it on stays one tap from home (slice 11) */}
+          {!f.org.on && <Link href={SCHEDULE_HREF} className="dp-pill co-org" title="Opens Settings › Schedule">Org is off · Turn on</Link>}
           <Link href="/settings" className="dp-gear" aria-label="Company settings" title="Opens Settings">{GEAR}</Link>
         </div>
       </div>
@@ -127,7 +133,7 @@ export default async function Company({ searchParams }: { searchParams: Promise<
         }))} />
         <div className="dp-pane" key={tab}>
           {/* each tab's own reads (goal numbers come from the tools) stream in under the title and tabs (card 303) */}
-          <Suspense key={tab} fallback={<PaneSkel />}><Pane tab={tab} f={f} chiefId={chiefId} chief={chief} spend={spend} owner={atLeast(me.role, "owner")} approver={atLeast(me.role, "approver")} open={open} view={view} pending={pending} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} /></Suspense>
+          <Suspense key={paneKey} fallback={<PaneSkel />}><Pane tab={tab} dview={dview} f={f} chiefId={chiefId} chief={chief} spend={spend} owner={atLeast(me.role, "owner")} approver={atLeast(me.role, "approver")} open={open} view={view} pending={pending} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} /></Suspense>
         </div>
       </div>
       {/* the chief of staff and any agent in no department open their sheet here (slice 9, in place of Everyone) */}
@@ -139,7 +145,7 @@ export default async function Company({ searchParams }: { searchParams: Promise<
 const PaneSkel = () => <div className="dp-scroll"><div className="dp-panel"><SkelLine width="45%" /><SkelLine width="70%" /></div></div>;
 
 type P = {
-  f: Floor; chiefId: string | null; chief: string; spend: Record<string, number>; owner: boolean; approver: boolean; open: ReturnType<typeof needs>;
+  dview: DeptView; f: Floor; chiefId: string | null; chief: string; spend: Record<string, number>; owner: boolean; approver: boolean; open: ReturnType<typeof needs>;
   view: Awaited<ReturnType<typeof getApprovals>> | null; pending: Awaited<ReturnType<typeof listProposals>> | null; say: string;
 };
 
@@ -235,8 +241,22 @@ async function TodayLine({ f, interrupts, later, chief }: { f: Floor; interrupts
 }
 
 /** One card per department: its head, who is on duty, what needs you, its goals and spend, its head's latest line. */
-async function Departments({ f, spend }: P) {
+/** Cards or the living org chart (and its editor), switched in the address (slice 11). */
+function DeptViews({ dview }: { dview: DeptView }) {
+  return (
+    <div className="co-dtools">
+      <nav className="co-vseg" aria-label="Departments view">
+        {(["cards", "chart"] as const).map((v) => <IntentLink key={v} href={deptViewHref(v)} className={dview === v || (v === "chart" && dview === "edit") ? "on" : ""} aria-current={dview === v ? "page" : undefined}>{v === "cards" ? "Cards" : "Chart"}</IntentLink>)}
+      </nav>
+      <span className="sp" />
+      {dview === "chart" && <Link href={deptViewHref("edit")} className="co-linkbtn">Edit seats and who sits where</Link>}
+    </div>
+  );
+}
+
+async function Departments({ f, spend, dview }: P) {
   const org = f.chart;
+  if (dview !== "cards") return <div className="dp-scroll"><DeptViews dview={dview} /><OrgChartPane f={f} edit={dview === "edit"} /></div>;
   if (!org) return <div className="dp-scroll"><div className="dp-panel"><span className="dp-note">The org chart tables aren’t up to date: apply the org chart migrations.</span></div></div>;
   const goals = await goalsByDept(org).catch(() => null);
   const heads = org.departments.map((d) => headAgentId(org, d.id)).filter((x): x is string => !!x);
@@ -244,6 +264,7 @@ async function Departments({ f, spend }: P) {
   const byDept = needsByDept(org.departments.map((d) => d.id), f.approvalOwners.map((o) => o.dept)).byDept;
   return (
     <div className="dp-scroll">
+      <DeptViews dview={dview} />
       <div className="co-cards">
         {org.departments.map((d, i) => {
           const headId = headAgentId(org, d.id), seat = headOf(org, d.id), head = headId ? f.byId[headId] : null;
