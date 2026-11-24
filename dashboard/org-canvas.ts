@@ -57,7 +57,8 @@ export function handoffsOf(chains: readonly Chain[], seatOfAgent: Readonly<Recor
     if (!c.on) continue;
     for (let i = 1; i < c.steps.length; i++) {
       if (!c.steps[i].passAlong) continue;
-      const from = seatOfAgent[c.steps[i - 1].agent], to = seatOfAgent[c.steps[i].agent];
+      const a = c.steps[i - 1].agent, b = c.steps[i].agent;
+      const from = a ? seatOfAgent[a] : undefined, to = b ? seatOfAgent[b] : undefined;
       if (!from || !to || from === to || seen.has(`${from}>${to}`)) continue;
       seen.add(`${from}>${to}`); out.push({ from, to, chain: c.name });
     }

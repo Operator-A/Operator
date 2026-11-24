@@ -186,7 +186,7 @@ export function readFirstJobTap(agentId: unknown, s: { offer: boolean; firstJob:
  * Steps of agents still off duty are skipped at $0 by withRun, so a shared chain like the morning one
  * still reaches Avery when its step runs on "any". A chain with none of them stays as it is.
  */
-export function firstJobChains<C extends { key: string; on: boolean; steps: readonly { agent: string }[] }>(chains: readonly C[], ids: readonly string[]): { chains: C[]; on: string[] } {
-  const next = chains.map((c) => (c.on || !c.steps.some((s) => ids.includes(s.agent)) ? c : { ...c, on: true }));
+export function firstJobChains<C extends { key: string; on: boolean; steps: readonly { agent?: string }[] }>(chains: readonly C[], ids: readonly string[]): { chains: C[]; on: string[] } {
+  const next = chains.map((c) => (c.on || !c.steps.some((s) => !!s.agent && ids.includes(s.agent)) ? c : { ...c, on: true }));
   return { chains: next, on: next.filter((c, i) => c.on && !chains[i].on).map((c) => c.key) };
 }

@@ -27,10 +27,24 @@ page or model says chooses what runs next, only the saved chain; a chain never t
 
 Tests: `npm run check:chains`.
 
+## Slice 2: Ask a model (built)
+
+| What | Where |
+| --- | --- |
+| A step is an agent (`{ agent }`) or an Ask a model step (`{ ask: { model, prompt, maxUsd } }`), never both. Any step can be one, the first included, and a chain can hold several. | `Step`, `Ask`, `askProblems` in `core/flow-rules.ts` |
+| The model is one on OPERATOR's list (`integrations/models.ts`); one from another maker needs its key on Connections > Other models, checked when saving. The instruction is up to 2,000 characters. The cap is $0.01 to $1.00 a run (`ASK`), $0.10 to start. | `ASK`, `withChain` in `dashboard/actions.ts` |
+| It gets the step before's result as facts when "Gets ... as facts" is ticked, marked as data in a `<facts>` block that can't close itself early. It has no tools, no reads and no memory; it sends, buys and posts nothing, and its answer never chooses what runs next. Its text is the run's summary, so the next step can get it. | `askMessages`, `keepText` in `core/ask-rules.ts`, `runAsk` in `core/ask-step.ts` |
+| It is billed to the agent that pays for the chain: the owner agent, the department's head, or for the company's chains the company seat, through `withRun` as that agent (on duty, daily budget, department budget, the run log). A seat that is open or held by a person can't pay, so saving refuses and the step is skipped. | `billedBy`, `payerOf` in `core/ask-rules.ts`, `runChainStep` in `core/chain.ts`, `withRun(..., { quick: true })` |
+| Answer length is set in code so input plus output stays under the cap (at most 4,000 tokens); input alone over the cap sends nothing and skips. Cost is worked out from the model's price. An answer cut at the cap says so. | `maxOutFor`, `costUsd` |
+| On a chain that is on, a higher total Ask a model cap a run needs a confirm, like a new agent. | `flowLooser` |
+| The lane's "+" offers Ask a model; its card shows the model, the instruction, the cap and who pays, with warnings (no payer, payer off duty, missing key, no instruction). Try it says what it would ask and sends nothing. | `dashboard/components/chains.tsx`, `previewChain` |
+
+No migration: the step is JSON in `crew_flow`.
+
+Tests: `npm run check:ask`.
+
 ## Next slices
 
-2. Ask a model: a quick step with the Runs on model list, one instruction, text back, no tools, capped per step and
-   billed to the owner's daily budget.
 3. Wait for my OK: an approval card with the step before's result; approve to go on, reject to stop, 3 days to answer.
 4. Make an image: OpenAI or Gemini images on the business's keys, stored with the run (new storage and a database
    change, asked before applying).

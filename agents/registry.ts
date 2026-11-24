@@ -12,6 +12,7 @@ import type { Handoff } from "@/core/chain";
 import type { ChainCtx } from "@/core/job-rules";
 import type { Crew } from "@/core/flow-rules";
 import { runBuilt } from "@/core/built";
+import { MODEL_LIST } from "@/integrations/models";
 
 export interface JobOpts {
   runId?: string;
@@ -43,7 +44,8 @@ export async function loadCrew(): Promise<Crew> {
   if (d.error) throw new Error(`Agent specs: ${d.error.message}`);
   const live = new Set((d.data ?? []).map((r) => r.agent_id as string));
   const rows = ((a.data ?? []) as { id: string; manual_only?: boolean }[]).filter((r) => live.has(r.id));
-  return { ids: rows.map((r) => r.id).sort(), manualOnly: new Set(rows.filter((r) => r.manual_only !== false).map((r) => r.id)) };
+  // the models an Ask a model chain step may pick (chains slice 2)
+  return { ids: rows.map((r) => r.id).sort(), manualOnly: new Set(rows.filter((r) => r.manual_only !== false).map((r) => r.id)), models: MODEL_LIST.map((m) => m.id) };
 }
 
 /** Old route names from the storefront repo, still accepted. */

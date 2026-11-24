@@ -1473,7 +1473,13 @@ textarea.input { height: auto; min-height: 84px; padding: 12px 16px; border-radi
 .ch-ico { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; font-weight: 800; font-size: 13px; grid-row: span 2; flex: none; }
 .k-agent { background: var(--soft); color: var(--ink); }
 .k-claude { background: var(--acc-soft); color: var(--acc-ink); }
-.k-model { background: var(--soft); color: var(--ink2); }
+/* Ask a model (chains slice 2): plum, as in the approved mockup */
+.ch-board { --plum: #8A4FD6; --plum-soft: #F1E8FD; }
+:root[data-theme="dark"] .ch-board { --plum: #C49BFF; --plum-soft: #2C1F40; }
+.k-model { background: var(--plum-soft); color: var(--plum); }
+.ch-minis i.k-model { background: var(--plum-soft); color: var(--plum); font-size: 8px; }
+.ch-ask { align-items: flex-start; }
+.ch-ask textarea { flex: 1 1 260px; min-width: 0; border-radius: 10px; border: 1px solid var(--bd); background: var(--card); color: var(--ink); font: inherit; font-size: 13px; padding: 8px 10px; resize: vertical; }
 .k-image { background: var(--mint-soft); color: var(--mint-ink); }
 .k-ok { background: var(--yel-soft); color: var(--yel-ink); }
 .k-start { background: var(--card); color: var(--report); }

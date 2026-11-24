@@ -121,7 +121,7 @@ assert.match((readFirstJobTap(undefined, { offer: true, firstJob: null }, bank) 
 const chains = (mergeTemplates([...TEMPLATES]).flow.chains as Chain[]).map((c) => ({ ...c, on: false }));
 const ids = ["bookkeeper", SETUP_AGENT];
 const turned = firstJobChains(chains, ids);
-assert.deepEqual(turned.on.sort(), chains.filter((c) => c.steps.some((s) => ids.includes(s.agent))).map((c) => c.key).sort());
+assert.deepEqual(turned.on.sort(), chains.filter((c) => c.steps.some((s) => !!s.agent && ids.includes(s.agent))).map((c) => c.key).sort());
 assert.ok(turned.on.includes("morning") && turned.on.includes("solo-bookkeeper"), "the morning chain (Avery) and the Bookkeeper's own");
 const morning = turned.chains.find((c) => c.key === "morning")!;
 const avStep = morning.steps.findIndex((s) => s.agent === SETUP_AGENT);

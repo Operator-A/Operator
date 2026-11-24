@@ -21,11 +21,12 @@ import { CAPS, capChange, fmtCap, type CapKey } from "@/core/gateway/policy";
 import { env } from "@/core/env";
 import { approvalDecided, startStep } from "@/core/chain";
 import { orgId, withOrg } from "@/core/tenancy";
-import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, withAgentAfter, dayWords, type AgentTime, type Chain, type Flow } from "@/core/flow";
+import { activateFlow, flowLooser, flowProblems, listFlowVersions, loadFlow, saveFlowVersion, withAgentTime, withAgentAfter, dayWords, type AgentTime, type Chain, type Flow, type Step } from "@/core/flow";
 import { ANNOTATE } from "@/core/gateway";
 import { flowWithStarts, readStored, startsWords } from "@/core/draft-starts-rules";
 import { BUDGET_CEILING, NO_MODEL_KEYS, RUN_LIMITS, createBuiltAgent, activateSpecVersion, versionStarts, draftOf, listSpecVersions, loadSpec, modelReady, readSpec, saveSpecVersion, specLooser, type AgentSpec } from "@/core/agent-spec";
 import { MODEL_LIST, modelDef } from "@/integrations/models";
+import { askWords, billedBy } from "@/core/ask-rules";
 import { modelKeysReady, removeRoutine, routineState, saveRoutine } from "@/integrations/mcp";
 import { markLinked, moveIntoOperator as moveAgentIntoOperator, runsOn } from "@/core/claude-agents";
 import { readRunsOn, switchConfirm, switchKind } from "./runs-on-rules";
@@ -455,8 +456,20 @@ async function withChain(key: string, raw: unknown): Promise<{ now: Awaited<Retu
   const next: Flow = { chains: has ? now.flow.chains.map((x) => (x.key === key ? c : x)) : [...now.flow.chains, c] };
   const problems = flowProblems(next, crew);
   if (problems.length) return { problem: `Not saved: ${problems.slice(0, 5).join(" ")}` };
+  // Ask a model steps (chains slice 2): an agent must be there to pay, and the model must be able to run here
+  const asks = c.steps.flatMap((s) => (s.ask ? [s.ask] : []));
+  if (asks.length) {
+    const payer = billedBy(c, await loadOrgChart());
+    if ("problem" in payer) return { problem: `Not saved: ${payer.problem}` };
+    const keys = await modelKeysReady().catch(() => NO_MODEL_KEYS);
+    const off = asks.find((a) => !modelReady(a.model, keys));
+    if (off) return { problem: `Not saved: ${modelDef(off.model)?.label ?? off.model} needs its provider’s key on Connections > Other models.` };
+  }
   return { now, next };
 }
+
+/** A step in words: its agent's name, or the Ask a model step. */
+const stepLabel = async (s: Step) => (s.ask ? `Ask ${modelDef(s.ask.model)?.label ?? s.ask.model}` : nameOf(s.agent));
 
 /**
  * Saves one chain (new or changed) as a new flow version, noted with where it was saved. A chain that starts running
@@ -531,7 +544,7 @@ export async function runChainNow(key: string): Promise<ActionResult> {
     await startStep(origin, c, { chainId, key: c.key, step: 0, manual: true });
     await audit(me, "run_chain_now", c.key, { chain: c.name });
     revalidatePath("/", "layout");
-    const names = await Promise.all(c.steps.map((s) => nameOf(s.agent)));
+    const names = await Promise.all(c.steps.map(stepLabel));
     return { ok: true, text: `${c.name} started: ${names.join(", then ")}. An agent that is off duty is skipped and the chain stops there. Runs shows each step.` };
   } catch (e) { return fail(e); }
 }
@@ -550,22 +563,29 @@ export async function previewChain(raw: unknown): Promise<ActionResult & { steps
   if ("problem" in got) return { ok: false, text: got.problem.replace(/^Not saved: /, "") };
   const c = got.next.chains.find((x) => x.key === key)!;
   const steps: ChainPreviewStep[] = [];
+  const payer = c.steps.some((s) => s.ask) ? billedBy(c, await loadOrgChart()) : null;
   for (let k = 0; k < c.steps.length; k++) {
-    const s = c.steps[k], name = await nameOf(s.agent);
+    const s = c.steps[k], name = await stepLabel(s);
     let summary: string, status: "ok" | "failed" = "ok";
-    try { summary = (await jobOf(s.agent)({ dryRun: true })).summary; }
-    catch (e) { status = "failed"; summary = `Dry run failed: ${e instanceof Error ? e.message : String(e)}`; }
+    if (s.ask) {
+      // a dry run sends nothing to a model: it says what would be asked, where and for how much
+      const who = payer && "agent" in payer ? await nameOf(payer.agent) : null;
+      summary = `Would ${askWords(s.ask, modelDef(s.ask.model)?.label ?? s.ask.model, who).replace(/^Ask/, "ask")}: “${s.ask.prompt.trim().slice(0, 200)}”${s.passAlong ? ", with the step before’s result as facts" : ""}. No tools, nothing sent.`;
+    } else {
+      try { summary = (await jobOf(s.agent)({ dryRun: true })).summary; }
+      catch (e) { status = "failed"; summary = `Dry run failed: ${e instanceof Error ? e.message : String(e)}`; }
+    }
     const nxt = c.steps[k + 1];
     let next = "End of the chain.";
     if (nxt) {
-      const nn = await nameOf(nxt.agent);
+      const nn = await stepLabel(nxt);
       const when = nxt.when ?? "ok";
       const goes = when === "any" || (when === "ok" ? status === "ok" : status === "failed");
       next = !goes ? `${nn} would not run (${when === "ok" ? "only after a step that worked" : "only after a failure"}).`
         : `${nn} would run next${nxt.days && nxt.days !== "daily" ? ` ${dayWords(nxt.days)}` : ""}${nxt.notBefore ? `, not before ${nxt.notBefore}` : ""}${nxt.check ? `, if ${nxt.check.metric} ${nxt.check.op} ${nxt.check.value} (a dry run reports no numbers, so not tested)` : ""}${nxt.passAlong ? `, with ${name}’s summary passed along` : ""}.`;
-      if (!goes) { steps.push({ agent: s.agent, name, summary, next }); break; }
+      if (!goes) { steps.push({ agent: s.agent ?? "ask", name, summary, next }); break; }
     }
-    steps.push({ agent: s.agent, name, summary, next });
+    steps.push({ agent: s.agent ?? "ask", name, summary, next });
   }
   return { ok: true, text: `Previewed ${c.name}: ${steps.length} step${steps.length === 1 ? "" : "s"}. Nothing was written or sent.`, steps };
 }

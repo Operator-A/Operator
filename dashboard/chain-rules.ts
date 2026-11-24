@@ -1,7 +1,7 @@
 // Chains where they live (chains slice 1, card 430): which chains a department page's Chains tab, an agent's sheet
 // and Settings > Schedule list, the words between steps, and a new chain. Pure: no database, no network, so
 // `npm run check:chains` tests it. The chains themselves, their checks and how they run are core/flow-rules.ts.
-import { chainOwner, dayWords, MAX_STEPS, type Chain, type Days, type Flow, type Owner, type Start, type Step } from "@/core/flow-rules";
+import { ASK, chainOwner, dayWords, MAX_STEPS, type Ask, type Chain, type Days, type Flow, type Owner, type Start, type Step } from "@/core/flow-rules";
 import { eventStartWords } from "@/core/event-rules";
 import { t12 } from "./format";
 
@@ -78,10 +78,22 @@ export function newChain(flow: Flow, owner: Owner | null, first: string, name: s
 /** Whether one more step fits. */
 export const roomFor = (c: Chain) => c.steps.length < MAX_STEPS;
 
-/** A step added at `at` (after step at-1): the next agent waits for the one before to work and gets its result. */
-export function withStep(c: Chain, at: number, agent: string): Chain {
+/** A new Ask a model step (chains slice 2) on `model`, with no instruction yet and the default cap. */
+export const newAsk = (model: string): Ask => ({ model, prompt: "", maxUsd: ASK.defaultUsd });
+
+/** The model a new Ask a model step starts on: the cheapest that can run here, by its price for answers. */
+export function askModel(models: readonly { id: string; ready: boolean; out: number }[]): string | null {
+  return [...models].filter((m) => m.ready).sort((a, b) => a.out - b.out)[0]?.id ?? null;
+}
+
+/**
+ * A step added at `at` (after step at-1): an agent (its id) or an Ask a model step. A step after another waits for it
+ * to work and gets its result.
+ */
+export function withStep(c: Chain, at: number, what: string | Ask): Chain {
   const steps = [...c.steps];
-  steps.splice(at, 0, at === 0 ? { agent } : { agent, when: "ok", passAlong: true });
+  const body: Step = typeof what === "string" ? { agent: what } : { ask: what };
+  steps.splice(at, 0, at === 0 ? body : { ...body, when: "ok", passAlong: true });
   // a new first step: the one it pushed down waits for it
   if (at === 0 && steps[1]) steps[1] = { when: "ok", passAlong: true, ...steps[1] };
   return { ...c, steps };
