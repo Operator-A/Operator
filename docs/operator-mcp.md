@@ -81,6 +81,8 @@ carries `WWW-Authenticate` with the resource metadata address, so Claude can sig
 | `list_tools` | Tools an agent can be given and whether each service is connected; actions apart, marked approver-only | `/connections` |
 | `list_brains` | Models an agent can run on, with prices | |
 | `get_run` (slice 3) | One run in full, tries included: status, cost, summary, each step | `/runs/<id>` |
+| `list_chains` (card 435) | Every saved chain: owner, start, on or off, each step in words and the link to the step before, the most its quick steps cost a run, next start, last run, and the chain as saved; optionally one department's or agent's | `/settings/schedule`, `/runs/<id>` |
+| `get_chain_run` (card 435) | One chain run as the run view: each step's name, where it ran, how it went, cost, what it said and passed on, the total and how it ended | `/runs/<id>` |
 
 Every answer goes through `scrubSecrets` plus a list of key shapes, is cut at 24,000 characters, and
 says that run summaries were written by agents.

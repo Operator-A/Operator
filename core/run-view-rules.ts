@@ -1,6 +1,6 @@
 // Run view (chains slice 5, docs/chains.md): one chain run as a timeline of its steps, with where each ran, what it
 // cost and what it passed on. Pure: no database, no network, so `npm run check:runview` tests it; the run page reads
-// the rows (dashboard/data.ts getChainRuns) and draws what this returns.
+// the rows (core/chain-view.ts, for the run page and OPERATOR's MCP server) and draws what this returns.
 import { OK, stepName, type Step } from "@/core/flow-rules";
 import { IMAGE_KEEP_DAYS, imageModel, SIZE_LABEL } from "@/core/image-rules";
 

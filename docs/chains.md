@@ -86,7 +86,7 @@ Tests: `npm run check:image`.
 ## Slice 5: Run view (built)
 
 The run page of any run in a chain shows the whole chain run as the chains lane: a card per step, top to bottom
-(`dashboard/run-view-rules.ts` `timeline`, drawn by `dashboard/components/runView.tsx`).
+(`core/run-view-rules.ts` `timeline`, drawn by `dashboard/components/runView.tsx`).
 
 - Each step: its name, where it ran (OPERATOR and its model, your Claude routine, the model asked, the image model on
   your key, or Approvals), how it went, when, what it cost and what it said. A picture a Make an image step made
@@ -100,3 +100,12 @@ The run page of any run in a chain shows the whole chain run as the chains lane:
   the chain can't be read, the runs alone are shown. A retried step shows its latest run.
 
 Tests: `npm run check:runview`.
+
+## Chains from Claude (card 435)
+
+OPERATOR's MCP server (`docs/operator-mcp.md`) reads chains: `list_chains` gives every saved chain in words
+(`core/chain-view-rules.ts`) plus the chain as saved, and `get_chain_run` gives one chain run as the run view, through
+the same reader as the run page (`core/chain-view.ts`). Slice 2 adds `draft_chain`: a draft that changes nothing until
+the owner uses it in OPERATOR, through the Chains tab's own save and its confirm.
+
+Tests: `npm run check:mcp-chains`.

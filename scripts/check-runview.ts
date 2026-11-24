@@ -1,11 +1,11 @@
-// Run view (chains slice 5, docs/chains.md): `npm run check:runview`. Tests dashboard/run-view-rules.ts, which turns
+// Run view (chains slice 5, docs/chains.md): `npm run check:runview`. Tests core/run-view-rules.ts, which turns
 // one chain run's rows into a timeline (where each step ran, how it went, what it cost, what it passed on, and why the
 // chain stopped), and reads source for where the run page draws it. No database, no network.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { Step } from "../core/flow-rules";
 import type { Img } from "../core/image-rules";
-import { STATE_LOOK, timeline, type ItemState, type TimelineOk, type TimelineRun } from "../dashboard/run-view-rules";
+import { STATE_LOOK, timeline, type ItemState, type TimelineOk, type TimelineRun } from "../core/run-view-rules";
 
 const read = (p: string) => readFileSync(p, "utf8");
 const names = {
@@ -93,13 +93,13 @@ assert.equal(timeline([{ agent: "nobody" }], [run(0, "nobody", "ok", 0, null)], 
 for (const s of ["running", "ok", "failed", "skipped", "waiting", "approved", "rejected", "expired", "not_run"] as ItemState[]) assert.ok(STATE_LOOK[s]?.label, `${s} has a label`);
 
 // ---- source: the data and the page
-const data = read("dashboard/data.ts");
-assert.match(data, /export async function getChainRuns\(runId: string, tz: string\)/);
+assert.match(read("dashboard/data.ts"), /export async function getChainRuns\(runId: string, tz: string\)[\s\S]*?chainRunView\(runId/, "the run page reads through the shared chain-run reader");
+const data = read("core/chain-view.ts");
 assert.match(data, /from\("chain_oks"\)\.select\("step, status, decided_by, decided_at, created_at, due_at"\)\.eq\("chain_id", me\.chain_id\)/, "the OK holds of this chain run, by its id");
 assert.match(data, /imageLink\(i\.runId!\)/, "pictures through short signed links");
 const page = read("app/(room)/runs/[id]/page.tsx");
 assert.match(page, /<RunView name=\{chain\.name\} timeline=\{chain\.timeline\}/);
 assert.doesNotMatch(page, /chain-steps/, "the old step grid is gone");
 assert.doesNotMatch(read("app/globals.css"), /\.chain-step\b/, "and its styles");
-assert.doesNotMatch(read("dashboard/run-view-rules.ts"), /from "@\/core\/db"|fetch\(/, "the rules stay pure");
+assert.doesNotMatch(read("core/run-view-rules.ts"), /from "@\/core\/db"|fetch\(/, "the rules stay pure");
 console.log("check:runview ok");
