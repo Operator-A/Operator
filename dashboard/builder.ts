@@ -15,7 +15,8 @@ import { modelKeysReady } from "@/integrations/mcp";
 import { PROVIDER_BY_ID } from "@/core/model-key-rules";
 import { env } from "@/core/env";
 import { when } from "@/dashboard/format";
-import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, stepLabel } from "@/core/playbook";
+import { activePlaybook, listPlaybooks, pendingPlaybook, playbookHold, savedCalls, stepLabel } from "@/core/playbook";
+import { NOTHING_READ } from "@/dashboard/hire-rules";
 import { CONNECTIONS, connOf, isSetUp, type ConnId, type CustomConnId } from "@/dashboard/connections";
 import { customMenu } from "@/core/tools/custom";
 import { CUSTOM_WARNING } from "@/core/custom-mcp-rules";
@@ -119,7 +120,8 @@ export async function mapSteps(runId: string): Promise<{ kind: string; tool: str
 export interface TryView {
   runId: string; version: number; at: string; status: string; summary: string; costUsd: number; secs: number | null;
   steps: { kind: string; tool: string | null; ok: boolean; ms: number }[];
-  /** True when the run finished, followed or explored without falling back, and no tool step failed. */
+  /** True when the run finished, followed or explored without falling back, no tool step failed, and at least one
+   *  read worked (code saves its runs' steps only from reads that worked, so a try that reads nothing can't go live). */
   clean: boolean;
   /** Why it isn't clean, as the end of "the latest try …". */
   why: string | null;
@@ -139,6 +141,7 @@ export async function lastTry(agentId: string, version: number): Promise<TryView
     : m.finished !== 1 ? "didn’t finish"
     : failed ? `had ${failed} step${failed === 1 ? "" : "s"} that didn’t work`
     : m.fell_back === 1 ? "left its routine and explored instead"
+    : !savedCalls(steps) ? NOTHING_READ
     : null;
   return {
     runId: r.id, version, at: when(r.started_at, tz), status: r.status, summary: r.error ?? r.summary ?? "", costUsd: Number(r.cost_usd ?? 0),

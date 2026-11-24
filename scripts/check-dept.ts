@@ -9,7 +9,7 @@ import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from 
 import { deptReach, headDirective } from "../core/head-chat-rules";
 import { resolveRuleWho, deptNamed } from "../core/chat-rules";
 import type { Org } from "../core/org-rules";
-import { allowedGrants, hireCostLine, hireRuns, hireStage, hireWhenWords, linkedCostLine, LINKED_READS, linkedStep, newAgent, tryInFeed } from "../dashboard/hire-rules";
+import { NOTHING_READ, nothingReadNext, allowedGrants, hireCostLine, hireRuns, hireStage, hireWhenWords, linkedCostLine, LINKED_READS, linkedStep, newAgent, tryInFeed } from "../dashboard/hire-rules";
 import { hireWhen, planProposal, toolInfoOf } from "../core/proposal-rules";
 import { changeRows, changeStage, goalRows, goalTitle, keepDecided, moveRows, savedVersionOf } from "../dashboard/change-rules";
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -207,6 +207,10 @@ assert.equal(hireCostLine(month(0.08, 0), null).big, "$0.08");
 assert.equal(hireCostLine(month(null, 22), null).big, "Cost unknown");
 assert.equal(hireStage(null), "hired"); assert.equal(hireStage({ clean: false, status: "running" }), "trying");
 assert.equal(hireStage({ clean: true, status: "ok" }), "clean"); assert.equal(hireStage({ clean: false, status: "ok" }), "failed");
+// a try that read nothing is not "worked": the card says why in plain words and names the next step, never "routine"
+assert.equal(hireStage({ clean: false, status: "ok" }), "failed");
+assert.ok(!/routine/i.test(NOTHING_READ) && !/routine/i.test(nothingReadNext("Ada")));
+assert.match(nothingReadNext("Ada"), /Try again/); assert.match(nothingReadNext("Ada"), /Change something/);
 assert.ok(newAgent({ enabled: false, approvedRoutine: false, hasSpec: true }) && !newAgent({ enabled: true, approvedRoutine: false, hasSpec: true }) && !newAgent({ enabled: false, approvedRoutine: true, hasSpec: true }), "a card stays only until the agent has been put on duty");
 assert.ok(tryInFeed("preview", "ivy", new Set(["ivy"])) && !tryInFeed("preview", "quinn", new Set(["ivy"])) && !inFeed("preview"), "only a new agent's first try posts in the chat");
 assert.equal(runTitle("preview"), "First try");

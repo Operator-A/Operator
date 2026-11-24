@@ -11,6 +11,7 @@ import "server-only";
 import { actor } from "@/core/actor";
 import { db } from "@/core/db";
 import { TOOLS } from "@/core/tools/catalog";
+import type { ToolDef } from "@/core/tools/types";
 import type { PlaybookStep, RunMode, Step } from "@/core/runner";
 
 export type PlaybookStatus = "proposed" | "approved" | "rejected" | "replaced";
@@ -27,16 +28,24 @@ export interface Playbook {
 export function draftSteps(steps: Step[]): PlaybookStep[] {
   const out: PlaybookStep[] = [];
   for (const s of steps) {
-    if (s.kind !== "tool" || !s.ok || !s.tool) continue;
-    const kind = TOOLS[s.tool]?.kind;
-    // web search and fetch run on Claude's side, so code can't repeat them: they stay the model's to do
-    if ((kind !== "read" && kind !== "calculate") || TOOLS[s.tool]?.server) continue;
+    if (s.kind !== "tool" || !s.ok || !s.tool || !isPlaybookTool(TOOLS[s.tool])) continue;
     const input = (s.input && typeof s.input === "object" ? s.input : {}) as Record<string, string | number>;
     const key = stepKey({ tool: s.tool, input });
     if (!out.some((x) => stepKey(x) === key)) out.push({ tool: s.tool, input });
   }
   return out.slice(0, 30);
 }
+
+/**
+ * A tool whose call can become a playbook step: a built-in read or calculate tool. Web search and fetch run on
+ * Claude's side, so code can't repeat them, and tools on servers the owner added stay the model's to call.
+ */
+export const isPlaybookTool = (t: Pick<ToolDef, "kind" | "server" | "group"> | undefined): boolean =>
+  !!t && (t.kind === "read" || t.kind === "calculate") && !t.server && t.group !== "custom";
+
+/** How many of a run's tool steps worked and could become playbook steps. A try with none leaves nothing to follow. */
+export const savedCalls = (steps: { kind: string; tool?: string | null; ok: boolean }[]): number =>
+  steps.filter((s) => s.kind === "tool" && s.ok && !!s.tool && isPlaybookTool(TOOLS[s.tool])).length;
 
 const stepKey = (s: PlaybookStep) => `${s.tool}(${Object.keys(s.input).sort().map((k) => `${k}=${s.input[k]}`).join(",")})`;
 

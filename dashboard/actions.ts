@@ -41,6 +41,7 @@ import { closedActions, createdWords, jobLine, newSpecDraft, readNewAgent } from
 import { customMenu } from "@/core/tools/custom";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { lastTry } from "./builder";
+import { NOTHING_READ } from "./hire-rules";
 import { activePlaybook, approvePlaybook, holdAfterRejection, listPlaybooks, pendingPlaybook } from "@/core/playbook";
 import { startTry as startTryRun, tryOnce, tryTarget } from "@/core/agent-try";
 import { getFloor, getRoster, asRole } from "./data";
@@ -829,7 +830,7 @@ export async function goLive(agentId: string, version: number, keep: number[] | 
     if (pending) {
       const v = await withActor(me.email, () => approvePlaybook(agentId, pending.id, Array.isArray(keep) ? keep.map(Number).filter(Number.isInteger) : pending.steps.map((_, i) => i)));
       routine = ` Routine v${v} approved.`;
-    } else if (!activePlaybook(all)) return { ok: false, text: "No routine yet: try it fresh, so code can save the calls that worked." };
+    } else if (!activePlaybook(all)) return { ok: false, text: `Nothing for it to follow yet: its latest try ${NOTHING_READ}. Try it again; if it still reads nothing, give it a tool that reaches its work.` };
     if (!target.active) await activateSpecVersion(agentId, version);
     let sched = "";
     if (plan) {

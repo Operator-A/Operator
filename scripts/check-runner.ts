@@ -5,8 +5,8 @@ import { withOrg } from "../core/tenancy";
 import { TEST_ORG } from "./lib/test-org";
 import { actionOpenTo, checkInput } from "../core/tools/types";
 import { NO_MODEL_KEYS, modelReady, readSpec, specLooser } from "../core/agent-spec";
-import { draftSteps, sameSteps, stepChanges } from "../core/playbook";
-import { runExplore, traceNumbers, type Step } from "../core/runner";
+import { draftSteps, isPlaybookTool, sameSteps, savedCalls, stepChanges } from "../core/playbook";
+import { READ_FIRST, runExplore, traceNumbers, type Step } from "../core/runner";
 import { TOOLS } from "../core/tools/catalog";
 import { claudeClient, modelClient, providerClient, type ProviderDeps } from "../integrations/llm";
 import { fromChat, fromResponses, toChat, toResponses } from "../core/llm-wire";
@@ -185,6 +185,23 @@ async function main() {
   assert.deepEqual(r4.output, []);
   assert.match(r4.summary, /1 number left out/);
 
+  // finishing an explore run before any read: sent back once to read first (a try that reads nothing saves no
+  // playbook, so the agent could never go live), and a second finish is taken as it is
+  const seen: unknown[][] = [];
+  const r4b = await runExplore(spec, { agentId: "scratch", client: fake((t, body) => {
+    seen.push(JSON.parse(JSON.stringify(body.messages)));
+    return reply([{ type: "tool_use", id: `e${t}`, name: "finish", input: { result: t ? "Nothing to report." : "Not run yet." } }]);
+  }) });
+  assert.equal(seen.length, 2, "one nudge, then the second finish ends the run");
+  assert.equal(r4b.finished, true);
+  assert.equal(r4b.summary, "Nothing to report.");
+  assert.deepEqual((seen[1].at(-1) as { content: unknown }).content, [{ type: "tool_result", tool_use_id: "e0", is_error: true, content: READ_FIRST }]);
+  // an agent with nothing it could read is not sent back
+  let noReads = 0;
+  const bare = readSpec({ directive: "x", model: "claude-haiku-5-5", tools: [] }).spec;
+  const r4c = await runExplore(bare, { agentId: "scratch", client: fake(() => { noReads++; return reply([{ type: "tool_use", id: "g", name: "finish", input: { result: "Done." } }]); }) });
+  assert.equal(noReads, 1); assert.equal(r4c.finished, true);
+
   // sources: picking agent_output needs an agent to read from
   assert.ok(readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["agent_output"] }).problems.some((p) => /no agent is picked/.test(p)));
   const reads = readSpec({ directive: "x", model: "claude-haiku-5-5", tools: ["agent_output"], readsFrom: [{ agentId: "b_green", label: "G" }, { agentId: "b_green" }, { agentId: "Bad Id!" }] });
@@ -205,6 +222,12 @@ async function main() {
   assert.ok(!sameSteps(pb, [{ tool: "klaviyo_lists", input: {} }, { tool: "calc_burn_rate", input: { days: 120 } }]));
   assert.match(stepChanges(pb, [pb[0]]), /^Removed: /);
   assert.match(stepChanges(null, pb), /First playbook: 2 steps/);
+  // what a try saved: reads that worked count; a model step, a failed read and an unknown tool don't
+  assert.equal(savedCalls(ran), 3);
+  assert.equal(savedCalls([{ kind: "model", tool: null, ok: true }]), 0, "a try with no tool calls saves nothing");
+  assert.equal(savedCalls([{ kind: "tool", tool: "mercury_balances", ok: false }, { kind: "tool", tool: "nope", ok: true }]), 0);
+  assert.ok(isPlaybookTool(TOOLS.goal_progress) && !isPlaybookTool(undefined));
+  assert.ok(Object.values(TOOLS).filter((t) => t.server || t.kind === "action" || t.kind === "report").every((t) => !isPlaybookTool(t)));
 
   // following a playbook: code makes the calls, the model is offered only finish
   const r5 = await runExplore(spec, { agentId: "scratch", playbook: { version: 1, steps: [] }, client: fake((t, body) => {
