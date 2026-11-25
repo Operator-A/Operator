@@ -130,7 +130,7 @@ export default async function Company({ searchParams }: { searchParams: Promise<
       </div>
       <div className="dp-stage">
         <DeptTabs label="Company tabs" open={tab} tabs={COMPANY_TABS.map((t) => ({
-          key: t, label: COMPANY_TAB_LABEL[t], href: companyHref(t),
+          key: t, label: COMPANY_TAB_LABEL[t], href: companyHref(t), icon: t,
           count: t === "departments" ? depts : t === "approvals" ? apCount ?? waiting : undefined, red: t === "approvals",
         }))} />
         <div className="dp-pane" key={tab}>

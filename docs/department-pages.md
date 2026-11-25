@@ -1,6 +1,6 @@
 # Department pages
 
-Each department gets one page, `/dept/[id]`, with four tabs: Chat, Agents, Goals and Approvals. You run
+Each department gets one page, `/dept/[id]`, with five tabs: Chat, Agents, Goals, Chains and Approvals. You run
 the department from its chat. Design approved 2026-11-23 (desktop and phone mockups, linked on the
 Build Board card "Department pages with chat"). Chat stays in OPERATOR: every head and agent runs here on
 the model picked for it, and a member's Claude reaches OPERATOR only through OPERATOR's own MCP server
@@ -25,6 +25,7 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | 11 | Company > Departments gets Cards and Chart; Schedule becomes a Settings section | The Crew menu item and page, its department chips and view switch |
 | 12 | Activity: Runs and Status on one page, a red dot in the menu while something is broken | The Runs and Status menu items and pages, the Runs table, the pinned Status link |
 | 13 | Nothing new | The pages that only redirected: `/build`, `/build/[id]`, `/integrations`, `/access` |
+| 14 | Phone tabs on one line: icon over a small label, on department pages and Company | The four-column phone tab grid and Company's own squeeze rule |
 
 ## Slice 1: the page
 
@@ -389,3 +390,24 @@ in Claude (`markLinked`), seated (`placeAgent`), given its budget (`setBuiltBudg
 `followAgent`). Anything that doesn't take is said in the reply; nothing is half-hidden. **Create and try once** also
 starts one try in the background (Controls on; not for a Claude routine, which tries after its routine is connected).
 The sheet then opens as the new agent's own sheet. Nothing here puts an agent on duty. No database change.
+
+## Slice 14: phone tabs on one line
+
+Departments got a fifth tab (Chains), but the phone tab bar was a four-column grid, so Approvals wrapped to a
+second row, the ink stretched two rows tall and the taller bar covered the top of the page. Design approved
+2026-11-25 (mockup https://claude.ai/artifact/WqTZTkAux1stb1vAuN6akz, option C).
+
+- **On a phone** (760px and narrower) every tab is an icon over a small label (10.5px), in as many equal
+  columns as there are tabs (`--n`, set by `DeptTabs`), so five fit and a sixth would. Counts sit as small
+  badges at the icon's top right; Approvals' stays red. The bar has one fixed height (`--tabs-h`), and the
+  panes (`.dp-scroll`, `.dp-log`) start below it by reading `--below-tabs`, so the bar can't cover them.
+- **Wide screens** keep the words-only tabs; the icons are hidden.
+- **Company** uses the same `DeptTabs`, so it gets the same bar (Chat, Departments, Goals, Approvals), and
+  shows its grey counts again on a phone.
+- **Icons** are Lucide outlines drawn inline in `dashboard/components/deptTabs.tsx`; `TabLink.icon` is
+  required, so a new tab can't ship without one.
+
+Tests: `npm run check:tabs` (source; then Chromium at 320 to 430px, light and dark, each tab open: one row,
+every label whole, counts inside their tab, the ink one row tall and on the open tab, the page starting below
+the bar; words only on a wide screen). Measured with Plus Jakarta Sans loaded, "Approvals" needs 53 of its
+56px at 320px wide, the narrowest phone.

@@ -79,7 +79,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
       </div>
       <div className="dp-stage">
         <DeptTabs label={`${dept.name} tabs`} open={tab} tabs={DEPT_TABS.map((t) => ({
-          key: t, label: TAB_LABEL[t], href: tabHref(id, t),
+          key: t, label: TAB_LABEL[t], href: tabHref(id, t), icon: t,
           count: t === "agents" ? ids.length : t === "goals" ? goalCount : t === "approvals" ? waiting : undefined, red: t === "approvals",
         }))} />
         <div className="dp-pane" key={tab}>
