@@ -394,3 +394,12 @@ const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = 
   assert.ok(existsSync("app/(room)/agents/[id]/page.tsx"), "an agent's lasting address stays: results, lessons and the agent map link to it");
   for (const p of ["approvals", "proposals", "crew", "runs", "status"]) assert.ok(existsSync(`app/(room)/${p}/page.tsx`), `/${p} still sends this month's emails and bookmarks on`);
 }
+
+// agent cards: the name sits on its own line and the job title under it, as in the approved mockup
+// (a <b> that stayed inline ran "MorganCFO" together on the Agents tab and Company page)
+{
+  const css = read("app/globals.css");
+  assert.ok(/\.dp-nm b \{[^}]*display: block/.test(css), "an agent card's name is its own line");
+  for (const f of ["app/(room)/dept/[id]/page.tsx", "app/(room)/page.tsx"])
+    assert.ok(/className="dp-nm"><b>\{a\.name\}<\/b><span>/.test(read(f)), `${f}: name in <b>, title in the <span> after it`);
+}
