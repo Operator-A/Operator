@@ -15,6 +15,7 @@ import { SOURCES, hookPath } from "@/core/event-rules";
 import { gatewayCredits, hookStates } from "@/integrations/mcp";
 import { imageSpendNow } from "@/core/image-step";
 import { IMAGE_MODELS, imageModel } from "@/core/image-rules";
+import { MODEL_LIST } from "@/integrations/models";
 import { orgId } from "@/core/tenancy";
 import { env } from "@/core/env";
 import { headers } from "next/headers";
@@ -373,8 +374,9 @@ async function ClaudeCard({ owner, query }: { owner: boolean; query: Readonly<Re
     <div className="card" id="claude" style={{ gap: 10 }}>
       <span className="row" style={{ gap: 8, justifyContent: "space-between" }}>
         <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="cpu" size={15} />Claude</span>
-        <span className="pill sm" style={{ background: ok ? "var(--mint-soft)" : "var(--red-soft)", color: ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{ok ? (using === "hosted" ? "On OPERATOR’s Claude" : "Your own key") : "Not set up"}</span>
+        <span className="pill sm" style={{ background: ok ? "var(--mint-soft)" : "var(--red-soft)", color: ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{ok ? (state.gateway ? "Through the gateway" : using === "hosted" ? "On OPERATOR’s Claude" : "Your own key") : "Not set up"}</span>
       </span>
+      {state.gateway && <span className="row" style={{ gap: 8, justifyContent: "space-between", fontSize: 12.5 }}><span className="ink2">Claude agents and steps run on your AI Gateway key. Your own Claude key, if saved, is the backup when the gateway can’t answer.</span><span className="pill sm" style={{ background: "var(--mint-soft)", color: "var(--mint-ink)", flex: "none" }}>Through the gateway</span></span>}
       <span className="ink2" style={{ fontSize: 12.5 }}>
         {ok ? "Every agent thinks with Claude. A key of your own always comes first; without one, runs use OPERATOR’s Claude and are paid from credits."
           : state.edition === "cloud" ? "Agents can’t think yet, so runs stop with a note. Buy credits for OPERATOR’s Claude, or paste your own key." : "Paste a Claude API key from the Claude Console (Settings > API keys). Until then agents can’t think, so runs stop with a note."}
@@ -410,6 +412,8 @@ async function GatewayCard({ owner }: { owner: boolean }) {
   const makers = new Map<string, { usd: number; pictures: number }>();
   for (const r of gw(week)) { const k = imageModel(r.model)!.maker, t = makers.get(k) ?? { usd: 0, pictures: 0 }; t.usd += r.usd; t.pictures += r.pictures; makers.set(k, t); }
   const pictures = IMAGE_MODELS.filter((m) => m.provider === "gateway").length;
+  // Claude's models go through the gateway too, so they count as its text models
+  const texts = MODEL_LIST.filter((m) => m.provider === "gateway" || m.provider === "anthropic").length;
   const usd = (v: number) => `$${v.toFixed(2)}`;
   const tile = (n: string, label: string, live: boolean) => (
     <div style={{ background: live ? "var(--mint-soft)" : "var(--soft)", borderRadius: 14, padding: "10px 12px", display: "flex", flexDirection: "column" }}>
@@ -424,18 +428,19 @@ async function GatewayCard({ owner }: { owner: boolean }) {
       </span>
       <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
         {on
-          ? "Picture models in Make an image steps come through your Vercel AI Gateway key. Vercel bills you at each maker’s own price, with no markup on top."
-          : "One key reaches every model OPERATOR offers through Vercel: picture models now, then Claude and other makers’ text models. Vercel bills you at each maker’s own price, with no markup on top. Until a key is saved, Make an image steps on gateway models can’t run."}
+          ? "Claude, other makers’ text models and picture models all come through your Vercel AI Gateway key. Vercel bills you at each maker’s own price, with no markup on top."
+          : "One key reaches every model OPERATOR offers through Vercel: Claude, other makers’ text models, and picture models. Vercel bills you at each maker’s own price, with no markup on top. Until a key is saved, gateway models can’t run, and Claude runs on your own key or credits as before."}
       </span>
       {paused && st?.lastError && <span className="ink2" style={{ fontSize: 12.5 }}>{st.lastError}</span>}
       {on && !paused && <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
           {tile(String(pictures), "Pictures", true)}
-          {tile("Next", "Text, Claude too", false)}
+          {tile(String(texts), "Text, Claude too", true)}
           {tile("Later", "Video, voice, transcribe", false)}
         </div>
         <div style={{ borderTop: "1px solid var(--bd)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
           <span className="row" style={{ justifyContent: "space-between", fontSize: 13 }}><span className="ink2">Pictures this month</span><b>{usd(spent)}</b></span>
+          <span className="ink2" style={{ fontSize: 12 }}>Each agent run’s cost is on Activity, as before.</span>
           <span className="row" style={{ justifyContent: "space-between", fontSize: 13 }}><span className="ink2">Credits left in Vercel</span><b>{credits ? usd(credits.balance) : "Couldn’t read"}</b></span>
           <span className="ink2" style={{ fontSize: 12 }}>You set the budget on the key in Vercel. When it runs out, steps stop and say so, and your agents’ daily budgets still apply on top.</span>
         </div>

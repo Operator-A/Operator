@@ -66,8 +66,11 @@ export const MODEL_PROVIDERS: readonly ModelProviderDef[] = [
   },
 ];
 
-/** The AI Gateway's address, for its picture endpoint (integrations/llm.ts). */
+/** The AI Gateway's address, for its picture endpoint and Claude's Messages endpoint (integrations/llm.ts). */
 export const GATEWAY_URL = "https://ai-gateway.vercel.sh";
+
+/** A Claude model's name on the gateway: claude-sonnet-5-5 is anthropic/claude-sonnet-5.5 there (its model list, 2026-11-25). */
+export const gatewayClaudeId = (id: string) => `anthropic/${id.replace(/-(\d+)-(\d+)$/, "-$1.$2")}`;
 
 export const PROVIDER_BY_ID: Readonly<Record<ModelProvider, ModelProviderDef>> = Object.fromEntries(MODEL_PROVIDERS.map((p) => [p.id, p])) as Record<ModelProvider, ModelProviderDef>;
 

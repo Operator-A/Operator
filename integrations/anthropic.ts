@@ -3,7 +3,7 @@ import "server-only";
 // integrations/models.ts (every provider's prices live there).
 import Anthropic from "@anthropic-ai/sdk";
 import { modelDef } from "./models";
-import { claudeKey, hasClaudeKey } from "./mcp";
+import { claudeKey, hasClaudeKey, modelKeysReady } from "./mcp";
 import { edition, pooledKey } from "@/core/extensions";
 import { billingFor, type Billing } from "@/core/cost-rules";
 
@@ -27,7 +27,18 @@ export const NO_CREDITS = "This business has no Claude key of its own and no Cla
 
 /** Who pays the current business's runs (core/cost-rules.ts billingFor). */
 export async function billingNow(): Promise<Billing> {
-  return billingFor({ ownKey: await hasClaudeKey(), edition: edition() });
+  // Claude runs go through the AI Gateway key first when it is saved (conductor ticket 1b), billed by Vercel
+  const [own, keys] = await Promise.all([hasClaudeKey(), modelKeysReady().catch(() => null)]);
+  return billingFor({ ownKey: own || !!keys?.gateway, edition: edition() });
+}
+
+/**
+ * The business's own Claude key as a client, or null: the backup when the AI Gateway can't run a Claude turn
+ * (integrations/llm.ts). Never the hosted key, since a run on the gateway was not billed to credits.
+ */
+export async function ownClaude(): Promise<Anthropic | null> {
+  const own = await claudeKey();
+  return own ? new Anthropic({ apiKey: own }) : null;
 }
 
 /**

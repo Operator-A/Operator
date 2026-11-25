@@ -235,7 +235,7 @@ export const getHealth = cache(async (): Promise<Record<IntegrationId, boolean>>
   if (!s.ownerEmail) h.email = false;
   // Claude (and web search through it): the business's own key, else OPERATOR's hosted Claude on
   // credits (cloud edition), the same order runs use (integrations/anthropic.ts, card 162)
-  h.claude = h.web = claudeReady(await claudeState({ status: mcp[CLAUDE_KEY_ID] ?? null }));
+  h.claude = h.web = claudeReady(await claudeState({ status: mcp[CLAUDE_KEY_ID] ?? null, gateway: mcp[PROVIDER_BY_ID.gateway.vaultId] ?? null }));
   // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
   const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0, ga4: !!mcp.ga4?.settings.propertyId };
   for (const id of MCP_IDS) { const st = mcp[id]; if (st?.connected && !st.paused && extra[id] !== false) h[id] = true; }

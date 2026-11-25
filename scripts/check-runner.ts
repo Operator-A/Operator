@@ -8,7 +8,8 @@ import { NO_MODEL_KEYS, modelReady, readSpec, specLooser } from "../core/agent-s
 import { draftSteps, isPlaybookTool, sameSteps, savedCalls, stepChanges } from "../core/playbook";
 import { READ_FIRST, runExplore, traceNumbers, type Step } from "../core/runner";
 import { TOOLS } from "../core/tools/catalog";
-import { claudeClient, modelClient, providerClient, type ProviderDeps } from "../integrations/llm";
+import { claudeClient, modelClient, providerClient, type ClaudeDeps, type ClaudeMessages, type ProviderDeps } from "../integrations/llm";
+import { gatewayClaudeId } from "../core/model-key-rules";
 import { fromChat, fromResponses, toChat, toResponses } from "../core/llm-wire";
 import { costUsd } from "../integrations/anthropic";
 import { MODEL_LIST } from "../integrations/models";
@@ -138,6 +139,55 @@ async function main() {
   await providerClient("google", deps(200, { choices: [{ message: { content: "hi" }, finish_reason: "stop" }] })).turn({ ...(wireTurn as any), model: "gemini-3.1-flash-lite" });
   assert.equal(wireSent[0].url, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
   assert.equal((wireSent[0].init.headers as Record<string, string>)["x-goog-api-key"], KEY);
+  // another maker's text model through the AI Gateway (conductor ticket 1b): chat completions on the gateway key
+  wireSent.length = 0;
+  const gt = await providerClient("gateway", deps(200, { choices: [{ message: { content: "hi" }, finish_reason: "stop" }] })).turn({ ...(wireTurn as any), model: "openai/gpt-6.2-sol" });
+  assert.equal(wireSent[0].url, "https://ai-gateway.vercel.sh/v1/chat/completions");
+  assert.equal(JSON.parse(String(wireSent[0].init.body)).model, "openai/gpt-6.2-sol", "the gateway takes the maker/model name");
+  assert.equal(gt.model, "openai/gpt-6.2-sol");
+  for (const m of MODEL_LIST.filter((x) => x.provider === "gateway")) assert.match(m.id, /^[a-z]+\/[a-z0-9.-]+$/, `${m.id} is a gateway name`);
+  assert.equal(costUsd("openai/gpt-6.2-sol", 1_000_000, 100_000), 3, "a gateway model is billed at the maker's own price, in code");
+
+  // Claude through the AI Gateway (conductor ticket 1b), the own key as backup, never credits
+  assert.equal(gatewayClaudeId("claude-sonnet-5-5"), "anthropic/claude-sonnet-5.5");
+  assert.equal(gatewayClaudeId("claude-haiku-5-5"), "anthropic/claude-haiku-5.5");
+  const GW = "vck_" + "g".repeat(40);
+  const gwReply = { id: "m1", type: "message", role: "assistant", model: "anthropic/claude-sonnet-5.5", content: [{ type: "text", text: "ok" }], stop_reason: "end_turn", usage: { input_tokens: 100, output_tokens: 5 } };
+  const ccalls: { via: string; body: any }[] = [];
+  const msgs = (via: string, fail?: { status: number }): ClaudeMessages => ({ beta: { messages: { create: async (body: any) => { ccalls.push({ via, body }); if (fail) throw Object.assign(new Error(`${fail.status} nope ${GW}`), fail); return gwReply as any; } } } });
+  const gwPaused: string[] = [];
+  const cdeps = (o: { gw?: string | null; fail?: { status: number }; own?: boolean }): ClaudeDeps => ({
+    gatewayKey: async () => (o.gw === undefined ? GW : o.gw), pauseGateway: async (why) => { gwPaused.push(why); },
+    viaGateway: (k) => { assert.equal(k, GW); return msgs("gateway", o.fail); }, own: async () => (o.own ? msgs("own") : null), usual: async () => msgs("usual"),
+  });
+  const turnReq = { model: "claude-sonnet-5-5", maxOut: 100, effort: "low" as const, system: [], tools: [], messages: [{ role: "user" as const, content: "hi" }] };
+  const c1 = await claudeClient(undefined, cdeps({})).turn(turnReq);
+  assert.equal(ccalls[0].via, "gateway");
+  assert.equal(ccalls[0].body.model, "anthropic/claude-sonnet-5.5");
+  assert.ok(!("betas" in ccalls[0].body) && !("fallbacks" in ccalls[0].body), "the Anthropic-only refusal fallback isn't sent through the gateway");
+  assert.deepEqual(ccalls[0].body.cache_control, { type: "ephemeral" }, "prompt caching still asked for");
+  assert.equal(c1.model, "claude-sonnet-5-5", "billed by the model the run asked for");
+  ccalls.length = 0;
+  await claudeClient(undefined, cdeps({ gw: null })).turn(turnReq);
+  assert.equal(ccalls[0].via, "usual", "no gateway key: own key or credits, as before");
+  assert.deepEqual(ccalls[0].body.betas, ["server-side-fallback-2026-07-01"]);
+  ccalls.length = 0;
+  await claudeClient(undefined, cdeps({ fail: { status: 503 }, own: true })).turn(turnReq);
+  assert.deepEqual(ccalls.map((c) => c.via), ["gateway", "own"], "the gateway down: sent again on the own key");
+  assert.equal(ccalls[1].body.model, "claude-sonnet-5-5");
+  assert.equal(gwPaused.length, 0, "a gateway that's down isn't paused");
+  ccalls.length = 0;
+  await claudeClient(undefined, cdeps({ fail: { status: 401 }, own: true })).turn(turnReq);
+  assert.equal(gwPaused.length as number, 1, "a refused gateway key is paused");
+  assert.ok(!gwPaused[0].includes(GW), "and never echoed");
+  ccalls.length = 0;
+  const noOwn = await claudeClient(undefined, cdeps({ fail: { status: 500 } })).turn(turnReq).then(() => "", (e: Error) => e.message);
+  assert.match(noOwn, /no Claude key of your own to fall back on/);
+  assert.ok(!noOwn.includes(GW) && !ccalls.some((c) => c.via === "usual"), "never falls back to credits, and never echoes the key");
+  ccalls.length = 0;
+  const budget = await claudeClient(undefined, cdeps({ fail: { status: 402 }, own: true })).turn(turnReq).then(() => "", (e: Error) => e.message);
+  assert.match(budget, /budget in Vercel is used up/);
+  assert.deepEqual(ccalls.map((c) => c.via), ["gateway"], "a used-up budget stops the run instead of spending elsewhere");
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // finishes: a tool the agent doesn't have is refused, then finish ends the run

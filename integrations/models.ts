@@ -39,6 +39,13 @@ const LIST: ModelDef[] = [
   // prompts up to 200K tokens; preview models can be withdrawn by Google
   { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (preview)", provider: "google", in: 2 * M, cacheIn: 0.2 * M, out: 12 * M, caps: ["structured-output", "reasoning"] },
   { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash-Lite", provider: "google", in: 0.25 * M, cacheIn: 0.025 * M, out: 1.5 * M, caps: ["structured-output", "reasoning"] },
+  // Through the AI Gateway (conductor ticket 1b), on the business's gateway key, billed by Vercel at each maker's own
+  // price: prices from the gateway's model list on 2026-11-25, at the tier for prompts under 272K tokens (every agent's
+  // prompt is a few thousand). Models whose price varies by the provider serving them aren't listed.
+  { id: "openai/gpt-6.2-sol", label: "GPT-6.2 Sol", provider: "gateway", in: 2 * M, cacheIn: 0.1 * M, out: 10 * M, caps: ["structured-output", "reasoning"] },
+  { id: "openai/gpt-6.2-astra", label: "GPT-6.2 Astra", provider: "gateway", in: 8 * M, cacheIn: 0.4 * M, out: 40 * M, caps: ["structured-output", "reasoning"] },
+  { id: "google/gemini-4-neon", label: "Gemini 4 Neon", provider: "gateway", in: 3 * M, cacheIn: 0.15 * M, out: 15 * M, caps: ["structured-output", "reasoning"] },
+  { id: "google/gemini-4-hydrogen", label: "Gemini 4 Hydrogen", provider: "gateway", in: 1.5 * M, cacheIn: 0.075 * M, out: 7.5 * M, caps: ["structured-output", "reasoning"] },
 ];
 
 export const MODEL_LIST: readonly ModelDef[] = LIST;

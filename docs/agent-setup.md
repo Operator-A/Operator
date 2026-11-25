@@ -148,6 +148,20 @@ stored id that falls off the list is ignored like any other invalid setup value.
   model whose price matches the logged cost.
 - Changing a price or adding a model is a pull request; read the provider's price page that day.
 
+
+### Through the AI Gateway (conductor ticket 1b, built 2026-11-25)
+
+With the business's AI Gateway key saved (Connections > AI Gateway), every Claude turn goes to the gateway's
+Anthropic-compatible Messages endpoint (`https://ai-gateway.vercel.sh/v1/messages`, Bearer key, no redirects), with
+the model named the gateway's way (`gatewayClaudeId`: `claude-sonnet-5-5` is `anthropic/claude-sonnet-5.5`). Prompt
+caching and effort are sent; the Anthropic-only refusal fallback beta is not. Vercel bills it at Anthropic's price,
+so the run's billing is the business's own key, never credits (`billingNow`). If the gateway can't run a turn, the
+turn is sent again on the business's own Claude key when it has one, never on credits; a refused gateway key is
+paused; a used-up budget (402) stops the run. Without a gateway key nothing changes. Other makers' text models
+listed with provider `gateway` (`openai/gpt-6.2-sol` and others) run on chat completions through the same key and
+show under "Other makers (AI Gateway)" in the Runs on picker. Other server-side Claude calls (setup interview, books
+sync) still use `claude()`: the business's own key or credits.
+
 ## Reads and Writes (slice 4)
 
 `dashboard/components/ReadsWritesEditor.tsx`; the shared draft, Preview, save and versions are in
