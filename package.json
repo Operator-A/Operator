@@ -73,6 +73,7 @@
     "check:signout": "npx --yes tsx scripts/check-signout.ts",
     "check:sidebar": "npx --yes tsx scripts/check-sidebar.ts",
     "check:tabs": "npx --yes tsx scripts/check-tabs.ts",
+    "check:chain-picker": "npx --yes tsx scripts/check-chain-picker.ts",
     "check:time-zone": "npx --yes tsx scripts/check-time-zone.ts",
     "check:on-duty": "npx --yes tsx scripts/check-on-duty.ts",
     "check:brain": "npx --yes tsx scripts/check-brain.ts",
