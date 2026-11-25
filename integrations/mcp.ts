@@ -1300,6 +1300,24 @@ export async function pauseModelKey(provider: ModelProvider, why: string, key: s
   await pause(PROVIDER_BY_ID[provider].vaultId, why, "refused", [key]);
 }
 
+/**
+ * The AI Gateway's credit balance and what has been used, for its card on Connections (conductor ticket 1): one
+ * read-only call on the business's own gateway key that never follows a redirect; null when there is no key, it is
+ * paused, or Vercel doesn't answer in time. The budget on the key is set in Vercel and isn't read here.
+ */
+export async function gatewayCredits(): Promise<{ balance: number; used: number } | null> {
+  const p = PROVIDER_BY_ID.gateway;
+  const key = await modelKey("gateway");
+  if (!key) return null;
+  try {
+    const res = await fetch(p.check.url, { headers: { [p.check.header]: `${p.check.prefix}${key}` }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) return null;
+    const j = await res.json() as { balance?: unknown; total_used?: unknown };
+    const balance = Number(j.balance), used = Number(j.total_used);
+    return Number.isFinite(balance) && Number.isFinite(used) ? { balance, used } : null;
+  } catch { return null; }
+}
+
 /** Which provider keys are saved and not paused, read without opening any of them. */
 export async function modelKeysReady(): Promise<Record<ModelProvider, boolean>> {
   const all = await mcpStatuses();

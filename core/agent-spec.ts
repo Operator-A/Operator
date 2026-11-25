@@ -49,7 +49,7 @@ export const specModelOk = (id: string) => !!modelDef(id);
 
 /** Which other providers have a key saved and not paused (Connections > Other models). */
 export type ModelKeys = Readonly<Record<ModelProvider, boolean>>;
-export const NO_MODEL_KEYS: ModelKeys = { openai: false, xai: false, google: false };
+export const NO_MODEL_KEYS: ModelKeys = { openai: false, xai: false, google: false, gateway: false };
 
 /** Whether a listed model can run for this business: Claude always (its own key or credits), another provider once its key is saved. */
 export const modelReady = (id: string, keys: ModelKeys) => {

@@ -1002,7 +1002,18 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
 // ---- The business's own keys for other model providers (docs/agent-setup.md, "Models across providers")
 {
   const R = ModelKeyRules;
-  assert.deepEqual(R.MODEL_PROVIDERS.map((p) => p.id), ["openai", "xai", "google"]);
+  assert.deepEqual(R.MODEL_PROVIDERS.map((p) => p.id), ["openai", "xai", "google", "gateway"]);
+  // the AI Gateway (conductor ticket 1): its own card, a key checked on a call that needs it (its model list doesn't)
+  assert.equal(R.PROVIDER_BY_ID.gateway.check.url, "https://ai-gateway.vercel.sh/v1/credits");
+  assert.ok(R.PROVIDER_BY_ID.gateway.ownCard && R.MODEL_PROVIDERS.filter((p) => p.ownCard).length === 1);
+  assert.equal(R.keyPlace(R.PROVIDER_BY_ID.gateway), "Connections > AI Gateway");
+  assert.equal(R.keyPlace(R.PROVIDER_BY_ID.openai), "Connections > Other models");
+  assert.ok("key" in R.readModelKey(R.PROVIDER_BY_ID.gateway, `vck_${"a".repeat(40)}`));
+  assert.match((R.readModelKey(R.PROVIDER_BY_ID.gateway, "has spaces in it, not a key at all") as { problem: string }).problem, /doesn’t look like an AI Gateway key/);
+  assert.ok(R.budgetGone(402) && !R.keyRefused(402), "a used-up gateway budget isn't a refused key");
+  const credits = mcpSrc.slice(mcpSrc.indexOf("export async function gatewayCredits"), mcpSrc.indexOf("export async function modelKeysReady"));
+  assert.match(credits, /redirect: "error"/, "reading credits never follows a redirect");
+  assert.ok(!/console\.|logEvent/.test(credits), "reading credits logs nothing");
   assert.equal(new Set(R.MODEL_PROVIDERS.map((p) => p.vaultId)).size, R.MODEL_PROVIDERS.length, "one vault row per provider");
   for (const p of R.MODEL_PROVIDERS) {
     assert.match(p.vaultId, /^[a-z][a-z0-9_]{1,30}$/, "fits mcp_connections.id");

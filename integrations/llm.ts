@@ -8,7 +8,7 @@ import "server-only";
 import { Anthropic, claude, inputTokens } from "./anthropic";
 import { modelDef } from "./models";
 import { modelKey, pauseModelKey } from "./mcp";
-import { PROVIDER_BY_ID, keyRefused, type ModelProvider } from "@/core/model-key-rules";
+import { GATEWAY_URL, PROVIDER_BY_ID, budgetGone, keyPlace, keyRefused, type ModelProvider } from "@/core/model-key-rules";
 import { fromChat, fromResponses, toChat, toResponses, type ChatResponse, type ClaudeTurn, type ResponsesResponse } from "@/core/llm-wire";
 import { scrubSecrets } from "@/core/mcp-rules";
 
@@ -92,7 +92,7 @@ export const providerClient = (provider: ModelProvider, deps: ProviderDeps = LIV
   async turn(req) {
     const p = PROVIDER_BY_ID[provider];
     const key = await deps.key(provider);
-    if (!key) throw new Error(`No ${p.name} key on Connections > Other models, or it is paused. Paste one there to run this agent on ${req.model}.`);
+    if (!key) throw new Error(`No ${p.name} key on ${keyPlace(p)}, or it is paused. Paste one there to run this agent on ${req.model}.`);
     const t = req as unknown as ClaudeTurn;
     const body = p.turns.wire === "responses" ? toResponses(t) : toChat(t);
     let res: Response;
@@ -106,7 +106,7 @@ export const providerClient = (provider: ModelProvider, deps: ProviderDeps = LIV
       const said = scrubSecrets(await res.text().catch(() => ""), [key]).slice(0, 200);
       if (keyRefused(res.status)) {
         await deps.pause(provider, `${p.name} refused the key (${res.status}) during a run`, key);
-        throw new Error(`${p.name} refused the key (${res.status}), so it is paused. Paste a working key on Connections > Other models.`);
+        throw new Error(`${p.name} refused the key (${res.status}), so it is paused. Paste a working key on ${keyPlace(p)}.`);
       }
       throw new Error(`${p.name} answered ${res.status}: ${said}`);
     }
@@ -126,26 +126,34 @@ export function modelClient(model: string): ModelClient {
 
 /** One picture back from an image model (chains slice 4): its bytes and the provider's own counts, for the cost in code. */
 export interface ImageResult { bytes: Uint8Array; usage: { textIn: number; imageOut: number } }
-export interface ImageClient { make(req: { model: string; prompt: string; size: string; quality: string }): Promise<ImageResult> }
+/** A quality is sent only to a model that takes one (core/image-rules.ts takesQuality). */
+export interface ImageClient { make(req: { model: string; prompt: string; size: string; quality?: string }): Promise<ImageResult> }
 
-/** Where each provider makes pictures. Only OpenAI's image models are on the list (core/image-rules.ts). */
-const IMAGE_URL: Partial<Record<ModelProvider, string>> = { openai: "https://api.openai.com/v1/images/generations" };
+/** Where each provider makes pictures: OpenAI's own endpoint on the business's OpenAI key, or the AI Gateway's (conductor ticket 1). */
+const IMAGE_URL: Partial<Record<ModelProvider, string>> = { openai: "https://api.openai.com/v1/images/generations", gateway: `${GATEWAY_URL}/v1/images/generations` };
+
+/** The request body for each provider: OpenAI's own fields, or the gateway's OpenAI-compatible ones (a base64 picture back). */
+const imageBody = (provider: ModelProvider, req: Parameters<ImageClient["make"]>[0]) =>
+  provider === "gateway"
+    ? { model: req.model, prompt: req.prompt, n: 1, size: req.size, response_format: "b64_json", ...(req.quality ? { quality: req.quality } : {}) }
+    : { model: req.model, prompt: req.prompt, size: req.size, quality: req.quality, n: 1, output_format: "png" };
 
 /**
- * An image model on the business's own key for its provider, opened for this one request, like providerClient: never
- * follows a redirect, never puts the key in an error, pauses a refused key. One picture per request.
+ * An image model on the business's own key for its provider (the AI Gateway key for gateway models), opened for this
+ * one request, like providerClient: never follows a redirect, never puts the key in an error, pauses a refused key. A
+ * gateway key whose budget in Vercel is used up (402) isn't paused: the step stops and says so. One picture per request.
  */
 export const imageClient = (provider: ModelProvider, deps: ProviderDeps = LIVE): ImageClient => ({
   async make(req) {
     const p = PROVIDER_BY_ID[provider], url = IMAGE_URL[provider];
     if (!url) throw new Error(`OPERATOR doesn’t make pictures on ${p.name} yet.`);
     const key = await deps.key(provider);
-    if (!key) throw new Error(`No ${p.name} key on Connections > Other models, or it is paused. Paste one there to make pictures on ${req.model}.`);
+    if (!key) throw new Error(`No ${p.name} key on ${keyPlace(p)}, or it is paused. Paste one there to make pictures on ${req.model}.`);
     let res: Response;
     try {
       res = await deps.fetch(url, {
         method: "POST", headers: { [p.check.header]: `${p.check.prefix}${key}`, "content-type": "application/json" },
-        body: JSON.stringify({ model: req.model, prompt: req.prompt, size: req.size, quality: req.quality, n: 1, output_format: "png" }),
+        body: JSON.stringify(imageBody(provider, req)),
         cache: "no-store", redirect: "error", signal: AbortSignal.timeout(240_000),
       });
     } catch (e) { throw new Error(`${p.name} couldn't be reached: ${scrubSecrets(e instanceof Error ? e.message : String(e), [key]).slice(0, 160)}`); }
@@ -153,12 +161,14 @@ export const imageClient = (provider: ModelProvider, deps: ProviderDeps = LIVE):
       const said = scrubSecrets(await res.text().catch(() => ""), [key]).slice(0, 200);
       if (keyRefused(res.status)) {
         await deps.pause(provider, `${p.name} refused the key (${res.status}) making a picture`, key);
-        throw new Error(`${p.name} refused the key (${res.status}), so it is paused. Paste a working key on Connections > Other models.`);
+        throw new Error(`${p.name} refused the key (${res.status}), so it is paused. Paste a working key on ${keyPlace(p)}.`);
       }
+      if (provider === "gateway" && budgetGone(res.status)) throw new Error("The AI Gateway key’s budget in Vercel is used up, so no picture was made. Raise it in Vercel under AI Gateway > API Keys, or add credits.");
       throw new Error(`${p.name} answered ${res.status}: ${said}`);
     }
     const json = await res.json() as { data?: { b64_json?: string }[]; usage?: { output_tokens?: number; input_tokens?: number; input_tokens_details?: { text_tokens?: number } } };
-    const b64 = json.data?.[0]?.b64_json;
+    // some answers carry a data address (data:image/png;base64,…) rather than bare base64
+    const b64 = json.data?.[0]?.b64_json?.replace(/^data:image\/[a-z]+;base64,/, "");
     if (!b64) throw new Error(`${p.name} sent no picture back.`);
     const u = json.usage ?? {};
     return { bytes: new Uint8Array(Buffer.from(b64, "base64")), usage: { textIn: u.input_tokens_details?.text_tokens ?? u.input_tokens ?? 0, imageOut: u.output_tokens ?? 0 } };

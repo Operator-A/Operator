@@ -76,12 +76,26 @@ wide or tall. Its price is worked out in code from the provider's picture tokens
   paying agent (`billedBy`, quick). One request through `imageClient` in `integrations/llm.ts` (the only file that
   opens model keys; no redirects, the key never in an error, a refused key paused). The step before's result, when
   passed along, is added as notes cut to 1,000 characters. The cost is the provider's own counts at our prices.
-- Keeping: the private `chain-images` bucket, at `<org>/<run>.png`, with a `chain_images` row (migration
+- Keeping: the private `chain-images` bucket, at `<org>/<run>.png` (`.jpg` or `.webp` for gateway models that answer so), with a `chain_images` row (migration
   `20270109090000_chain_images.sql`), deleted by the scheduler after 90 days (`pruneImages`). Read only through
   10-minute signed links: on the run page, and on a Wait for my OK card right after the step.
 - The picture is never posted, sent or attached anywhere. A later step gets only a line saying a picture was made.
 
 Tests: `npm run check:image`.
+
+### AI Gateway pictures (conductor ticket 1, built 2026-11-25)
+
+Decided 2026-11-25: picture models come from the Vercel AI Gateway. The business pastes its own gateway key on
+Connections > AI Gateway (`gateway` in `core/model-key-rules.ts`, vault row `ai_gateway_key`, checked on
+`GET /v1/credits`, which needs a key; the model list doesn't). `IMAGE_MODELS` lists the gateway's picture models
+that have a price per picture on its model list (checked 2026-11-25), gateway models first, plus GPT Image 2.5
+Flare on the gateway and on the business's own OpenAI key. A flat-priced model's price is its listed price for the
+shape (the dearer tier where a shape falls between two); it takes no quality, so none is sent or shown. Requests go
+to `POST https://ai-gateway.vercel.sh/v1/images/generations` with `response_format: "b64_json"`; the bytes must be
+a PNG, JPEG or WebP (`imageKind`) or nothing is kept. A 402 (the key's budget in Vercel used up) stops the step and
+doesn't pause the key; a 401/403 pauses it. The step's model is picked on a searchable list, cheapest first or by
+maker, with each model's price for one picture. The card shows picture spend this month and by maker over 7 days
+(from `chain_images`) and the credit balance Vercel reports. Text models through the gateway come in ticket 1b.
 
 ## Slice 5: Run view (built)
 

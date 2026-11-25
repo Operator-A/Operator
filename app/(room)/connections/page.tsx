@@ -12,11 +12,13 @@ import { metaTargets } from "@/core/meta-targets";
 import { RESULT_KINDS, RESULT_LABEL } from "@/core/meta-rules";
 import { claudeRemoveKey, hookRemove, hookSaveSecret, modelRemoveKey, modelSaveKey } from "@/dashboard/connectionActions";
 import { SOURCES, hookPath } from "@/core/event-rules";
-import { hookStates } from "@/integrations/mcp";
+import { gatewayCredits, hookStates } from "@/integrations/mcp";
+import { imageSpendNow } from "@/core/image-step";
+import { IMAGE_MODELS, imageModel } from "@/core/image-rules";
 import { orgId } from "@/core/tenancy";
 import { env } from "@/core/env";
 import { headers } from "next/headers";
-import { MODEL_PROVIDERS } from "@/core/model-key-rules";
+import { MODEL_PROVIDERS, PROVIDER_BY_ID } from "@/core/model-key-rules";
 import { claudeState } from "@/dashboard/claude";
 import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
 import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
@@ -338,6 +340,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
         <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="lock" size={15} />Always on, for every agent</span>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", columnGap: 24 }}><LockList rules={HARD_RULES} dark /></div>
       </div>
+      <Suspense fallback={<SkelPane />}><GatewayCard owner={me.role === "owner"} /></Suspense>
       <Suspense fallback={<SkelPane />}><ClaudeCard owner={me.role === "owner"} query={sp} /></Suspense>
       <Suspense fallback={<SkelPane />}><ModelKeysCard owner={me.role === "owner"} /></Suspense>
       <Suspense fallback={<SkelPane />}><LiveEventsCard owner={me.role === "owner"} /></Suspense>
@@ -382,14 +385,93 @@ async function ClaudeCard({ owner, query }: { owner: boolean; query: Readonly<Re
   );
 }
 
+/** The steps to make a gateway key, click by click (conductor ticket 1 mockup). */
+const GATEWAY_STEPS = [
+  <>Open <b>vercel.com</b> and sign in.</>,
+  <>Pick your team, then <b>AI Gateway</b> in the left menu.</>,
+  <>Open <b>API Keys</b> and press <b>Create key</b>.</>,
+  <>Name it <b>OPERATOR</b>, and set a <b>monthly budget</b> (start with $50).</>,
+  <>Press <b>Create</b>, copy the key, and paste it below.</>,
+];
+
+/**
+ * The Vercel AI Gateway (conductor ticket 1, to the approved mockup): one key that reaches every maker's models, billed
+ * by Vercel at each maker's own price. Picture models come through it now; text models, Claude included, next.
+ */
+async function GatewayCard({ owner }: { owner: boolean }) {
+  const p = PROVIDER_BY_ID.gateway;
+  const st = await mcpStatus(p.vaultId);
+  const on = !!st?.connected, paused = on && !!st?.paused;
+  const [credits, { month, week }] = on && !paused
+    ? await Promise.all([gatewayCredits(), imageSpendNow().catch(() => ({ month: [], week: [] }))])
+    : [null, { month: [], week: [] }];
+  const gw = (rows: { model: string; usd: number; pictures: number }[]) => rows.filter((r) => imageModel(r.model)?.provider === "gateway");
+  const spent = gw(month).reduce((t, r) => t + r.usd, 0);
+  const makers = new Map<string, { usd: number; pictures: number }>();
+  for (const r of gw(week)) { const k = imageModel(r.model)!.maker, t = makers.get(k) ?? { usd: 0, pictures: 0 }; t.usd += r.usd; t.pictures += r.pictures; makers.set(k, t); }
+  const pictures = IMAGE_MODELS.filter((m) => m.provider === "gateway").length;
+  const usd = (v: number) => `$${v.toFixed(2)}`;
+  const tile = (n: string, label: string, live: boolean) => (
+    <div style={{ background: live ? "var(--mint-soft)" : "var(--soft)", borderRadius: 14, padding: "10px 12px", display: "flex", flexDirection: "column" }}>
+      <b style={{ fontSize: 18 }}>{n}</b><span style={{ fontSize: 12, color: live ? "var(--mint-ink)" : "var(--ink2)" }}>{label}</span>
+    </div>
+  );
+  return (
+    <div className="card" id="gateway" style={{ gap: 12 }}>
+      <span className="row" style={{ gap: 8, justifyContent: "space-between" }}>
+        <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="cpu" size={15} />AI Gateway</span>
+        <span className="pill sm" style={{ background: paused ? "var(--yel-soft)" : on ? "var(--mint-soft)" : "var(--soft)", color: paused ? "var(--yel-ink)" : on ? "var(--mint-ink)" : "var(--ink2)" }}>{paused ? "Paused" : on ? "Connected" : "No key"}</span>
+      </span>
+      <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+        {on
+          ? "Picture models in Make an image steps come through your Vercel AI Gateway key. Vercel bills you at each maker’s own price, with no markup on top."
+          : "One key reaches every model OPERATOR offers through Vercel: picture models now, then Claude and other makers’ text models. Vercel bills you at each maker’s own price, with no markup on top. Until a key is saved, Make an image steps on gateway models can’t run."}
+      </span>
+      {paused && st?.lastError && <span className="ink2" style={{ fontSize: 12.5 }}>{st.lastError}</span>}
+      {on && !paused && <>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
+          {tile(String(pictures), "Pictures", true)}
+          {tile("Next", "Text, Claude too", false)}
+          {tile("Later", "Video, voice, transcribe", false)}
+        </div>
+        <div style={{ borderTop: "1px solid var(--bd)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+          <span className="row" style={{ justifyContent: "space-between", fontSize: 13 }}><span className="ink2">Pictures this month</span><b>{usd(spent)}</b></span>
+          <span className="row" style={{ justifyContent: "space-between", fontSize: 13 }}><span className="ink2">Credits left in Vercel</span><b>{credits ? usd(credits.balance) : "Couldn’t read"}</b></span>
+          <span className="ink2" style={{ fontSize: 12 }}>You set the budget on the key in Vercel. When it runs out, steps stop and say so, and your agents’ daily budgets still apply on top.</span>
+        </div>
+        {makers.size > 0 && (
+          <div style={{ borderTop: "1px solid var(--bd)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 600 }}>Last 7 days by maker</span>
+            {[...makers].sort((a, b) => b[1].usd - a[1].usd).map(([k, t]) => (
+              <span key={k} className="row" style={{ justifyContent: "space-between", fontSize: 12.5 }}><span>{k}</span><span className="ink2">{usd(t.usd)} · {t.pictures} picture{t.pictures === 1 ? "" : "s"}</span></span>
+            ))}
+          </div>
+        )}
+      </>}
+      {owner
+        ? <>
+            {!on && <>
+              <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.7 }}>{GATEWAY_STEPS.map((t, i) => <li key={i}>{t}</li>)}</ol>
+              <span style={{ background: "var(--yel-soft)", color: "var(--yel-ink)", borderRadius: 14, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5 }}>Vercel asks for credits before the key works. Add some under <b>AI Gateway › Credits</b>.</span>
+            </>}
+            <KeyForm label="AI Gateway API key" save={modelSaveKey.bind(null, p.id)} placeholder={p.placeholder} replace={on} />
+            {!on && <span className="sub">OPERATOR checks the key with one read-only call, then locks it in this business’s vault. It’s never shown again.</span>}
+            {on && <ActionButton className="btn outline sm" action={modelRemoveKey.bind(null, p.id)} confirm={{ title: "Forget the AI Gateway key?", body: "The key is forgotten here, and Make an image steps on gateway models stop until a key is saved again. Delete it in Vercel too if it shouldn’t work anywhere.", confirmLabel: "Forget it", kind: "danger" }}>Forget the key</ActionButton>}
+          </>
+        : !on && <span className="sub">Ask an owner of this business to paste it.</span>}
+    </div>
+  );
+}
+
 /** The business's own keys for other model providers (docs/agent-setup.md, "Models across providers"). */
 async function ModelKeysCard({ owner }: { owner: boolean }) {
-  const states = await Promise.all(MODEL_PROVIDERS.map((p) => mcpStatus(p.vaultId)));
+  const list = MODEL_PROVIDERS.filter((p) => !p.ownCard);
+  const states = await Promise.all(list.map((p) => mcpStatus(p.vaultId)));
   return (
     <div className="card" id="models" style={{ gap: 10 }}>
       <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="cpu" size={15} />Other models</span>
       <span className="ink2" style={{ fontSize: 12.5 }}>Your own key for another AI provider, billed by that provider. With a key saved, its models show under Runs on in an agent’s sheet. Picking another model sends that agent’s job, facts and memory to the provider, and web search stays Claude-only.</span>
-      {MODEL_PROVIDERS.map((p, i) => {
+      {list.map((p, i) => {
         const st = states[i], on = !!st?.connected, paused = on && !!st?.paused;
         return (
           <div key={p.id} style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 8, borderTop: "1px solid var(--bd)" }}>

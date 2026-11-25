@@ -11,7 +11,7 @@ import type { ActionResult, ChainPreviewStep } from "@/dashboard/actions";
 import { ASK, DAYS, OK, flowProblems, isDays, runsPerMonth, type Chain, type Days, type Flow, type Op, type Owner, type Start, type Step, type When } from "@/core/flow-rules";
 import { EVENTS, EVENT_BY_TYPE, type EventStart, type EventType } from "@/core/event-rules";
 import { afterChoices, askModel, boardGroups, placeOf, linkWords, moveStep, newAsk, newChain, newImage, okFits, roomFor, startWords, withStep, withoutStep } from "@/dashboard/chain-rules";
-import { IMAGE, IMAGE_KEEP_DAYS, IMAGE_QUALITIES, IMAGE_SIZES, SIZE_LABEL, imageMaxUsd, type ImageQuality, type ImageSize } from "@/core/image-rules";
+import { IMAGE, IMAGE_KEEP_DAYS, IMAGE_QUALITIES, IMAGE_SIZES, SIZE_LABEL, imageMaxUsd, type ImageQuality, type ImageSize, type Img } from "@/core/image-rules";
 import { payerOf, type Payers } from "@/core/ask-rules";
 import { Modal, Toast, type Confirm } from "./client";
 import { Summary } from "./ui";
@@ -28,7 +28,13 @@ export interface ChainAgent {
 /** A model an Ask a model step can pick (integrations/models.ts), and whether it can run here (its key is saved). */
 export interface ChainModel { id: string; label: string; ready: boolean; in: number; out: number }
 /** An image model a Make an image step can pick (core/image-rules.ts), and whether its provider's key is saved. */
-export interface ChainImageModel { id: string; label: string; ready: boolean }
+export interface ChainImageModel {
+  id: string; label: string; ready: boolean; maker: string;
+  /** Takes low, medium or high (GPT Image); other models make their own. */
+  quality: boolean;
+  /** Where its key goes when it isn't saved, e.g. "the AI Gateway key on Connections". */
+  needs: string;
+}
 export interface ChainVersion { version: number; active: boolean; note: string | null; createdBy: string; createdAt: string; chains: number; on: string[] }
 export interface ChainsData {
   version: number; flow: Flow; problems: string[]; versions: ChainVersion[];
@@ -208,7 +214,7 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
         </button>
         <button type="button" role="menuitem" className="ch-po" disabled={!firstImage} onClick={() => { if (!firstImage) return; set(withStep(draft, k, newImage(firstImage))); setAdding(null); setOpen(k); }}>
           <span className="ch-ico k-image" aria-hidden="true">▣</span>
-          <b>Make an image</b><small>{firstImage ? "One picture, kept privately in OPERATOR. Never posted by itself" : "Needs an OpenAI key on Connections > Other models"}</small>
+          <b>Make an image</b><small>{firstImage ? "One picture, kept privately in OPERATOR. Never posted by itself" : "Needs the AI Gateway key on Connections"}</small>
         </button>
       </div>
     );
@@ -378,25 +384,21 @@ export function ChainsBoard({ d, scope, place, pick, startWith, newAgentHref, ac
                       <button type="button" className="ch-stb" aria-expanded={open === k} onClick={() => setOpen(open === k ? null : k)}><b>Make an image{img.prompt.trim() ? `: ${firstLine(img.prompt)}` : ""}</b></button>
                       <span className="ch-badge b-img">{im?.label ?? img.model}</span>
                       <span className="ch-what">
-                        One {SIZE_LABEL[img.size].toLowerCase()} picture at {img.quality} quality{st.passAlong ? ", drawing on the step before’s result" : ""}, about {money(imageMaxUsd(img))}
+                        One {SIZE_LABEL[img.size].toLowerCase()} picture{im?.quality !== false ? ` at ${img.quality} quality` : ""}{st.passAlong ? ", drawing on the step before’s result" : ""}, about {money(imageMaxUsd(img))}
                         {payer && "agent" in payer ? <>, billed to {name(payer.agent)}.</> : "."} Kept privately in OPERATOR for {IMAGE_KEEP_DAYS} days and shown on the run; never posted or sent. The next step gets a line about it, not the picture.
                         {payer && "problem" in payer && <b className="ch-warn"> {payer.problem.replace("Ask a model", "Make an image")}</b>}
-                        {im && !im.ready && <b className="ch-warn"> {im.label} needs an OpenAI key on Connections &gt; Other models.</b>}
+                        {im && !im.ready && <b className="ch-warn"> {im.label} needs {im.needs}.</b>}
                         {!img.prompt.trim() && <b className="ch-warn"> Say what picture to make.</b>}
                       </span>
                       {open === k && (
                         <div className="ch-opts">
-                          <label className="ch-row"><span>Model</span>
-                            <select value={img.model} onChange={(e) => setImg({ model: e.target.value })}>
-                              {d.imageModels.map((x) => <option key={x.id} value={x.id} disabled={!x.ready && x.id !== img.model}>{x.label}{x.ready ? "" : " (needs its key)"}</option>)}
-                            </select>
-                          </label>
+                          <div className="ch-row ch-ask"><span>Model</span><ImagePicker models={d.imageModels} img={img} pick={(model) => setImg({ model })} /></div>
                           <label className="ch-row ch-ask"><span>Picture</span>
                             <textarea rows={3} maxLength={IMAGE.promptMax} placeholder="A bright flat-lay of this week’s new products on a wood counter, morning light, no text." value={img.prompt} onChange={(e) => setImg({ prompt: e.target.value })} />
                           </label>
-                          <label className="ch-row"><span>Quality</span>
+                          {im?.quality !== false && <label className="ch-row"><span>Quality</span>
                             <select value={img.quality} onChange={(e) => setImg({ quality: e.target.value as ImageQuality })}>{IMAGE_QUALITIES.map((q) => <option key={q} value={q}>{q} · about {money(imageMaxUsd({ ...img, quality: q }))}</option>)}</select>
-                          </label>
+                          </label>}
                           <label className="ch-row"><span>Shape</span>
                             <select value={img.size} onChange={(e) => setImg({ size: e.target.value as ImageSize })}>{IMAGE_SIZES.map((z) => <option key={z} value={z}>{SIZE_LABEL[z]} ({z})</option>)}</select>
                           </label>
@@ -563,6 +565,44 @@ function StartEditor({ c, set, d }: { c: Chain; set: (c: Chain) => void; d: Chai
           <span className="ch-note">Set it up under Connections &gt; Live events. At most 10 an hour and 50 a day.</span>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The picture model picker (conductor ticket 1, to the approved mockup): search, cheapest first or by maker, and each
+ * model's price for one picture at the shape picked, worked out in code (imageMaxUsd). A model whose key isn't saved
+ * is greyed out and says where its key goes.
+ */
+function ImagePicker({ models, img, pick }: { models: ChainImageModel[]; img: Img; pick: (id: string) => void }) {
+  const [q, setQ] = useState("");
+  const [by, setBy] = useState<"price" | "maker">("price");
+  const price = (id: string) => imageMaxUsd({ ...img, model: id });
+  const words = q.trim().toLowerCase();
+  const rows = models
+    .filter((m) => !words || `${m.label} ${m.maker} ${m.id}`.toLowerCase().includes(words))
+    .sort((a, b) => (by === "price" ? price(a.id) - price(b.id) : a.maker.localeCompare(b.maker)) || a.label.localeCompare(b.label));
+  return (
+    <div className="ch-pick">
+      <div className="ch-pick-top">
+        <input type="search" aria-label="Search picture models" placeholder={`Search ${models.length} picture models`} value={q} onChange={(e) => setQ(e.target.value)} />
+        <button type="button" className={`ch-chip${by === "price" ? " on" : ""}`} aria-pressed={by === "price"} onClick={() => setBy("price")}>Cheapest first</button>
+        <button type="button" className={`ch-chip${by === "maker" ? " on" : ""}`} aria-pressed={by === "maker"} onClick={() => setBy("maker")}>By maker</button>
+      </div>
+      <div className="ch-pick-list" role="listbox" aria-label="Picture models">
+        {rows.map((m) => {
+          const on = m.id === img.model;
+          return (
+            <button key={m.id} type="button" role="option" aria-selected={on} className={`ch-pick-row${on ? " on" : ""}`} disabled={!m.ready && !on} onClick={() => pick(m.id)}>
+              <span className="ch-pick-dot" aria-hidden="true" />
+              <b>{m.label}</b><span className="ch-pick-price">{money(price(m.id))} a picture</span>
+              <small>{m.maker}{m.ready ? "" : ` · needs ${m.needs}`}</small><small>{m.quality ? "Low, medium, high" : "Square, wide, tall"}</small>
+            </button>
+          );
+        })}
+        {!rows.length && <span className="ch-note">No picture model matches “{q}”.</span>}
+      </div>
+      <span className="ch-note">Prices are for one {SIZE_LABEL[img.size].toLowerCase()} picture, through your AI Gateway at each maker’s own price.</span>
     </div>
   );
 }
