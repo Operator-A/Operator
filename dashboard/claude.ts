@@ -5,6 +5,7 @@ import { CLAUDE_KEY_ID, mcpStatus, type McpStatus } from "@/integrations/mcp";
 import { PROVIDER_BY_ID } from "@/core/model-key-rules";
 import { edition, hostedClaudeReady } from "@/core/extensions";
 import type { ClaudeState } from "@/core/claude-choice-rules";
+import { claudeVia } from "@/core/claude-via";
 
 /** `pre`: the Claude key's status when the caller already read every connection (getHealth, card 202). */
 export async function claudeState(pre?: { status: McpStatus | null; gateway?: McpStatus | null }): Promise<ClaudeState> {
@@ -13,5 +14,8 @@ export async function claudeState(pre?: { status: McpStatus | null; gateway?: Mc
   const ed = edition();
   // the hosted key is only asked about when a run would ask for it: no key of its own, on the cloud
   const hostedReady = !ownKey && ed === "cloud" ? await hostedClaudeReady() : false;
-  return { edition: ed, ownKey, ownKeyPaused: ownKey && !!st?.paused, hostedReady, gateway: !!gw?.connected && !gw?.paused };
+  const gateway = !!gw?.connected && !gw?.paused, ownKeyPaused = ownKey && !!st?.paused;
+  // the choice of key matters only with both saved, and only Connections shows it (callers with `pre` don't)
+  const via = !pre && gateway && ownKey && !ownKeyPaused ? await claudeVia().catch(() => "gateway" as const) : undefined;
+  return { edition: ed, ownKey, ownKeyPaused, hostedReady, gateway, via };
 }

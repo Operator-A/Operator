@@ -2,7 +2,7 @@
 // The few interactive pieces: theme, nav highlighting, and confirm-then-act buttons.
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useRef, useState, useTransition } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
 import { SEEN_COOKIE, parseSeen } from "../seen";
 import { Icon } from "./Icon";
@@ -184,6 +184,43 @@ export function ActionButton({ action, confirm, className, children, disabled, t
       {open && confirm && <Modal c={confirm} busy={busy} onCancel={() => setOpen(false)} onGo={go} />}
       <Toast t={toast} onDone={() => setToast(null)} />
     </>
+  );
+}
+
+/**
+ * A choice of two or more, saved the moment one is tapped (Connections > Claude runs on): shows the tap at once and
+ * goes back if the action refuses it. `disabled` for members who can see the choice but not change it.
+ */
+export function ChoiceSwitch({ label, value, options, act, disabled }: {
+  label: string; value: string; options: readonly { id: string; title: string; sub: string }[]; act: (id: string) => Promise<ActionResult>; disabled?: boolean;
+}) {
+  const [on, setOn] = useState(value);
+  const [toast, setToast] = useState<ActionResult | null>(null);
+  const [busy, start] = useTransition();
+  const id = useId();
+  const pick = (o: string) => {
+    if (o === on || busy || disabled) return;
+    const was = on;
+    setOn(o);
+    start(async () => {
+      let res: ActionResult;
+      try { res = await act(o); } catch (e) { res = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
+      if (!res.ok) setOn(was);
+      setToast(res);
+    });
+  };
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <span id={id} style={{ fontSize: 12.5, fontWeight: 600 }}>{label}</span>
+      <div role="radiogroup" aria-labelledby={id} className="pick2">
+        {options.map((o) => (
+          <button key={o.id} type="button" role="radio" aria-checked={on === o.id} disabled={disabled || busy} onClick={() => pick(o.id)}>
+            <b>{o.title}</b><span>{o.sub}</span>
+          </button>
+        ))}
+      </div>
+      <Toast t={toast} onDone={() => setToast(null)} />
+    </div>
   );
 }
 

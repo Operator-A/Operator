@@ -9,7 +9,7 @@ import { draftSteps, isPlaybookTool, sameSteps, savedCalls, stepChanges } from "
 import { READ_FIRST, runExplore, traceNumbers, type Step } from "../core/runner";
 import { TOOLS } from "../core/tools/catalog";
 import { claudeClient, modelClient, providerClient, type ClaudeDeps, type ClaudeMessages, type ProviderDeps } from "../integrations/llm";
-import { gatewayClaudeId } from "../core/model-key-rules";
+import { gatewayClaudeId, isClaudeVia, readClaudeVia } from "../core/model-key-rules";
 import { fromChat, fromResponses, toChat, toResponses } from "../core/llm-wire";
 import { costUsd } from "../integrations/anthropic";
 import { MODEL_LIST } from "../integrations/models";
@@ -156,9 +156,10 @@ async function main() {
   const ccalls: { via: string; body: any }[] = [];
   const msgs = (via: string, fail?: { status: number }): ClaudeMessages => ({ beta: { messages: { create: async (body: any) => { ccalls.push({ via, body }); if (fail) throw Object.assign(new Error(`${fail.status} nope ${GW}`), fail); return gwReply as any; } } } });
   const gwPaused: string[] = [];
-  const cdeps = (o: { gw?: string | null; fail?: { status: number }; own?: boolean }): ClaudeDeps => ({
+  const cdeps = (o: { gw?: string | null; fail?: { status: number }; own?: boolean; ownFail?: { status: number }; via?: "gateway" | "own" }): ClaudeDeps => ({
     gatewayKey: async () => (o.gw === undefined ? GW : o.gw), pauseGateway: async (why) => { gwPaused.push(why); },
-    viaGateway: (k) => { assert.equal(k, GW); return msgs("gateway", o.fail); }, own: async () => (o.own ? msgs("own") : null), usual: async () => msgs("usual"),
+    viaGateway: (k) => { assert.equal(k, GW); return msgs("gateway", o.fail); }, own: async () => (o.own ? msgs("own", o.ownFail) : null), usual: async () => msgs("usual"),
+    via: async () => o.via ?? "gateway",
   });
   const turnReq = { model: "claude-sonnet-5-5", maxOut: 100, effort: "low" as const, system: [], tools: [], messages: [{ role: "user" as const, content: "hi" }] };
   const c1 = await claudeClient(undefined, cdeps({})).turn(turnReq);
@@ -188,6 +189,36 @@ async function main() {
   const budget = await claudeClient(undefined, cdeps({ fail: { status: 402 }, own: true })).turn(turnReq).then(() => "", (e: Error) => e.message);
   assert.match(budget, /budget in Vercel is used up/);
   assert.deepEqual(ccalls.map((c) => c.via), ["gateway"], "a used-up budget stops the run instead of spending elsewhere");
+
+  // Claude runs on: the owner's own key first when both are saved (decided 2026-11-25), the gateway the one backup
+  assert.equal(readClaudeVia({ via: "own" }), "own");
+  assert.equal(readClaudeVia(null), "gateway", "nothing saved: the gateway");
+  assert.equal(readClaudeVia({ via: "credits" }), "gateway", "anything else: the gateway");
+  assert.ok(isClaudeVia("own") && isClaudeVia("gateway") && !isClaudeVia("credits"));
+  ccalls.length = 0;
+  const v1 = await claudeClient(undefined, cdeps({ via: "own", own: true })).turn(turnReq);
+  assert.deepEqual(ccalls.map((c) => c.via), ["own"], "own key picked: straight to Anthropic");
+  assert.deepEqual(ccalls[0].body.betas, ["server-side-fallback-2026-07-01"], "with Anthropic's own refusal fallback");
+  assert.equal(ccalls[0].body.model, "claude-sonnet-5-5");
+  assert.equal(v1.model, "anthropic/claude-sonnet-5.5", "billed by the model Anthropic answered with");
+  ccalls.length = 0;
+  await claudeClient(undefined, cdeps({ via: "own", own: true, ownFail: { status: 529 } })).turn(turnReq);
+  assert.deepEqual(ccalls.map((c) => c.via), ["own", "gateway"], "own key can't answer: the gateway once");
+  assert.equal(ccalls[1].body.model, "anthropic/claude-sonnet-5.5");
+  ccalls.length = 0;
+  const both = await claudeClient(undefined, cdeps({ via: "own", own: true, ownFail: { status: 500 }, fail: { status: 503 } })).turn(turnReq).then(() => "", (e: Error) => e.message);
+  assert.match(both, /Your own Claude key couldn’t run Claude .*AI Gateway couldn’t run Claude \(503.*either/);
+  assert.ok(!both.includes(GW) && !ccalls.some((c) => c.via === "usual"), "both down: stops, never credits, never echoes the key");
+  assert.deepEqual(ccalls.map((c) => c.via), ["own", "gateway"], "each key tried once");
+  ccalls.length = 0;
+  const bud2 = await claudeClient(undefined, cdeps({ via: "own", own: true, ownFail: { status: 500 }, fail: { status: 402 } })).turn(turnReq).then(() => "", (e: Error) => e.message);
+  assert.match(bud2, /budget in Vercel is used up/, "the backup's used-up budget is said plainly");
+  ccalls.length = 0;
+  await claudeClient(undefined, cdeps({ via: "own", own: false })).turn(turnReq);
+  assert.deepEqual(ccalls.map((c) => c.via), ["gateway"], "own key picked but forgotten: the gateway, never credits");
+  ccalls.length = 0;
+  await claudeClient(undefined, cdeps({ via: "own", gw: null })).turn(turnReq);
+  assert.deepEqual(ccalls.map((c) => c.via), ["usual"], "no gateway key: the choice doesn't apply, as before");
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // finishes: a tool the agent doesn't have is refused, then finish ends the run

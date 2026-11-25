@@ -162,6 +162,14 @@ listed with provider `gateway` (`openai/gpt-6.2-sol` and others) run on chat com
 show under "Other makers (AI Gateway)" in the Runs on picker. Other server-side Claude calls (setup interview, books
 sync) still use `claude()`: the business's own key or credits.
 
+**Claude runs on (built 2026-11-25).** With both keys saved, Connections > Claude shows a "Claude runs on" choice:
+AI Gateway (to start with) or My own Claude key, saved per business in `policies` under `claude_via`
+(`core/claude-via.ts`, read on each gateway Claude turn; only an owner changes it, through `claudeSetVia`, audited).
+With the own key picked, a turn goes straight to Anthropic (refusal fallback included); if it fails, the gateway is
+tried once, with its own budget and refused-key handling; if both fail the run stops. A forgotten or paused own key
+means the gateway, and without a gateway key the choice doesn't apply. Neither path ever uses credits. Pictures and
+other makers' models always go through the gateway.
+
 ## Reads and Writes (slice 4)
 
 `dashboard/components/ReadsWritesEditor.tsx`; the shared draft, Preview, save and versions are in

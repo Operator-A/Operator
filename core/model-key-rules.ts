@@ -99,3 +99,14 @@ export const keyRefused = (status: number) => status === 401 || status === 403;
 
 /** The gateway's answer when the key's budget in Vercel is used up (402): the step stops and says so, and the key isn't paused. */
 export const budgetGone = (status: number) => status === 402;
+
+/**
+ * Which key Claude runs on first when the business has saved both an AI Gateway key and its own Claude key (decided
+ * 2026-11-25): the gateway, to start with, or its own key. The other is tried once as a backup, and neither falls back
+ * to OPERATOR credits. Kept in policies under CLAUDE_VIA_KEY; an owner changes it on Connections > Claude.
+ */
+export type ClaudeVia = "gateway" | "own";
+export const CLAUDE_VIA_KEY = "claude_via";
+export const isClaudeVia = (v: unknown): v is ClaudeVia => v === "gateway" || v === "own";
+/** The saved choice, read from its policies row; anything else is the gateway. */
+export const readClaudeVia = (v: unknown): ClaudeVia => (v && typeof v === "object" && (v as { via?: unknown }).via === "own" ? "own" : "gateway");

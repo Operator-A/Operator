@@ -8,7 +8,8 @@ import "server-only";
 import { Anthropic, claude, inputTokens, ownClaude } from "./anthropic";
 import { modelDef } from "./models";
 import { modelKey, pauseModelKey } from "./mcp";
-import { GATEWAY_URL, PROVIDER_BY_ID, budgetGone, gatewayClaudeId, keyPlace, keyRefused, type ModelProvider } from "@/core/model-key-rules";
+import { GATEWAY_URL, PROVIDER_BY_ID, budgetGone, gatewayClaudeId, keyPlace, keyRefused, type ClaudeVia, type ModelProvider } from "@/core/model-key-rules";
+import { claudeVia } from "@/core/claude-via";
 import { fromChat, fromResponses, toChat, toResponses, type ChatResponse, type ClaudeTurn, type ResponsesResponse } from "@/core/llm-wire";
 import { scrubSecrets } from "@/core/mcp-rules";
 
@@ -67,7 +68,12 @@ export interface ClaudeDeps {
   own: () => Promise<ClaudeMessages | null>;
   /** The usual client: its own key, else OPERATOR credits (integrations/anthropic.ts claude()). */
   usual: () => Promise<ClaudeMessages>;
+  /** Which key goes first when both are saved (core/claude-via.ts): the gateway, or the business's own Claude key. */
+  via: () => Promise<ClaudeVia>;
 }
+
+/** The gateway couldn't run a turn for a reason the backup key may not share (down, refused, a request it won't take). */
+class GatewayDown extends Error {}
 
 /** The gateway's Anthropic-compatible Messages endpoint, on the business's gateway key. Never follows a redirect. */
 const gatewayMessages = (key: string): ClaudeMessages => new Anthropic({
@@ -76,15 +82,16 @@ const gatewayMessages = (key: string): ClaudeMessages => new Anthropic({
 });
 const CLAUDE_LIVE: ClaudeDeps = {
   gatewayKey: () => modelKey("gateway"), pauseGateway: (why, key) => pauseModelKey("gateway", why, key),
-  viaGateway: gatewayMessages, own: ownClaude, usual: claude,
+  viaGateway: gatewayMessages, own: ownClaude, usual: claude, via: claudeVia,
 };
 
 /**
  * Claude. With an AI Gateway key saved (conductor ticket 1b, decided 2026-11-25), every turn goes through the gateway,
  * billed by Vercel at Anthropic's price; if the gateway can't run it (down, refused, a request it won't take), the
  * turn is sent again on the business's own Claude key when it has one, never on credits. A used-up gateway budget
- * (402) stops the run instead: the owner set that budget as a limit. Without a gateway key: the business's own key or
- * OPERATOR credits, as before. Keeps what only Claude has: prompt caching on every turn (card 200), effort, and,
+ * (402) stops the run instead: the owner set that budget as a limit. With both keys saved, the owner may pick their own
+ * Claude key to go first (Connections > Claude, decided 2026-11-25); then the gateway is the one backup try. Without a
+ * gateway key: the business's own key or OPERATOR credits, as before. Keeps what only Claude has: prompt caching on every turn (card 200), effort, and,
  * straight to Anthropic, the server-side refusal fallback.
  */
 export const claudeClient = (stand?: ClaudeMessages, deps: ClaudeDeps = CLAUDE_LIVE): ModelClient => ({
@@ -101,19 +108,37 @@ export const claudeClient = (stand?: ClaudeMessages, deps: ClaudeDeps = CLAUDE_L
     if (stand) { const res = await stand.beta.messages.create(direct); return done(res, res.model); }
     const gw = await deps.gatewayKey();
     if (!gw) { const res = await (await deps.usual()).beta.messages.create(direct); return done(res, res.model); }
-    try {
-      // the gateway names Claude its own way and answers with that name, so the run is billed by the model it asked for
-      const res = await deps.viaGateway(gw).beta.messages.create({ ...body, model: gatewayClaudeId(req.model) } as Anthropic.Beta.MessageCreateParamsNonStreaming);
-      return done(res, req.model);
-    } catch (e) {
-      const status = typeof (e as { status?: unknown }).status === "number" ? (e as { status: number }).status : null;
-      const said = scrubSecrets(e instanceof Error ? e.message : String(e), [gw]).slice(0, 160);
-      if (status !== null && budgetGone(status)) throw new Error("The AI Gateway key’s budget in Vercel is used up, so this run stopped. Raise it in Vercel under AI Gateway > API Keys, or add credits.");
-      if (status !== null && keyRefused(status)) await deps.pauseGateway(`AI Gateway refused the key (${status}) during a Claude run`, gw);
+    const onOwn = async (own: ClaudeMessages) => { const res = await own.beta.messages.create(direct); return done(res, res.model); };
+    const onGateway = async (): Promise<TurnResult> => {
+      try {
+        // the gateway names Claude its own way and answers with that name, so the run is billed by the model it asked for
+        const res = await deps.viaGateway(gw).beta.messages.create({ ...body, model: gatewayClaudeId(req.model) } as Anthropic.Beta.MessageCreateParamsNonStreaming);
+        return done(res, req.model);
+      } catch (e) {
+        const status = typeof (e as { status?: unknown }).status === "number" ? (e as { status: number }).status : null;
+        const said = scrubSecrets(e instanceof Error ? e.message : String(e), [gw]).slice(0, 160);
+        if (status !== null && budgetGone(status)) throw new Error("The AI Gateway key’s budget in Vercel is used up, so this run stopped. Raise it in Vercel under AI Gateway > API Keys, or add credits.");
+        if (status !== null && keyRefused(status)) await deps.pauseGateway(`AI Gateway refused the key (${status}) during a Claude run`, gw);
+        throw new GatewayDown(`The AI Gateway couldn’t run Claude (${status ?? "no answer"}: ${said})`);
+      }
+    };
+    if ((await deps.via()) === "own") {
       const own = await deps.own();
-      if (!own) throw new Error(`The AI Gateway couldn’t run Claude (${status ?? "no answer"}: ${said}), and there’s no Claude key of your own to fall back on.`);
-      const res = await own.beta.messages.create(direct);
-      return done(res, res.model);
+      // a forgotten or paused own key: the gateway runs it, as when the gateway is picked
+      if (own) {
+        try { return await onOwn(own); } catch (e) {
+          const said = scrubSecrets(e instanceof Error ? e.message : String(e), [gw]).slice(0, 160);
+          try { return await onGateway(); } catch (g) {
+            throw new Error(`Your own Claude key couldn’t run Claude (${said}). ${g instanceof GatewayDown ? `${g.message} either.` : (g as Error).message}`);
+          }
+        }
+      }
+    }
+    try { return await onGateway(); } catch (e) {
+      if (!(e instanceof GatewayDown)) throw e;
+      const own = await deps.own();
+      if (!own) throw new Error(`${e.message}, and there’s no Claude key of your own to fall back on.`);
+      return onOwn(own);
     }
   },
 });

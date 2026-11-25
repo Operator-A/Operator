@@ -7,10 +7,10 @@ import { BEHIND_THE_SCENES, CONNECTIONS, CONN_BY_ID, isSetUp, toolsOf, usersOf, 
 import type { ToolDef } from "@/core/tools/types";
 import { Icon } from "@/dashboard/components/Icon";
 import { Avatar, LockList } from "@/dashboard/components/ui";
-import { ActionButton, KeyForm, TargetForm } from "@/dashboard/components/client";
+import { ActionButton, ChoiceSwitch, KeyForm, TargetForm } from "@/dashboard/components/client";
 import { metaTargets } from "@/core/meta-targets";
 import { RESULT_KINDS, RESULT_LABEL } from "@/core/meta-rules";
-import { claudeRemoveKey, hookRemove, hookSaveSecret, modelRemoveKey, modelSaveKey } from "@/dashboard/connectionActions";
+import { claudeRemoveKey, claudeSaveKey, claudeSetVia, hookRemove, hookSaveSecret, modelRemoveKey, modelSaveKey } from "@/dashboard/connectionActions";
 import { SOURCES, hookPath } from "@/core/event-rules";
 import { gatewayCredits, hookStates } from "@/integrations/mcp";
 import { imageSpendNow } from "@/core/image-step";
@@ -365,24 +365,54 @@ async function SelDetail({ c, f, detailP, note }: { c: Connection; f: CrewFloor;
   return <Detail c={c} f={f} mcp={mcp} more={more} note={note} line={line} />;
 }
 
-/** How agents think (card 162): the business's own Claude key (docs/tenancy.md, slice 8.1c), or on the cloud edition OPERATOR's hosted Claude on credits. */
+/** The two keys Claude can run on when both are saved (decided 2026-11-25, to the approved mockup). */
+const CLAUDE_VIA_OPTIONS = [
+  { id: "gateway", title: "AI Gateway", sub: "Billed by Vercel" },
+  { id: "own", title: "My own Claude key", sub: "Billed by Anthropic" },
+] as const;
+
+/** How agents think (card 162): the business's own Claude key (docs/tenancy.md, slice 8.1c), or on the cloud edition OPERATOR's hosted Claude on credits; with an AI Gateway key, which of the two keys Claude runs on first. */
 async function ClaudeCard({ owner, query }: { owner: boolean; query: Readonly<Record<string, string | undefined>> }) {
   const state = await claudeState();
   const ok = claudeReady(state);
   const using = inUse(state);
+  // with a gateway key, the card is about which key Claude runs on; without one, it is the usual choice
+  const both = !!state.gateway && state.ownKey && !state.ownKeyPaused;
+  const via = both ? state.via ?? "gateway" : "gateway";
+  const pill = !ok ? "Not set up" : state.gateway ? (via === "own" ? "Your own key" : "Through the gateway") : using === "hosted" ? "On OPERATOR’s Claude" : "Your own key";
+  const forget = { title: "Forget the Claude key?", body: state.gateway ? "The key is forgotten here, and Claude runs on your AI Gateway key alone. Delete it in the Claude Console too if it shouldn’t work anywhere." : state.edition === "cloud" ? "The key is forgotten here, and runs move to OPERATOR’s Claude on your credits. Delete it in the Claude Console too if it shouldn’t work anywhere." : "The key is forgotten here. Delete it in the Claude Console too if it shouldn’t work anywhere.", confirmLabel: "Forget it", kind: "danger" as const };
   return (
-    <div className="card" id="claude" style={{ gap: 10 }}>
+    <div className="card" id="claude" style={{ gap: state.gateway ? 12 : 10 }}>
       <span className="row" style={{ gap: 8, justifyContent: "space-between" }}>
         <span className="row" style={{ gap: 8, fontSize: 15, fontWeight: 600 }}><Icon name="cpu" size={15} />Claude</span>
-        <span className="pill sm" style={{ background: ok ? "var(--mint-soft)" : "var(--red-soft)", color: ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{ok ? (state.gateway ? "Through the gateway" : using === "hosted" ? "On OPERATOR’s Claude" : "Your own key") : "Not set up"}</span>
+        <span className="pill sm" style={{ background: ok ? "var(--mint-soft)" : "var(--red-soft)", color: ok ? "var(--mint-ink)" : "var(--red-ink)" }}>{pill}</span>
       </span>
-      {state.gateway && <span className="row" style={{ gap: 8, justifyContent: "space-between", fontSize: 12.5 }}><span className="ink2">Claude agents and steps run on your AI Gateway key. Your own Claude key, if saved, is the backup when the gateway can’t answer.</span><span className="pill sm" style={{ background: "var(--mint-soft)", color: "var(--mint-ink)", flex: "none" }}>Through the gateway</span></span>}
-      <span className="ink2" style={{ fontSize: 12.5 }}>
-        {ok ? "Every agent thinks with Claude. A key of your own always comes first; without one, runs use OPERATOR’s Claude and are paid from credits."
-          : state.edition === "cloud" ? "Agents can’t think yet, so runs stop with a note. Buy credits for OPERATOR’s Claude, or paste your own key." : "Paste a Claude API key from the Claude Console (Settings > API keys). Until then agents can’t think, so runs stop with a note."}
-      </span>
-      <ClaudeChoice state={state} picked={pickedChoice(state, query.claude)} owner={owner} back="connections" query={query} />
-      {owner && state.ownKey && <ActionButton className="btn outline sm" action={claudeRemoveKey} confirm={{ title: "Forget the Claude key?", body: state.edition === "cloud" ? "The key is forgotten here, and runs move to OPERATOR’s Claude on your credits. Delete it in the Claude Console too if it shouldn’t work anywhere." : "The key is forgotten here. Delete it in the Claude Console too if it shouldn’t work anywhere.", confirmLabel: "Forget it", kind: "danger" }}>Forget the key</ActionButton>}
+      {state.gateway ? <>
+        {both && <ChoiceSwitch label="Claude runs on" value={via} options={CLAUDE_VIA_OPTIONS} act={claudeSetVia} disabled={!owner} />}
+        <span className="ink2" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+          {!both ? (state.ownKeyPaused
+            ? "Claude agents and steps run on your AI Gateway key. Anthropic stopped accepting your saved Claude key: paste a new one to choose between the two."
+            : "Claude agents and steps run on your AI Gateway key. Save your own Claude key below to choose between the two.")
+            : via === "own" ? "Claude agents and steps run on your own Claude key, billed by Anthropic. If that key can’t answer, the run tries your AI Gateway key once. Pictures and other makers’ models still come through the gateway."
+            : "Claude agents and steps run on your AI Gateway key. If the gateway can’t answer, the run tries your own Claude key once. Runs never fall back to credits."}
+        </span>
+        {!both && (owner
+          ? <><KeyForm label="Claude API key" save={claudeSaveKey} placeholder="sk-ant-…" replace={state.ownKey} /><span className="sub">From the Claude Console, Settings › API keys.</span></>
+          : <span className="sub">Ask an owner of this business to paste their Claude key.</span>)}
+        {both && (
+          <span className="row" style={{ gap: 8, justifyContent: "space-between", fontSize: 12.5, borderTop: "1px solid var(--bd)", paddingTop: 12 }}>
+            <span className="ink2">Your own Claude key is saved.</span>
+            {owner && <ActionButton className="btn outline sm" action={claudeRemoveKey} confirm={forget}>Forget the key</ActionButton>}
+          </span>
+        )}
+      </> : <>
+        <span className="ink2" style={{ fontSize: 12.5 }}>
+          {ok ? "Every agent thinks with Claude. A key of your own always comes first; without one, runs use OPERATOR’s Claude and are paid from credits."
+            : state.edition === "cloud" ? "Agents can’t think yet, so runs stop with a note. Buy credits for OPERATOR’s Claude, or paste your own key." : "Paste a Claude API key from the Claude Console (Settings > API keys). Until then agents can’t think, so runs stop with a note."}
+        </span>
+        <ClaudeChoice state={state} picked={pickedChoice(state, query.claude)} owner={owner} back="connections" query={query} />
+        {owner && state.ownKey && <ActionButton className="btn outline sm" action={claudeRemoveKey} confirm={forget}>Forget the key</ActionButton>}
+      </>}
     </div>
   );
 }
