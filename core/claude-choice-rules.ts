@@ -6,6 +6,7 @@
 // offers the own key alone. Whether a run may use the hosted key is decided by the paid layer
 // (pooledKey); this file only reads that answer as a yes or no.
 
+import type { ClaudeVia } from "@/core/model-key-rules";
 import { CREDITS_MARGIN } from "@/core/cost-rules";
 
 export type ClaudeChoice = "hosted" | "own";
@@ -16,6 +17,8 @@ export interface ClaudeState {
   edition: Edition; ownKey: boolean; ownKeyPaused: boolean; hostedReady: boolean;
   /** The AI Gateway key is saved and not paused (conductor ticket 1b): Claude runs go through it first. */
   gateway?: boolean;
+  /** With both keys saved, which goes first (core/claude-via.ts); read only then. */
+  via?: ClaudeVia;
 }
 
 /** The options an edition offers, the recommended one first. */

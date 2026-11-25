@@ -8,7 +8,8 @@ import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
 import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, removeModelKey, saveModelKey, saveHookSecret, removeHookSecret, pauseCustom, removeCustomServer, resealAll, saveCustomKey, setCustomNumber, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
 import { isCustomId } from "@/core/custom-mcp-rules";
-import { PROVIDER_BY_ID, isModelProvider } from "@/core/model-key-rules";
+import { PROVIDER_BY_ID, isClaudeVia, isModelProvider } from "@/core/model-key-rules";
+import { saveClaudeVia } from "@/core/claude-via";
 import { SOURCE_BY_ID, isEventSource } from "@/core/event-rules";
 import { knownByAddress } from "@/core/connector-rules";
 import { askFor, closeRequest } from "@/core/connector-requests";
@@ -64,6 +65,17 @@ export async function claudeRemoveKey(): Promise<ActionResult> {
     await removeClaudeKey();
     await audit(me, "disconnect", "anthropic_key");
     return done("Claude key forgotten here. Delete it in the Claude Console too if it shouldn’t work anywhere.");
+  } catch (e) { return fail(e); }
+}
+
+/** Which key Claude runs on first when both an AI Gateway key and the business's own Claude key are saved (Connections > Claude). */
+export async function claudeSetVia(via: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!isClaudeVia(via)) return { ok: false, text: "That isn’t one of the choices." };
+  try {
+    await saveClaudeVia(via);
+    await audit(me, "claude_via", via);
+    return done(via === "own" ? "Claude runs on your own key from the next run. The AI Gateway is the backup." : "Claude runs on your AI Gateway key from the next run. Your own key is the backup.");
   } catch (e) { return fail(e); }
 }
 

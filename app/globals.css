@@ -1600,3 +1600,11 @@ textarea.input { height: auto; min-height: 84px; padding: 12px 16px; border-radi
 .ch-pick-row.on { background: var(--acc-soft, var(--soft)); }
 .ch-pick-row.on .ch-pick-dot { border: 4px solid var(--ink); }
 .ch-pick-row:disabled { opacity: .5; cursor: not-allowed; }
+
+/* a choice of two saved on tap (Connections > Claude runs on) */
+.pick2 { display: flex; gap: 4px; padding: 4px; border-radius: 16px; background: var(--soft); }
+.pick2 button { flex: 1; min-width: 0; min-height: 52px; border: 0; border-radius: 12px; padding: 8px 10px; text-align: left; display: flex; flex-direction: column; gap: 2px; background: transparent; color: var(--ink2); font: inherit; cursor: pointer; }
+.pick2 button b { font-size: 13.5px; font-weight: 600; }
+.pick2 button span { font-size: 11.5px; color: var(--mut); }
+.pick2 button[aria-checked="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 4px rgba(17, 17, 26, .12); }
+.pick2 button:disabled { cursor: default; }
