@@ -37,7 +37,7 @@ const picker = `<div class="ch-pick" role="menu"><div class="ch-pgrp">An agent</
   <div class="ch-pgrp">A quick step</div>
   ${row("AI", "k-model", "Ask a model", "Claude, OpenAI, Gemini or Grok. One instruction, text back, no tools")}
   ${row("✓", "k-ok", "Wait for my OK", "A card in Approvals with the step before’s result; the chain goes on when you approve")}
-  ${row("▣", "k-image", "Make an image", "Needs an OpenAI key on Connections > Other models")}</div>`;
+  ${row("▣", "k-image", "Make an image", "Needs the AI Gateway key on Connections")}</div>`;
 // the chain editor as the app draws it: a lane of step cards with the + link between them
 const page = (theme: string) => `<!doctype html><html data-theme="${theme}"><head><style>${css}</style>
   <style>body{margin:0;font-family:"Plus Jakarta Sans",system-ui,sans-serif}</style></head><body>

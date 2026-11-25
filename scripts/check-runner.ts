@@ -39,7 +39,7 @@ async function main() {
   assert.ok(modelReady("claude-haiku-5-5", NO_MODEL_KEYS), "Claude needs no provider key");
   assert.ok(!modelReady("grok-4.3", NO_MODEL_KEYS) && modelReady("grok-4.3", { ...NO_MODEL_KEYS, xai: true }));
   assert.ok(!modelReady("gpt-6.2-sol", { ...NO_MODEL_KEYS, xai: true }), "one provider's key doesn't open another's models");
-  assert.ok(!modelReady("openai/gpt-x", { openai: true, xai: true, google: true }), "an unlisted model never runs");
+  assert.ok(!modelReady("openai/gpt-x", { openai: true, xai: true, google: true, gateway: true }), "an unlisted model never runs");
   assert.deepEqual(bad.spec.tools, ["klaviyo_lists"]);
   assert.equal(bad.spec.limits.maxSteps, 12);
   assert.equal(bad.problems.length, 4);

@@ -4,7 +4,8 @@ import "server-only";
 import { imageLink } from "@/core/image-step";
 import { when } from "@/dashboard/format";
 import { chainRunImages, chainRunView, type ChainRunView } from "@/core/chain-view";
-import { IMAGE_MODELS } from "@/core/image-rules";
+import { IMAGE_MODELS, takesQuality } from "@/core/image-rules";
+import { PROVIDER_BY_ID } from "@/core/model-key-rules";
 import { pendingOks } from "@/core/chain-ok";
 import type { OkCard } from "@/core/chain-ok-rules";
 import { orgTz } from "@/core/tz";
@@ -603,7 +604,10 @@ export async function getChains(r: Roster, tz: string, versions = false): Promis
   const keys = await modelKeysReady().catch(() => NO_MODEL_KEYS);
   const models: ChainModel[] = MODEL_LIST.map((m) => ({ id: m.id, label: m.label, ready: modelReady(m.id, keys), in: m.in, out: m.out }));
   // Make an image steps (slice 4): the image models and whether each can run here (its provider's key is saved)
-  const imageModels: ChainImageModel[] = IMAGE_MODELS.map((m) => ({ id: m.id, label: m.label, ready: !!keys[m.provider] }));
+  const imageModels: ChainImageModel[] = IMAGE_MODELS.map((m) => ({
+    id: m.id, label: m.label, ready: !!keys[m.provider], maker: m.maker, quality: takesQuality(m),
+    needs: m.provider === "gateway" ? "the AI Gateway key on Connections" : `a ${PROVIDER_BY_ID[m.provider].name} key on Connections > Other models`,
+  }));
   const base = {
     palette, deptOf, depts: (chart?.departments ?? []).map((d) => ({ id: d.id, name: d.name })), models, imageModels, payers: payers(chart),
     approvalTools: APPROVAL_TOOLS.map((t) => ({ id: t, label: APPROVAL_LABELS[t] ?? t })),
