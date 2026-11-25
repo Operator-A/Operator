@@ -20,7 +20,7 @@ const MODELS: PickModel[] = [
 
 // ---- every model OPERATOR lists has a maker the picker groups by
 for (const m of MODEL_LIST) assert.ok(makerOf(m.provider), `${m.id}: its maker (${m.provider}) is in MAKERS`);
-assert.deepEqual(MAKERS.map((m) => m.name), ["Claude", "OpenAI", "Gemini", "Grok"], "the picker's order");
+assert.deepEqual(MAKERS.map((m) => m.name), ["Claude", "OpenAI", "Gemini", "Grok", "Other makers (AI Gateway)"], "the picker's order");
 
 // ---- groups: by maker, in order; a maker with no key is marked so the picker links to Connections
 const g = modelGroups(MODELS);

@@ -12,7 +12,11 @@ export type ClaudeChoice = "hosted" | "own";
 export type Edition = "open" | "cloud";
 
 /** What the business has now. hostedReady: the paid layer would hand a run the hosted key (credits, a plan that allows runs). */
-export interface ClaudeState { edition: Edition; ownKey: boolean; ownKeyPaused: boolean; hostedReady: boolean }
+export interface ClaudeState {
+  edition: Edition; ownKey: boolean; ownKeyPaused: boolean; hostedReady: boolean;
+  /** The AI Gateway key is saved and not paused (conductor ticket 1b): Claude runs go through it first. */
+  gateway?: boolean;
+}
 
 /** The options an edition offers, the recommended one first. */
 export const claudeOptions = (edition: Edition): readonly ClaudeChoice[] => (edition === "cloud" ? ["hosted", "own"] : ["own"]);
@@ -35,6 +39,7 @@ export const inUse = (s: ClaudeState): ClaudeChoice | null => (s.ownKey ? "own" 
 
 /** True when agents can think now: an own key that works, or (with no key) the hosted Claude on the cloud edition. */
 export function claudeReady(s: ClaudeState): boolean {
+  if (s.gateway) return true;
   if (s.ownKey) return !s.ownKeyPaused;
   return s.edition === "cloud" && s.hostedReady;
 }

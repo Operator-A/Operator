@@ -5,10 +5,10 @@ import "server-only";
 // The transcript keeps the Claude Messages shape (text, tool_use, tool_result, thinking, server tools):
 // it holds everything other providers return, so a client for another provider translates at its own
 // edge and the runner never changes. Cost stays in code (costUsd), from the counts in TurnUsage.
-import { Anthropic, claude, inputTokens } from "./anthropic";
+import { Anthropic, claude, inputTokens, ownClaude } from "./anthropic";
 import { modelDef } from "./models";
 import { modelKey, pauseModelKey } from "./mcp";
-import { GATEWAY_URL, PROVIDER_BY_ID, budgetGone, keyPlace, keyRefused, type ModelProvider } from "@/core/model-key-rules";
+import { GATEWAY_URL, PROVIDER_BY_ID, budgetGone, gatewayClaudeId, keyPlace, keyRefused, type ModelProvider } from "@/core/model-key-rules";
 import { fromChat, fromResponses, toChat, toResponses, type ChatResponse, type ClaudeTurn, type ResponsesResponse } from "@/core/llm-wire";
 import { scrubSecrets } from "@/core/mcp-rules";
 
@@ -56,21 +56,65 @@ export const claudeUsage = (u: Anthropic.Beta.BetaUsage): TurnUsage => ({
   searches: u.server_tool_use?.web_search_requests ?? 0,
 });
 
+/** What the Claude client needs besides the turn; tests pass stand-ins so no key or network is touched. */
+export interface ClaudeDeps {
+  /** The AI Gateway key, opened for this turn; null when there is none or it is paused. */
+  gatewayKey: () => Promise<string | null>;
+  pauseGateway: (why: string, key: string) => Promise<void>;
+  /** A Messages client on the gateway key. */
+  viaGateway: (key: string) => ClaudeMessages;
+  /** The business's own Claude key, the backup; null when it has none. */
+  own: () => Promise<ClaudeMessages | null>;
+  /** The usual client: its own key, else OPERATOR credits (integrations/anthropic.ts claude()). */
+  usual: () => Promise<ClaudeMessages>;
+}
+
+/** The gateway's Anthropic-compatible Messages endpoint, on the business's gateway key. Never follows a redirect. */
+const gatewayMessages = (key: string): ClaudeMessages => new Anthropic({
+  baseURL: GATEWAY_URL, apiKey: null, authToken: key, maxRetries: 1,
+  fetch: (url: string | URL | Request, init?: RequestInit) => fetch(url, { ...init, redirect: "error" }),
+});
+const CLAUDE_LIVE: ClaudeDeps = {
+  gatewayKey: () => modelKey("gateway"), pauseGateway: (why, key) => pauseModelKey("gateway", why, key),
+  viaGateway: gatewayMessages, own: ownClaude, usual: claude,
+};
+
 /**
- * Claude, on the business's own key or OPERATOR credits (integrations/anthropic.ts claude()). Keeps what only
- * Claude has: prompt caching on every turn (card 200), effort, and the server-side refusal fallback.
+ * Claude. With an AI Gateway key saved (conductor ticket 1b, decided 2026-11-25), every turn goes through the gateway,
+ * billed by Vercel at Anthropic's price; if the gateway can't run it (down, refused, a request it won't take), the
+ * turn is sent again on the business's own Claude key when it has one, never on credits. A used-up gateway budget
+ * (402) stops the run instead: the owner set that budget as a limit. Without a gateway key: the business's own key or
+ * OPERATOR credits, as before. Keeps what only Claude has: prompt caching on every turn (card 200), effort, and,
+ * straight to Anthropic, the server-side refusal fallback.
  */
-export const claudeClient = (stand?: ClaudeMessages): ModelClient => ({
+export const claudeClient = (stand?: ClaudeMessages, deps: ClaudeDeps = CLAUDE_LIVE): ModelClient => ({
   async turn(req) {
-    const res = await (stand ?? (await claude())).beta.messages.create({
+    const body = {
       model: req.model, max_tokens: req.maxOut,
       // each turn re-sends the whole prompt, so later turns read it from the cache
       cache_control: { type: "ephemeral" },
-      betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
       output_config: { effort: req.effort },
       system: req.system, tools: req.tools, messages: req.messages,
-    });
-    return { content: res.content, stopReason: res.stop_reason ?? null, model: res.model, usage: claudeUsage(res.usage) };
+    } satisfies Anthropic.Beta.MessageCreateParamsNonStreaming;
+    const direct = { ...body, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } as Anthropic.Beta.MessageCreateParamsNonStreaming;
+    const done = (res: Anthropic.Beta.BetaMessage, model: string): TurnResult => ({ content: res.content, stopReason: res.stop_reason ?? null, model, usage: claudeUsage(res.usage) });
+    if (stand) { const res = await stand.beta.messages.create(direct); return done(res, res.model); }
+    const gw = await deps.gatewayKey();
+    if (!gw) { const res = await (await deps.usual()).beta.messages.create(direct); return done(res, res.model); }
+    try {
+      // the gateway names Claude its own way and answers with that name, so the run is billed by the model it asked for
+      const res = await deps.viaGateway(gw).beta.messages.create({ ...body, model: gatewayClaudeId(req.model) } as Anthropic.Beta.MessageCreateParamsNonStreaming);
+      return done(res, req.model);
+    } catch (e) {
+      const status = typeof (e as { status?: unknown }).status === "number" ? (e as { status: number }).status : null;
+      const said = scrubSecrets(e instanceof Error ? e.message : String(e), [gw]).slice(0, 160);
+      if (status !== null && budgetGone(status)) throw new Error("The AI Gateway key’s budget in Vercel is used up, so this run stopped. Raise it in Vercel under AI Gateway > API Keys, or add credits.");
+      if (status !== null && keyRefused(status)) await deps.pauseGateway(`AI Gateway refused the key (${status}) during a Claude run`, gw);
+      const own = await deps.own();
+      if (!own) throw new Error(`The AI Gateway couldn’t run Claude (${status ?? "no answer"}: ${said}), and there’s no Claude key of your own to fall back on.`);
+      const res = await own.beta.messages.create(direct);
+      return done(res, res.model);
+    }
   },
 });
 

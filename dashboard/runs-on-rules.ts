@@ -20,6 +20,8 @@ export const MAKERS = [
   { id: "openai", name: "OpenAI", mark: "O" },
   { id: "google", name: "Gemini", mark: "G" },
   { id: "xai", name: "Grok", mark: "X" },
+  // other makers' models through the AI Gateway key (conductor ticket 1b)
+  { id: "gateway", name: "Other makers (AI Gateway)", mark: "V" },
 ] as const;
 export type MakerId = (typeof MAKERS)[number]["id"];
 export const makerOf = (provider: string) => MAKERS.find((m) => m.id === provider) ?? null;
