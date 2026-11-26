@@ -123,7 +123,7 @@ assert.doesNotMatch(schedPage, /CrewCanvas/);
 const dept = read("app/(room)/dept/[id]/page.tsx");
 assert.match(dept, /tab === "chains"\) return <Chains/);
 assert.match(dept, /<ChainsBoard d=\{d\} scope=\{\{ dept: id \}\}/);
-assert.match(read("dashboard/dept-rules.ts"), /\["chat", "agents", "goals", "chains", "approvals"\]/);
+assert.match(read("dashboard/dept-rules.ts"), /\["overview", "agents", "goals", "chains", "approvals"\]/);
 const sheet = read("dashboard/components/agentSheet.tsx");
 assert.match(sheet, /href=\{d\.newChain\}>\+ New chain starting with \{d\.name\}/, "the agent sheet starts a new chain with this agent");
 assert.match(sheet, /href=\{c\.href\}>Open</, "each chain on the sheet opens where it lives");

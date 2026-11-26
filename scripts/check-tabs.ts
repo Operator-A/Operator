@@ -20,7 +20,7 @@ const dept = readFileSync("app/(room)/dept/[id]/page.tsx", "utf8");
 const company = readFileSync("app/(room)/page.tsx", "utf8");
 
 assert.match(tabs, /icon: TabIcon/, "every tab has an icon (TabLink.icon is required)");
-for (const k of ["chat", "agents", "goals", "chains", "approvals", "departments"]) assert.match(tabs, new RegExp(`^\\s*${k}: <`, "m"), `the ${k} tab has an icon drawn`);
+for (const k of ["overview", "chat", "agents", "goals", "chains", "approvals", "departments"]) assert.match(tabs, new RegExp(`^\\s*${k}: <`, "m"), `the ${k} tab has an icon drawn`);
 assert.match(dept, /href: tabHref\(id, t\), icon: t,/, "the department page passes each tab's icon");
 assert.match(company, /href: companyHref\(t\), icon: t,/, "the Company page passes each tab's icon");
 assert.match(tabs, /"--n": tabs\.length/, "the bar tells the CSS how many tabs it has");
@@ -38,7 +38,7 @@ try { chromium = createRequire(`${process.cwd()}/package.json`)("playwright").ch
 
 const svg = '<svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>';
 type T = { k: string; l: string; c?: number; red?: boolean };
-const DEPT: T[] = [{ k: "chat", l: "Chat" }, { k: "agents", l: "Agents", c: 12 }, { k: "goals", l: "Goals", c: 3 }, { k: "chains", l: "Chains" }, { k: "approvals", l: "Approvals", c: 14, red: true }];
+const DEPT: T[] = [{ k: "overview", l: "Overview" }, { k: "agents", l: "Agents", c: 12 }, { k: "goals", l: "Goals", c: 3 }, { k: "chains", l: "Chains" }, { k: "approvals", l: "Approvals", c: 14, red: true }];
 const CO: T[] = [{ k: "chat", l: "Chat" }, { k: "departments", l: "Departments", c: 9 }, { k: "goals", l: "Goals", c: 4 }, { k: "approvals", l: "Approvals", c: 14, red: true }];
 const bar = (list: T[], open: string) => `<nav class="dp-tabs" style="--n:${list.length}"><span class="dp-ink" style="transition:none"></span>${list.map((t) =>
   `<a data-tab="${t.k}" class="${t.k === open ? "on" : ""}">${svg}<span class="tl">${t.l}</span>${t.c ? `<span class="c${t.red ? " red" : ""}">${t.c}</span>` : ""}</a>`).join("")}</nav>`;

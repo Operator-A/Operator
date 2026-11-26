@@ -2,15 +2,24 @@
 // department, and who works there. Pure: no database, no network, so `npm run check:dept` can test it.
 import { deptAgentIds, headOf, seatOf, type Org } from "@/core/org-rules";
 
-/** The tabs a department page has. Chat comes first and opens by default (slice 2); Chains is chains slice 1 (card 430). */
-export const DEPT_TABS = ["chat", "agents", "goals", "chains", "approvals"] as const;
+/**
+ * The tabs a department page has. Overview comes first and opens by default (overview slice 1, in place of Chat,
+ * which moved behind the Ask button); Chains is chains slice 1 (card 430).
+ */
+export const DEPT_TABS = ["overview", "agents", "goals", "chains", "approvals"] as const;
 export type DeptTab = (typeof DEPT_TABS)[number];
-export const TAB_LABEL: Record<DeptTab, string> = { chat: "Chat", agents: "Agents", goals: "Goals", chains: "Chains", approvals: "Approvals" };
+export const TAB_LABEL: Record<DeptTab, string> = { overview: "Overview", agents: "Agents", goals: "Goals", chains: "Chains", approvals: "Approvals" };
 
-/** The tab in the address, or Chat. */
-export const deptTab = (raw: unknown): DeptTab => (DEPT_TABS as readonly string[]).includes(String(raw)) ? (raw as DeptTab) : "chat";
-/** The tab's address: Chat is the page itself. */
-export const tabHref = (deptId: string, t: DeptTab) => (t === "chat" ? `/dept/${deptId}` : `/dept/${deptId}?tab=${t}`);
+/** The tab in the address, or Overview. */
+export const deptTab = (raw: unknown): DeptTab => (DEPT_TABS as readonly string[]).includes(String(raw)) ? (raw as DeptTab) : "overview";
+/** The tab's address: Overview is the page itself. */
+export const tabHref = (deptId: string, t: DeptTab) => (t === "overview" ? `/dept/${deptId}` : `/dept/${deptId}?tab=${t}`);
+/** The tab's address with one more setting on it. */
+const withParam = (deptId: string, t: DeptTab, kv: string) => `${tabHref(deptId, t)}${t === "overview" ? "?" : "&"}${kv}`;
+/** The head's chat in the Ask sheet over a tab (overview slice 1): in the address, so back closes it. */
+export const askHref = (deptId: string, t: DeptTab = "overview") => withParam(deptId, t, "ask=1");
+/** Whether the address opens the Ask sheet: ?ask, or words to type in (?say=…). */
+export const asksOpen = (sp: { ask?: unknown; say?: unknown }) => sp.ask != null || (typeof sp.say === "string" && sp.say.length > 0);
 /**
  * Where an agent opens now that its own pages are gone (slice 4): its department's Agents tab with its sheet,
  * else (the chief of staff, or an agent in no department) the Company page's Departments tab with its sheet (slice 9).
@@ -20,16 +29,16 @@ export function agentHref(o: Org | null, agentId: string, edit = false): string 
   const href = dept && o!.departments.some((d) => d.id === dept) ? sheetHref(dept, "agents", agentId) : `/?tab=departments&agent=${encodeURIComponent(agentId)}`;
   return edit ? `${href}&edit=1` : href;
 }
-/** The department's chat with a goal ask typed in (slice 6): "Set a goal: ", or a change to the goal named. */
+/** The department's chat (in the Ask sheet) with a goal ask typed in (slice 6): "Set a goal: ", or a change to the goal named. */
 export const goalHref = (deptId: string, goal?: string | null) =>
   `/dept/${encodeURIComponent(deptId)}?say=${encodeURIComponent(goal ? `Change the goal “${goal}”: ` : "Set a goal: ")}`;
-/** The department's chat with a hire typed in, ready to send: where every "hire an agent" link goes (slice 5). */
+/** The department's chat (in the Ask sheet) with a hire typed in, ready to send: where every "hire an agent" link goes (slice 5). */
 export const hireHref = (deptId: string, seat?: { title: string; sub?: string | null } | null) =>
   `/dept/${deptId}?say=${encodeURIComponent(seat ? `Hire an agent for the ${seat.title} seat${seat.sub ? `: ${seat.sub}` : ""}.` : "I want to hire an agent to ")}`;
 /** A tab with an agent's sheet open over it (slice 4): the sheet is in the address, so back closes it. */
 /** A tab with the department's settings open over it (slice 7): in the address, so back closes it. */
-export const settingsHref = (deptId: string, t: DeptTab) => `${tabHref(deptId, t)}${t === "chat" ? "?" : "&"}settings=1`;
-export const sheetHref = (deptId: string, t: DeptTab, agentId: string) => `${tabHref(deptId, t)}${t === "chat" ? "?" : "&"}agent=${encodeURIComponent(agentId)}`;
+export const settingsHref = (deptId: string, t: DeptTab) => withParam(deptId, t, "settings=1");
+export const sheetHref = (deptId: string, t: DeptTab, agentId: string) => withParam(deptId, t, `agent=${encodeURIComponent(agentId)}`);
 /** New agent (card 420): the blank sheet on a department's Agents tab, and where the new agent's sheet then opens ("{id}" for its id). */
 export const newAgentHref = (deptId: string) => sheetHref(deptId, "agents", "new");
 export const madeAgentHref = (deptId: string) => `${tabHref(deptId, "agents")}&agent={id}`;

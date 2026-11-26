@@ -30,7 +30,7 @@ export function liveRows(runs: readonly LiveRunIn[], byId: Record<string, { name
       return {
         id: r.id, name: a.name, role: a.role, dept: dept?.name ?? null, hue: dept ? deptHue(i) : null,
         mins: Math.max(0, Math.floor((now - Date.parse(r.started_at)) / 6e4)),
-        href: dept ? tabHref(dept.id, "chat") : agentHref(org, r.agent_id),
+        href: dept ? tabHref(dept.id, "overview") : agentHref(org, r.agent_id),
       };
     });
 }
