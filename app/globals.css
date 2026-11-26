@@ -158,12 +158,6 @@ h1, h2, h3, p { margin: 0; }
 .dp-pill:hover { text-decoration: none; }
 .dp-pill.warn { background: var(--yel-soft); color: var(--yel-ink); border-color: transparent; }
 .dp-icon, .dp-icon i, .dp-head h1 { transition: all .45s cubic-bezier(.22,.8,.2,1); }
-.dp.chat .dp-head { gap: 10px; }
-.dp.chat .dp-icon { width: 28px; height: 28px; border-radius: 10px; }
-.dp.chat .dp-icon i { width: 9px; height: 9px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--hue) 25%, transparent); }
-.dp.chat .dp-head > div:nth-child(2) { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.dp.chat .dp-head h1 { font-size: 18px; }
-.dp.chat .dp-stat .dp-pill:not(.warn) { display: none; }
 .dp-ttl { display: none; }
 
 /* glass tabs over the content */
@@ -575,17 +569,6 @@ h1, h2, h3, p { margin: 0; }
 .co-gsec > header { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
 .co-gsec > header i { width: 9px; height: 9px; border-radius: 99px; background: var(--hue); }
 .co-gsec > header .dp-btn { margin-left: auto; }
-.co-pin { display: flex; flex-direction: column; gap: 14px; }
-.co-wide { max-width: 720px; }
-.co-needs { display: flex; flex-direction: column; gap: 8px; }
-.co-need { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 14px; background: var(--soft); font-size: 13px; line-height: 1.45; }
-.co-need > span:not(.co-kind) { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.co-need small { color: var(--mut); font-size: 12px; }
-.co-kind { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; flex: none; }
-.co-later { display: flex; flex-direction: column; gap: 2px; }
-.co-later small { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--mut); }
-.co-later ul { margin: 0; padding-left: 18px; }
-.co-later a { color: inherit; }
 /* Company > Approvals holds everything the Approvals page did (slice 10, mockup v18) */
 .dp-btn.sm { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 10px; }
 .co-full { flex-basis: 100%; }
@@ -1706,6 +1689,43 @@ a.ov-tile:hover { text-decoration: none; border-color: var(--mut2); }
 .ov-step.waiting, .ov-step.running { background: var(--yel-soft); color: var(--yel-ink); }
 .ov-step.failed { background: var(--red-soft); color: var(--red-ink); }
 .ov-when { margin-left: auto; color: var(--mut); font-size: 12.5px; }
+/* The Company page's Overview (overview slice 3), to the canvas's Company artboard */
+.ov-kind.acc { background: var(--acc-soft); color: var(--acc-ink); }
+.ov-kind.mint { background: var(--mint-soft); color: var(--mint-ink); }
+.co-ov-needs { padding: 8px 10px; display: flex; flex-direction: column; }
+.co-ov-need { display: flex; align-items: center; gap: 12px; padding: 10px 8px; }
+.co-ov-need + .co-ov-need { border-top: 1px solid var(--bd); }
+.co-ov-need .ov-kind { min-width: 86px; text-align: center; }
+.co-ov-dept { font-size: 12.5px; color: var(--mut); min-width: 84px; flex: none; }
+.ov-line.todo { padding-left: 22px; position: relative; }
+.ov-line.todo::before { content: ""; position: absolute; left: 0; top: 4px; width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--mut2); box-sizing: border-box; }
+.co-unit { font-size: 15px; color: var(--mut); font-weight: 600; letter-spacing: 0; }
+.co-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.co-rev { height: 170px; display: flex; align-items: flex-end; gap: 3px; border-bottom: 1px solid var(--bd); }
+.co-revbar { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.co-revbar:hover { opacity: .8; }
+.co-revbar i { display: block; width: 100%; background: var(--ov-a); border-radius: 3px 3px 0 0; }
+.co-revbar i.none { height: 12%; background: transparent; border: 1px dashed var(--mut2); box-sizing: border-box; }
+.co-legend { flex-wrap: wrap; }
+.co-stack i { border-radius: 0; }
+.co-stack i:first-child { border-radius: 4px 4px 0 0; }
+.co-ov-depts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.co-ov-dcard { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; color: var(--ink); min-width: 0; }
+.co-ov-dcard:hover { text-decoration: none; border-color: var(--mut2); }
+.co-ov-dh { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.co-ov-dh i { width: 10px; height: 10px; border-radius: 99px; background: var(--hue); flex: none; }
+.co-ov-dh b { font-size: 15px; }
+.co-ov-dh span:not(.co-chip) { font-size: 12.5px; color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-ov-dcard p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--ink); }
+.co-ov-dn { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink2); }
+.co-ov > .card { max-width: 720px; }
+@media (max-width: 900px) { .co-charts, .co-ov-depts { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  .co-ov-need { flex-wrap: wrap; gap: 8px; }
+  .co-ov-need .ov-need-t { flex-basis: 100%; order: 3; }
+  .co-ov-need .dp-btn { order: 4; height: 44px; flex: 1; justify-content: center; }
+  .co-ov-dcard { padding: 16px; }
+}
 /* the Ask button in the header, and the chat in its sheet */
 .dp-ask { height: 30px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--bd); background: var(--card); color: var(--ink); font-size: 12.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .dp-ask:hover { text-decoration: none; border-color: var(--mut2); }

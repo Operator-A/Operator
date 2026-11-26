@@ -147,47 +147,56 @@ export interface OvChip { label: string; href: string; failed: boolean }
 export interface OvLine { text: string; chips: OvChip[] }
 export interface OvReport {
   heading: string; sub: string | null; empty: string | null;
-  happened: OvLine[]; look: OvLine[]; coming: { text: string; href: string }[];
-  dayHref: string; weekHref: string; week: boolean; allHref: string; allLabel: string;
+  sections: { title: string; lines: OvLine[]; todo?: boolean }[]; coming: { text: string; href: string }[];
+  dayHref: string; weekHref: string; week: boolean; note: string; allHref: string | null; allLabel: string;
 }
-/** A saved report as the card reads it (core/reports.ts Report). */
+/** A saved report as the card reads it (core/reports.ts Report): a department's lines, or the company's (slice 3). */
 export interface RepIn {
   day: string; runCount: number; dropped: number; costUsd: number; writtenAt: string; writerRun: string | null;
-  lines: { section: "happened" | "look"; text: string; runs: { id: string; agent: string; at: string; failed: boolean }[] }[];
+  lines: { section: string; text: string; runs: { id: string; agent: string; at: string; failed: boolean; dept?: string }[] }[];
 }
 export interface RepOpts {
   week: boolean; name: string; today: string; tz: string; coming: { agent: string; at: number }[];
-  agentsHref: string; dayHref: string; weekHref: string; allHref: string;
+  agentsHref: string; dayHref: string; weekHref: string; allHref: string | null;
+  /** The company's report (slice 3): written from department reports, with action items. */
+  company?: boolean;
 }
 const fmt = (t: number | string, tz: string, o: Intl.DateTimeFormatOptions) => {
   try { return new Intl.DateTimeFormat("en-US", { timeZone: tz, ...o }).format(new Date(t)); }
   catch { return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", ...o }).format(new Date(t)); }
 };
 const dayTime = (t: number | string, tz: string) => fmt(t, tz, { weekday: "short", hour: "numeric", minute: "2-digit" });
+const SECTIONS = { dept: [["happened", "What happened"], ["look", "Worth a look"]], company: [["short", "The short version"], ["todo", "Action items"]] } as const;
 
 /**
- * The report card: its heading, the line under it (when it was written, from how many runs, what the model call cost,
- * how many lines the checker left out), the lines with a chip per cited run, and what runs next. A day report from an
- * earlier day says which day; no report yet says when one comes.
+ * The report card: its heading, the line under it (when it was written, from how many runs or department reports,
+ * what the model call cost, how many lines the checker left out), the lines with a chip per cited run, and what runs
+ * next. A day report from an earlier day says which day; no report yet says when one comes.
  */
 export function reportView(r: RepIn | null, o: RepOpts): OvReport {
-  const heading = o.week ? `Last 7 days in ${o.name}` : !r || r.day === o.today ? `Today in ${o.name}` : `${fmt(`${r.day}T12:00:00Z`, "UTC", { weekday: "long", month: "short", day: "numeric" })} in ${o.name}`;
-  const chips = (runs: RepIn["lines"][number]["runs"]): OvChip[] => runs.map((c) => ({
-    label: `${c.agent} · ${o.week ? fmt(c.at, o.tz, { weekday: "short" }) : fmt(c.at, o.tz, { hour: "numeric", minute: "2-digit" })}${c.failed ? ", failed" : ""}`,
-    href: `/runs/${c.id}`, failed: c.failed,
-  }));
-  const pick = (section: "happened" | "look") => (r?.lines ?? []).filter((l) => l.section === section).map((l) => ({ text: l.text, chips: chips(l.runs) }));
-  const call = r && r.runCount > 0 && r.writerRun ? ` · 1 model call, ${r.costUsd > 0 && r.costUsd < 0.01 ? "under $0.01" : money(r.costUsd)}` : "";
-  const sub = r ? `Written ${dayTime(r.writtenAt, o.tz)} from ${r.runCount} run${r.runCount === 1 ? "" : "s"}${call}${r.dropped ? ` · ${r.dropped} line${r.dropped === 1 ? "" : "s"} left out` : ""}` : null;
+  const where = o.company ? "at the company" : `in ${o.name}`;
+  const heading = o.week ? `Last 7 days ${where}` : !r || r.day === o.today ? `Today ${where}` : `${fmt(`${r.day}T12:00:00Z`, "UTC", { weekday: "long", month: "short", day: "numeric" })} ${where}`;
+  const chips = (runs: RepIn["lines"][number]["runs"]): OvChip[] => runs.map((c) => {
+    const when = o.week || o.company ? fmt(c.at, o.tz, { weekday: "short" }) : fmt(c.at, o.tz, { hour: "numeric", minute: "2-digit" });
+    return { label: `${c.dept ? `${c.dept} · ` : ""}${c.agent} ${o.company ? "" : "· "}${when}${c.failed ? ", failed" : ""}`.replace("  ", " "), href: `/runs/${c.id}`, failed: c.failed };
+  });
+  const sections = SECTIONS[o.company ? "company" : "dept"].map(([key, title]) => ({
+    title, todo: key === "todo", lines: (r?.lines ?? []).filter((l) => l.section === key).map((l) => ({ text: l.text, chips: chips(l.runs) })),
+  })).filter((x) => x.lines.length > 0);
+  const cost = r && r.costUsd > 0 && r.costUsd < 0.01 ? "under $0.01" : money(r?.costUsd ?? 0);
+  const from = o.company ? `${r?.runCount} department report${r?.runCount === 1 ? "" : "s"}` : `${r?.runCount} run${r?.runCount === 1 ? "" : "s"}`;
+  const call = r && r.runCount > 0 && r.writerRun ? ` · 1 model call, ${cost}` : "";
+  const sub = r ? `Written ${dayTime(r.writtenAt, o.tz)} from ${from}${call}${r.dropped ? ` · ${r.dropped} line${r.dropped === 1 ? "" : "s"} left out` : ""}` : null;
   const empty = !r
-    ? `No report yet. ${o.name}’s report is written after its morning runs, by noon at the latest.`
-    : r.runCount === 0 ? (o.week ? `No runs in ${o.name} in the last 7 days, so there was nothing to write.` : `No runs in ${o.name} yet today, so there was nothing to write.`)
-    : !r.lines.length ? "None of the model’s lines cited a run with the numbers it gave, so none are shown. Open the runs below." : null;
+    ? (o.company ? "No company report yet. It’s written once every department has its report, by 1 PM at the latest." : `No report yet. ${o.name}’s report is written after its morning runs, by noon at the latest.`)
+    : r.runCount === 0 ? (o.company ? "No department had report lines for this period, so there was nothing to write." : o.week ? `No runs in ${o.name} in the last 7 days, so there was nothing to write.` : `No runs in ${o.name} yet today, so there was nothing to write.`)
+    : !r.lines.length ? `None of the model’s lines cited ${o.company ? "a department line" : "a run"} with the numbers it gave, so none are shown.` : null;
   const horizon = o.week ? 7 : 1;
   const coming = [...o.coming].sort((a, b) => a.at - b.at).filter((c) => c.at <= Date.parse(`${o.today}T12:00:00Z`) + (horizon + 1) * DAY).slice(0, 3)
     .map((c) => ({ text: `${c.agent} runs ${dayTime(c.at, o.tz)}.`, href: o.agentsHref }));
   return {
-    heading, sub, empty, happened: pick("happened"), look: pick("look"), coming,
-    dayHref: o.dayHref, weekHref: o.weekHref, week: o.week, allHref: o.allHref, allLabel: r?.runCount ? `All ${r.runCount} run${r.runCount === 1 ? "" : "s"}` : "All runs",
+    heading, sub, empty, sections, coming, dayHref: o.dayHref, weekHref: o.weekHref, week: o.week,
+    note: o.company ? "Your assistant in Claude can read this report and its action items through the OPERATOR connector." : "Each line links to the run it came from; a line that cites no run is left out.",
+    allHref: o.allHref, allLabel: !o.company && r?.runCount ? `All ${r.runCount} run${r.runCount === 1 ? "" : "s"}` : "All runs",
   };
 }

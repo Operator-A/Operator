@@ -152,17 +152,17 @@ export function GoalTile({ title, line, pct, href }: { title: string | null; lin
   );
 }
 
-const Lines = ({ title, lines }: { title: string; lines: OvLine[] }) => (
+const Lines = ({ title, lines, todo }: { title: string; lines: OvLine[]; todo?: boolean }) => (
   <div className="ov-rsec">
     <h3>{title}</h3>
     {lines.map((l, i) => (
-      <p key={i} className="ov-line">{l.text}{l.chips.map((c, j) => <Link key={j} href={c.href} className="ov-chip"><i className={c.failed ? "bad" : undefined} />{c.label}</Link>)}</p>
+      <p key={i} className={`ov-line${todo ? " todo" : ""}`}>{l.text}{l.chips.map((c, j) => <Link key={j} href={c.href} className="ov-chip"><i className={c.failed ? "bad" : undefined} />{c.label}</Link>)}</p>
     ))}
   </div>
 );
 
 /** The written report: Today or the last 7 days, each line with chips to its runs, what runs next, and Write it now. */
-function Report({ r, write }: { r: OvReport; write: React.ReactNode }) {
+export function Report({ r, write }: { r: OvReport; write: React.ReactNode }) {
   return (
     <article className="ov-card ov-report">
       <div className="ov-report-h">
@@ -173,8 +173,7 @@ function Report({ r, write }: { r: OvReport; write: React.ReactNode }) {
         </nav>
       </div>
       {r.empty && <p className="ov-empty">{r.empty}</p>}
-      {r.happened.length > 0 && <Lines title="What happened" lines={r.happened} />}
-      {r.look.length > 0 && <Lines title="Worth a look" lines={r.look} />}
+      {r.sections.map((x) => <Lines key={x.title} title={x.title} lines={x.lines} todo={x.todo} />)}
       {r.coming.length > 0 && (
         <div className="ov-rsec">
           <h3>Coming up</h3>
@@ -182,9 +181,9 @@ function Report({ r, write }: { r: OvReport; write: React.ReactNode }) {
         </div>
       )}
       <div className="ov-rfoot">
-        <span>Each line links to the run it came from; a line that cites no run is left out.</span>
+        <span>{r.note}</span>
         {write}
-        <Link href={r.allHref}>{r.allLabel}</Link>
+        {r.allHref && <Link href={r.allHref}>{r.allLabel}</Link>}
       </div>
     </article>
   );

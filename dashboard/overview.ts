@@ -51,3 +51,10 @@ export async function chainRows(chains: readonly Chain[], names: Record<string, 
     last: chainLast(c.key, c.steps.length, runs, oks),
   }));
 }
+
+/** The company's saved daily numbers from `fromDay` on (overview slice 3): revenue, orders and cash, a row per saved day. */
+export async function snapshotsSince(fromDay: string): Promise<import("./company-overview-rules").Snap[] | null> {
+  const { data, error } = await db().from("kpi_snapshots").select("date, revenue, orders, cash_usd").gte("date", fromDay).order("date", { ascending: true }).limit(120);
+  if (error) return null;
+  return (data ?? []).map((r) => ({ date: String(r.date), revenue: Number(r.revenue) || 0, orders: Number(r.orders) || 0, cash_usd: r.cash_usd == null ? null : Number(r.cash_usd) }));
+}

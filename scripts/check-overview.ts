@@ -2,6 +2,7 @@
 // the page draws them without a model. No database, no network. Run: npm run check:overview
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { STACK_HUES, companyTiles, deptRuns7, deptStack, goalsTile, headline, lastDays, revenueDays, type Snap } from "../dashboard/company-overview-rules";
 import { barPct, chainLast, dayKey, draftOutcomes, isWork, lastWeek, money, recentFailures, runsPerDay, spendRows, type OvRun } from "../dashboard/overview-rules";
 
 const now = Date.parse("2026-11-26T18:00:00Z"); // 10 AM in Los Angeles, Thursday
@@ -80,4 +81,47 @@ assert.ok(/<AskSheet[\s\S]*?<Chat /.test(page), "the head's chat opens in the As
 assert.ok(!/className=\{`dp\$\{tab === "chat"/.test(page), "the page has no chat mode any more");
 assert.ok(/from\("approvals"\)\.select\("status, created_at"\)\.eq\("department_id", deptId\)/.test(srv), "drafts are this department's cards only");
 assert.ok(/import \{ db \} from "@\/core\/db"/.test(srv), "every read goes through db(), so it is this org's");
+
+// ---- the Company Overview (overview slice 3): tiles, revenue per day with gaps, runs by department, department cards
+assert.deepEqual(lastDays(now, tz, 3), ["2026-11-24", "2026-11-25", "2026-11-26"]);
+const snap = (date: string, revenue: number, orders: number, cash: number | null = null): Snap => ({ date, revenue, orders, cash_usd: cash });
+const snaps = [snap("2026-10-05", 1000, 20), snap("2026-10-20", 1000, 20), snap("2026-11-02", 300, 6, 9030), snap("2026-11-19", 500, 10, 9030), snap("2026-11-25", 200, 4, 8420)];
+const rev = revenueDays(snaps, now, tz, 30);
+assert.equal(rev.length, 30); assert.equal(rev[29].key, "2026-11-26");
+assert.equal(rev[29].usd, null, "a day with no saved reading is null, never 0");
+assert.equal(rev.find((r) => r.key === "2026-11-25")?.usd, 200);
+assert.equal(rev.filter((r) => r.usd != null).length, 3);
+const tl = companyTiles(snaps, now, tz);
+assert.equal(tl.revenue.value, "$1,000", "this month's saved days, added in code");
+assert.equal(tl.revenue.sub, "50% of last month, 4 days left · 23 days not saved", "against last month, and the missing days counted, not passed off as slow ones");
+assert.equal(tl.orders.value, "20"); assert.equal(tl.orders.sub, "Average order $50");
+assert.equal(tl.cash.value, "$8,420"); assert.equal(tl.cash.sub, "Down $610 this week · as of 11/25", "the latest reading against the one a week before it");
+assert.equal(companyTiles([snap("2026-11-25", 0, 0, 500)], now, tz).cash.sub, "No reading from a week before · as of 11/25");
+const none = companyTiles([], now, tz);
+assert.ok(none.revenue.empty && none.cash.empty && none.orders.empty, "no saved numbers: the tiles say so");
+assert.equal(companyTiles([snap("2026-11-26", 0, 0)], now, tz).orders.sub, "No orders yet this month");
+assert.deepEqual(goalsTile([{ title: "List size", status: "behind" }, { title: "Runway", status: "on_track" }, { title: "Accounts won", status: "missed" }, { title: "Reach", status: "no_measure" }]), { ok: 1, total: 4, sub: "Behind: list size, accounts won" });
+assert.deepEqual(goalsTile([]), { ok: 0, total: 0, sub: "No goals yet" });
+assert.equal(goalsTile([{ title: "A", status: "reached" }, { title: "B", status: "no_measure" }]).sub, "1 not measured yet");
+const deptOfA = (a: string) => (a === "a" ? "fin" : a === "b" ? "sales" : null);
+const st = deptStack([run(1), run(2, { agent_id: "b", status: "failed" }), run(3, { agent_id: "c" }), run(4, { trigger: "chat" }), run(5, { status: "running" }), run(24 * 20)], deptOfA, ["fin", "sales"], now, tz, 14);
+assert.equal(st.length, 14);
+assert.deepEqual(st[13], { key: "2026-11-26", counts: [1, 1], total: 2 }, "finished and failed work runs by department; chats, running and runs in no department left out");
+assert.equal(st.reduce((t, x) => t + x.total, 0), 2, "nothing older than 14 days");
+assert.deepEqual(deptRuns7([run(1), run(24 * 6), run(24 * 8), run(2, { agent_id: "b" }), run(3, { trigger: "report" })], deptOfA, now), { fin: 2, sales: 1 });
+assert.ok(STACK_HUES.length >= 4);
+assert.equal(headline({ day: "2026-11-26", lines: [{ section: "happened", text: "Cash is $8,420." }, { section: "look", text: "Tuesday's review failed." }] }, "2026-11-26", null), "Tuesday's review failed; Cash is $8,420.", "worth a look first");
+assert.equal(headline({ day: "2026-11-24", lines: [{ section: "happened", text: "All charges categorized." }] }, "2026-11-26", null), "Last report: All charges categorized.");
+assert.equal(headline(null, "2026-11-26", "Drafted 2 emails."), "Drafted 2 emails.");
+assert.equal(headline({ day: "2026-11-26", lines: [] }, "2026-11-26", null), "No report yet.");
+
+// the Company page: Overview first, drawn from code, Avery's chat behind Ask, the report from core/reports
+const home = readFileSync("app/(room)/page.tsx", "utf8"), coView = readFileSync("dashboard/components/companyOverview.tsx", "utf8"), coRules = readFileSync("dashboard/company-overview-rules.ts", "utf8");
+for (const [name, src] of [["company page", home], ["company overview", coView], ["company rules", coRules]] as const) {
+  assert.ok(!/integrations\/llm|callModel|anthropic/i.test(src), `the ${name} calls no model`);
+}
+assert.ok(!/Date\.now\(\)/.test(coView) && !/Date\.now\(\)/.test(coRules), "drawn with the floor's time");
+assert.ok(/return <OverviewPane \{\.\.\.p\} \/>;/.test(home), "Overview is the Company page's default tab");
+assert.ok(/latestReports\(COMPANY_SCOPE\)/.test(home) && /company: true/.test(home), "the company report is the saved one, drawn as the company's");
+assert.ok(/from\("kpi_snapshots"\)\.select\("date, revenue, orders, cash_usd"\)/.test(srv), "revenue, orders and cash come from the saved daily numbers");
 console.log("check:overview ok");

@@ -2,15 +2,22 @@
 // is open, its address, and the words typed in by its links. Pure: no database, no network, so
 // `npm run check:dept` can test it.
 
-/** The Company page's tabs, the same shape as a department's. Chat comes first and opens by default. */
-export const COMPANY_TABS = ["chat", "departments", "goals", "approvals"] as const;
+/** The Company page's tabs, the same shape as a department's. Overview comes first and opens by default (overview slice 3). */
+export const COMPANY_TABS = ["overview", "departments", "goals", "approvals"] as const;
 export type CompanyTab = (typeof COMPANY_TABS)[number];
-export const COMPANY_TAB_LABEL: Record<CompanyTab, string> = { chat: "Chat", departments: "Departments", goals: "Goals", approvals: "Approvals" };
+export const COMPANY_TAB_LABEL: Record<CompanyTab, string> = { overview: "Overview", departments: "Departments", goals: "Goals", approvals: "Approvals" };
 
-/** The tab in the address, or Chat. */
-export const companyTab = (raw: unknown): CompanyTab => (COMPANY_TABS as readonly string[]).includes(String(raw)) ? (raw as CompanyTab) : "chat";
-/** The tab's address: Chat is the page itself. */
-export const companyHref = (t: CompanyTab) => (t === "chat" ? "/" : `/?tab=${t}`);
+/** The tab in the address, or Overview. */
+export const companyTab = (raw: unknown): CompanyTab => (COMPANY_TABS as readonly string[]).includes(String(raw)) ? (raw as CompanyTab) : "overview";
+/** The tab's address: Overview is the page itself. */
+export const companyHref = (t: CompanyTab) => (t === "overview" ? "/" : `/?tab=${t}`);
+/** Ask Avery: her chat in a sheet over the tab that is open (?ask=1), or with words typed in (?say=…), so Back closes it. */
+export const companyAskHref = (t: CompanyTab = "overview", say?: string) => {
+  const base = companyHref(t);
+  return `${base}${base.includes("?") ? "&" : "?"}${say ? `say=${encodeURIComponent(say)}` : "ask=1"}`;
+};
+/** The company report's period in the address: today (the page itself) or the last 7 days. */
+export const companyReportHref = (week: boolean) => (week ? "/?report=week" : "/");
 /** History and trust levels, folded at the foot of Company > Approvals (slice 10). */
 /** New agent (card 420) from Company > Departments, and where the new agent's sheet then opens ("{id}" for its id). */
 export const newAgentCompanyHref = () => `${companyHref("departments")}&agent=new`;
@@ -27,9 +34,8 @@ export const SCHEDULE_HREF = "/settings/schedule";
 
 /** What "Add a department" types into Avery's chat: her department interview starts from it. */
 export const ADD_DEPT_SAY = "Add a department for ";
-/** Card 440: the window event a card's button fires to send a message in the chat on the same page. */
-export const SAY_EVENT = "operator:say";
-export const addDeptHref = () => `/?say=${encodeURIComponent(ADD_DEPT_SAY)}`;
+/** Opens Avery's chat in its sheet on the Company page with the words typed in. */
+export const addDeptHref = () => companyAskHref("overview", ADD_DEPT_SAY);
 
 /** The Company page's colour (the departments take theirs from DEPT_HUES). */
 export const COMPANY_HUE = "#F2C46B";

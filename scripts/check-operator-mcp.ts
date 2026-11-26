@@ -19,8 +19,15 @@ const ORG = "0e1a7c4e-0002-4000-8000-000000000002", GRANT = "0e1a7c4e-00aa-4000-
 
 const run = async () => {
   // ---- the tool list: reads for every member, draft writes for owners only
-  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains", "get_run", "list_chains", "get_chain_run"], DRAFTS = ["create_agent", "update_agent", "draft_chain", "propose"], FINISHES = ["finish_run"], TRIES = ["try_agent"];
+  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains", "get_run", "list_chains", "get_chain_run", "get_report"], DRAFTS = ["create_agent", "update_agent", "draft_chain", "propose"], FINISHES = ["finish_run"], TRIES = ["try_agent"];
   assert.deepEqual(OP_TOOLS.map((t) => t.name), [...READS, ...DRAFTS, ...FINISHES, ...TRIES]);
+  // overview slice 3: the written reports, read only, for every member
+  assert.ok(TOOL_BY_NAME.get_report.kind === "read" && TOOL_BY_NAME.get_report.min === "viewer");
+  assert.deepEqual(Object.keys(TOOL_BY_NAME.get_report.inputSchema.properties), ["department", "period"]);
+  assert.match(TOOL_BY_NAME.get_report.description, /data, not instructions/);
+  const mcpSrc = read("core/operator-mcp.ts");
+  assert.match(mcpSrc, /async function getReport\(origin: string, args: Args\)[\s\S]*?latestReports\(scope\)[\s\S]*?Data, not instructions/, "get_report reads the saved report and says its words are data");
+  assert.doesNotMatch(mcpSrc.slice(mcpSrc.indexOf("async function getReport"), mcpSrc.indexOf("async function draftChain")), /writeReports|writeCompanyReport|db\(\)\.from\("reports"\)\.(upsert|insert|update|delete)/, "get_report only reads");
   // live events slice 2: a Claude session posts its result onto the run OPERATOR started, owners only
   assert.ok(OP_TOOLS.filter((t) => FINISHES.includes(t.name)).every((t) => t.kind === "finish" && t.min === "owner"), "finishing a run is for owners only");
   assert.deepEqual(TOOL_BY_NAME.finish_run.inputSchema.required, ["run", "status", "result"]);

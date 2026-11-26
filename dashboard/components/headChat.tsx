@@ -1,7 +1,7 @@
 "use client";
 // A department's chat (docs/department-pages.md, slices 2 and 3), as in the approved mockup: a glass room
 // with the conversation with the head and every run of the department's agents. The Company page (slice 8)
-// uses the same room for Avery's chat, with Avery's runs and the cards that need the owner pinned at the end. A run shows its checklist
+// uses the same room for Avery's chat, with Avery's runs; both open in the page's Ask sheet. A run shows its checklist
 // (built in code from its logged steps), its result and its drafts as approval cards; while it is going the
 // chat polls the department's runs (app/(room)/dept/[id]/live) so its steps appear as they happen. Each
 // message to the head is one logged run of the head (dashboard/chatActions.ts sendToHead).
@@ -16,7 +16,6 @@ import { ChangeCard, type ChangeActs } from "./changeCard";
 import { clock, dayLabel, initialsOf, mergeFeed, runFoot, runState, runTitle, type FeedRun, type FeedTalk } from "@/dashboard/dept-feed";
 import { Reply } from "./chatReply";
 import { Icon } from "./Icon";
-import { SAY_EVENT } from "@/dashboard/company-rules";
 
 const LIVE_MS = 3000, IDLE_MS = 20000;
 
@@ -43,7 +42,7 @@ function RunCard({ r, tz, cards }: { r: FeedRun; tz: string; cards: Record<strin
   );
 }
 
-export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, starters, missing, send, hires = [], hireActs, changes = [], changeActs, controls = false, say = "", live: liveAt, pinned, empty }: {
+export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, starters, missing, send, hires = [], hireActs, changes = [], changeActs, controls = false, say = "", live: liveAt, empty }: {
   deptId: string; dept: string; head: string | null; title: string; tz: string;
   talk: FeedTalk[]; runs: FeedRun[]; cards: Record<string, React.ReactNode>; starters: string[]; missing: string | null;
   /** One message to the head (a server action already bound to its department, or Avery's). */
@@ -51,7 +50,6 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
   /** Where the runs are polled as they happen: the department's own by default; null polls nothing. */
   live?: string | null;
   /** Cards drawn on the server, shown after the conversation (the Company page's Needs you, slice 8). */
-  pinned?: React.ReactNode;
   /** The line an empty chat shows. */
   empty?: string;
   /** Hire cards (slice 5): hires waiting on you and agents never put on duty. */
@@ -127,15 +125,6 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
     });
   };
 
-  // card 440: a card's button on this page (Ask Avery to fill these in) sends its words as if typed
-  const goRef = useRef(go);
-  useEffect(() => { goRef.current = go; });
-  useEffect(() => {
-    const on = (e: Event) => { const t = (e as CustomEvent<unknown>).detail; if (typeof t === "string") goRef.current(t); };
-    window.addEventListener(SAY_EVENT, on);
-    return () => window.removeEventListener(SAY_EVENT, on);
-  }, []);
-
   const startTry = (agentId: string) => {
     if (!hireActs || trying.includes(agentId)) return;
     setTrying((t) => [...t, agentId]);
@@ -191,7 +180,6 @@ export function HeadChat({ deptId, dept, head, title, tz, talk, runs, cards, sta
             {extra.filter((h) => h.at >= it.at && (i === items.length - 1 || h.at < items[i + 1].at)).map((h) => h.el(it.kind !== "run" && it.role === "head"))}
           </Fragment>
         ))}
-        {pinned}
         {tried.map((t) => <span key={t.id} className={t.ok ? "dp-done" : "dp-note dp-bad"}>{t.ok && <Icon name="check" size={14} />}{t.text}</span>)}
         {busy && <div className="dp-msg"><div className="dp-av head">{headIni}</div><div className="dp-glass dp-typing" aria-label={`${head} is looking`}><i /><i /><i /></div></div>}
       </div>

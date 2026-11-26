@@ -135,7 +135,7 @@ const card = readFileSync("dashboard/components/department.tsx", "utf8");
 assert.match(card, /gapSentence\(v\.gaps\)/, "the card says in a sentence what is missing");
 assert.match(card, /<AskAveryButton[^>]*say=\{fillAsk\(v\.gaps\)\}/, "and offers a button that asks Avery to fill it");
 assert.doesNotMatch(card, /disabled=\{v\.gaps/, "never a greyed-out Propose with no way forward");
-assert.match(readFileSync("dashboard/components/headChat.tsx", "utf8"), /addEventListener\(SAY_EVENT/, "the chat sends what a card's button asks");
+assert.match(readFileSync("dashboard/components/askAvery.tsx", "utf8"), /companyAskHref\("overview", say\)/, "the button opens Avery's chat with its words typed in (overview slice 3)");
 const averyChat = readFileSync("core/avery-chat.ts", "utf8");
 assert.match(averyChat, /fill in the whole draft yourself/, "Avery fills the whole draft with suggestions, then asks to confirm");
 assert.match(averyChat, /never say a part is in the draft unless you called Update the department draft/, "and never claims a part she didn't save");

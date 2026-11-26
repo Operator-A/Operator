@@ -151,7 +151,7 @@ const SUSPENDED = (inner: string) => new RegExp(`<Suspense(?: key=\\{\\w+\\})? f
 assert.ok(SUSPENDED("<Pane\\b").test(`<Suspense key={tab} fallback={<PaneSkel />}><Pane tab={tab} />`));
 assert.ok(!SUSPENDED("<Pane\\b").test(`<section><Pane tab={tab} />`));
 const home = read("app/(room)/page.tsx");
-if (!SUSPENDED("<Pane\\b").test(home) || !SUSPENDED("<TodayLine\\b").test(home) || /export default async function Company[\s\S]*?await goalsByDept\([\s\S]*?\n\}\n/.test(home.split("\ntype P = ")[0])) problems.push("app/(room)/page.tsx: the Company page's tabs and its day line (goal numbers read from the tools) should stream in behind <Suspense> (Pane, TodayLine), not hold up the title and tabs (card 303).");
+if (!SUSPENDED("<Pane\\b").test(home) || !SUSPENDED("<GoalsTileOf\\b").test(home) || /export default async function Company[\s\S]*?await goalsByDept\([\s\S]*?\n\}\n/.test(home.split("\ntype P = ")[0])) problems.push("app/(room)/page.tsx: the Company page's tabs and its Goals tile (goal numbers read from the tools) should stream in behind <Suspense> (Pane, GoalsTileOf), not hold up the title and tabs (card 303).");
 const conn = read("app/(room)/connections/page.tsx");
 if (!SUSPENDED("<SelDetail\\b").test(conn) || !SUSPENDED("<ClaudeCard\\b").test(conn)) problems.push("app/(room)/connections/page.tsx: a connection's detail (SelDetail) and ClaudeCard call services; each should sit in <Suspense> (card 303).");
 if (!/<Pane tab=\{tab\} dview=\{dview\}/.test(home) || !/dview !== "cards"\) return [\s\S]{0,120}<OrgChartPane\b/.test(home)) problems.push("app/(room)/page.tsx: the org chart (goal numbers from the tools) should stream in inside the suspended Pane under the title and views (card 303).");

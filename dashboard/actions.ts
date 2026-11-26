@@ -39,7 +39,7 @@ import { TOOLS as CATALOG } from "@/core/tools/catalog";
 import { loadOrg as loadOrgChart, placeAgent, seatTitleFor } from "@/core/org";
 import { closedActions, createdWords, jobLine, newSpecDraft, readNewAgent } from "./new-agent-rules";
 import { customMenu } from "@/core/tools/custom";
-import { writeReports } from "@/core/reports";
+import { writeCompanyReport, writeReports } from "@/core/reports";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { lastTry } from "./builder";
 import { NOTHING_READ } from "./hire-rules";
@@ -123,6 +123,18 @@ export async function writeReportNow(deptId: string): Promise<ActionResult> {
     const res = await writeReports(deptId);
     await audit(me, "write_report", deptId);
     revalidatePath(`/dept/${deptId}`);
+    return { ok: res.ok, text: res.text };
+  } catch (e) { return fail(e); }
+}
+
+/** Write it now on the Company page (overview slice 3): today's company report from the department reports, paid by the company seat. */
+export async function writeCompanyReportNow(): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
+  try {
+    const res = await writeCompanyReport();
+    await audit(me, "write_report", "company");
+    revalidatePath("/");
     return { ok: res.ok, text: res.text };
   } catch (e) { return fail(e); }
 }
