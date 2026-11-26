@@ -86,6 +86,11 @@ assert.deepEqual(checkLines("not json", today, allowed), { lines: [], dropped: 1
 const many = checkLines(answer({ happened: Array.from({ length: 9 }, () => ({ text: "Cash went down.", runs: [3] })) }), today, allowed);
 assert.equal(many.lines.length, SECTION_MAX, "at most SECTION_MAX lines a section");
 assert.deepEqual(numbersIn("$1,240.50 and 12% of 3.0"), ["1240.50", "12", "3"]);
+// overview slice 4: a run's saved numbers (a Claude session's own from finish_run) are part of its fact, so a line can cite them
+const withNums = factsFor([run(1, { summary: "Weekly sales check done.", metrics: { orders: 14, cash_usd: 8420, "Bad Key": 3, note: "x" } })], agents, day);
+assert.equal(withNums[0].text, "Weekly sales check done. Numbers: orders 14; cash usd 8420.", "only valid names with finite numbers");
+const numOk = checkLines(answer({ happened: [{ text: "14 orders came in.", runs: [1] }, { text: "3 refunds.", runs: [1] }] }), withNums, allowed);
+assert.deepEqual(numOk.lines.map((l) => l.text), ["14 orders came in."], "a number from the run's saved numbers can be cited; one it doesn't carry can't");
 
 // the job names a department and a day, nothing else
 assert.deepEqual(readReportPayload({ dept: "finance", day: "2026-11-26" }), { dept: "finance", day: "2026-11-26" });
