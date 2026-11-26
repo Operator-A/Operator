@@ -1033,6 +1033,15 @@ hostChecks.then(() => console.log("mcp: ok"), (e) => { console.error(e); process
   assert.match((R.checkAnswer(P.xai, 401) as { problem: string }).problem, /didn’t accept/);
   assert.match((R.checkAnswer(P.google, 400) as { problem: string }).problem, /didn’t accept/, "Google answers 400 for a bad key");
   assert.match((R.checkAnswer(P.openai, 503) as { problem: string }).problem, /answered 503/);
+  // the provider's own reason is shown, so a good key on an account without credits says why
+  const gwNo = (R.checkAnswer(P.gateway, 403, "AI Gateway requires a valid credit card on file") as { problem: string }).problem;
+  assert.match(gwNo, /didn’t accept that key\. AI Gateway said \(403\): “AI Gateway requires a valid credit card on file”/);
+  assert.equal((R.checkAnswer(P.gateway, 401, "  ") as { problem: string }).problem, "AI Gateway didn’t accept that key.", "no reason, no empty quote");
+  assert.equal(R.errorSaid({ error: { message: "Invalid  API\nkey", type: "authentication_error" } }), "Invalid API key");
+  assert.equal(R.errorSaid({ error: "nope" }), "nope");
+  assert.equal(R.errorSaid({ message: "m" }), "m");
+  assert.equal(R.errorSaid(null), "");
+  assert.equal(R.errorSaid({ error: { code: 1 } }), "");
   assert.ok(!R.isModelProvider("anthropic") && R.isModelProvider("xai"));
   const save = mcpSrc.slice(mcpSrc.indexOf("export async function saveModelKey"), mcpSrc.indexOf("export async function removeModelKey"));
   assert.ok(save.includes("secret: await sealSecret({ key } satisfies KeySecret)"), "a provider key is sealed in the vault");

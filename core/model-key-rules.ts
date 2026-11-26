@@ -87,11 +87,24 @@ export function readModelKey(p: ModelProviderDef, pasted: unknown): { key: strin
   return { key };
 }
 
-/** What the provider's answer to the check call means. */
-export function checkAnswer(p: ModelProviderDef, status: number): { ok: true } | { problem: string } {
+/**
+ * What the provider's answer to the check call means. `said`: the provider's own reason, already scrubbed of the key
+ * (a key can be fine while the account isn't, e.g. no credits or card yet), so the owner sees why.
+ */
+export function checkAnswer(p: ModelProviderDef, status: number, said?: string): { ok: true } | { problem: string } {
   if (status >= 200 && status < 300) return { ok: true };
-  if (status === 400 || status === 401 || status === 403) return { problem: `${p.name} didn’t accept that key.` };
-  return { problem: `${p.name} answered ${status} when checking the key. Try again in a minute.` };
+  const why = said?.trim() ? ` ${p.name} said (${status}): “${said.trim().slice(0, 200)}”` : "";
+  if (status === 400 || status === 401 || status === 403) return { problem: `${p.name} didn’t accept that key.${why}` };
+  return { problem: `${p.name} answered ${status} when checking the key. Try again in a minute.${why}` };
+}
+
+/** The reason in a provider's error body ({ error: { message } }, { error: "..." } or { message }), or "" when there is none. */
+export function errorSaid(body: unknown): string {
+  if (!body || typeof body !== "object") return "";
+  const b = body as { error?: unknown; message?: unknown };
+  const e = b.error;
+  const m = typeof e === "string" ? e : e && typeof e === "object" && typeof (e as { message?: unknown }).message === "string" ? (e as { message: string }).message : typeof b.message === "string" ? b.message : "";
+  return m.replace(/\s+/g, " ").trim();
 }
 
 /** What a refused turn means for the key: a key the provider no longer accepts is paused until the owner pastes a new one. */

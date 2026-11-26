@@ -20,7 +20,7 @@ import {
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
 import { orgId } from "@/core/tenancy";
-import { MODEL_PROVIDERS, PROVIDER_BY_ID, checkAnswer, readModelKey, type ModelProvider } from "@/core/model-key-rules";
+import { MODEL_PROVIDERS, PROVIDER_BY_ID, checkAnswer, errorSaid, readModelKey, type ModelProvider } from "@/core/model-key-rules";
 import { HOOK_ID, SOURCES, SOURCE_BY_ID, readSigningSecret, type EventSource } from "@/core/event-rules";
 import { sameId, shopifySigned, stripeSigned } from "@/core/event-signature";
 import { afterFire, readRoutine, routineVaultId } from "@/core/routine-rules";
@@ -1270,7 +1270,9 @@ export async function saveModelKey(provider: ModelProvider, pasted: string): Pro
   try {
     res = await fetch(p.check.url, { headers: { [p.check.header]: `${p.check.prefix}${key}` }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15_000) });
   } catch (e) { throw new Error(`${p.name} couldn't be reached to check the key: ${scrubSecrets(e instanceof Error ? e.message : String(e), [key]).slice(0, 120)}`); }
-  const answer = checkAnswer(p, res.status);
+  // the provider's own reason, scrubbed of the key, so a refusal says why (no credits, wrong kind of key)
+  const said = res.ok ? "" : scrubSecrets(errorSaid(await res.json().catch(() => null)), [key]).slice(0, 200);
+  const answer = checkAnswer(p, res.status, said);
   if ("problem" in answer) throw new Error(answer.problem);
   const now = new Date().toISOString();
   const { error } = await db().from("mcp_connections").upsert({ id: p.vaultId, secret: await sealSecret({ key } satisfies KeySecret), connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
