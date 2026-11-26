@@ -2,7 +2,7 @@
 // Run: npm run check:org
 import assert from "node:assert/strict";
 
-import { placeSpots, placedWords, planPlacement, seatToClose, seatTitleFor, MAX_SEATS, LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, groupByDepartment, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, headBlock, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
+import { placeSpots, placedWords, planPlacement, seatToClose, seatTitleFor, MAX_SEATS, LEAD_MIN_TEAM, LEAD_REVIEW_HOURS, checkerOf, draftCode, leadCheck, agentsIn, below, companyBlock, headBlock, seatToolBlocks, teamBlock, teamOf, deptBudgetBlock, deptBudgetChange, deptEmailCap, deptEmailChange, deptOf, deptSpent, depthOf, deptSlug, headOf, orgProblems, reportsTo, seatOf, seatPath, type Org } from "../core/org-rules";
 
 const org: Org = {
   departments: [{ id: "marketing", name: "Marketing", sort: 1, monthlyBudgetUsd: 20, maxEmailsPerDay: null, leadChecksDrafts: false }],
@@ -117,13 +117,6 @@ assert.ok("problem" in leadCheck("note", "see https://x.co", true), "no links");
 assert.ok("problem" in leadCheck("note", " ", true));
 assert.equal(draftCode("3F2A9C1B-0000-4000-8000-000000000000"), "3f2a9c1b");
 
-
-// Today: Needs you grouped by department, the rest last
-const need = (title: string, agentId?: string) => ({ pri: "High" as const, title, sub: "", href: "/", agentId });
-const dOf = (id: string) => (id === "b_sub" ? { id: "marketing", name: "Marketing", sort: 1 } : id === "cfo" ? { id: "finance", name: "Finance", sort: 0 } : null);
-assert.deepEqual(groupByDepartment([need("a", "b_sub"), need("b"), need("c", "cfo")], dOf).map((g) => [g.name, g.items.map((x) => x.title)]), [["Finance", ["c"]], ["Marketing", ["a"]], ["Everything else", ["b"]]]);
-assert.deepEqual(groupByDepartment([need("b")], dOf), [{ name: null, items: [need("b")] }], "no departments: one plain list");
-assert.deepEqual(groupByDepartment([], dOf), []);
 
 // Card 370: adding an agent to a department, from Crew or a move card
 assert.deepEqual(placeSpots(org, "marketing"), [

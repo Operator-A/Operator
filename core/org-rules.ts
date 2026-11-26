@@ -250,27 +250,6 @@ export function leadCheck(verdict: string, note: string, canSendBack: boolean): 
 /** The short code a lead names a draft by: the first 8 characters of its approval id. */
 export const draftCode = (approvalId: string) => approvalId.replace(/-/g, "").slice(0, 8).toLowerCase();
 
-/**
- * Items grouped by the department of the agent each one is about (docs/org-chart.md, slice 4; Today's
- * Needs you), in the chart's order; the rest (no agent, or one off the chart or in the company seat)
- * last, as "Everything else". One group with no name when nothing is in a department.
- */
-export function groupByDepartment<T extends { agentId?: string }>(list: T[], deptOfAgent: (agentId: string) => { id: string; name: string; sort: number } | null): { name: string | null; items: T[] }[] {
-  const groups = new Map<string, { name: string; sort: number; items: T[] }>();
-  const rest: T[] = [];
-  for (const x of list) {
-    const d = x.agentId ? deptOfAgent(x.agentId) : null;
-    if (!d) { rest.push(x); continue; }
-    const g = groups.get(d.id) ?? { name: d.name, sort: d.sort, items: [] };
-    g.items.push(x);
-    groups.set(d.id, g);
-  }
-  if (!groups.size) return list.length ? [{ name: null, items: list }] : [];
-  const out: { name: string | null; items: T[] }[] = [...groups.values()].sort((a, b) => a.sort - b.sort).map((g) => ({ name: g.name, items: g.items }));
-  if (rest.length) out.push({ name: "Everything else", items: rest });
-  return out;
-}
-
 /** Agents seated in a department, its head first, then down the chart in seat order. */
 export function deptAgentIds(org: Org, deptId: string): string[] {
   const head = headOf(org, deptId);

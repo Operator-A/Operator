@@ -1,13 +1,9 @@
-"use client";
-// Card 440: a button on a server-drawn card that sends a message into the chat on the same page. The chat
-// (HeadChat) listens for SAY_EVENT and sends the text as if typed, so a card never leaves the owner
-// guessing what to type. With no chat on the page nothing happens.
-import { SAY_EVENT } from "@/dashboard/company-rules";
+// Card 440: a button on a server-drawn card that asks Avery something. Since overview slice 3 her chat sits behind
+// the Company page's Ask Avery sheet, so the button opens that sheet with the words typed in (?say=…); the owner
+// reads them and sends. Back closes the sheet.
+import Link from "next/link";
+import { companyAskHref } from "@/dashboard/company-rules";
 
 export function AskAveryButton({ say, className, children }: { say: string; className?: string; children: React.ReactNode }) {
-  return (
-    <button type="button" className={className} onClick={() => window.dispatchEvent(new CustomEvent(SAY_EVENT, { detail: say }))}>
-      {children}
-    </button>
-  );
+  return <Link href={companyAskHref("overview", say)} scroll={false} className={className}>{children}</Link>;
 }

@@ -1,8 +1,8 @@
 import { NextResponse, after } from "next/server";
 import { runChainStep } from "@/core/chain";
 import { isUuid, readChainPayload } from "@/core/job-rules";
-import { readReportPayload } from "@/core/report-rules";
-import { writeReports } from "@/core/reports";
+import { COMPANY_SCOPE, readReportPayload } from "@/core/report-rules";
+import { writeCompanyReport, writeReports } from "@/core/reports";
 import { claimJob, finishJob, type Job } from "@/core/jobs";
 import { cronAuthorized } from "@/core/runs";
 import { withOrg } from "@/core/tenancy";
@@ -39,10 +39,10 @@ async function runJob(origin: string, job: Job): Promise<void> {
 async function doJob(origin: string, job: Job): Promise<void> {
   try {
     if (job.kind === "report") {
-      // a department's reports for the day (overview slice 2): one model call per period, through withRun
+      // a department's reports for the day (overview slice 2), or the company's (slice 3): one model call per period, through withRun
       const r = readReportPayload(job.payload);
       if (!r) return await finishJob(job.id, { failed: true, outcome: "Bad report payload." });
-      const res = await writeReports(r.dept);
+      const res = r.dept === COMPANY_SCOPE ? await writeCompanyReport() : await writeReports(r.dept);
       return await finishJob(job.id, { failed: !res.ok, outcome: res.text, runId: res.runId });
     }
     if (job.kind !== "chain_step") return await finishJob(job.id, { failed: true, outcome: `Unknown kind ${job.kind}.` });

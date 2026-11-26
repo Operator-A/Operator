@@ -85,6 +85,7 @@ carries `WWW-Authenticate` with the resource metadata address, so Claude can sig
 | `get_run` (slice 3) | One run in full, tries included: status, cost, summary, each step | `/runs/<id>` |
 | `list_chains` (card 435) | Every saved chain: owner, start, on or off, each step in words and the link to the step before, the most its quick steps cost a run, next start, last run, and the chain as saved; optionally one department's or agent's | `/settings/schedule`, `/runs/<id>` |
 | `get_chain_run` (card 435) | One chain run as the run view: each step's name, where it ran, how it went, cost, what it said and passed on, the total and how it ended | `/runs/<id>` |
+| `get_report` (overview slice 3) | The newest written report of the company (the short version, action items) or one department (what happened, worth a look), today's or the last 7 days', each line with the runs it came from | `/`, `/dept/<id>`, `/runs/<id>` |
 
 Every answer goes through `scrubSecrets` plus a list of key shapes, is cut at 24,000 characters, and
 says that run summaries were written by agents.

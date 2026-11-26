@@ -1,16 +1,16 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, cache } from "react";
 import { SEEN_COOKIE, parseSeen } from "@/dashboard/seen";
 import { getApprovals, getChainOks, getFloor, requireSession, rulesFor, type ApprovalItem, type Floor } from "@/dashboard/data";
 import { okChainHref } from "@/core/chain-ok-rules";
 import { goalsByDept, type GoalView } from "@/dashboard/goals";
 import { GOALS_MISSING } from "@/core/goals";
-import { interruptCount, needs, split } from "@/dashboard/needs";
+import { interruptCount, needs } from "@/dashboard/needs";
 import { INTERRUPT_WORDS, interruptKind, type Interrupt } from "@/dashboard/needs-rules";
-import { deskGreeting, deskLine, firstSentence } from "@/dashboard/desk";
-import { companySeat, deptOf, deptSpent, groupByDepartment, headOf, latestOutputs, monthSpendByAgent } from "@/core/org";
+import { deskGreeting, firstSentence } from "@/dashboard/desk";
+import { companySeat, deptOf, deptSpent, headOf, latestOutputs, monthSpendByAgent } from "@/core/org";
 import { listProposals } from "@/core/proposals";
 import { billing, hireCost } from "@/dashboard/cost";
 import { monthWords, usd, type Billing } from "@/core/cost-rules";
@@ -34,40 +34,40 @@ import { GoalTiles } from "@/dashboard/components/goalTiles";
 import { ApprovalCard, ChainOkCard, Tag } from "@/dashboard/components/approvalBits";
 import { DraftCard } from "@/dashboard/components/department";
 import { currentDraftView } from "@/dashboard/department";
-import { deptAgentIds, deptHue, headAgentId, needsByDept, tabHref, askHref } from "@/dashboard/dept-rules";
-import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, SCHEDULE_HREF, addDeptHref, companyHref, madeAgentCompanyHref, newAgentCompanyHref, companyTab, deptView, deptViewHref, goalsWord, type CompanyTab, type DeptView } from "@/dashboard/company-rules";
+import { asksOpen, deptAgentIds, deptHue, headAgentId, needsByDept, tabHref, askHref } from "@/dashboard/dept-rules";
+import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, SCHEDULE_HREF, addDeptHref, companyAskHref, companyHref, companyReportHref, madeAgentCompanyHref, newAgentCompanyHref, companyTab, deptView, deptViewHref, goalsWord, type CompanyTab, type DeptView } from "@/dashboard/company-rules";
 import { OrgChartPane } from "@/dashboard/components/orgChartPane";
 import { IntentLink } from "@/dashboard/components/intentLink";
 import { controlsOn } from "@/dashboard/session";
 import { SkelLine } from "@/dashboard/components/skeletons";
 import { ActionButton } from "@/dashboard/components/client";
-import { acceptPromotion, applyWaiting, approveAll, cancelAction, declinePromotion, retryAction, trustToDraft } from "@/dashboard/actions";
+import { acceptPromotion, applyWaiting, approveAll, cancelAction, declinePromotion, retryAction, trustToDraft, writeCompanyReportNow } from "@/dashboard/actions";
 import { trustView, type TrustView } from "@/dashboard/trust";
 import { writeBlocker } from "@/core/gateway";
 import { KIND_WORDS } from "@/core/proposal-rules";
 import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
 import { readFill } from "@/dashboard/handoff-rules";
 import { agentHref } from "@/dashboard/dept-rules";
-import { seatOf } from "@/core/org-rules";
+import { seatOf, type Org } from "@/core/org-rules";
 import { stateLook, stateOf } from "@/dashboard/status";
-import { when } from "@/dashboard/format";
+import { md, when } from "@/dashboard/format";
+import { AskSheet } from "@/dashboard/components/askSheet";
+import { CompanyOverview, type CoNeed, type CoTile, type CompanyOverviewData } from "@/dashboard/components/companyOverview";
+import { STACK_HUES, companyTiles, deptRuns7, deptStack, goalsTile, headline, lastDays, revenueDays, usd0 } from "@/dashboard/company-overview-rules";
+import { recentFailures, reportView } from "@/dashboard/overview-rules";
+import { snapshotsSince } from "@/dashboard/overview";
+import { latestDayReports, latestReports } from "@/core/reports";
+import { COMPANY_SCOPE, todayIn, type Line } from "@/core/report-rules";
 
 // The Company page (docs/department-pages.md, slice 8): home, in place of the Desk and the floating Avery
-// panel, built to the approved mockup. The same shape as a department's page: a short header, glass tabs
-// (Chat with Avery, the default; Departments; Goals; Approvals), and Avery's chat as a glass room where her
-// runs post and what needs the owner is pinned at the end. Every count and number on it comes from code.
+// panel. The same shape as a department's page: a short header, glass tabs (Overview, the default, built to the
+// approved overview canvas in overview slice 3; Departments; Goals; Approvals). Avery's chat, where her runs post,
+// opens in a sheet from the header's Ask button. Every count and number on it comes from code.
 
 const GEAR = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" /></svg>;
 const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-const LOOK: Record<Interrupt, { bg: string; fg: string }> = {
-  money: { bg: "var(--red-soft)", fg: "var(--red-ink)" },
-  first_time: { bg: "var(--yel-soft)", fg: "var(--yel-ink)" },
-  new_agent: { bg: "var(--acc-soft)", fg: "var(--acc-ink)" },
-  goal: { bg: "var(--mint-soft)", fg: "var(--mint-ink)" },
-};
-const Label = ({ k }: { k: Interrupt }) => <span className="co-kind" style={{ background: LOOK[k].bg, color: LOOK[k].fg }}>{INTERRUPT_WORDS[k]}</span>;
 
 /** Card 156: a department proposal's line: its people, goals and month if each ran daily, from code. */
 function deptLine(d: DeptDraft, bill: Billing): string {
@@ -85,14 +85,17 @@ function goalLine(p: Extract<ProposalPlan, { kind: "goal" }>, dept?: string | nu
 // approving, Approve all and Apply now on the Approvals tab call the outside service once or twice per change
 export const maxDuration = 300;
 
-export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; agent?: string; edit?: string; view?: string; at?: string; days?: string }> }) {
+const ASK = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>;
+
+export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; ask?: string; agent?: string; edit?: string; view?: string; at?: string; days?: string; report?: string }> }) {
   const jar = await cookies(); // per request only, so nothing here is read at build time (no database)
   const [f, setup, me, sp, biz] = await Promise.all([getFloor(), inSetup(), requireSession(), searchParams, loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
   // a new business starts with setup (card 151, docs/setup.md), not an empty Company page
   if (setup) redirect("/start");
   const tab = companyTab(sp.tab);
   const dview = deptView(sp.view);
-  const paneKey = `${tab}:${dview}`; // a new view streams in afresh
+  const week = sp.report === "week";
+  const paneKey = `${tab}:${dview}:${week ? "w" : "d"}`; // a new view streams in afresh
   const org = f.chart;
   const open = needs(f, f.now, parseSeen(jar.get(SEEN_COOKIE)?.value));
   // the same count as the bell and the menu's Approvals: only the four kinds that interrupt (card 158)
@@ -113,18 +116,22 @@ export default async function Company({ searchParams }: { searchParams: Promise<
   const apCount = view ? view.pending.length + view.withLead.length + (pending ?? []).filter((p) => p.state === "pending" && interruptKind({ from: "proposal", kind: p.kind })).length : undefined;
   const needsWord = `${waiting} need${waiting === 1 ? "s" : ""} you`;
   const depts = org?.departments.length ?? 0;
+  const onDuty = f.crew.filter((a) => f.agents[a.id]?.enabled).length;
+  const askOpen = asksOpen(sp) && !sp.agent;
 
   return (
-    <div className={`dp co${tab === "chat" ? " chat" : ""}`} style={{ "--hue": COMPANY_HUE } as React.CSSProperties}>
+    <div className="dp co" style={{ "--hue": COMPANY_HUE } as React.CSSProperties}>
       <Link href="/settings" className="dp-ttl" aria-label="Company settings"><b>{biz.name}</b><span className={waiting ? "warn" : undefined}>{chief}{waiting ? ` · ${needsWord}` : ", chief of staff"}</span></Link>
       <div className="dp-head">
         <div className="dp-icon"><i /></div>
-        <div><h1>{biz.name}</h1><div className="dp-led">{chief}, your chief of staff · {s(depts, "department")}, {s(f.crew.length, "agent")}</div></div>
+        {/* the canvas's header: the day's greeting, then the company in one line */}
+        <div><h1>{deskGreeting(f.now, f.tz)}</h1><div className="dp-led">{s(depts, "department")} · {s(onDuty, "agent")} on duty · {chief}, chief of staff</div></div>
         <div className="dp-stat">
-          <span className="dp-pill">AI spend {usd(spent)}{budget != null ? ` of ${usd(budget)}` : ""} this month</span>
           {waiting > 0 && <Link href={companyHref("approvals")} className="dp-pill warn">{needsWord}</Link>}
+          <span className="dp-pill">AI spend {usd(spent)}{budget != null ? ` of ${usd(budget)}` : ""}</span>
           {/* while the org is off nothing starts on its own: turning it on stays one tap from home (slice 11) */}
           {!f.org.on && <Link href={SCHEDULE_HREF} className="dp-pill co-org" title="Opens Settings › Schedule">Org is off · Turn on</Link>}
+          <Link href={companyAskHref(tab)} scroll={false} className="dp-ask">{ASK}Ask {chief}</Link>
           <Link href="/settings" className="dp-gear" aria-label="Company settings" title="Opens Settings">{GEAR}</Link>
         </div>
       </div>
@@ -135,9 +142,16 @@ export default async function Company({ searchParams }: { searchParams: Promise<
         }))} />
         <div className="dp-pane" key={tab}>
           {/* each tab's own reads (goal numbers come from the tools) stream in under the title and tabs (card 303) */}
-          <Suspense key={paneKey} fallback={<PaneSkel />}><Pane tab={tab} dview={dview} f={f} chiefId={chiefId} chief={chief} spend={spend} owner={atLeast(me.role, "owner")} approver={atLeast(me.role, "approver")} open={open} view={view} pending={pending} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} /></Suspense>
+          <Suspense key={paneKey} fallback={<PaneSkel />}><Pane tab={tab} dview={dview} f={f} chiefId={chiefId} chief={chief} spend={spend} owner={atLeast(me.role, "owner")} approver={atLeast(me.role, "approver")} open={open} view={view} pending={pending} week={week} bizName={biz.name} /></Suspense>
         </div>
       </div>
+      <Link href={companyAskHref(tab)} scroll={false} className="dp-askfab" aria-label={`Ask ${chief}`}>{ASK}</Link>
+      {/* Avery's chat, in a sheet over the tab (overview slice 3; it was the page's first tab) */}
+      {askOpen && (
+        <AskSheet title={`Ask ${chief}`} sub="Chief of staff, about the whole company" closeHref={companyHref(tab)}>
+          <Chat f={f} chiefId={chiefId} chief={chief} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} />
+        </AskSheet>
+      )}
       {/* the chief of staff and any agent in no department open their sheet here (slice 9, in place of Everyone) */}
       {typeof sp.agent === "string" && <AgentSheetFor id={sp.agent} closeHref={companyHref(tab)} tz={f.tz} now={f.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} openHref={madeAgentCompanyHref()} />}
     </div>
@@ -148,98 +162,158 @@ const PaneSkel = () => <div className="dp-scroll"><div className="dp-panel"><Ske
 
 type P = {
   dview: DeptView; f: Floor; chiefId: string | null; chief: string; spend: Record<string, number>; owner: boolean; approver: boolean; open: ReturnType<typeof needs>;
-  view: Awaited<ReturnType<typeof getApprovals>> | null; pending: Awaited<ReturnType<typeof listProposals>> | null; say: string;
+  view: Awaited<ReturnType<typeof getApprovals>> | null; pending: Awaited<ReturnType<typeof listProposals>> | null; week: boolean; bizName: string;
 };
 
 async function Pane({ tab, ...p }: P & { tab: CompanyTab }) {
   if (tab === "departments") return <Departments {...p} />;
   if (tab === "goals") return <Goals {...p} />;
   if (tab === "approvals") return <Approvals {...p} />;
-  return <Chat {...p} />;
+  return <OverviewPane {...p} />;
 }
 
-/** Avery's chat: the conversation, her runs (the morning summary among them), then what needs you, pinned. */
-async function Chat({ f, chiefId, chief, owner, approver, open, say }: P) {
+/** Avery's chat in the Ask sheet: the conversation and her runs (the morning summary among them). */
+async function Chat({ f, chiefId, chief, say }: { f: Floor; chiefId: string | null; chief: string; say: string }) {
   const [history, runs] = await Promise.all([chatHistory(40).catch(() => null), chiefId ? deptRuns([chiefId], f.byId, undefined, 15) : Promise.resolve([])]);
   const talk = (history ?? []).map((h) => ({ id: h.id, role: h.role === "owner" ? "owner" as const : "head" as const, text: h.text, notes: h.notes, runId: h.run_id, at: h.created_at }));
   return (
     <HeadChat deptId="company" dept="the company" head={chief} title="Chief of staff" tz={f.tz} talk={talk} runs={runs} cards={{}} send={sendToAvery} live={null}
       missing={history ? null : CHAT_MISSING} controls={controlsOn()} say={say}
       starters={["What needs me today?", "How are the goals?", "Add a department"]}
-      empty={`Ask ${chief} about the whole company: how the goals stand, what needs you, or to add a department. A question about one department is best asked to its head, on its page.`}
-      pinned={<Pinned f={f} chief={chief} owner={owner} approver={approver} open={open} />} />
+      empty={`Ask ${chief} about the whole company: how the goals stand, what needs you, or to add a department. A question about one department is best asked to its head, on its page.`} />
   );
 }
 
-/** What sat on the Desk, now at the end of Avery's chat: the department she is drafting, setup's leftovers, and Needs you. */
-async function Pinned({ f, chief, owner, approver, open }: { f: Floor; chief: string; owner: boolean; approver: boolean; open: ReturnType<typeof needs> }) {
+const NEED_CLS: Record<Interrupt, CoNeed["cls"]> = { money: "red", first_time: "yel", new_agent: "acc", goal: "mint" };
+
+/**
+ * The Overview (overview slice 3), to the canvas's Company artboard: setup's leftovers and the department being
+ * drafted, what needs you in every department, the company report, four tiles, two charts and a card per department.
+ * Every number is worked out in code (dashboard/company-overview-rules.ts).
+ */
+async function OverviewPane({ f, chiefId, spend, owner, approver, week, bizName }: P) {
   const org = f.chart;
-  const [draft, first, finish, skipped, pending, bill] = await Promise.all([
+  const now = f.now, tz = f.tz;
+  const today = todayIn(tz, now);
+  const deptIds = org?.departments.map((d) => d.id) ?? [];
+  const from = lastDays(now, tz, 62)[0];
+  const heads = org ? org.departments.map((d) => headAgentId(org, d.id)).filter((x): x is string => !!x) : [];
+  const [draft, first, finish, skipped, props, bill, reports, snaps, dayReports, outs] = await Promise.all([
     currentDraftView().catch(() => null), firstJobView(f).catch(() => null), followUpsView(f).catch(() => []), skippedFindings().catch(() => []),
     listProposals(["pending"], 12).catch(() => null), billing(),
+    latestReports(COMPANY_SCOPE).catch(() => ({ day: null, week: null })), snapshotsSince(from).catch(() => null),
+    latestDayReports(deptIds).catch(() => ({} as Record<string, { day: string; lines: Line[] }>)),
+    latestOutputs(heads).catch(() => ({} as Awaited<ReturnType<typeof latestOutputs>>)),
   ]);
-  const names = await agentNames([...new Set((pending ?? []).map((p) => p.from_agent).filter((x): x is string => !!x))]).catch(() => ({} as Record<string, string>));
-  // the four kinds; their proposals show as rows of their own, so their count lines go
-  const { now: asks, later } = split(open);
-  const lines = asks.filter((x) => x.source.from !== "proposal");
-  const props = (pending ?? []).map((p) => ({ p, k: interruptKind({ from: "proposal", kind: p.kind }) })).filter((x): x is { p: typeof x.p; k: Interrupt } => !!x.k);
-  const groups = groupByDepartment(later, (id) => (org ? deptOf(org, id) : null));
-  const waitCount = later.reduce((t, x) => t + x.n, 0);
+  const names = await agentNames([...new Set((props ?? []).map((p) => p.from_agent).filter((x): x is string => !!x))]).catch(() => ({} as Record<string, string>));
+  const deptName = (id: string | null | undefined) => (id ? org?.departments.find((d) => d.id === id)?.name : null) ?? "Company";
+  const agentDept = (aid: string) => (org ? deptOf(org, aid)?.id ?? null : null);
+  const byDept = needsByDept(deptIds, f.approvalOwners.map((o) => o.dept));
+
+  // what needs you, in every department: drafts waiting (a row per department), runs that stopped, new agents and goal changes
+  const needRows: CoNeed[] = [
+    ...org?.departments.filter((d) => (byDept.byDept[d.id] ?? 0) > 0).map((d) => {
+      const n = byDept.byDept[d.id];
+      return { kind: "To approve", cls: "yel" as const, dept: d.name, title: `${s(n, "draft")} waiting for your OK.`, sub: `Everything ${d.name}’s agents drafted, in one place.`, href: tabHref(d.id, "approvals"), btn: "Review" };
+    }) ?? [],
+    ...(byDept.none + byDept.gone > 0 ? [{ kind: "To approve", cls: "yel" as const, dept: "Company", title: `${s(byDept.none + byDept.gone, "draft")} waiting for your OK.`, sub: "From agents in no department.", href: companyHref("approvals"), btn: "Review" }] : []),
+    ...recentFailures(f.runs, now).map((r) => ({
+      kind: "Failed run", cls: "red" as const, dept: deptName(agentDept(r.agent_id)), title: `${f.byId[r.agent_id]?.name ?? r.agent_id}’s run on ${when(r.started_at, tz)} stopped.`,
+      sub: firstSentence(r.error ?? r.summary ?? "It failed.", 140), href: `/runs/${r.id}`, btn: "Open run",
+    })),
+    ...(props ?? []).flatMap((p) => {
+      const k = interruptKind({ from: "proposal", kind: p.kind });
+      if (!k) return [];
+      const who = p.from_agent ? names[p.from_agent] ?? p.from_agent : p.source === "claude" ? "Claude" : "you";
+      const more = p.payload.kind === "hire" ? ` ${p.payload.job} · ${monthWords(hireCost(p.payload, bill).byHand)}.` : p.payload.kind === "department" ? ` ${deptLine(p.payload.draft, bill)}.` : p.payload.kind === "goal" ? ` ${goalLine(p.payload, deptName(p.department_id))}.` : "";
+      return [{ kind: INTERRUPT_WORDS[k], cls: NEED_CLS[k], dept: deptName(p.department_id), title: `${p.title}.`, sub: `From ${who}: ${firstSentence(p.why, 160)}${more}`, href: `/proposals/${p.id}`, btn: "Review" }];
+    }),
+  ];
+
+  const report = reportView(week ? reports.week : reports.day, {
+    week, name: bizName, today, tz, coming: [], company: true,
+    agentsHref: companyHref("departments"), dayHref: companyReportHref(false), weekHref: companyReportHref(true), allHref: null,
+  });
+  const controls = controlsOn();
+  const seatOn = !!(chiefId && f.agents[chiefId]?.enabled);
+  const write = (
+    <ActionButton className="dp-btn" action={writeCompanyReportNow} disabled={!owner || !controls}
+      title={!controls ? "Real runs are off on this OPERATOR" : !owner ? "Only the owner can write the report now" : seatOn ? "One small model call for each period, paid by the chief of staff" : "The company report is paid by the chief of staff, who is off duty"}>Write it now</ActionButton>
+  );
+
+  const t = companyTiles(snaps ?? [], now, tz);
+  const tiles: CoTile[] = [
+    { label: "Revenue this month", ...t.revenue },
+    { label: "Cash in the bank", ...t.cash },
+    { label: "Orders this month", ...t.orders },
+  ];
+  // goal numbers are read from the tools, so the Goals tile and each card's goal stream in after the rest (card 303)
+  const goalTile = <Suspense fallback={<div className="ov-card ov-tile"><span className="ov-tl">Goals</span><b className="sm">Measuring…</b><span className="ov-ts">Reading each goal’s number</span></div>}><GoalsTileOf org={org} /></Suspense>;
+
+  const rev = revenueDays(snaps ?? [], now, tz, 30);
+  const top = Math.max(1, ...rev.map((r) => r.usd ?? 0));
+  const dayWord = (k: string) => md(`${k}T12:00:00Z`, "UTC");
+  const skippedDays = rev.filter((r) => r.usd == null).length;
+  const stack = deptStack(f.runs, agentDept, deptIds, now, tz, 14);
+  const stackNames = (org?.departments ?? []).map((d, i) => ({ name: d.name, hue: STACK_HUES[i % STACK_HUES.length] }));
+  const runs7 = deptRuns7(f.runs, agentDept, now);
+
+  const d: CompanyOverviewData = {
+    needs: needRows, report, tiles,
+    rev: rev.map((r) => ({ key: r.key, pct: r.usd == null ? null : (r.usd / top) * 100, tip: `${dayWord(r.key)}: ${r.usd == null ? "no reading saved" : usd0(r.usd)}` })),
+    revLabels: [dayWord(rev[0].key), dayWord(rev[15].key), "Today"],
+    revNote: snaps == null ? "The daily numbers can’t be read right now." : skippedDays > 0 && skippedDays < rev.length ? `Outlined bars are days with no saved reading (the daily numbers job skipped ${skippedDays} of ${rev.length} days).` : null,
+    revEmpty: skippedDays === rev.length,
+    stackNames, stackTotal: stack.reduce((t2, x) => t2 + x.total, 0),
+    stack: stack.map((x) => ({ key: x.key, parts: x.counts, tip: `${dayWord(x.key)}: ${stackNames.map((n, i) => `${n.name} ${x.counts[i]}`).join(", ") || "no runs"}` })),
+    stackLabels: [dayWord(stack[0].key), dayWord(stack[7].key), "Today"],
+    depts: (org?.departments ?? []).map((dep, i) => {
+      const headId = headAgentId(org!, dep.id), headSeat = headOf(org!, dep.id), head = headId ? f.byId[headId] : null;
+      const n = runs7[dep.id] ?? 0;
+      return {
+        id: dep.id, name: dep.name, hue: deptHue(i),
+        led: head ? head.name : headSeat?.holder === "owner" ? "You lead it" : "No head yet",
+        need: byDept.byDept[dep.id] ?? 0,
+        headline: headline(dayReports[dep.id] ?? null, today, headId && outs[headId] ? firstSentence(outs[headId].summary) : null),
+        runs: `${s(n, "run")}, last 7 days`, spend: `${usd(deptSpent(org!, dep.id, spend))} this month`,
+        goal: <Suspense fallback={<span>Measuring the goal…</span>}><DeptGoalOf org={org!} id={dep.id} /></Suspense>,
+        href: tabHref(dep.id, "overview"),
+      };
+    }),
+  };
+  const before = (draft || first || finish.length > 0 || skipped.length > 0) ? (
+    <>
+      {draft && <DraftCard v={draft} owner={owner} />}
+      {first && <FirstJobCard v={first} owner={owner} />}
+      {finish.length > 0 && <FollowUpsCard items={finish} owner={owner} />}
+      {skipped.length > 0 && <SkippedFindingsCard items={skipped} approver={approver} />}
+    </>
+  ) : null;
+  return <CompanyOverview d={d} write={write} before={before} goalTile={goalTile} />;
+}
+
+/** Each goal measured once per request, shared by the Goals tile and the department cards. */
+const goalsOnce = cache((org: Org) => goalsByDept(org).catch(() => null));
+
+/** The Goals tile: how many goals are on track and which are behind, measured in code (streams in). */
+async function GoalsTileOf({ org }: { org: Org | null }) {
+  const goals = org ? await goalsOnce(org) : null;
+  if (!org || goals == null) return <Link href={companyHref("goals")} className="ov-card ov-tile"><span className="ov-tl">Goals</span><b className="sm">Not measured</b><span className="ov-ts">{GOALS_MISSING}</span></Link>;
+  const g = goalsTile(org.departments.flatMap((d) => goals[d.id] ?? []));
   return (
-    <div className="co-pin">
-      {draft && <div className="co-wide"><DraftCard v={draft} owner={owner} /></div>}
-      {first && <div className="co-wide"><FirstJobCard v={first} owner={owner} /></div>}
-      {finish.length > 0 && <div className="co-wide"><FollowUpsCard items={finish} owner={owner} /></div>}
-      {skipped.length > 0 && <div className="co-wide"><SkippedFindingsCard items={skipped} approver={approver} /></div>}
-      <div className="dp-msg">
-        <div className="dp-av head">{chief.replace(/[^A-Za-z ]/g, "").slice(0, 2).toUpperCase() || "AV"}</div>
-        <div className="dp-bub">
-          <div className="dp-who"><b>{chief}</b> Chief of staff <span className="tag">now</span></div>
-          <div className="dp-glass dp-headtext dp-text">
-            <Suspense fallback={<SkelLine width="60%" />}><TodayLine f={f} interrupts={interruptCount(open)} later={waitCount} chief={chief} /></Suspense>
-          </div>
-          {(lines.length > 0 || props.length > 0) && (
-            <div className="dp-glass dp-card">
-              <span className="dp-card-k amber">● Needs you</span>
-              <div className="co-needs">
-                {lines.map((x, i) => (
-                  <div key={`l${i}`} className="co-need"><Label k={x.interrupt!} /><span><b>{x.title}.</b> {x.sub}</span><Link href={x.href} className="dp-btn">Review</Link></div>
-                ))}
-                {props.map(({ p, k }) => (
-                  <div key={p.id} className="co-need"><Label k={k} />
-                    <span><b>{p.title}.</b> From {p.from_agent ? names[p.from_agent] ?? p.from_agent : p.source === "claude" ? "Claude" : "you"}: {firstSentence(p.why, 220)}
-                      {p.payload.kind === "hire" && <small>{p.payload.job} · {monthWords(hireCost(p.payload, bill).byHand)}</small>}
-                      {p.payload.kind === "department" && <small>{deptLine(p.payload.draft, bill)}</small>}
-                      {p.payload.kind === "goal" && <small>{goalLine(p.payload, org?.departments.find((d) => d.id === p.department_id)?.name)}</small>}
-                    </span>
-                    <Link href={`/proposals/${p.id}`} className="dp-btn">Review</Link>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {groups.length > 0 && (
-            <div className="dp-glass dp-headtext dp-text">
-              <p>These can wait; {chief} rolls them into the next summary:</p>
-              {groups.map((g) => (
-                <div key={g.name ?? "all"} className="co-later">
-                  {g.name && <small>{g.name}</small>}
-                  <ul>{g.items.map((x, i) => <li key={i}><Link href={x.href}>{x.title}</Link>{x.sub ? ` · ${x.sub}` : ""}</li>)}</ul>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+    <Link href={companyHref("goals")} className="ov-card ov-tile">
+      <span className="ov-tl">Goals</span>
+      {g.total ? <b>{g.ok}<span className="co-unit"> of {g.total} on track</span></b> : <b className="sm">None yet</b>}
+      <span className="ov-ts">{g.sub}</span>
+    </Link>
   );
 }
 
-/** The greeting and the day's one line: it counts goals by how they stand, so it waits for their numbers. */
-async function TodayLine({ f, interrupts, later, chief }: { f: Floor; interrupts: number; later: number; chief: string }) {
-  const goals = f.chart ? await goalsByDept(f.chart).catch(() => null) : null;
-  const all = f.chart && goals ? f.chart.departments.flatMap((d) => goals[d.id] ?? []) : [];
-  return <p>{deskGreeting(f.now, f.tz)}. {deskLine(all.map((g) => g.status), interrupts, later, chief)}</p>;
+/** A department card's goal: its first goal and how it stands (streams in). */
+async function DeptGoalOf({ org, id }: { org: Org; id: string }) {
+  const goals = await goalsOnce(org);
+  const g = goals?.[id]?.[0];
+  return <span>{goals == null ? "Goals not measured" : g ? `${g.title}: ${g.statusLabel.toLowerCase()}` : "No goal yet"}</span>;
 }
 
 /** One card per department: its head, who is on duty, what needs you, its goals and spend, its head's latest line. */

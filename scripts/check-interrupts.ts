@@ -6,7 +6,6 @@ import { alerting, interruptCount, needs, split } from "../dashboard/needs";
 import type { Floor } from "../dashboard/data";
 import { GOAL_CHANGES, KIND_WORDS, PROPOSAL_KINDS, planProposal, proposalTitle, toolInfoOf, type ProposalPlan } from "../core/proposal-rules";
 import { TOOLS } from "../core/tools/catalog";
-import { deskLine } from "../dashboard/desk";
 
 // every place something can want the owner maps to exactly one place: one of the four, or the summary
 const later: Source[] = ["run_failed", "run_stuck", "budget", "database", "connection", "lesson", "photos", "job"].map((from) => ({ from }) as Source);
@@ -78,16 +77,11 @@ assert.ok(propose && propose.type === "enum" && propose.options.includes("goal")
 const migration = readFileSync("supabase/migrations/20261222090000_goal_proposals.sql", "utf8");
 assert.match(migration, /check \(kind in \('hire', 'grant_tool', 'new_tool', 'retire', 'department', 'goal'\)\)/);
 const home = readFileSync("app/(room)/page.tsx", "utf8");
-assert.match(home, /const \{ now: asks, later \} = split\(open\);/, "the Company page splits Needs you by interruptKind");
-assert.match(home, /These can wait; \{chief\} rolls them into the next summary/);
+assert.match(home, /const k = interruptKind\(\{ from: "proposal", kind: p\.kind \}\);\s*if \(!k\) return \[\];/, "the Company Overview's Needs you shows only proposals of the four kinds (overview slice 3)");
 assert.match(home, /const waiting = interruptCount\(open\);/, "the Company page's count is the same four as the bell and the menu");
 assert.doesNotMatch(home, /proposals from your heads|x\.href !== "\/proposals"/, "the old mixed list is gone");
 assert.match(readFileSync("app/(room)/layout.tsx", "utf8"), /const waiting = interruptCount\(open\);/, "the menu badge counts only the four");
 assert.doesNotMatch(readFileSync("dashboard/needs.ts", "utf8"), /Mercury change|from your heads/);
-
-// the Company page's day line counts the four, then what waits
-assert.equal(deskLine(["on_track"], 2, 3, "Avery"), "One goal on track. Two things need you; three wait for Avery’s summary.");
-assert.equal(deskLine([], 0, 0), "No goals set yet. Nothing needs you.");
 
 // card 189: a fresh business isn't covered in red. "Connect a tool" never marks the frame; a failure still does.
 {

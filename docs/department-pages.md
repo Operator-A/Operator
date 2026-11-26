@@ -26,6 +26,26 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | 12 | Activity: Runs and Status on one page, a red dot in the menu while something is broken | The Runs and Status menu items and pages, the Runs table, the pinned Status link |
 | 13 | Nothing new | The pages that only redirected: `/build`, `/build/[id]`, `/integrations`, `/access` |
 | 14 | Phone tabs on one line: icon over a small label, on department pages and Company | The four-column phone tab grid and Company's own squeeze rule |
+| O1 | Overview pages, slice 1: a department opens on an Overview of numbers worked out in code; its chat moves behind Ask | The department's Chat tab |
+| O2 | A department's written report (table `reports`): lines a small model wrote from its runs, each checked against the runs it cites | The report card's placeholder |
+| O3 | The Company Overview: Needs you across departments, the company report (from the department reports, with action items), tiles, revenue per day, runs by department, department cards; Avery behind Ask Avery; `get_report` for a member's Claude | The Company Chat tab, the chat room's pinned Needs you, the "can wait" list and the day line |
+
+## Overview slice 3: the Company Overview
+
+- **Tabs.** Overview (the default, `/`), Departments, Goals, Approvals (`dashboard/company-rules.ts`). An old `?tab=chat`
+  opens the Overview. Avery's chat opens in the Ask sheet (`?ask=1`, or `?say=…` with words typed in); a card's
+  Ask Avery button links there.
+- **The company report.** Written once every department with agents has today's report, or at 1 PM at the latest
+  (`companyDue`), as a `report` job with department `company` (`core/reports.ts writeCompanyReport`). One small-model
+  call per period through `withRun`, paid by the agent in the company seat. The department lines are numbered facts
+  inside a data block; `checkCompany` keeps a line only when it cites a real line from one of the business's departments
+  and every number in it is written in those lines. Each chip opens the cited line's run. Same `reports` table
+  (`scope = 'company'`), no migration. Write it now is the owner's (`writeCompanyReportNow`, audited).
+- **Numbers.** `dashboard/company-overview-rules.ts`: revenue and orders this month from the saved daily numbers
+  (`kpi_snapshots`), with days not saved counted; cash against the reading nearest a week before; goals on track;
+  revenue per day for 30 days, a day with no reading drawn as an outlined bar; work runs per day by department for 14
+  days; each department card's headline from its newest day report. Goal numbers stream in (check:speed).
+- **Tested** by check:reports, check:overview, check:dept, check:operator-mcp and check:speed.
 
 ## Slice 1: the page
 
