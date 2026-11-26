@@ -170,6 +170,7 @@ export const OP_TOOLS: readonly OpTool[] = [
       run: { type: "string", maxLength: 40, description: "The run id from OPERATOR's note." },
       status: { type: "string", enum: ["ok", "failed"], description: "How the run went." },
       result: text(4000, "What the session did and found, in a few sentences."),
+      numbers: text(600, "Optional: up to 12 numbers the session read or counted, as name: value pairs, one per line or split by semicolons, e.g. \"orders: 12; cash_usd: 8,420\". They go on OPERATOR's charts and reports, labelled as the session's numbers."),
     }, additionalProperties: false, required: ["run", "status", "result"] } },
   { name: "try_agent", title: "Try an agent", kind: "try", min: "owner",
     description: "Tries an agent once on today's data: its draft, or its live version when there is no draft. It reads and thinks like a real run but sends nothing, queues no approval card and saves nothing for other agents. It is logged as a try, costs model time against the agent's daily budget, and works while the agent is off duty. It answers once the try starts; read the result with get_run. Going live stays a tap in OPERATOR.",

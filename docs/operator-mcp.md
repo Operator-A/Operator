@@ -196,7 +196,9 @@ No migration and no new settings. Merge; an owner's Claude sees `try_agent` and 
 `create_agent` takes `runs_on: "claude"` for an agent whose connectors only the owner's Claude account has
 (they are set in the routine on claude.ai, never named in OPERATOR; `claude_tools` was dropped 2026-11-24): it lands off duty with no OPERATOR tools, and the answer carries the line to paste into
 the routine's prompt. `finish_run` (owner only, kind `finish`) lets the routine's session post its result
-onto the run OPERATOR started: once per run, within 24 hours, and only on a run that fired a session. See
+onto the run OPERATOR started: once per run, within 24 hours, and only on a run that fired a session. It may also give up to 12
+named numbers (`numbers`, like `orders: 12; cash_usd: 8,420`), read in code and saved to the run's metrics as the
+session's numbers (overview slice 4, `docs/department-pages.md`). See
 `docs/live-events.md`, slice 2.
 
 ## Slice 4: actions and starts in a draft (decided 2026-11-23)

@@ -35,7 +35,31 @@ export const ROUTINE_TOKEN = /^sk-ant-oat01-[A-Za-z0-9_-]{20,300}$/;
 export const ROUTINE_CAPS = { perAgentHour: 25, perOrgHour: 90 } as const;
 
 /** How long a session may take to post its result with finish_run, and how much it may say. */
-export const FINISH = { withinHours: 24, maxResult: 4000 } as const;
+export const FINISH = { withinHours: 24, maxResult: 4000, maxNumbers: 12, maxNumbersText: 600, maxAbs: 1e12 } as const;
+
+/**
+ * The numbers a Claude session reports with its result (overview slice 4): "name: value" pairs, one per line or split by
+ * semicolons. Names become lower_snake_case (at most 40 characters); a value may carry $, % and thousands commas, which
+ * are dropped. At most FINISH.maxNumbers, no repeats, each finite and no bigger than FINISH.maxAbs. They are saved as
+ * the run's metrics, labelled as the session's own numbers: OPERATOR stores them, it doesn't vouch for them.
+ */
+export function readNumbers(raw: unknown): { numbers: Record<string, number> } | { problem: string } {
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (!text) return { numbers: {} };
+  if (text.length > FINISH.maxNumbersText) return { problem: `numbers is longer than ${FINISH.maxNumbersText} characters.` };
+  const out: Record<string, number> = {};
+  for (const part of text.split(/[;\n]+/).map((x) => x.trim()).filter(Boolean)) {
+    const m = part.match(/^([A-Za-z][A-Za-z0-9 _-]{0,39})\s*[:=]\s*(-?\$?-?[0-9][0-9,]*(?:\.[0-9]+)?)\s*%?$/);
+    if (!m) return { problem: `"${part.slice(0, 60)}" isn't a name: value pair, like orders: 12.` };
+    const name = m[1].trim().toLowerCase().replace(/[\s-]+/g, "_");
+    const value = Number(m[2].replace(/[$,]/g, ""));
+    if (!Number.isFinite(value) || Math.abs(value) > FINISH.maxAbs) return { problem: `${name} isn't a number OPERATOR can keep.` };
+    if (name in out) return { problem: `${name} is given twice.` };
+    out[name] = value;
+    if (Object.keys(out).length > FINISH.maxNumbers) return { problem: `At most ${FINISH.maxNumbers} numbers.` };
+  }
+  return { numbers: out };
+}
 
 /**
  * Chains across where agents run (card 405): a chain step that runs in Claude keeps its place in the chain on its
@@ -170,14 +194,16 @@ export function promptLine(agentName: string): string {
 }
 
 /** finish_run's input, checked: the run id, how it went and the result, cut to FINISH.maxResult. */
-export function readFinish(args: Record<string, unknown>): { runId: string; status: "ok" | "failed"; result: string } | { problem: string } {
+export function readFinish(args: Record<string, unknown>): { runId: string; status: "ok" | "failed"; result: string; numbers: Record<string, number> } | { problem: string } {
   const runId = typeof args.run === "string" ? args.run.trim() : "";
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) return { problem: "That isn’t a run id: use the one in OPERATOR’s note." };
   const status = args.status === "failed" ? "failed" : args.status === "ok" ? "ok" : null;
   if (!status) return { problem: "status is ok or failed." };
   const result = typeof args.result === "string" ? args.result.trim() : "";
   if (!result) return { problem: "Say what happened in result." };
-  return { runId, status, result: cut(result, FINISH.maxResult) };
+  const n = readNumbers(args.numbers);
+  if ("problem" in n) return n;
+  return { runId, status, result: cut(result, FINISH.maxResult), numbers: n.numbers };
 }
 
 /** Whether a run can still take a result: a linked agent's fire that started a session, not finished, within FINISH.withinHours. */

@@ -18,6 +18,7 @@
     "check:dept": "npx --yes tsx scripts/check-dept.ts",
     "check:overview": "npx --yes tsx scripts/check-overview.ts",
     "check:reports": "npx --yes tsx scripts/check-reports.ts",
+    "check:goal-readings": "npx --yes tsx scripts/check-goal-readings.ts",
     "check:handoff": "npx --yes tsx scripts/check-handoff.ts",
     "check:new-agent": "npx --yes tsx scripts/check-new-agent.ts",
     "check:header": "npx --yes tsx scripts/check-header.ts",
