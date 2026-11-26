@@ -1,8 +1,9 @@
-// A department's Overview tab (overview slice 1), built to the approved canvas: what needs you, the report's place,
-// four tiles, runs per day, drafts this week, AI spend by agent, the agents and the chains. It only draws: every
-// number arrives worked out (dashboard/overview-rules.ts).
+// A department's Overview tab (overview slices 1 and 2), built to the approved canvas: what needs you, the written
+// report (each line with chips to the runs it came from), four tiles, runs per day, drafts this week, AI spend by
+// agent, the agents and the chains. It only draws: every number arrives worked out (dashboard/overview-rules.ts),
+// and every report line arrives already checked against its runs (core/report-rules.ts).
 import Link from "next/link";
-import type { Drafts, StepState, WeekCounts } from "@/dashboard/overview-rules";
+import type { Drafts, OvLine, OvReport, StepState, WeekCounts } from "@/dashboard/overview-rules";
 import { STEP_WORD, money } from "@/dashboard/overview-rules";
 
 export interface OvNeed { kind: "approve" | "failed"; title: string; sub: string; href: string; btn: string }
@@ -12,6 +13,7 @@ export interface OvAgent { id: string; name: string; initial: string; hue: strin
 export interface OvChain { key: string; name: string; on: boolean; steps: { name: string; state: StepState }[]; when: string | null; href: string }
 export interface OverviewData {
   name: string;
+  report: OvReport;
   needs: OvNeed[];
   week: WeekCounts; waiting: number; waitingSub: string; claudeCount: number;
   bars: OvBar[]; barLabels: [string, string, string];
@@ -24,7 +26,7 @@ export interface OverviewData {
 const KIND: Record<OvNeed["kind"], { word: string; cls: string }> = { approve: { word: "To approve", cls: "yel" }, failed: { word: "Failed run", cls: "red" } };
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export function Overview({ d, goal }: { d: OverviewData; goal: React.ReactNode }) {
+export function Overview({ d, goal, write }: { d: OverviewData; goal: React.ReactNode; write: React.ReactNode }) {
   const top = Math.max(1, ...d.bars.map((b) => b.finished + b.failed));
   const pct = (n: number) => (n > 0 ? `${Math.max(4, Math.round((n / top) * 100))}%` : "0px");
   const dr = d.drafts;
@@ -44,12 +46,7 @@ export function Overview({ d, goal }: { d: OverviewData; goal: React.ReactNode }
         )}
 
         <div className="ov-top">
-          <article className="ov-card ov-report">
-            <div className="ov-report-h">
-              <div><h2>This week in {d.name}</h2><span className="ov-sub">A written report of these runs comes here next</span></div>
-            </div>
-            <p className="ov-soon">Each day and each week, {d.name}’s runs will be written up here in a few short lines, and every line will link to the run it came from, so you can check any of it.</p>
-          </article>
+          <Report r={d.report} write={write} />
 
           <div className="ov-tiles">
             <div className="ov-card ov-tile"><span className="ov-tl">Runs, last 7 days</span><b>{d.week.runs}</b><span className="ov-ts">{d.week.finished} finished · {d.week.failed} failed</span></div>
@@ -152,5 +149,43 @@ export function GoalTile({ title, line, pct, href }: { title: string | null; lin
       {pct != null && <span className="ov-meter"><i style={{ width: `${Math.max(2, Math.min(100, pct))}%` }} /></span>}
       <span className="ov-ts">{line}</span>
     </Link>
+  );
+}
+
+const Lines = ({ title, lines }: { title: string; lines: OvLine[] }) => (
+  <div className="ov-rsec">
+    <h3>{title}</h3>
+    {lines.map((l, i) => (
+      <p key={i} className="ov-line">{l.text}{l.chips.map((c, j) => <Link key={j} href={c.href} className="ov-chip"><i className={c.failed ? "bad" : undefined} />{c.label}</Link>)}</p>
+    ))}
+  </div>
+);
+
+/** The written report: Today or the last 7 days, each line with chips to its runs, what runs next, and Write it now. */
+function Report({ r, write }: { r: OvReport; write: React.ReactNode }) {
+  return (
+    <article className="ov-card ov-report">
+      <div className="ov-report-h">
+        <div><h2>{r.heading}</h2>{r.sub && <span className="ov-sub">{r.sub}</span>}</div>
+        <nav className="ov-period" aria-label="Report period">
+          <Link href={r.dayHref} scroll={false} aria-current={!r.week ? "true" : undefined}>Today</Link>
+          <Link href={r.weekHref} scroll={false} aria-current={r.week ? "true" : undefined}>Last 7 days</Link>
+        </nav>
+      </div>
+      {r.empty && <p className="ov-empty">{r.empty}</p>}
+      {r.happened.length > 0 && <Lines title="What happened" lines={r.happened} />}
+      {r.look.length > 0 && <Lines title="Worth a look" lines={r.look} />}
+      {r.coming.length > 0 && (
+        <div className="ov-rsec">
+          <h3>Coming up</h3>
+          {r.coming.map((c, i) => <p key={i} className="ov-line">{c.text}<Link href={c.href} className="ov-chip">Schedule</Link></p>)}
+        </div>
+      )}
+      <div className="ov-rfoot">
+        <span>Each line links to the run it came from; a line that cites no run is left out.</span>
+        {write}
+        <Link href={r.allHref}>{r.allLabel}</Link>
+      </div>
+    </article>
   );
 }
