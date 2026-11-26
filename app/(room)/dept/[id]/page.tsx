@@ -6,7 +6,14 @@ import { deptHires } from "@/dashboard/hireCards";
 import { deptChanges } from "@/dashboard/changeCards";
 import { getApprovals, getChainOks, getChains, getCounts, getOrgSwitch, getRoster, getTz, requireSession, rulesFor, type ApprovalItem, type ApprovalsView } from "@/dashboard/data";
 import { ChainsBoard } from "@/dashboard/components/chains";
-import { DEPT_TABS, TAB_LABEL, deptAgentIds, deptHue, deptTab, goalHref, headAgentId, hireHref, madeAgentHref, needsByDept, newAgentHref, settingsHref, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
+import { DEPT_TABS, TAB_LABEL, askHref, asksOpen, deptAgentIds, deptHue, deptTab, goalHref, headAgentId, hireHref, madeAgentHref, needsByDept, newAgentHref, settingsHref, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
+import { Suspense } from "react";
+import { AskSheet } from "@/dashboard/components/askSheet";
+import { GoalTile, Overview, type OverviewData } from "@/dashboard/components/overview";
+import { chainRows, deptCards, deptChains, inClaude } from "@/dashboard/overview";
+import { dayKey, draftOutcomes, lastWeek, money, recentFailures, runsPerDay, spendRows } from "@/dashboard/overview-rules";
+import { md } from "@/dashboard/format";
+import { trustView } from "@/dashboard/trust";
 import { deptRuns } from "@/dashboard/deptFeed";
 import { HEAD_CHAT_MISSING, headHistory } from "@/core/head-chat";
 import { sendToHead } from "@/dashboard/chatActions";
@@ -36,16 +43,17 @@ export const maxDuration = 300;
 
 const GEAR = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" /></svg>;
 
-// A department's page (docs/department-pages.md), built to the approved mockup: a short header, glass tabs
-// floating over the content (Chat, the default; Agents; Goals; Approvals), and the chat as a glass room where
-// the head answers and every run of the department posts its checklist, result and drafts. Every count and
-// number on it is worked out in code.
+// A department's page (docs/department-pages.md), built to the approved mockups: a short header, glass tabs
+// floating over the content (Overview, the default; Agents; Goals; Chains; Approvals). The chat with the head,
+// where every run of the department posts its checklist, result and drafts, opens in a sheet from the header's
+// Ask button (overview slice 1). Every count and number on it is worked out in code.
 
 const NO_ORG = "The org chart tables aren’t up to date: apply the org chart migrations.";
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const ASK = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></svg>;
 const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 
-export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; edit?: string; settings?: string; at?: string; days?: string; chain?: string; new?: string }> }) {
+export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; ask?: string; edit?: string; settings?: string; at?: string; days?: string; chain?: string; new?: string }> }) {
   // the pieces this page shows, in one round (card 304): the crew and its runs, what waits on you, the time zone, the org switch
   const [{ id }, sp, roster, counts, tz, org, me] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch(), requireSession()]);
   const chart = roster.chart;
@@ -66,7 +74,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
   const needs = `${waiting} need${waiting === 1 ? "s" : ""} you`;
 
   return (
-    <div className={`dp${tab === "chat" ? " chat" : ""}`} style={{ "--hue": deptHue(index) } as React.CSSProperties}>
+    <div className="dp" style={{ "--hue": deptHue(index) } as React.CSSProperties}>
       <Link href={settingsHref(id, tab)} scroll={false} className="dp-ttl" aria-label={`${dept.name} settings`}><b>{dept.name}</b><span className={waiting ? "warn" : undefined}>{head ? `${head.name}, ${title}` : led}{waiting ? ` · ${needs}` : ""}</span></Link>
       <div className="dp-head">
         <div className="dp-icon"><i /></div>
@@ -74,6 +82,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
         <div className="dp-stat">
           <span className="dp-pill">AI spend {usd(spent)}{dept.monthlyBudgetUsd != null ? ` of ${usd(dept.monthlyBudgetUsd)}` : ""} this month</span>
           {waiting > 0 && <Link href={tabHref(id, "approvals")} className="dp-pill warn">{needs}</Link>}
+          <Link href={askHref(id, tab)} scroll={false} className="dp-ask">{ASK}{head ? `Ask ${head.name}` : "Ask"}</Link>
           <Link href={settingsHref(id, tab)} scroll={false} className="dp-gear" aria-label={`${dept.name} settings`} title="Department settings">{GEAR}</Link>
         </div>
       </div>
@@ -83,9 +92,15 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
           count: t === "agents" ? ids.length : t === "goals" ? goalCount : t === "approvals" ? waiting : undefined, red: t === "approvals",
         }))} />
         <div className="dp-pane" key={tab}>
-          <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} chain={typeof sp.chain === "string" ? sp.chain.slice(0, 40) : undefined} startWith={typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined} />
+          <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} spend={spend} waiting={waiting} chain={typeof sp.chain === "string" ? sp.chain.slice(0, 40) : undefined} startWith={typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined} />
         </div>
       </div>
+      <Link href={askHref(id, tab)} scroll={false} className="dp-askfab" aria-label={head ? `Ask ${head.name}` : `Ask about ${dept.name}`}>{ASK}</Link>
+      {asksOpen(sp) && !sp.agent && sp.settings == null && (
+        <AskSheet title={head ? `Ask ${head.name}` : `${dept.name} chat`} sub={head ? `${title} of ${dept.name}` : led} closeHref={tabHref(id, tab)}>
+          <Chat id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} />
+        </AskSheet>
+      )}
       {sp.settings != null && !sp.agent && <DeptSettingsFor chart={chart} id={id} closeHref={tabHref(id, tab)} names={Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]))} />}
       {sp.agent && <AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} dept={id} openHref={madeAgentHref(id)} />}
     </div>
@@ -94,14 +109,83 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
 
 type Roster = Awaited<ReturnType<typeof getRoster>>;
 type Counts = Awaited<ReturnType<typeof getCounts>>;
-type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; owner?: boolean; goals?: Record<string, GoalView[]> | null; say?: string; chain?: string; startWith?: string };
+type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; owner?: boolean; goals?: Record<string, GoalView[]> | null; say?: string; chain?: string; startWith?: string; spend?: Record<string, number>; waiting?: number };
 
 async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
   if (tab === "goals") return <Goals {...p} />;
   if (tab === "approvals") return <Approvals {...p} />;
-  if (tab === "chat") return <Chat {...p} />;
+  if (tab === "overview") return <OverviewPane {...p} />;
   if (tab === "chains") return <Chains {...p} />;
   return <Agents {...p} />;
+}
+
+/** The Overview (overview slice 1): what needs you, tiles, charts, the agents and the chains, all counted in code. */
+async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0 }: P) {
+  const chart = roster.chart!;
+  const now = roster.now;
+  const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
+  const mine = new Set(ids);
+  const runs = roster.runs.filter((r) => mine.has(r.agent_id));
+  const names = Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]));
+  const chains = deptChains(roster.chains, id, ids);
+  const [claude, cards, chainList, trust] = await Promise.all([
+    inClaude(ids), deptCards(id, now).catch(() => []), chainRows(chains, names, now).catch(() => []),
+    trustView().catch(() => null),
+  ]);
+  const week = lastWeek(runs, now);
+  const bars = runsPerDay(runs, now, tz, 14);
+  const dayWord = (k: string) => md(`${k}T12:00:00Z`, "UTC");
+  const failures = recentFailures(runs, now);
+  const pendingCards = cards.filter((c) => c.status === "pending").sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const oldest = pendingCards[0]?.created_at;
+  // the action type in this department nearest its next trust level, while it is still at Draft
+  const near = (trust?.lines ?? []).filter((l) => mine.has(l.agentId) && l.level === "draft" && l.clean > 0).sort((a, b) => b.clean - a.clean)[0];
+  const sr = spendRows(ids, spend, claude);
+  const d: OverviewData = {
+    name,
+    needs: [
+      ...(waiting > 0 ? [{ kind: "approve" as const, title: `${waiting} draft${waiting === 1 ? "" : "s"} waiting for your OK.`, sub: `Everything ${name}’s agents drafted, in one place.`, href: tabHref(id, "approvals"), btn: "Review" }] : []),
+      ...failures.map((r) => ({ kind: "failed" as const, title: `${names[r.agent_id] ?? r.agent_id}’s run on ${when(r.started_at, tz)} stopped.`, sub: firstSentence(r.error ?? r.summary ?? "It failed.", 140), href: `/runs/${r.id}`, btn: "Open run" })),
+    ],
+    week, waiting,
+    waitingSub: waiting === 0 ? "Nothing waiting" : oldest ? `Oldest from ${dayKey(oldest, tz) === dayKey(now, tz) ? "today" : when(oldest, tz)}` : "Drafts and chain OKs",
+    claudeCount: ids.filter((a) => claude.has(a)).length,
+    bars: bars.map((b) => ({ ...b, tip: `${dayWord(b.key)}: ${b.finished} finished${b.failed ? `, ${b.failed} failed` : ""}` })),
+    barLabels: [dayWord(bars[0].key), dayWord(bars[Math.floor(bars.length / 2)].key), "Today"],
+    drafts: draftOutcomes(cards, now),
+    trust: near ? `${near.name}’s ${near.what}: ${near.words}` : null,
+    spend: sr.map((r) => ({ name: names[r.id] ?? r.id, label: r.claude ? "$0 · runs in Claude" : money(r.usd), pct: r.pct })),
+    spendNote: sr.some((r) => r.claude) ? "Agents that run in Claude use your Claude plan, so they show $0 here." : null,
+    agents: ids.map((aid) => {
+      const a = roster.byId[aid];
+      const last = runs.find((r) => r.agent_id === aid && r.status !== "skipped" && r.trigger !== "chat");
+      const next = nextRuns(a.schedule, now, 1, tz)[0];
+      const model = MODEL_LIST.find((m) => m.id === (a.model ?? roster.agents[aid]?.model))?.label ?? null;
+      return {
+        id: aid, name: a.name, initial: (a.name.trim()[0] ?? "?").toUpperCase(), hue: a.hue ?? "#C9C9D0",
+        where: claude.has(aid) ? "runs in Claude" : model ?? "in OPERATOR",
+        next: next ? `Next: ${when(next, tz)}` : schedWords(a.schedule) === "Manual only" ? "By hand" : schedWords(a.schedule),
+        last: last ? firstSentence(last.summary ?? (last.status === "failed" ? last.error ?? "The run failed." : "Working now."), 160) : a.job,
+        state: !last ? "Never run" : last.status === "running" ? "Running now" : `${last.status === "failed" ? "Failed" : "Finished"} ${when(last.started_at, tz)}`,
+        bad: last?.status === "failed", href: sheetHref(id, "overview", aid),
+      };
+    }),
+    agentsHref: tabHref(id, "agents"),
+    chains: chainList.map((c) => ({
+      key: c.key, name: c.name, on: c.on, href: `${tabHref(id, "chains")}&chain=${encodeURIComponent(c.key)}`,
+      steps: c.steps.map((n, i) => ({ name: n, state: c.last?.steps[i] ?? "not_reached" })),
+      when: c.last ? when(c.last.at, tz) : null,
+    })),
+    chainsHref: tabHref(id, "chains"),
+  };
+  return <Overview d={d} goal={<Suspense fallback={<div className="ov-card ov-tile"><span className="ov-tl">Goal</span><span className="ov-ts">Measuring…</span></div>}><GoalOf id={id} chart={chart} /></Suspense>} />;
+}
+
+/** The goal tile: the department's first goal, measured in code (streams in after the rest of the page). */
+async function GoalOf({ id, chart }: { id: string; chart: NonNullable<Roster["chart"]> }) {
+  const goals = await goalsByDept(chart).catch(() => null);
+  const g = goals?.[id]?.[0];
+  return <GoalTile title={g?.title ?? null} line={g ? g.line : goals == null ? GOALS_MISSING : "Set one from the Goals tab."} pct={g?.pct ?? null} href={tabHref(id, "goals")} />;
 }
 
 /** The chat: the conversation with the head and every run of the department, with its drafts as approval cards. */
@@ -211,7 +295,7 @@ async function Approvals({ id, name, roster, tz }: P) {
   const pending = view.pending.filter(mine), withLead = view.withLead.filter(mine);
   const [rules, allOks] = await Promise.all([rulesFor([...pending, ...withLead]), getChainOks()]);
   const oks = (allOks ?? []).filter((c) => c.dept === id);
-  const card = (i: ApprovalItem) => <ApprovalCard key={i.id} i={i} view={view} byId={roster.byId} tz={tz} rules={rules} look="tab" chatHref={tabHref(id, "chat")} />;
+  const card = (i: ApprovalItem) => <ApprovalCard key={i.id} i={i} view={view} byId={roster.byId} tz={tz} rules={rules} look="tab" chatHref={askHref(id, "approvals")} />;
   return (
     <div className="dp-scroll">
       <div className="dp-panel">

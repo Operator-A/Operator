@@ -34,7 +34,7 @@ import { GoalTiles } from "@/dashboard/components/goalTiles";
 import { ApprovalCard, ChainOkCard, Tag } from "@/dashboard/components/approvalBits";
 import { DraftCard } from "@/dashboard/components/department";
 import { currentDraftView } from "@/dashboard/department";
-import { deptAgentIds, deptHue, headAgentId, needsByDept, tabHref } from "@/dashboard/dept-rules";
+import { deptAgentIds, deptHue, headAgentId, needsByDept, tabHref, askHref } from "@/dashboard/dept-rules";
 import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, SCHEDULE_HREF, addDeptHref, companyHref, madeAgentCompanyHref, newAgentCompanyHref, companyTab, deptView, deptViewHref, goalsWord, type CompanyTab, type DeptView } from "@/dashboard/company-rules";
 import { OrgChartPane } from "@/dashboard/components/orgChartPane";
 import { IntentLink } from "@/dashboard/components/intentLink";
@@ -278,7 +278,7 @@ async function Departments({ f, spend, dview, owner }: P) {
           const pct = d.monthlyBudgetUsd ? Math.min(100, (used / d.monthlyBudgetUsd) * 100) : null;
           const word = headId && outs[headId] ? firstSentence(outs[headId].summary) : null;
           return (
-            <Link key={d.id} href={tabHref(d.id, "chat")} className="co-card" style={{ "--hue": deptHue(i) } as React.CSSProperties}>
+            <Link key={d.id} href={tabHref(d.id, "overview")} className="co-card" style={{ "--hue": deptHue(i) } as React.CSSProperties}>
               <div className="co-card-h"><i /><b>{d.name}</b>{need > 0 ? <span className="co-chip warn">{need} need{need === 1 ? "s" : ""} you</span> : <span className="co-chip ok">All clear</span>}</div>
               <div className="co-led">{head ? `${head.name}, ${seat?.title ?? "head"}` : seat?.holder === "owner" ? "You lead it" : "No head yet"} · {s(onDuty, "agent")} on duty</div>
               <div className="co-goal">{goals == null ? GOALS_MISSING : <><b>{goalsWord(mine.map((g) => g.status))}</b>{mine[0] ? ` ${mine[0].title}: ${mine[0].line}` : ""}</>}</div>
@@ -362,7 +362,7 @@ async function Approvals({ f, view, pending }: P) {
     !controls ? Promise.resolve("Real runs are off on this OPERATOR") : writeBlocker(),
     getChainOks().then((x) => x ?? []),
   ]);
-  const card = (i: ApprovalItem) => <ApprovalCard key={i.id} i={i} view={view} byId={f.byId} tz={f.tz} rules={rules} look="tab" chatHref={i.department_id ? tabHref(i.department_id, "chat") : "/"} />;
+  const card = (i: ApprovalItem) => <ApprovalCard key={i.id} i={i} view={view} byId={f.byId} tz={f.tz} rules={rules} look="tab" chatHref={i.department_id ? askHref(i.department_id) : "/"} />;
   const props = (pending ?? []).filter((p) => p.state === "pending");
   const decidedProps = (pending ?? []).filter((p) => p.state !== "pending").slice(0, 20);
   const from = (p: NonNullable<P["pending"]>[number]) => (p.from_agent ? f.byId[p.from_agent]?.name ?? p.from_agent : p.source === "claude" ? "Claude" : "You");

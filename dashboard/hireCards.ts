@@ -77,7 +77,7 @@ export async function deptHires(deptId: string, roster: Roster): Promise<{ cards
   const inClaude = new Set(((where.data ?? []) as { id: string; runs_on?: string | null }[]).filter((a) => a.runs_on === "claude").map((a) => a.id));
   const [tries, routines] = await Promise.all([
     Promise.all(defRows.map((d) => (inClaude.has(d.agent_id) ? null : lastTry(d.agent_id, d.version).catch(() => null)))),
-    Promise.all(defRows.map((d): Promise<LinkedCard | null> => (inClaude.has(d.agent_id) ? routineState(d.agent_id).then(linkedStep, () => linkedStep(null)).then((l) => ({ ...l, sheet: sheetHref(deptId, "chat", d.agent_id) })) : Promise.resolve(null)))),
+    Promise.all(defRows.map((d): Promise<LinkedCard | null> => (inClaude.has(d.agent_id) ? routineState(d.agent_id).then(linkedStep, () => linkedStep(null)).then((l) => ({ ...l, sheet: sheetHref(deptId, "overview", d.agent_id) })) : Promise.resolve(null)))),
   ]);
   defRows.forEach((d, i) => {
     const a = roster.agents[d.agent_id];

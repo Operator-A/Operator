@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
 import { COMPANY_TABS, companyTab, companyHref, addDeptHref, approvalsHistoryHref, ADD_DEPT_SAY, goalsWord, deptView, deptViewHref, SCHEDULE_HREF } from "../dashboard/company-rules";
 import { readFileSync } from "node:fs";
-import { DEPT_TABS, agentHref, goalHref, hireHref, settingsHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
+import { DEPT_TABS, agentHref, askHref, asksOpen, goalHref, hireHref, settingsHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
 import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from "../core/flow-rules";
 import { deptReach, headDirective } from "../core/head-chat-rules";
 import { resolveRuleWho, deptNamed } from "../core/chat-rules";
@@ -31,15 +31,21 @@ const org: Org = {
   ],
 };
 
-// tabs: Chat first and the default; anything else opens Chat
-assert.equal(DEPT_TABS[0], "chat");
+// tabs: Overview first and the default (overview slice 1); anything else, the old Chat tab too, opens Overview
+assert.equal(DEPT_TABS[0], "overview");
+assert.ok(!(DEPT_TABS as readonly string[]).includes("chat"), "chat is no longer a tab: it opens from the Ask button");
 assert.equal(deptTab("goals"), "goals");
 assert.equal(deptTab("approvals"), "approvals");
 assert.equal(deptTab("agents"), "agents");
-assert.equal(deptTab(undefined), "chat");
-assert.equal(deptTab("chat"), "chat");
-assert.equal(deptTab("<script>"), "chat");
-assert.equal(tabHref("finance", "chat"), "/dept/finance");
+assert.equal(deptTab(undefined), "overview");
+assert.equal(deptTab("chat"), "overview");
+assert.equal(deptTab("<script>"), "overview");
+assert.equal(tabHref("finance", "overview"), "/dept/finance");
+// the chat in the Ask sheet: in the address over any tab, and words to type in open it too
+assert.equal(askHref("finance"), "/dept/finance?ask=1");
+assert.equal(askHref("finance", "approvals"), "/dept/finance?tab=approvals&ask=1");
+assert.ok(asksOpen({ ask: "1" }) && asksOpen({ say: "Set a goal: " }) && !asksOpen({}) && !asksOpen({ say: "" }));
+assert.ok(asksOpen(new URL(`http://x${goalHref("finance")}`).searchParams.get("say") ? { say: "x" } : {}), "a set-a-goal link opens the chat");
 assert.equal(tabHref("finance", "goals"), "/dept/finance?tab=goals");
 
 // who works here: the head first, then down the chart in seat order; open and owner seats hold no agent
@@ -146,7 +152,7 @@ assert.ok(/refresh-ok/.test(chat) && !/\bapprove\b(?! ?card)/i.test(chat.replace
 
 // the agent sheet (slice 4): in the address, old links open it, any set of days, and the same checks as before
 assert.equal(sheetHref("finance", "agents", "quinn"), "/dept/finance?tab=agents&agent=quinn");
-assert.equal(sheetHref("finance", "chat", "quinn"), "/dept/finance?agent=quinn");
+assert.equal(sheetHref("finance", "overview", "quinn"), "/dept/finance?agent=quinn");
 assert.equal(agentHref(org, "quinn"), "/dept/finance?tab=agents&agent=quinn", "an old agent link opens its sheet in its department");
 assert.equal(agentHref(org, "avery"), "/?tab=departments&agent=avery", "an agent in no department opens on Company > Departments");
 assert.equal(agentHref(null, "quinn"), "/?tab=departments&agent=quinn");
@@ -281,7 +287,7 @@ assert.ok(/More detail/.test(sheetSrc) && /goodResult/.test(sheetSrc) && /maxCos
 assert.ok(/ask at most two short questions/.test(headDirective({ name: "Morgan", title: "CFO", dept: "Finance", business: "Shop", agents: [] })), "the head asks at most two questions before it files a hire");
 
 // slice 7: a department's settings on its own page, through the same owner-only actions Crew's editor used
-assert.equal(settingsHref("finance", "chat"), "/dept/finance?settings=1");
+assert.equal(settingsHref("finance", "overview"), "/dept/finance?settings=1");
 assert.equal(settingsHref("finance", "goals"), "/dept/finance?tab=goals&settings=1");
 const dsFor = read("dashboard/components/deptSettingsFor.tsx"), ds = read("dashboard/components/deptSettings.tsx"), orgActs = read("dashboard/orgActions.ts");
 for (const a of ["orgRenameDepartment", "orgSetDeptBudget", "orgSetDeptEmails", "orgSetLeadChecks", "orgAddDeptRule", "orgForgetDeptRule", "orgRemoveDepartment"]) {
