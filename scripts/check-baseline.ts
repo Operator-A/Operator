@@ -44,7 +44,10 @@ assert.doesNotMatch(sql, /^ALTER DEFAULT PRIVILEGES /m, "no default privileges: 
 
 // what the history checks (check:jobs, check:mcp, check:audit) read from single migrations
 const quoted = (constraint: string) => [...(new RegExp(`CONSTRAINT ${constraint} CHECK \\((.*)\\),?$`, "m").exec(sql)?.[1] ?? "").matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1]);
-assert.deepEqual(quoted("jobs_kind_check"), [...JOB_KINDS], "jobs.kind allows exactly the job kinds");
+// a later migration may widen jobs.kind (overview slice 2 added 'report'); the newest one that sets it wins
+const laterKinds = later.map(({ sql: s }) => /add constraint jobs_kind_check check \(kind in \(([^)]*)\)\)/.exec(s)?.[1]).filter(Boolean).pop();
+const jobKinds = laterKinds ? laterKinds.split(",").map((k) => k.trim().replace(/'/g, "")) : quoted("jobs_kind_check");
+assert.deepEqual(jobKinds, [...JOB_KINDS], "jobs.kind allows exactly the job kinds");
 assert.deepEqual(quoted("mcp_connection_events_event_check"), [...MCP_EVENTS], "connection events allow exactly MCP_EVENTS");
 assert.match(sql, /^ALTER TABLE ONLY public\.jobs\n\s+ADD CONSTRAINT \w+ UNIQUE \(org_id, dedupe_key\)/m, "a job is queued once per dedupe key");
 const auditGrants = [...sql.matchAll(/^GRANT (\S+) ON TABLE public\.audit_log TO /gm)].map((m) => m[1]);

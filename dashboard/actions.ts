@@ -39,6 +39,7 @@ import { TOOLS as CATALOG } from "@/core/tools/catalog";
 import { loadOrg as loadOrgChart, placeAgent, seatTitleFor } from "@/core/org";
 import { closedActions, createdWords, jobLine, newSpecDraft, readNewAgent } from "./new-agent-rules";
 import { customMenu } from "@/core/tools/custom";
+import { writeReports } from "@/core/reports";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
 import { lastTry } from "./builder";
 import { NOTHING_READ } from "./hire-rules";
@@ -108,6 +109,22 @@ async function startRun(agentId: string, name: string): Promise<ActionResult> {
   if (first === null) return { ok: true, text: `${name} is working. Keep using the app; ${name} pulses until the run is done.` };
   if ("err" in first) return fail(first.err);
   return { ok: first.res.status === "ok", text: `${name}: ${first.res.status === "skipped" ? "skipped, " : ""}${first.res.summary}` };
+}
+
+/**
+ * Write it now (overview slice 2): writes the department's day and week reports at once, each one small-model call
+ * through withRun, paid by the head or the company seat. The owner's, like Run now, since it spends.
+ */
+export async function writeReportNow(deptId: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!controlsOn()) return { ok: false, text: CONTROLS_OFF };
+  if (typeof deptId !== "string" || !deptId || deptId.length > 80) return { ok: false, text: "Unknown department." };
+  try {
+    const res = await writeReports(deptId);
+    await audit(me, "write_report", deptId);
+    revalidatePath(`/dept/${deptId}`);
+    return { ok: res.ok, text: res.text };
+  } catch (e) { return fail(e); }
 }
 
 export async function setEnabled(agentId: string, on: boolean): Promise<ActionResult> {

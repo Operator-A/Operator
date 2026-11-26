@@ -12,8 +12,8 @@ export interface OvChainRun { chain_key: string; chain_id: string; chain_step: n
 export interface OvChainOk { chain_id: string; step: number; status: string }
 
 const DAY = 864e5;
-/** Runs that are not work an agent did on its own: chat replies, tries, approved writes, report writing. */
-export const NOT_WORK = new Set(["chat", "preview", "approval"]);
+/** Runs that are not work an agent did on its own: chat replies, tries, approved writes, report writing (slice 2). */
+export const NOT_WORK = new Set(["chat", "preview", "approval", "report"]);
 export const isWork = (r: Pick<OvRun, "trigger" | "status">) => !NOT_WORK.has(r.trigger) && r.status !== "skipped";
 
 /** The calendar day of an instant in a time zone, as YYYY-MM-DD. */
@@ -140,3 +140,54 @@ export const STEP_WORD: Record<StepState, string> = { done: "done", failed: "fai
 const round2 = (n: number) => Math.round(n * 100) / 100;
 /** Dollars for the Overview: $0, $0.04, $12.40. */
 export const money = (n: number) => (n === 0 ? "$0" : `$${n.toFixed(2)}`);
+
+// ---- The written report (overview slice 2): what the report card shows, from the saved report row.
+
+export interface OvChip { label: string; href: string; failed: boolean }
+export interface OvLine { text: string; chips: OvChip[] }
+export interface OvReport {
+  heading: string; sub: string | null; empty: string | null;
+  happened: OvLine[]; look: OvLine[]; coming: { text: string; href: string }[];
+  dayHref: string; weekHref: string; week: boolean; allHref: string; allLabel: string;
+}
+/** A saved report as the card reads it (core/reports.ts Report). */
+export interface RepIn {
+  day: string; runCount: number; dropped: number; costUsd: number; writtenAt: string; writerRun: string | null;
+  lines: { section: "happened" | "look"; text: string; runs: { id: string; agent: string; at: string; failed: boolean }[] }[];
+}
+export interface RepOpts {
+  week: boolean; name: string; today: string; tz: string; coming: { agent: string; at: number }[];
+  agentsHref: string; dayHref: string; weekHref: string; allHref: string;
+}
+const fmt = (t: number | string, tz: string, o: Intl.DateTimeFormatOptions) => {
+  try { return new Intl.DateTimeFormat("en-US", { timeZone: tz, ...o }).format(new Date(t)); }
+  catch { return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", ...o }).format(new Date(t)); }
+};
+const dayTime = (t: number | string, tz: string) => fmt(t, tz, { weekday: "short", hour: "numeric", minute: "2-digit" });
+
+/**
+ * The report card: its heading, the line under it (when it was written, from how many runs, what the model call cost,
+ * how many lines the checker left out), the lines with a chip per cited run, and what runs next. A day report from an
+ * earlier day says which day; no report yet says when one comes.
+ */
+export function reportView(r: RepIn | null, o: RepOpts): OvReport {
+  const heading = o.week ? `Last 7 days in ${o.name}` : !r || r.day === o.today ? `Today in ${o.name}` : `${fmt(`${r.day}T12:00:00Z`, "UTC", { weekday: "long", month: "short", day: "numeric" })} in ${o.name}`;
+  const chips = (runs: RepIn["lines"][number]["runs"]): OvChip[] => runs.map((c) => ({
+    label: `${c.agent} · ${o.week ? fmt(c.at, o.tz, { weekday: "short" }) : fmt(c.at, o.tz, { hour: "numeric", minute: "2-digit" })}${c.failed ? ", failed" : ""}`,
+    href: `/runs/${c.id}`, failed: c.failed,
+  }));
+  const pick = (section: "happened" | "look") => (r?.lines ?? []).filter((l) => l.section === section).map((l) => ({ text: l.text, chips: chips(l.runs) }));
+  const call = r && r.runCount > 0 && r.writerRun ? ` · 1 model call, ${r.costUsd > 0 && r.costUsd < 0.01 ? "under $0.01" : money(r.costUsd)}` : "";
+  const sub = r ? `Written ${dayTime(r.writtenAt, o.tz)} from ${r.runCount} run${r.runCount === 1 ? "" : "s"}${call}${r.dropped ? ` · ${r.dropped} line${r.dropped === 1 ? "" : "s"} left out` : ""}` : null;
+  const empty = !r
+    ? `No report yet. ${o.name}’s report is written after its morning runs, by noon at the latest.`
+    : r.runCount === 0 ? (o.week ? `No runs in ${o.name} in the last 7 days, so there was nothing to write.` : `No runs in ${o.name} yet today, so there was nothing to write.`)
+    : !r.lines.length ? "None of the model’s lines cited a run with the numbers it gave, so none are shown. Open the runs below." : null;
+  const horizon = o.week ? 7 : 1;
+  const coming = [...o.coming].sort((a, b) => a.at - b.at).filter((c) => c.at <= Date.parse(`${o.today}T12:00:00Z`) + (horizon + 1) * DAY).slice(0, 3)
+    .map((c) => ({ text: `${c.agent} runs ${dayTime(c.at, o.tz)}.`, href: o.agentsHref }));
+  return {
+    heading, sub, empty, happened: pick("happened"), look: pick("look"), coming,
+    dayHref: o.dayHref, weekHref: o.weekHref, week: o.week, allHref: o.allHref, allLabel: r?.runCount ? `All ${r.runCount} run${r.runCount === 1 ? "" : "s"}` : "All runs",
+  };
+}

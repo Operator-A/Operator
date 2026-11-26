@@ -1,6 +1,8 @@
 import { NextResponse, after } from "next/server";
 import { runChainStep } from "@/core/chain";
 import { isUuid, readChainPayload } from "@/core/job-rules";
+import { readReportPayload } from "@/core/report-rules";
+import { writeReports } from "@/core/reports";
 import { claimJob, finishJob, type Job } from "@/core/jobs";
 import { cronAuthorized } from "@/core/runs";
 import { withOrg } from "@/core/tenancy";
@@ -8,7 +10,7 @@ import { traced } from "@/core/trace";
 
 export const maxDuration = 300;
 
-// The worker (docs/tenancy.md, slice 3): runs one job as its org. Called by a kick (core/jobs.ts)
+// The worker (docs/tenancy.md, slice 3): runs one job as its org (a chain step, or a department's daily reports). Called by a kick (core/jobs.ts)
 // with the CRON_SECRET bearer and ?org=<org>. Everything here runs as that org, so the job is read
 // through db() scoped to it, and with the database lock on, with that org's token: a job of another
 // org can't be claimed whatever the request says. It claims the job, answers, then does the work
@@ -36,6 +38,13 @@ async function runJob(origin: string, job: Job): Promise<void> {
 
 async function doJob(origin: string, job: Job): Promise<void> {
   try {
+    if (job.kind === "report") {
+      // a department's reports for the day (overview slice 2): one model call per period, through withRun
+      const r = readReportPayload(job.payload);
+      if (!r) return await finishJob(job.id, { failed: true, outcome: "Bad report payload." });
+      const res = await writeReports(r.dept);
+      return await finishJob(job.id, { failed: !res.ok, outcome: res.text, runId: res.runId });
+    }
     if (job.kind !== "chain_step") return await finishJob(job.id, { failed: true, outcome: `Unknown kind ${job.kind}.` });
     const ctx = readChainPayload(job.payload);
     if (!ctx) return await finishJob(job.id, { failed: true, outcome: "Bad chain step payload." });

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { deleteChain, discardChainDraft, goLive, previewChain, realRun, runChainNow, saveChain, setEnabled, tryBuilt } from "@/dashboard/actions";
+import { deleteChain, discardChainDraft, goLive, previewChain, realRun, runChainNow, saveChain, setEnabled, tryBuilt, writeReportNow } from "@/dashboard/actions";
 import { changeInChat, hireInChat, proposalDecline } from "@/dashboard/proposalActions";
 import { deptHires } from "@/dashboard/hireCards";
 import { deptChanges } from "@/dashboard/changeCards";
@@ -11,7 +11,9 @@ import { Suspense } from "react";
 import { AskSheet } from "@/dashboard/components/askSheet";
 import { GoalTile, Overview, type OverviewData } from "@/dashboard/components/overview";
 import { chainRows, deptCards, deptChains, inClaude } from "@/dashboard/overview";
-import { dayKey, draftOutcomes, lastWeek, money, recentFailures, runsPerDay, spendRows } from "@/dashboard/overview-rules";
+import { dayKey, draftOutcomes, isWork, lastWeek, money, recentFailures, reportView, runsPerDay, spendRows } from "@/dashboard/overview-rules";
+import { latestReports } from "@/core/reports";
+import { todayIn } from "@/core/report-rules";
 import { md } from "@/dashboard/format";
 import { trustView } from "@/dashboard/trust";
 import { deptRuns } from "@/dashboard/deptFeed";
@@ -53,7 +55,7 @@ const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : 
 const ASK = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></svg>;
 const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 
-export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; ask?: string; edit?: string; settings?: string; at?: string; days?: string; chain?: string; new?: string }> }) {
+export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; ask?: string; edit?: string; settings?: string; at?: string; days?: string; chain?: string; new?: string; report?: string }> }) {
   // the pieces this page shows, in one round (card 304): the crew and its runs, what waits on you, the time zone, the org switch
   const [{ id }, sp, roster, counts, tz, org, me] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch(), requireSession()]);
   const chart = roster.chart;
@@ -92,7 +94,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
           count: t === "agents" ? ids.length : t === "goals" ? goalCount : t === "approvals" ? waiting : undefined, red: t === "approvals",
         }))} />
         <div className="dp-pane" key={tab}>
-          <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} spend={spend} waiting={waiting} chain={typeof sp.chain === "string" ? sp.chain.slice(0, 40) : undefined} startWith={typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined} />
+          <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} spend={spend} waiting={waiting} chain={typeof sp.chain === "string" ? sp.chain.slice(0, 40) : undefined} startWith={typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined} week={sp.report === "week"} />
         </div>
       </div>
       <Link href={askHref(id, tab)} scroll={false} className="dp-askfab" aria-label={head ? `Ask ${head.name}` : `Ask about ${dept.name}`}>{ASK}</Link>
@@ -109,7 +111,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
 
 type Roster = Awaited<ReturnType<typeof getRoster>>;
 type Counts = Awaited<ReturnType<typeof getCounts>>;
-type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; owner?: boolean; goals?: Record<string, GoalView[]> | null; say?: string; chain?: string; startWith?: string; spend?: Record<string, number>; waiting?: number };
+type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; owner?: boolean; goals?: Record<string, GoalView[]> | null; say?: string; chain?: string; startWith?: string; spend?: Record<string, number>; waiting?: number; week?: boolean };
 
 async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
   if (tab === "goals") return <Goals {...p} />;
@@ -120,7 +122,7 @@ async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
 }
 
 /** The Overview (overview slice 1): what needs you, tiles, charts, the agents and the chains, all counted in code. */
-async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0 }: P) {
+async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0, owner, week: weekView = false }: P) {
   const chart = roster.chart!;
   const now = roster.now;
   const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
@@ -128,9 +130,9 @@ async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0 }: P
   const runs = roster.runs.filter((r) => mine.has(r.agent_id));
   const names = Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]));
   const chains = deptChains(roster.chains, id, ids);
-  const [claude, cards, chainList, trust] = await Promise.all([
+  const [claude, cards, chainList, trust, reports] = await Promise.all([
     inClaude(ids), deptCards(id, now).catch(() => []), chainRows(chains, names, now).catch(() => []),
-    trustView().catch(() => null),
+    trustView().catch(() => null), latestReports(id).catch(() => ({ day: null, week: null })),
   ]);
   const week = lastWeek(runs, now);
   const bars = runsPerDay(runs, now, tz, 14);
@@ -141,8 +143,19 @@ async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0 }: P
   // the action type in this department nearest its next trust level, while it is still at Draft
   const near = (trust?.lines ?? []).filter((l) => mine.has(l.agentId) && l.level === "draft" && l.clean > 0).sort((a, b) => b.clean - a.clean)[0];
   const sr = spendRows(ids, spend, claude);
+  const reportHref = (w: boolean) => (w ? `${tabHref(id, "overview")}?report=week` : tabHref(id, "overview"));
+  const report = reportView(weekView ? reports.week : reports.day, {
+    week: weekView, name, today: todayIn(tz, now), tz,
+    coming: ids.flatMap((aid) => nextRuns(roster.byId[aid].schedule, now, weekView ? 7 : 2, tz).map((at) => ({ agent: roster.byId[aid].name, at }))),
+    agentsHref: tabHref(id, "agents"), dayHref: reportHref(false), weekHref: reportHref(true), allHref: `/activity?dept=${encodeURIComponent(id)}`,
+  });
+  const controls = controlsOn();
+  const write = (
+    <ActionButton className="dp-btn" action={writeReportNow.bind(null, id)} disabled={!owner || !controls}
+      title={!controls ? "Real runs are off on this OPERATOR" : !owner ? "Only the owner can write the report now" : "One small model call for each period, paid by the department head"}>Write it now</ActionButton>
+  );
   const d: OverviewData = {
-    name,
+    name, report,
     needs: [
       ...(waiting > 0 ? [{ kind: "approve" as const, title: `${waiting} draft${waiting === 1 ? "" : "s"} waiting for your OK.`, sub: `Everything ${name}’s agents drafted, in one place.`, href: tabHref(id, "approvals"), btn: "Review" }] : []),
       ...failures.map((r) => ({ kind: "failed" as const, title: `${names[r.agent_id] ?? r.agent_id}’s run on ${when(r.started_at, tz)} stopped.`, sub: firstSentence(r.error ?? r.summary ?? "It failed.", 140), href: `/runs/${r.id}`, btn: "Open run" })),
@@ -158,7 +171,7 @@ async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0 }: P
     spendNote: sr.some((r) => r.claude) ? "Agents that run in Claude use your Claude plan, so they show $0 here." : null,
     agents: ids.map((aid) => {
       const a = roster.byId[aid];
-      const last = runs.find((r) => r.agent_id === aid && r.status !== "skipped" && r.trigger !== "chat");
+      const last = runs.find((r) => r.agent_id === aid && isWork(r));
       const next = nextRuns(a.schedule, now, 1, tz)[0];
       const model = MODEL_LIST.find((m) => m.id === (a.model ?? roster.agents[aid]?.model))?.label ?? null;
       return {
@@ -178,7 +191,7 @@ async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0 }: P
     })),
     chainsHref: tabHref(id, "chains"),
   };
-  return <Overview d={d} goal={<Suspense fallback={<div className="ov-card ov-tile"><span className="ov-tl">Goal</span><span className="ov-ts">Measuring…</span></div>}><GoalOf id={id} chart={chart} /></Suspense>} />;
+  return <Overview d={d} write={write} goal={<Suspense fallback={<div className="ov-card ov-tile"><span className="ov-tl">Goal</span><span className="ov-ts">Measuring…</span></div>}><GoalOf id={id} chart={chart} /></Suspense>} />;
 }
 
 /** The goal tile: the department's first goal, measured in code (streams in after the rest of the page). */

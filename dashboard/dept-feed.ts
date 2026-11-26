@@ -34,7 +34,7 @@ export function checklist(steps: readonly StepRow[], label: (tool: string) => st
 
 /** What the run card is called, from how it started. */
 export function runTitle(trigger: string, version: number | null = null): string {
-  return trigger === "manual" ? "Run now" : trigger === "preview" ? (version && version > 1 ? `Try of v${version}` : "First try") : trigger === "chain" || trigger === "schedule" ? "Scheduled run" : trigger === "event" ? "Started by an event" : "Run";
+  return trigger === "manual" ? "Run now" : trigger === "preview" ? (version && version > 1 ? `Try of v${version}` : "First try") : trigger === "chain" || trigger === "schedule" ? "Scheduled run" : trigger === "event" ? "Started by an event" : trigger === "report" ? "Report writing" : "Run";
 }
 
 /** The status pill on a run card. */
