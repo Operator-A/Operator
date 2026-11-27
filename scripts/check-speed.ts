@@ -6,7 +6,7 @@
 //    say so on the same line: `// refresh-ok: <reason>`.
 // 3. The Control Room has a loading frame (app/(room)/loading.tsx): a click shows it at once, and Next.js
 //    pre-loads dynamic pages up to it.
-// 4-13. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
+// 4-14. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
 //    starts loading on hover, touch or focus (IntentLink). Each rule is below, where it is checked.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -225,6 +225,18 @@ if (!SUSPENDED("<Pane\\b").test(dept) || !SUSPENDED("<AgentSheetFor\\b").test(de
 for (const f of ["agentSheet", "askSheet", "deptSettings", "newAgentSheet"].map((n) => `dashboard/components/${n}.tsx`)) if (/setTimeout\(\(\) => router\.push/.test(read(f))) problems.push(`${f}: closing waits before loading the page under it; push at once (rule 13).`);
 if (/\bgetRoster\(/.test(read("app/(room)/agents/[id]/page.tsx"))) problems.push("app/(room)/agents/[id]/page.tsx: the hop to an agent's sheet should read only the org chart (orgChartOnce), not the roster (rule 13).");
 if (!/useLinkStatus\(\)/.test(read("dashboard/components/intentLink.tsx"))) problems.push("dashboard/components/intentLink.tsx: the link just clicked should show it is loading (useLinkStatus) (rule 13).");
+
+// 14. Fewer, shorter cold starts and less to download (slice 5 of the click-speed fix). Every Control Room page has the
+//     same maxDuration as the room layout, so Vercel keeps them in one warm function instead of several; core/mcp-rules.ts
+//     (which some client components import for constants) hashes with core/sha256.ts, not node:crypto, whose browser
+//     polyfills added about 150 KB to Connections and setup.
+const roomMax = Number(read("app/(room)/layout.tsx").match(/export const maxDuration = (\d+)/)?.[1]);
+if (!roomMax) problems.push("app/(room)/layout.tsx: set the Control Room's maxDuration (rule 14).");
+for (const f of ["app"].filter(existsSync).flatMap(walk).filter((x) => x.startsWith(join("app", "(room)")))) {
+  const m = readFileSync(f, "utf8").match(/export const maxDuration = (\d+)/);
+  if (m && Number(m[1]) !== roomMax) problems.push(`${f}: maxDuration ${m[1]} differs from the room layout's ${roomMax}; one value keeps every page in one warm function (rule 14).`);
+}
+if (/from "node:crypto"|from "crypto"/.test(read("core/mcp-rules.ts"))) problems.push("core/mcp-rules.ts: client components import this file; hash with core/sha256.ts, not node:crypto (rule 14).");
 
 if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
 console.log("check:speed ok");

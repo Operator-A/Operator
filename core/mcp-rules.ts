@@ -7,7 +7,7 @@
 // server adds later does nothing until it is named here in a pull request. A server's write tools
 // are never called; a write would become a gateway action type that starts at Draft.
 
-import { createHash } from "node:crypto";
+import { base64url, sha256 } from "./sha256";
 import { SHOPIFY_TOOLS } from "@/core/shopify-queries";
 import { STRIPE_DRAFT_TOOL, STRIPE_READ_TOOLS } from "@/core/stripe-rules";
 import { QBO_CATEGORIZE, QBO_CATEGORIZE_TOOL, QBO_READ_TOOLS, QBO_SCOPE } from "@/core/quickbooks-rules";
@@ -677,7 +677,7 @@ const canon = (x: unknown): unknown => Array.isArray(x) ? x.map(canon) : x && ty
 
 /** A short fingerprint of a tool's inputs (key order doesn't matter; descriptions do, kept simple on purpose). */
 export function toolFingerprint(t: ListedTool): string {
-  return createHash("sha256").update(JSON.stringify(canon(t.inputSchema ?? null))).digest("base64url").slice(0, 16);
+  return base64url(sha256(JSON.stringify(canon(t.inputSchema ?? null)))).slice(0, 16);
 }
 
 /** The tools in one tools/list reply, and the cursor for the next page. */
