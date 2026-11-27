@@ -69,9 +69,9 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
   const waiting = needsByDept(chart.departments.map((d) => d.id), counts.approvalOwners.map((o) => o.dept)).byDept[id] ?? 0;
   const headId = headAgentId(chart, id), head = headId ? roster.byId[headId] : null, headSeat = headOf(chart, id);
   const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
-  const spend = await monthSpendByAgent(ids).catch(() => ({} as Record<string, number>));
+  // together, not one after the other (click-speed slice 3)
+  const [spend, goals] = await Promise.all([monthSpendByAgent(ids).catch(() => ({} as Record<string, number>)), tab === "goals" ? goalsByDept(chart) : undefined]);
   const spent = deptSpent(chart, id, spend);
-  const goals = tab === "goals" ? await goalsByDept(chart) : undefined;
   const goalCount = goals ? (goals[id] ?? []).length : undefined;
   const title = headSeat?.title ?? "head";
   const led = head ? `Led by ${head.name}, your ${title}` : headSeat?.holder === "owner" ? `You lead ${dept.name}` : "No head yet";
@@ -134,7 +134,7 @@ async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0, own
   const chains = deptChains(roster.chains, id, ids);
   const [claude, cards, chainList, trust, reports] = await Promise.all([
     inClaude(ids), deptCards(id, now).catch(() => []), chainRows(chains, names, now).catch(() => []),
-    trustView().catch(() => null), latestReports(id).catch(() => ({ day: null, week: null })),
+    trustView(ids).catch(() => null), latestReports(id).catch(() => ({ day: null, week: null })),
   ]);
   const week = lastWeek(runs, now);
   const bars = runsPerDay(runs, now, tz, 14);

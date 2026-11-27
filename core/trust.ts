@@ -67,6 +67,44 @@ export async function standingOf(agentId: string, tool: string, row?: TrustRow |
   return { level, row: r, standing: standing({ level, promotable: promotable(tool), outcomes: list, sinceDecline }) };
 }
 
+/**
+ * Where many agent and tool pairs stand at once (click-speed slice 3): the same answer as standingOf for each pair, in
+ * one round. Pairs at Draft read their agent's decided approvals once per agent, with each action's tool alongside,
+ * instead of two queries per pair one after another. Each approvals read takes the oldest `since` among that agent's
+ * pairs, so every pair's newest 120 are in it (newer rows come first). A pair that fails carries its error.
+ */
+export async function standingsOf(pairs: { agentId: string; tool: string }[], rows: TrustRow[]): Promise<{ agentId: string; tool: string; level: Level; standing: Standing; row: TrustRow | null; error?: string }[]> {
+  const rowFor = (a: string, t: string) => rows.find((r) => r.agent_id === a && r.tool === t) ?? null;
+  const items = pairs.map((p) => { const row = rowFor(p.agentId, p.tool); return { ...p, row, level: effectiveLevel(row?.level, promotable(p.tool)) }; });
+  type Decided = { action_id: string; status: string; reject_kind: string | null; decided_at: string; agent_actions: { tool: string } | { tool: string }[] | null };
+  const draftAgents = [...new Set(items.filter((i) => i.level === "draft").map((i) => i.agentId))];
+  const byAgent = new Map<string, Decided[] | Error>(await Promise.all(draftAgents.map(async (a) => {
+    const sinces = items.filter((i) => i.agentId === a && i.level === "draft").map((i) => i.row?.changed_at ?? null);
+    const since = sinces.includes(null) ? null : (sinces as string[]).sort()[0];
+    let q = db().from("approvals").select("action_id, status, reject_kind, decided_at, agent_actions(tool)").eq("agent_id", a).in("status", ["approved", "edited", "rejected"]).order("decided_at", { ascending: false }).limit(120);
+    if (since) q = q.gt("decided_at", since);
+    const { data, error } = await q;
+    return [a, error ? new Error(missing(error.message)) : ((data ?? []) as Decided[])] as const;
+  })));
+  const toolOf = (d: Decided) => (Array.isArray(d.agent_actions) ? d.agent_actions[0]?.tool : d.agent_actions?.tool) ?? null;
+  return Promise.all(items.map(async (i) => {
+    try {
+      let list: Dated[];
+      if (i.level === "draft") {
+        const got = byAgent.get(i.agentId);
+        if (got instanceof Error) throw got;
+        const since = i.row?.changed_at ?? null;
+        list = (got ?? []).filter((d) => (!since || d.decided_at > since) && toolOf(d) === i.tool)
+          .map((d) => ({ clean: d.status === "approved", kind: d.status === "rejected" ? (isRejectKind(d.reject_kind) ? d.reject_kind : "other") : null, at: d.decided_at }));
+      } else list = await outcomes(i.agentId, i.tool, i.level, i.row?.changed_at ?? null);
+      const sinceDecline = i.row?.declined_at ? list.filter((o) => o.at > i.row!.declined_at!).length : null;
+      return { agentId: i.agentId, tool: i.tool, level: i.level, row: i.row, standing: standing({ level: i.level, promotable: promotable(i.tool), outcomes: list, sinceDecline }) };
+    } catch (e) {
+      return { agentId: i.agentId, tool: i.tool, level: i.level, row: i.row, standing: standing({ level: i.level, promotable: promotable(i.tool), outcomes: [], sinceDecline: null }), error: e instanceof Error ? e.message : String(e) };
+    }
+  }));
+}
+
 /** After a decision: opens a promotion card when the record earns one. Never moves a level by itself. */
 export async function refreshOffer(agentId: string, tool: string): Promise<boolean> {
   const { level, standing: s, row } = await standingOf(agentId, tool);

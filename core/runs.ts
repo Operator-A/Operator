@@ -88,9 +88,9 @@ async function deptBlocked(agentId: string): Promise<string | null> {
  * Trigger "preview" (a try from the builder) loads none: the job reads memory itself without
  * changing it.
  */
-export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null) => Promise<RunResult>, opts: { chain?: RunChain; quick?: boolean } = {}): Promise<RunResult & { runId: string }> {
+export async function withRun(agentId: string, trigger: string, job: (runId: string, memory: MemoryLoad | null) => Promise<RunResult>, opts: { chain?: RunChain; quick?: boolean; onStart?: (runId: string) => void } = {}): Promise<RunResult & { runId: string }> {
   return traced("run", { "operator.agent": agentId, "operator.trigger": trigger, "operator.chain": opts.chain?.key }, async (set) => {
-    const out = await loggedRun(agentId, trigger, job, opts, (runId) => set({ "operator.run": runId }));
+    const out = await loggedRun(agentId, trigger, job, opts, (runId) => { set({ "operator.run": runId }); opts.onStart?.(runId); });
     set({ "operator.status": out.status, "operator.tokens_in": out.tokensIn ?? 0, "operator.tokens_out": out.tokensOut ?? 0, "operator.cost_usd": out.costUsd ?? 0 });
     return out;
   });

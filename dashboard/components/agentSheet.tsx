@@ -5,7 +5,7 @@
 // checks: a changed job, model, reads or can do saves a new version that goes live only after a clean try.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useOptimistic, useState, useTransition } from "react";
 import type { SheetData } from "@/dashboard/agentSheet";
 import { clock, dayLabel, initialsOf, runFoot, runState, runTitle } from "@/dashboard/dept-feed";
 import { daysOf, type AgentTime } from "@/core/flow-rules";
@@ -112,7 +112,9 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
   function close() { setOpen(false); setTimeout(() => router.push(closeHref, { scroll: false }), 320); }
   const set = (p: Partial<ReturnType<typeof init>>) => { setF((x) => ({ ...x, ...p })); setConfirm(null); };
   const say = (r: Result) => setToast(r.text);
-  const go = (fn: () => Promise<Result>) => start(async () => { try { say(await fn()); } catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong."); } });
+  // which button is working, so it alone says so (click-speed slice 2)
+  const [doing, setDoing] = useState<string | null>(null);
+  const go = (fn: () => Promise<Result>, key?: string) => { setDoing(key ?? null); start(async () => { try { say(await fn()); } catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong."); } }); };
 
   const capN = Number(f.cap), stepsN = Number(f.steps);
   const moreChanged = !!d.spec && (f.good.trim() !== d.spec.goodResult.trim() || Math.round(capN * 100) !== Math.round(d.spec.limits.maxCostUsd * 100) || stepsN !== d.spec.limits.maxSteps
@@ -181,7 +183,8 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
   });
 
   const reads = d.reads.filter((r) => f.tools.includes(r.id));
-  const st = d.enabled;
+  // the duty switch flips the moment it is tapped and goes back if the server refuses (click-speed slice 2)
+  const [st, setSt] = useOptimistic(d.enabled);
   return (
     <>
       <div className={`ag-bg${open ? " open" : ""}`} onClick={close} />
@@ -192,10 +195,10 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
           <button type="button" className="x" onClick={close} aria-label="Close">{X}</button>
         </div>
         <div className="ag-state">
-          <button type="button" className="dp-tog" aria-pressed={st} disabled={busy} onClick={() => go(() => act.duty(!st))}><i />{st ? "On duty" : "Off duty"}</button>
+          <button type="button" className="dp-tog" aria-pressed={st} disabled={busy} onClick={() => { const to = !st; go(() => { setSt(to); return act.duty(to); }, "duty"); }}><i />{st ? "On duty" : "Off duty"}</button>
           {d.claude ? <span className="dp-where">Runs in Claude</span> : d.model && <span className="dp-where">Runs on {d.model}</span>}
           <span className="dp-pill ag-next">{d.next ? `Next: ${d.next}` : d.manual ? "Only when you ask" : "No run planned"}</span>
-          <button type="button" className="dp-btn" disabled={busy || !controls} title={controls ? undefined : "Real runs are off on this OPERATOR"} onClick={() => go(act.run)}>Run now</button>
+          <button type="button" className="dp-btn" disabled={busy || !controls} title={controls ? undefined : "Real runs are off on this OPERATOR"} onClick={() => go(act.run, "run")}>{busy && doing === "run" ? "Starting…" : "Run now"}</button>
         </div>
         <div className="ag-seg" role="tablist">
           <button type="button" role="tab" aria-selected={tab === "runs"} className={tab === "runs" ? "on" : ""} onClick={() => setTab("runs")}>Runs</button>

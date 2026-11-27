@@ -7,6 +7,7 @@ import type { ActionResult } from "../actions";
 import { SEEN_COOKIE, parseSeen } from "../seen";
 import { Icon } from "./Icon";
 import { IntentLink } from "./intentLink";
+import { LIVE_POLL_MS, liveKey, runOfPath, shouldRefresh } from "../live-rules";
 
 export function ThemeToggle({ initial, wide }: { initial: "light" | "dark"; wide?: boolean }) {
   const [theme, setTheme] = useState(initial);
@@ -163,16 +164,24 @@ export function Modal({ c, busy, onCancel, onGo }: { c: Confirm; busy: boolean; 
 
 /** A button that (optionally) confirms, runs a server action, then toasts the result and refreshes. The confirm closes as soon as it's accepted. */
 /** `follow`: on success, go to the in-app page the action names (its `href`), instead of staying. */
-export function ActionButton({ action, confirm, className, children, disabled, title, busyLabel, follow }: { action: Act; confirm?: Confirm; className?: string; children: React.ReactNode; disabled?: boolean; title?: string; busyLabel?: React.ReactNode; follow?: boolean }) {
+/**
+ * `dim` (slice 2 of the click-speed fix): the card around the button fades and stops taking taps the moment it is
+ * pressed, so an Approve or Reject shows at once while the server works; it comes back if the action refuses.
+ * The button always says it is working, after a confirm too.
+ */
+export function ActionButton({ action, confirm, className, children, disabled, title, busyLabel, follow, dim }: { action: Act; confirm?: Confirm; className?: string; children: React.ReactNode; disabled?: boolean; title?: string; busyLabel?: React.ReactNode; follow?: boolean; dim?: boolean }) {
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
   const router = useRouter();
+  const btn = useRef<HTMLButtonElement>(null);
   const go = () => {
     setOpen(false);
+    const card = dim ? dimCard(btn.current) : null;
     start(async () => {
       let res: ActionResult;
       try { res = await action(); } catch (e) { res = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
+      if (!res.ok) card?.restore();
       setToast(res);
       const href = (res as { href?: unknown }).href;
       if (follow && res.ok && typeof href === "string" && href.startsWith("/") && !href.startsWith("//")) router.push(href);
@@ -180,11 +189,22 @@ export function ActionButton({ action, confirm, className, children, disabled, t
   };
   return (
     <>
-      <button className={className} disabled={disabled || busy} title={title} onClick={() => (confirm ? setOpen(true) : go())}>{busy && busyLabel ? busyLabel : busy && !confirm ? "Working…" : children}</button>
+      <button ref={btn} className={className} disabled={disabled || busy} title={title} onClick={() => (confirm ? setOpen(true) : go())}>{busy ? busyLabel ?? "Working…" : children}</button>
       {open && confirm && <Modal c={confirm} busy={busy} onCancel={() => setOpen(false)} onGo={go} />}
       <Toast t={toast} onDone={() => setToast(null)} />
     </>
   );
+}
+
+/** Fades the card a button sits in (an approval card) until the server answers; `restore` brings it back. */
+export function dimCard(el: HTMLElement | null): { restore: () => void } | null {
+  const card = el?.closest<HTMLElement>("[data-dim-card]");
+  if (!card) return null;
+  const was = { opacity: card.style.opacity, pe: card.style.pointerEvents };
+  card.style.opacity = "0.45";
+  card.style.pointerEvents = "none";
+  card.setAttribute("aria-busy", "true");
+  return { restore: () => { card.style.opacity = was.opacity; card.style.pointerEvents = was.pe; card.removeAttribute("aria-busy"); } };
 }
 
 /**
@@ -255,14 +275,22 @@ export function DryRun({ action, compact }: { action: Act; compact?: boolean }) 
 export interface RecentRun { id: string; name: string; status: string; live: boolean }
 
 /**
- * Keeps the floor current while an agent works: refreshes the server data every few seconds while any
- * run is live, and says so when one finishes. Mounted once in the room layout, so it follows the owner around.
+ * Keeps the floor current while an agent works, and says so when a run finishes. Mounted once in the room layout,
+ * so it follows the owner around. While a run is live it asks /live which runs are live now (one small query) and
+ * renders the page again only when that set changes, or every tick on a live run's own page, whose steps arrive as
+ * it runs (slice 1 of the click-speed fix, docs/speed.md rule 10). `watch` keeps the old every-tick render for a
+ * page that shows one run's progress outside the room (setup's first job).
  */
-export function LiveRefresher({ runs }: { runs: RecentRun[] }) {
+export function LiveRefresher({ runs, watch }: { runs: RecentRun[]; watch?: boolean }) {
   const router = useRouter();
+  const path = usePathname();
   const anyLive = runs.some((r) => r.live);
+  const shown = liveKey(runs.filter((r) => r.live).map((r) => r.id));
   const [seen, setSeen] = useState(runs);
   const [done, setDone] = useState<RecentRun | null>(null);
+  // the latest values for the timer, without restarting it on every render
+  const now = useRef({ shown, path, watch: !!watch });
+  useEffect(() => { now.current = { shown, path, watch: !!watch }; }, [shown, path, watch]);
   // compare with the last render's runs (React's "adjust state on prop change" pattern)
   if (seen !== runs) {
     const finished = runs.find((r) => !r.live && seen.some((p) => p.id === r.id && p.live));
@@ -271,7 +299,26 @@ export function LiveRefresher({ runs }: { runs: RecentRun[] }) {
   }
   useEffect(() => {
     if (!anyLive) return;
-    const h = setInterval(() => { if (document.visibilityState === "visible") router.refresh(); }, 4000); // refresh-ok: polls while a run is live, no action involved
+    let busy = false, lastAsked: string | null = null;
+    const tick = async () => {
+      if (busy || document.visibilityState !== "visible") return;
+      const { shown, path, watch } = now.current;
+      const run = runOfPath(path);
+      const watching = watch || (!!run && shown.split(",").includes(run));
+      busy = true;
+      try {
+        let got = shown;
+        if (!watching) {
+          const res = await fetch("/live", { cache: "no-store" });
+          if (!res.ok) return;
+          got = liveKey(((await res.json()) as { live?: string[] }).live ?? []);
+        }
+        if (!shouldRefresh({ shown, got, lastAsked, watching })) return;
+        lastAsked = got;
+        router.refresh(); // refresh-ok: a run started or finished (or this page shows a live run's steps), seen by the /live poll
+      } catch { /* offline for a moment: the next tick tries again */ } finally { busy = false; }
+    };
+    const h = setInterval(tick, LIVE_POLL_MS);
     return () => clearInterval(h);
   }, [anyLive, router]);
   useEffect(() => { if (!done) return; const h = setTimeout(() => setDone(null), 10000); return () => clearTimeout(h); }, [done]);

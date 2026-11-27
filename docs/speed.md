@@ -67,3 +67,34 @@ first, each page reads only what it shows).
    show all of it. Settings asks only for the org switch, People only for the time zone, Runs and Approvals for the
    crew, Connections and the builder for `getCrewFloor` (crew, tools, time zone). On a client click the frame
    (app/(room)/layout.tsx) is not rendered again, so a click costs only the page's own pieces.
+
+## Still 3 to 5 seconds (Nov 27): what we measured, and the fix in five slices
+
+Timed in the owner's signed-in browser and in the Supabase and Vercel logs. Warm pages took 0.3 s (Settings,
+Connections) to 1.9 s (a department page). The 3 to 5 s clicks came from four things on top of that: about 60 queries
+per department page sent into Supabase's API pool of 10 connections (1 ms queries queued 3 to 5 s, about 7 times a
+day); a timer that rendered the whole app every 4 s while a run was live, with every button click queued behind it;
+saves that render every page (`revalidatePath("/", "layout")`) and wipe the browser's pre-loaded pages; and tabs and
+sheets with no loading frame. Slices: 1 the live poll, 2 saves that answer fast, 3 the department page's queries,
+4 something on screen at every click, 5 fewer cold starts.
+
+10. **No timer renders the whole app** (checked, slice 1). While a run is live, `LiveRefresher`
+    (dashboard/components/client.tsx) asks `/live` (app/(room)/live/route.ts: one query, the live run ids) every 4 s
+    and calls `router.refresh()` only when that set changes, a run started or finished (dashboard/live-rules.ts), or
+    on a live run's own page, whose steps arrive as it runs. Setup's first job keeps a render on every tick (`watch`).
+    check:speed refuses `router.refresh()` inside a `setInterval`.
+
+11. **A tap shows at once** (checked, slice 2). An approval card fades and stops taking taps the moment Approve or
+    Reject is pressed (`ActionButton dim`, `RejectButton`, `dimCard` in dashboard/components/client.tsx) and comes
+    back if the action refuses. The agent sheet's duty switch flips at once (`useOptimistic`), and Run now says
+    "Starting…" and answers as soon as the run's row is logged (`withRun`'s `onStart`), not after the agent's checks
+    and memory load. A button with a confirm says it is working after the confirm too. Approve still waits for the
+    gateway's own call (Gmail, Shopify, Stripe…) before it answers, so its result, or its failure, shows right there.
+
+12. **The department page's queries stay few** (checked, slice 3). The trust line read each agent's spec with its own
+    query and each agent and action pair's record with two queries one after another: about 27 spec reads and dozens
+    of serial reads per department page in the logs. `trustView` (dashboard/trust.ts) now reads in two rounds whatever
+    the number of agents: specs in one query, and every pair's standing at once (`standingsOf` in core/trust.ts, one
+    approvals read per agent with each action's tool alongside). A department page asks only for its own agents. The
+    roster's up to 1,000 runs leave out each run's memory record (`ROSTER_RUN_COLS`; a run's own page still reads it),
+    the org chart is read once per request (`orgChartOnce`), and the department page reads its spend and goals together.
