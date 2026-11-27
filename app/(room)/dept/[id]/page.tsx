@@ -37,6 +37,7 @@ import { ActionButton } from "@/dashboard/components/client";
 import { ApprovalCard, ChainOkCard } from "@/dashboard/components/approvalBits";
 import { okChainHref } from "@/core/chain-ok-rules";
 import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
+import { SheetSkel, SkelPane } from "@/dashboard/components/skeletons";
 import { readFill } from "@/dashboard/handoff-rules";
 import { DeptSettingsFor } from "@/dashboard/components/deptSettingsFor";
 import { GoalTiles } from "@/dashboard/components/goalTiles";
@@ -96,7 +97,8 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
           count: t === "agents" ? ids.length : t === "goals" ? goalCount : t === "approvals" ? waiting : undefined, red: t === "approvals",
         }))} />
         <div className="dp-pane" key={tab}>
-          <Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} spend={spend} waiting={waiting} chain={typeof sp.chain === "string" ? sp.chain.slice(0, 40) : undefined} startWith={typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined} week={sp.report === "week"} />
+          {/* the tabs and header draw first; the pane streams in (click-speed slice 4) */}
+          <Suspense key={tab} fallback={<SkelPane />}><Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} spend={spend} waiting={waiting} chain={typeof sp.chain === "string" ? sp.chain.slice(0, 40) : undefined} startWith={typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined} week={sp.report === "week"} /></Suspense>
         </div>
       </div>
       <Link href={askHref(id, tab)} scroll={false} className="dp-askfab" aria-label={head ? `Ask ${head.name}` : `Ask about ${dept.name}`}>{ASK}</Link>
@@ -106,7 +108,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
         </AskSheet>
       )}
       {sp.settings != null && !sp.agent && <DeptSettingsFor chart={chart} id={id} closeHref={tabHref(id, tab)} names={Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]))} />}
-      {sp.agent && <AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} dept={id} openHref={madeAgentHref(id)} />}
+      {sp.agent && <Suspense key={sp.agent} fallback={<SheetSkel />}><AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} dept={id} openHref={madeAgentHref(id)} /></Suspense>}
     </div>
   );
 }

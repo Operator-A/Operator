@@ -98,3 +98,12 @@ sheets with no loading frame. Slices: 1 the live poll, 2 saves that answer fast,
     approvals read per agent with each action's tool alongside). A department page asks only for its own agents. The
     roster's up to 1,000 runs leave out each run's memory record (`ROSTER_RUN_COLS`; a run's own page still reads it),
     the org chart is read once per request (`orgChartOnce`), and the department page reads its spend and goals together.
+
+13. **Something shows at every click** (checked, slice 4). The loading frame only showed when the first page under
+    the Control Room changed, so moving from one department, run, goal, proposal or Settings section to another
+    showed nothing until the server finished. Each of those now has its own `loading.tsx` (the same frame). A
+    department's pane streams in behind `<Suspense>` keyed by tab, so a tab click draws the header and tabs first;
+    an agent's sheet slides in as a skeleton (`SheetSkel`) while its data loads, on the department and Company pages.
+    A sheet closes and its page loads at the same moment instead of 320 ms later. `/agents/<id>` reads only the org
+    chart before it redirects, not the roster and its runs. The `IntentLink` just clicked shows a small pulsing dot
+    until its page arrives (`useLinkStatus`).

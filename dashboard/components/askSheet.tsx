@@ -16,7 +16,8 @@ export function AskSheet({ title, sub, closeHref, children }: { title: string; s
     addEventListener("keydown", esc);
     return () => { cancelAnimationFrame(r); removeEventListener("keydown", esc); };
   });
-  function close() { setOpen(false); setTimeout(() => router.push(closeHref, { scroll: false }), 320); }
+  // the page under the sheet loads while the sheet slides away, not after (click-speed slice 4)
+  function close() { setOpen(false); router.push(closeHref, { scroll: false }); }
   return (
     <>
       <div className={`ag-bg${open ? " open" : ""}`} onClick={close} />

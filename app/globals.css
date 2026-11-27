@@ -1773,3 +1773,8 @@ a.ov-tile:hover { text-decoration: none; border-color: var(--mut2); }
 }
 /* a run whose Claude session is still going (2026-11-27) */
 .claude-live { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 16px; background: var(--acc-soft); border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent); }
+
+/* click-speed slice 4: the link just clicked pulses until its page shows (IntentLink) */
+.link-pending { display: inline-block; flex: none; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: currentColor; opacity: .6; vertical-align: middle; animation: link-pending .7s ease-in-out infinite alternate; }
+@keyframes link-pending { from { opacity: .2; } to { opacity: .8; } }
+@media (prefers-reduced-motion: reduce) { .link-pending { animation: none; } }

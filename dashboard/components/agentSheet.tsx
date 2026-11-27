@@ -109,7 +109,8 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
   });
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 3200); return () => clearTimeout(t); }, [toast]);
 
-  function close() { setOpen(false); setTimeout(() => router.push(closeHref, { scroll: false }), 320); }
+  // the page under the sheet loads while the sheet slides away, not after (click-speed slice 4)
+  function close() { setOpen(false); router.push(closeHref, { scroll: false }); }
   const set = (p: Partial<ReturnType<typeof init>>) => { setF((x) => ({ ...x, ...p })); setConfirm(null); };
   const say = (r: Result) => setToast(r.text);
   // which button is working, so it alone says so (click-speed slice 2)
