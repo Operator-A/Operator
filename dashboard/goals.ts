@@ -1,7 +1,8 @@
 import "server-only";
 // Goals as the Control Room draws them (docs/company-mode.md, slice 2): plain data for
 // components/goals.tsx, built from core/goals.ts. Every number and status comes from code.
-import { agentNames, loadOrg, type Org } from "@/core/org";
+import { agentNames, type Org } from "@/core/org";
+import { orgChartOnce } from "./data";
 import { measureOf, STATUS_WORDS, type GoalStatus, type MeasureDef } from "@/core/goal-rules";
 import { goalsNow, listGoals, ownMeasureDefs, ownerOf, type GoalNow } from "@/core/goals";
 import type { Detail } from "@/core/measures";
@@ -45,6 +46,6 @@ export async function goalsByDept(org: Org | null): Promise<Record<string, GoalV
 
 /** Departments on the chart, for the new-goal form. */
 export async function deptChoices(): Promise<{ id: string; name: string }[]> {
-  const org = await loadOrg().catch(() => null);
+  const org = await orgChartOnce().catch(() => null);
   return org ? org.departments.map((d) => ({ id: d.id, name: d.name })) : [];
 }

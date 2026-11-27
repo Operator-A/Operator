@@ -167,7 +167,13 @@ export interface Floor extends Roster, Counts {
 
 // a run in Claude: only the session's start, end and link (not its result or chain), so lists stay small
 export const RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error, memory_json, claude_fired_at:claude_session->>fired_at, claude_finished_at:claude_session->>finished_at, claude_url:claude_session->>url";
-const toRun = (r: Record<string, unknown>) => ({ ...r, cost_usd: Number(r.cost_usd ?? 0), tokens_in: Number(r.tokens_in ?? 0), tokens_out: Number(r.tokens_out ?? 0) }) as Run;
+/** The org chart, read once per request however many pieces ask for it (the roster, approvals, goals; click-speed slice 3). */
+export const orgChartOnce = cache(() => loadOrg());
+
+/** The roster's runs (click-speed slice 3): up to 1,000 rows on every page, so not each run's memory record (memory_json),
+ *  which only a run's own page shows (getRun reads RUN_COLS). */
+export const ROSTER_RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error, claude_fired_at:claude_session->>fired_at, claude_finished_at:claude_session->>finished_at, claude_url:claude_session->>url";
+const toRun = (r: Record<string, unknown>) => ({ ...r, memory_json: (r.memory_json ?? null), cost_usd: Number(r.cost_usd ?? 0), tokens_in: Number(r.tokens_in ?? 0), tokens_out: Number(r.tokens_out ?? 0) }) as Run;
 
 /** Midnight UTC: the same day boundary withRun uses for daily budgets. */
 export const budgetDayStart = (now = new Date()) => { const d = new Date(now); d.setUTCHours(0, 0, 0, 0); return d; };
@@ -282,10 +288,10 @@ export const getRoster = cache(async (): Promise<Roster> => {
     db().from("agents").select("id, name, model, enabled, daily_budget_usd, role, icon, hue, manual_only, in_org, created_at")
       .then((x) => (x.error ? db().from("agents").select("id, name, model, enabled, daily_budget_usd, role, icon, hue, manual_only, created_at") : x))
       .then((x) => (x.error ? db().from("agents").select("id, name, model, enabled, daily_budget_usd") : x)),
-    db().from("agent_runs").select(RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
+    db().from("agent_runs").select(ROSTER_RUN_COLS).gte("started_at", since).order("started_at", { ascending: false }).limit(1000),
     db().from("agent_defs").select("agent_id, version, spec").eq("active", true),
     db().from("crew_flow").select("flow").eq("active", true).maybeSingle(),
-    loadOrg().catch(() => null),
+    orgChartOnce().catch(() => null),
   ]);
   if (a.error || r.error) return { ...empty, problem: `Supabase: ${(a.error ?? r.error)?.message}` };
   const rows = (a.data ?? []) as (AgentRow & RosterRow)[];
@@ -544,7 +550,7 @@ export async function getApprovals(): Promise<ApprovalsView | null> {
     db().from("policies").select("value_json").eq("key", "approval_expiry_hours").maybeSingle(),
   ]);
   if (ap.error || log.error) return null;
-  const org = await loadOrg().catch(() => null);
+  const org = await orgChartOnce().catch(() => null);
   const items: ApprovalItem[] = await Promise.all(((ap.data ?? []) as unknown as ApRow[]).map(async (r) => {
     const act = (Array.isArray(r.agent_actions) ? r.agent_actions[0] : r.agent_actions) as { status: string; reason: string | null; tool: string; run_id?: string | null } | null;
     const preview = (r.preview ?? {}) as ApprovalItem["preview"];

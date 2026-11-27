@@ -90,3 +90,11 @@ sheets with no loading frame. Slices: 1 the live poll, 2 saves that answer fast,
     "Starting…" and answers as soon as the run's row is logged (`withRun`'s `onStart`), not after the agent's checks
     and memory load. A button with a confirm says it is working after the confirm too. Approve still waits for the
     gateway's own call (Gmail, Shopify, Stripe…) before it answers, so its result, or its failure, shows right there.
+
+12. **The department page's queries stay few** (checked, slice 3). The trust line read each agent's spec with its own
+    query and each agent and action pair's record with two queries one after another: about 27 spec reads and dozens
+    of serial reads per department page in the logs. `trustView` (dashboard/trust.ts) now reads in two rounds whatever
+    the number of agents: specs in one query, and every pair's standing at once (`standingsOf` in core/trust.ts, one
+    approvals read per agent with each action's tool alongside). A department page asks only for its own agents. The
+    roster's up to 1,000 runs leave out each run's memory record (`ROSTER_RUN_COLS`; a run's own page still reads it),
+    the org chart is read once per request (`orgChartOnce`), and the department page reads its spend and goals together.

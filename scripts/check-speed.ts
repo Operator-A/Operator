@@ -6,7 +6,7 @@
 //    say so on the same line: `// refresh-ok: <reason>`.
 // 3. The Control Room has a loading frame (app/(room)/loading.tsx): a click shows it at once, and Next.js
 //    pre-loads dynamic pages up to it.
-// 4-11. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
+// 4-12. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
 //    starts loading on hover, touch or focus (IntentLink). Each rule is below, where it is checked.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -203,6 +203,16 @@ if (!/dimCard\(btn\.current\)/.test(read("dashboard/components/react.tsx"))) pro
 if (!/useOptimistic\(d\.enabled\)/.test(read("dashboard/components/agentSheet.tsx"))) problems.push("dashboard/components/agentSheet.tsx: the duty switch should flip at once (useOptimistic) (rule 11).");
 if (/busy && !confirm/.test(read("dashboard/components/client.tsx"))) problems.push("dashboard/components/client.tsx: ActionButton should say it is working after a confirm too (rule 11).");
 if (!/onStart: markStarted/.test(read("dashboard/actions.ts"))) problems.push("dashboard/actions.ts: Run now should answer once the run is logged (withRun onStart) (rule 11).");
+
+// 12. The department page's queries stay few (slice 3 of the click-speed fix). The trust lines read in two rounds whatever
+//     the number of agents (dashboard/trust.ts: specs in one query, every pair's standing at once through standingsOf),
+//     a department asks only for its own agents, the roster's 1,000 runs leave out each run's memory record, and the
+//     org chart is read once per request (orgChartOnce).
+const tv = read("dashboard/trust.ts").match(/export async function trustView\b[\s\S]*?\n\}/)?.[0] ?? "";
+if (!tv || /\bloadSpec\(|\bstandingOf\(|for \([^)]*\) \{[^}]*await /.test(tv) || !/standingsOf\(/.test(tv)) problems.push("dashboard/trust.ts: trustView should read specs in one query and every standing at once (standingsOf), never one query per agent or pair (rule 12).");
+if (!/trustView\(ids\)/.test(read("app/(room)/dept/[id]/page.tsx"))) problems.push("app/(room)/dept/[id]/page.tsx: ask trustView for this department's agents only (rule 12).");
+if (!/select\(ROSTER_RUN_COLS\)/.test(dataSrc) || /ROSTER_RUN_COLS = "[^"]*memory_json/.test(dataSrc)) problems.push("dashboard/data.ts: getRoster should read its runs with ROSTER_RUN_COLS, without memory_json (rule 12).");
+if (/\bloadOrg\(\)\.catch/.test(dataSrc)) problems.push("dashboard/data.ts: read the org chart with orgChartOnce(), once per request (rule 12).");
 
 if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
 console.log("check:speed ok");
