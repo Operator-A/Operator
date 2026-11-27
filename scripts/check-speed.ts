@@ -224,6 +224,8 @@ const dept = read("app/(room)/dept/[id]/page.tsx");
 if (!SUSPENDED("<Pane\\b").test(dept) || !SUSPENDED("<AgentSheetFor\\b").test(dept) || !SUSPENDED("<AgentSheetFor\\b").test(home)) problems.push("a department's pane and an agent's sheet (dept and Company pages) should stream in behind <Suspense> (rule 13).");
 for (const f of ["agentSheet", "askSheet", "deptSettings", "newAgentSheet"].map((n) => `dashboard/components/${n}.tsx`)) if (/setTimeout\(\(\) => router\.push/.test(read(f))) problems.push(`${f}: closing waits before loading the page under it; push at once (rule 13).`);
 if (/\bgetRoster\(/.test(read("app/(room)/agents/[id]/page.tsx"))) problems.push("app/(room)/agents/[id]/page.tsx: the hop to an agent's sheet should read only the org chart (orgChartOnce), not the roster (rule 13).");
+// A department's loading frame is the page's own frame (.dp), so phones keep the floating header while the next one loads.
+if (!/DeptSkel/.test(read("app/(room)/dept/[id]/loading.tsx")) || !/DeptSkel/.test(read("app/(room)/loading.tsx"))) problems.push("app/(room)/dept/[id]/loading.tsx and the Company frame in app/(room)/loading.tsx should use DeptSkel, so phones keep the department header while loading (rule 13).");
 if (!/useLinkStatus\(\)/.test(read("dashboard/components/intentLink.tsx"))) problems.push("dashboard/components/intentLink.tsx: the link just clicked should show it is loading (useLinkStatus) (rule 13).");
 
 // 14. Fewer, shorter cold starts and less to download (slice 5 of the click-speed fix). Every Control Room page has the
