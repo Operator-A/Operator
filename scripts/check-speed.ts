@@ -6,12 +6,13 @@
 //    say so on the same line: `// refresh-ok: <reason>`.
 // 3. The Control Room has a loading frame (app/(room)/loading.tsx): a click shows it at once, and Next.js
 //    pre-loads dynamic pages up to it.
-// 4-9. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
+// 4-10. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
 //    starts loading on hover, touch or focus (IntentLink). Each rule is below, where it is checked.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { statusMap } from "../core/mcp-rules";
+import { liveKey, runOfPath, shouldRefresh } from "../dashboard/live-rules";
 
 // actions that change nothing the page shows: they answer with text only
 const READ_ONLY = new Set([
@@ -168,6 +169,27 @@ for (const f of ["app", "dashboard"].filter(existsSync).flatMap(walk).filter((x)
   if (/\bgetFloor\(\)/.test(readFileSync(f, "utf8"))) problems.push(`${f}: reads the whole floor; ask for only the pieces this page shows (getRoster, getCrewFloor, getTz, getCounts, getHealth, getOrgSwitch; card 304).`);
 }
 if (!/prefetch=\{warm \? true : null\}/.test(read("dashboard/components/intentLink.tsx"))) problems.push("dashboard/components/intentLink.tsx: IntentLink should pre-load the full page once warm and only to the loading frame before (card 301).");
+
+// 10. No timer renders the whole app (slice 1 of the click-speed fix): while a run is live the frame asks /live which runs are
+//     live and renders again only when that set changes (or on a live run's own page). A render on every tick re-ran the
+//     frame's 20+ queries every 4 s, threw away every pre-loaded page, and made any button click wait behind it.
+export function timerRefreshes(src: string): number[] {
+  return src.split("\n").flatMap((line, i) => (/\bsetInterval\(/.test(line) && /\brouter\.refresh\(\)/.test(line) ? [i + 1] : []));
+}
+assert.deepEqual(timerRefreshes(`const h = setInterval(() => router.refresh(), 4000); // refresh-ok: polls\nconst g = setInterval(tick, 4000);`), [1]);
+assert.equal(liveKey(["b", "a", "b"]), "a,b");
+assert.equal(shouldRefresh({ shown: "a", got: "a", lastAsked: null, watching: false }), false);
+assert.equal(shouldRefresh({ shown: "a", got: "", lastAsked: null, watching: false }), true);
+assert.equal(shouldRefresh({ shown: "a", got: "", lastAsked: "", watching: false }), false);
+assert.equal(shouldRefresh({ shown: "a", got: "a", lastAsked: "a", watching: true }), true);
+assert.equal(runOfPath("/runs/982823c3-a066-461d-9a63-d770274d7c6d"), "982823c3-a066-461d-9a63-d770274d7c6d");
+assert.equal(runOfPath("/runs"), null);
+for (const f of ["app", "dashboard", "ee"].filter(existsSync).flatMap(walk)) {
+  for (const n of timerRefreshes(readFileSync(f, "utf8"))) problems.push(`${f}:${n}: router.refresh() on a timer renders the whole app every tick. Poll a small route and refresh only when something changed (rule 10).`);
+}
+const lr = read("dashboard/components/client.tsx").match(/export function LiveRefresher\b[\s\S]*?\n\}/)?.[0] ?? "";
+if (!/fetch\("\/live"/.test(lr) || !/shouldRefresh\(/.test(lr)) problems.push("dashboard/components/client.tsx: LiveRefresher should ask /live and refresh only when the live runs change (rule 10).");
+if (!existsSync("app/(room)/live/route.ts")) problems.push("app/(room)/live/route.ts is missing: LiveRefresher has nothing small to poll (rule 10).");
 
 if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
 console.log("check:speed ok");

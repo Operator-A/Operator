@@ -7,6 +7,7 @@ import type { ActionResult } from "../actions";
 import { SEEN_COOKIE, parseSeen } from "../seen";
 import { Icon } from "./Icon";
 import { IntentLink } from "./intentLink";
+import { LIVE_POLL_MS, liveKey, runOfPath, shouldRefresh } from "../live-rules";
 
 export function ThemeToggle({ initial, wide }: { initial: "light" | "dark"; wide?: boolean }) {
   const [theme, setTheme] = useState(initial);
@@ -255,14 +256,22 @@ export function DryRun({ action, compact }: { action: Act; compact?: boolean }) 
 export interface RecentRun { id: string; name: string; status: string; live: boolean }
 
 /**
- * Keeps the floor current while an agent works: refreshes the server data every few seconds while any
- * run is live, and says so when one finishes. Mounted once in the room layout, so it follows the owner around.
+ * Keeps the floor current while an agent works, and says so when a run finishes. Mounted once in the room layout,
+ * so it follows the owner around. While a run is live it asks /live which runs are live now (one small query) and
+ * renders the page again only when that set changes, or every tick on a live run's own page, whose steps arrive as
+ * it runs (slice 1 of the click-speed fix, docs/speed.md rule 10). `watch` keeps the old every-tick render for a
+ * page that shows one run's progress outside the room (setup's first job).
  */
-export function LiveRefresher({ runs }: { runs: RecentRun[] }) {
+export function LiveRefresher({ runs, watch }: { runs: RecentRun[]; watch?: boolean }) {
   const router = useRouter();
+  const path = usePathname();
   const anyLive = runs.some((r) => r.live);
+  const shown = liveKey(runs.filter((r) => r.live).map((r) => r.id));
   const [seen, setSeen] = useState(runs);
   const [done, setDone] = useState<RecentRun | null>(null);
+  // the latest values for the timer, without restarting it on every render
+  const now = useRef({ shown, path, watch: !!watch });
+  useEffect(() => { now.current = { shown, path, watch: !!watch }; }, [shown, path, watch]);
   // compare with the last render's runs (React's "adjust state on prop change" pattern)
   if (seen !== runs) {
     const finished = runs.find((r) => !r.live && seen.some((p) => p.id === r.id && p.live));
@@ -271,7 +280,26 @@ export function LiveRefresher({ runs }: { runs: RecentRun[] }) {
   }
   useEffect(() => {
     if (!anyLive) return;
-    const h = setInterval(() => { if (document.visibilityState === "visible") router.refresh(); }, 4000); // refresh-ok: polls while a run is live, no action involved
+    let busy = false, lastAsked: string | null = null;
+    const tick = async () => {
+      if (busy || document.visibilityState !== "visible") return;
+      const { shown, path, watch } = now.current;
+      const run = runOfPath(path);
+      const watching = watch || (!!run && shown.split(",").includes(run));
+      busy = true;
+      try {
+        let got = shown;
+        if (!watching) {
+          const res = await fetch("/live", { cache: "no-store" });
+          if (!res.ok) return;
+          got = liveKey(((await res.json()) as { live?: string[] }).live ?? []);
+        }
+        if (!shouldRefresh({ shown, got, lastAsked, watching })) return;
+        lastAsked = got;
+        router.refresh(); // refresh-ok: a run started or finished (or this page shows a live run's steps), seen by the /live poll
+      } catch { /* offline for a moment: the next tick tries again */ } finally { busy = false; }
+    };
+    const h = setInterval(tick, LIVE_POLL_MS);
     return () => clearInterval(h);
   }, [anyLive, router]);
   useEffect(() => { if (!done) return; const h = setTimeout(() => setDone(null), 10000); return () => clearTimeout(h); }, [done]);

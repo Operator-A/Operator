@@ -67,3 +67,19 @@ first, each page reads only what it shows).
    show all of it. Settings asks only for the org switch, People only for the time zone, Runs and Approvals for the
    crew, Connections and the builder for `getCrewFloor` (crew, tools, time zone). On a client click the frame
    (app/(room)/layout.tsx) is not rendered again, so a click costs only the page's own pieces.
+
+## Still 3 to 5 seconds (Nov 27): what we measured, and the fix in five slices
+
+Timed in the owner's signed-in browser and in the Supabase and Vercel logs. Warm pages took 0.3 s (Settings,
+Connections) to 1.9 s (a department page). The 3 to 5 s clicks came from four things on top of that: about 60 queries
+per department page sent into Supabase's API pool of 10 connections (1 ms queries queued 3 to 5 s, about 7 times a
+day); a timer that rendered the whole app every 4 s while a run was live, with every button click queued behind it;
+saves that render every page (`revalidatePath("/", "layout")`) and wipe the browser's pre-loaded pages; and tabs and
+sheets with no loading frame. Slices: 1 the live poll, 2 saves that answer fast, 3 the department page's queries,
+4 something on screen at every click, 5 fewer cold starts.
+
+10. **No timer renders the whole app** (checked, slice 1). While a run is live, `LiveRefresher`
+    (dashboard/components/client.tsx) asks `/live` (app/(room)/live/route.ts: one query, the live run ids) every 4 s
+    and calls `router.refresh()` only when that set changes, a run started or finished (dashboard/live-rules.ts), or
+    on a live run's own page, whose steps arrive as it runs. Setup's first job keeps a render on every tick (`watch`).
+    check:speed refuses `router.refresh()` inside a `setInterval`.

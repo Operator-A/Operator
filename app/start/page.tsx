@@ -179,7 +179,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
             )}
             {wrap.view && wrap.screen !== "credits" && <FirstJobCard v={wrap.view} owner={owner} look="card wg-glass" />}
             {wrap.screen === "working" && wrap.view && wrap.view.phase !== "offer" && wrap.view.run && (
-              <LiveRefresher runs={[{ id: wrap.view.run.id, name: wrap.view.name, status: wrap.view.run.status, live: wrap.view.run.status === "running" }]} />
+              <LiveRefresher watch runs={[{ id: wrap.view.run.id, name: wrap.view.name, status: wrap.view.run.status, live: wrap.view.run.status === "running" }]} />
             )}
             {(wrap.screen === "working" || wrap.screen === "waits") && (
               <div className="row" style={{ justifyContent: "center" }}>
