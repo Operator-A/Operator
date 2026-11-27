@@ -25,8 +25,7 @@ import { TOOLS } from "@/core/tools/catalog";
 // works and what the department spends on AI. Read only since department pages slice 6: a change, pause,
 // done or drop is asked for in the department's chat and comes back as a change card.
 
-// a measure reads Shopify or Mercury when the page opens
-export const maxDuration = 120;
+// a measure reads Shopify or Mercury when the page opens; the Control Room's 300 s limit (app/(room)/layout.tsx) covers it
 
 const dayIn = (tz: string) => (iso: string) => new Date(iso.length === 10 ? `${iso}T12:00:00Z` : iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: iso.length === 10 ? "UTC" : tz });
 const usd = (n: number) => `$${n.toFixed(2)}`;

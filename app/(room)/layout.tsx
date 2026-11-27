@@ -20,8 +20,10 @@ import { companyHref } from "@/dashboard/company-rules";
 import { ACTIVITY_HREF } from "@/dashboard/activity-rules";
 import { alertCount } from "@/core/status";
 
-// a message to Avery (the Company page) or to a head (a department page) is a run on that page
-export const maxDuration = 120;
+// a message to Avery (the Company page) or to a head (a department page) is a run on that page. Every Control Room page
+// has the same limit (click-speed slice 5): Vercel groups pages with the same settings into one function, so a click
+// from one page to another lands on a copy that is already warm instead of starting a new one.
+export const maxDuration = 300;
 
 export default async function RoomLayout({ children }: { children: React.ReactNode }) {
   // one round for everything the frame shows (card 202, docs/speed.md); a bad session still redirects before anything is drawn

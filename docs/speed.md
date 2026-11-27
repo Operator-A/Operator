@@ -107,3 +107,13 @@ sheets with no loading frame. Slices: 1 the live poll, 2 saves that answer fast,
     A sheet closes and its page loads at the same moment instead of 320 ms later. `/agents/<id>` reads only the org
     chart before it redirects, not the roster and its runs. The `IntentLink` just clicked shows a small pulsing dot
     until its page arrives (`useLinkStatus`).
+
+14. **Fewer, shorter cold starts and less to download** (checked, slice 5). Control Room pages had two time limits
+    (120 s and 300 s); Vercel groups pages by their settings, so moving between the groups could land on a copy that
+    had to start first. Every room page now shares the layout's 300 s. `core/mcp-rules.ts`, which some client
+    components import for constants, hashed tool fingerprints with `node:crypto`, and the browser polyfills for it
+    added a 492 KB (147 KB compressed) chunk to Connections and setup. It now uses `core/sha256.ts`, plain TypeScript
+    that gives node's exact bytes (check:mcp compares them), so stored fingerprints don't change.
+    Left as is: tracing (`instrumentation.node.ts`) loads on every start, since a Vercel trace drain may depend on it;
+    and in the hosted edition, a business with no Claude key of its own still sums its credit ledger on each home page
+    load (`ee/credits.ts`), which a running balance would replace.

@@ -1,5 +1,7 @@
 // MCP connection rules (docs/company-mode.md, slice 6): `npm run check:mcp`. Pure: no network.
 import { BRAINS } from "../core/proposal-rules";
+import { createHash } from "node:crypto";
+import { base64url, sha256 } from "../core/sha256";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { migration } from "./lib/schema";
@@ -165,6 +167,11 @@ for (const srv of Object.values(MCP_SERVERS) as McpServer[]) {
   assert.ok(srv.scopes.length && srv.signInHint, srv.id);
 }
 const schema = { type: "object", properties: { id: { type: "string" }, fields: { type: "array" } } };
+// click-speed slice 5: the fingerprint's SHA-256 is plain TypeScript (core/sha256.ts), so the browser bundle carries no
+// node:crypto polyfill; it must give node's exact bytes, or every stored fingerprint would read as a changed tool
+for (const t of ["", "a", "abc", "é漢字🙂", "x".repeat(55), "x".repeat(56), "x".repeat(64), "x".repeat(1000), JSON.stringify({ properties: { id: { type: "string" } } })]) {
+  assert.equal(base64url(sha256(t)), createHash("sha256").update(t).digest("base64url"), `sha256 matches node:crypto (${t.length} chars)`);
+}
 assert.equal(toolFingerprint({ name: "get_list", inputSchema: schema }), toolFingerprint({ name: "get_list", inputSchema: { properties: { fields: { type: "array" }, id: { type: "string" } }, type: "object" } }), "key order doesn't matter");
 assert.notEqual(toolFingerprint({ name: "get_list", inputSchema: schema }), toolFingerprint({ name: "get_list", inputSchema: { ...schema, required: ["id"] } }));
 const listed = listedTools({ tools: [{ name: "get_list", inputSchema: schema }, { name: "get_lists", inputSchema: {} }, { name: "create_campaign", inputSchema: {} }], nextCursor: "p2" });
