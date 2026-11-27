@@ -101,7 +101,7 @@ async function startRun(agentId: string, name: string): Promise<ActionResult> {
   const started = new Promise<null>((resolve) => { markStarted = () => resolve(null); });
   // the run outlives this request, so it carries the org itself rather than reading the cookie later
   const org = await orgId();
-  const run = withOrg(org, () => withRun(agentId, "manual", (runId, memory) => { markStarted(); return jobOf(agentId)({ runId, memory }); }))
+  const run = withOrg(org, () => withRun(agentId, "manual", (runId, memory) => jobOf(agentId)({ runId, memory }), { onStart: markStarted }))
     .then((res) => ({ res }), (err: unknown) => { console.error(`[control-room] ${agentId} run failed`, err); return { err }; });
   after(run);
   const first = await Promise.race([started, run]);

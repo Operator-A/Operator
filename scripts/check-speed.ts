@@ -6,7 +6,7 @@
 //    say so on the same line: `// refresh-ok: <reason>`.
 // 3. The Control Room has a loading frame (app/(room)/loading.tsx): a click shows it at once, and Next.js
 //    pre-loads dynamic pages up to it.
-// 4-10. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
+// 4-11. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
 //    starts loading on hover, touch or focus (IntentLink). Each rule is below, where it is checked.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -190,6 +190,19 @@ for (const f of ["app", "dashboard", "ee"].filter(existsSync).flatMap(walk)) {
 const lr = read("dashboard/components/client.tsx").match(/export function LiveRefresher\b[\s\S]*?\n\}/)?.[0] ?? "";
 if (!/fetch\("\/live"/.test(lr) || !/shouldRefresh\(/.test(lr)) problems.push("dashboard/components/client.tsx: LiveRefresher should ask /live and refresh only when the live runs change (rule 10).");
 if (!existsSync("app/(room)/live/route.ts")) problems.push("app/(room)/live/route.ts is missing: LiveRefresher has nothing small to poll (rule 10).");
+
+// 11. A tap shows at once (slice 2 of the click-speed fix): an approval card fades the moment Approve or Reject is pressed
+//     (ActionButton `dim`, RejectButton) and comes back if refused; the agent sheet's duty switch flips at once
+//     (useOptimistic); a button says it is working after a confirm too; Run now answers once the run is logged
+//     (withRun's onStart), not after the agent's memory and checks load.
+const ab = read("dashboard/components/approvalBits.tsx");
+const approves = [...ab.matchAll(/<ActionButton\b[^>]*action=\{approve\.bind/g)].map((m) => m[0]);
+if (!approves.length || approves.some((a) => !/\bdim\b/.test(a))) problems.push("dashboard/components/approvalBits.tsx: every Approve button should fade its card at once (ActionButton dim) (rule 11).");
+if ((ab.match(/data-dim-card/g) ?? []).length < 3) problems.push("dashboard/components/approvalBits.tsx: each approval card look should carry data-dim-card so Approve and Reject can fade it (rule 11).");
+if (!/dimCard\(btn\.current\)/.test(read("dashboard/components/react.tsx"))) problems.push("dashboard/components/react.tsx: Reject should fade its card at once (dimCard) (rule 11).");
+if (!/useOptimistic\(d\.enabled\)/.test(read("dashboard/components/agentSheet.tsx"))) problems.push("dashboard/components/agentSheet.tsx: the duty switch should flip at once (useOptimistic) (rule 11).");
+if (/busy && !confirm/.test(read("dashboard/components/client.tsx"))) problems.push("dashboard/components/client.tsx: ActionButton should say it is working after a confirm too (rule 11).");
+if (!/onStart: markStarted/.test(read("dashboard/actions.ts"))) problems.push("dashboard/actions.ts: Run now should answer once the run is logged (withRun onStart) (rule 11).");
 
 if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
 console.log("check:speed ok");

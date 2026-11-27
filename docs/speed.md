@@ -83,3 +83,10 @@ sheets with no loading frame. Slices: 1 the live poll, 2 saves that answer fast,
     and calls `router.refresh()` only when that set changes, a run started or finished (dashboard/live-rules.ts), or
     on a live run's own page, whose steps arrive as it runs. Setup's first job keeps a render on every tick (`watch`).
     check:speed refuses `router.refresh()` inside a `setInterval`.
+
+11. **A tap shows at once** (checked, slice 2). An approval card fades and stops taking taps the moment Approve or
+    Reject is pressed (`ActionButton dim`, `RejectButton`, `dimCard` in dashboard/components/client.tsx) and comes
+    back if the action refuses. The agent sheet's duty switch flips at once (`useOptimistic`), and Run now says
+    "Starting…" and answers as soon as the run's row is logged (`withRun`'s `onStart`), not after the agent's checks
+    and memory load. A button with a confirm says it is working after the confirm too. Approve still waits for the
+    gateway's own call (Gmail, Shopify, Stripe…) before it answers, so its result, or its failure, shows right there.

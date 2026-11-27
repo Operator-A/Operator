@@ -261,7 +261,7 @@ export function ApprovalCard({ i, view, byId, tz, rules, look = "page", chatHref
   const name = a?.name ?? view?.names[i.agent_id] ?? i.agent_id;
   const buttons = (
     <div className="dp-btns">
-      <ActionButton className="dp-btn go" action={approve.bind(null, i.id)}>Approve</ActionButton>
+      <ActionButton className="dp-btn go" dim busyLabel="Approving…" action={approve.bind(null, i.id)}>Approve</ActionButton>
       <RejectButton reject={reject.bind(null, i.id)} agentName={name} rules={rules[i.agent_id] ?? NO_RULES} label="Not this" className="dp-btn" />
     </div>
   );
@@ -272,7 +272,7 @@ export function ApprovalCard({ i, view, byId, tz, rules, look = "page", chatHref
     </>
   );
   if (look === "chat") return (
-    <div className="dp-glass dp-card">
+    <div className="dp-glass dp-card" data-dim-card>
       <span className="dp-card-k amber">● Waiting for your OK</span>
       <h4>{i.title}</h4>
       <div className="dp-draft"><Change i={i} /></div>
@@ -282,7 +282,7 @@ export function ApprovalCard({ i, view, byId, tz, rules, look = "page", chatHref
     </div>
   );
   if (look === "tab") return (
-    <div className="dp-ap">
+    <div className="dp-ap" data-dim-card>
       <div className="dp-ap-h"><b>{name}</b>{a?.role ? `${a.role} · ` : ""}{when(i.created_at, tz)}<span className="kind">{KIND_LABEL[i.tool] ?? "Mercury change"}</span></div>
       <h4>{i.title}</h4>
       <div className="dp-draft"><Change i={i} /></div>
@@ -292,7 +292,7 @@ export function ApprovalCard({ i, view, byId, tz, rules, look = "page", chatHref
     </div>
   );
   return (
-    <div className="card" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22, padding: 22 }}>
+    <div className="card" data-dim-card style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22, padding: 22 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="row wrap">{a && <Avatar a={a} size={32} />}<span style={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>{name} · {KIND_LABEL[i.tool] ?? "Mercury change"}</span>{view && <DeptTag i={i} view={view} />}<span className="muted" style={{ fontSize: 12 }}>{when(i.created_at, tz)}</span></div>
         <span style={{ fontSize: 17, fontWeight: 600 }}>{i.title}</span>
@@ -300,7 +300,7 @@ export function ApprovalCard({ i, view, byId, tz, rules, look = "page", chatHref
         {view && <LeadBits i={i} view={view} tz={tz} />}
         {i.brain_note && <span className="sub">{i.brain_note}</span>}
         <div className="row" style={{ gap: 8, marginTop: 6 }}>
-          <ActionButton className="btn primary" action={approve.bind(null, i.id)}>Approve</ActionButton>
+          <ActionButton className="btn primary" dim busyLabel="Approving…" action={approve.bind(null, i.id)}>Approve</ActionButton>
           <RejectButton reject={reject.bind(null, i.id)} agentName={name} rules={rules[i.agent_id] ?? NO_RULES} />
         </div>
       </div>

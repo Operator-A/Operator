@@ -1,9 +1,9 @@
 "use client";
 // Teach by reacting (docs/company-mode.md, slice 1): Good / Not this on a run or one item of it, and the
 // rule picker that Reject on an approval card shares. The owner's words save straight away as a rule.
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import type { ActionResult } from "../actions";
-import { Toast } from "./client";
+import { Toast, dimCard } from "./client";
 import { REJECT_KINDS, REJECT_WORDS, type RejectKind } from "@/core/trust-rules";
 
 const MAX = 280;
@@ -121,15 +121,22 @@ export function RejectButton({ reject, agentName, rules, label = "Reject", class
   const [kind, setKind] = useState<RejectKind | null>(null);
   const [toast, setToast] = useState<ActionResult | null>(null);
   const [busy, start] = useTransition();
-  const go = () => start(async () => {
-    let r: ActionResult;
+  const btn = useRef<HTMLButtonElement>(null);
+  // the box closes and the card fades the moment Reject is pressed (click-speed slice 2); the card comes back if refused
+  const go = () => {
     if (!kind) return;
-    try { r = await reject(draft.text, draft.scope, draft.keep, draft.replaces, kind); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
-    setOpen(false); setDraft(blank); setKind(null); setToast(r);
-  });
+    setOpen(false);
+    const card = dimCard(btn.current);
+    start(async () => {
+      let r: ActionResult;
+      try { r = await reject(draft.text, draft.scope, draft.keep, draft.replaces, kind); } catch (e) { r = { ok: false, text: e instanceof Error ? e.message : "Something went wrong." }; }
+      if (r.ok) { setDraft(blank); setKind(null); } else card?.restore();
+      setToast(r);
+    });
+  };
   return (
     <>
-      <button className={className} disabled={busy} onClick={() => setOpen(true)}>{busy ? "Working…" : label}</button>
+      <button ref={btn} className={className} disabled={busy} onClick={() => setOpen(true)}>{busy ? "Rejecting…" : label}</button>
       {open && (
         <div className="modal-bg" onClick={busy ? undefined : () => setOpen(false)}>
           <div className="modal" role="dialog" aria-modal="true" aria-label="Reject" onClick={(e) => e.stopPropagation()}>
