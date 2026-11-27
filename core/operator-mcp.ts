@@ -39,7 +39,7 @@ import { orgTz } from "@/core/tz";
 import { latestReports } from "@/core/reports";
 import { COMPANY_SCOPE } from "@/core/report-rules";
 import { flowWithStarts, readStarts, readStored, startsToday, startsWords } from "@/core/draft-starts-rules";
-import { LIMITS, answerText, draftActions, draftTools, hashesMatch, newToken, nextWindow, staleRead, tokenParts, toolList, type OpTool, type ToolAnswer } from "@/core/operator-mcp-rules";
+import { LIMITS, answerText, draftActions, draftTools, hashesMatch, newToken, nextWindow, readAccess, refreshProblem, signAccess, staleRead, tokenParts, toolList, type OpTool, type ToolAnswer } from "@/core/operator-mcp-rules";
 
 // ---- Grants
 
@@ -79,12 +79,19 @@ export async function startGrant(m: { id: string }, orgId: string, client: { nam
 
 export type TokenAnswer = { ok: true; body: { access_token: string; token_type: "Bearer"; expires_in: number; refresh_token: string; scope: string } } | { ok: false; error: "invalid_grant" | "invalid_request"; text: string };
 
-/** Issues a fresh access and refresh token on a grant (rotating the refresh token). */
+/**
+ * A sign-in code's first tokens: a signed one-hour access token and the connection's refresh token. Only the
+ * refresh token's hash is kept; access tokens are signed, so each session renewing gets its own and none
+ * signs another out.
+ */
 async function issue(orgId: string, g: GrantRow): Promise<TokenAnswer> {
-  const a = newToken("a", orgId, g.id), r = newToken("r", orgId, g.id);
-  const { error } = await db().from("mcp_grants").update({ code_hash: null, code_challenge: null, code_expires_at: null, access_hash: a.hash, access_expires_at: iso(Date.now() + LIMITS.accessSeconds * 1000), refresh_hash: r.hash, refresh_expires_at: iso(Date.now() + LIMITS.refreshDays * 864e5) }).eq("id", g.id);
+  const exp = Date.now() + LIMITS.accessSeconds * 1000;
+  const access = signAccess(orgId, g.id, exp, clientSecret()), r = newToken("r", orgId, g.id);
+  // access_hash only marks the connection as finished (Settings > Connected apps lists those): a hash no token has,
+  // as calls check the signature instead
+  const { error } = await db().from("mcp_grants").update({ code_hash: null, code_challenge: null, code_expires_at: null, access_hash: newToken("a", orgId, g.id).hash, access_expires_at: iso(exp), refresh_hash: r.hash, refresh_expires_at: iso(Date.now() + LIMITS.refreshDays * 864e5) }).eq("id", g.id);
   if (error) throw new Error(error.message);
-  return { ok: true, body: { access_token: a.token, token_type: "Bearer", expires_in: LIMITS.accessSeconds, refresh_token: r.token, scope: "operator" } };
+  return { ok: true, body: { access_token: access, token_type: "Bearer", expires_in: LIMITS.accessSeconds, refresh_token: r.token, scope: "operator" } };
 }
 
 /**
@@ -109,15 +116,23 @@ export async function redeemCode(code: string, redirectUri: string, pkce: (chall
   });
 }
 
-/** The token endpoint's refresh_token grant: a new pair, the old refresh token no longer works. */
+/**
+ * The token endpoint's refresh_token grant: a new signed access token, and the same refresh token back with its
+ * expiry moved on (refreshProblem says why it isn't rotated). Other sessions' access tokens keep working.
+ */
 export async function refresh(token: string): Promise<TokenAnswer> {
   const p = tokenParts(token, "r");
-  if (!p) return { ok: false, error: "invalid_grant", text: "That refresh token isn't one of ours." };
+  if (!p) { console.warn("[oauth] refresh refused: not a refresh token"); return { ok: false, error: "invalid_grant", text: "That refresh token isn't one of ours." }; }
   return withOrg(p.orgId, async () => {
     const g = await grantById(p.grantId);
-    if (!g || g.revoked_at || !hashesMatch(g.refresh_hash, p.hash) || !live(g.refresh_expires_at)) return { ok: false, error: "invalid_grant", text: "That connection ended. Connect OPERATOR again in Claude." };
-    if (!(await memberById(g.member_id))) return { ok: false, error: "invalid_grant", text: "That person isn't a member any more." };
-    return issue(p.orgId, g);
+    const why = refreshProblem(g, p.hash);
+    if (why) { console.warn(`[oauth] refresh refused on grant ${p.grantId}: ${why}`); return { ok: false, error: "invalid_grant", text: "That connection ended. Connect OPERATOR again in Claude." }; }
+    if (!(await memberById(g!.member_id))) return { ok: false, error: "invalid_grant", text: "That person isn't a member any more." };
+    const exp = Date.now() + LIMITS.accessSeconds * 1000;
+    const access = signAccess(p.orgId, g!.id, exp, clientSecret());
+    const { error } = await db().from("mcp_grants").update({ access_expires_at: iso(exp), refresh_expires_at: iso(Date.now() + LIMITS.refreshDays * 864e5) }).eq("id", g!.id);
+    if (error) throw new Error(error.message);
+    return { ok: true, body: { access_token: access, token_type: "Bearer", expires_in: LIMITS.accessSeconds, refresh_token: token, scope: "operator" } };
   });
 }
 
@@ -130,11 +145,15 @@ export type Verified = { ok: true; caller: Caller } | { ok: false; status: 401 |
  * Runs inside the token's org; the caller then runs its work in withOrg(caller.orgId).
  */
 export async function verifyAccess(token: string | null): Promise<Verified> {
-  const p = tokenParts(token, "a");
-  if (!p) return { ok: false, status: 401, text: "Sign in to OPERATOR first." };
+  // a signed token (opa2); a one-hour opa1 token from before 2026-11-27 still works against its stored hash
+  const signed = readAccess(token, clientSecret());
+  const old = signed ? null : tokenParts(token, "a");
+  const p = signed ?? old;
+  if (!p) return { ok: false, status: 401, text: token ? "This sign-in ended or expired." : "Sign in to OPERATOR first." };
   return withOrg(p.orgId, async () => {
     const g = await grantById(p.grantId).catch(() => null);
-    if (!g || g.revoked_at || !hashesMatch(g.access_hash, p.hash) || !live(g.access_expires_at)) return { ok: false, status: 401, text: "This sign-in ended or expired." } as const;
+    if (!g || g.revoked_at || !g.refresh_hash) return { ok: false, status: 401, text: "This sign-in ended or expired." } as const;
+    if (old && (!hashesMatch(g.access_hash, old.hash) || !live(g.access_expires_at))) return { ok: false, status: 401, text: "This sign-in ended or expired." } as const;
     const m = await memberById(g.member_id);
     if (!m) return { ok: false, status: 401, text: "That person isn't a member of this business any more." } as const;
     const w = nextWindow(g.window_start, g.window_calls, Date.now());

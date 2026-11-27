@@ -1,6 +1,7 @@
 // Agent and run status in plain words, as the design names them.
 import type { CrewMember } from "./crew";
 import type { AgentRow, Run, RunStatus } from "./data";
+import { claudeRunning } from "@/core/routine-rules";
 
 export interface Look { label: string; dot: string; bg: string; fg: string; pulse?: boolean }
 
@@ -10,6 +11,12 @@ export const RUN_LOOK: Record<RunStatus, Look> = {
   skipped: { label: "Skipped", dot: "var(--mut2)", bg: "var(--soft)", fg: "var(--ink2)" },
   failed: { label: "Failed", dot: "var(--red)", bg: "var(--red-soft)", fg: "var(--red-ink)" },
 };
+
+/** A run whose Claude session is still going (2026-11-27): the row says ok, but no result has come back yet. */
+export const CLAUDE_LOOK: Look = { label: "Running in Claude", dot: "var(--acc)", bg: "var(--acc-soft)", fg: "var(--acc-ink)", pulse: true };
+export const inClaude = (r: Pick<Run, "claude_fired_at" | "claude_finished_at">, now = Date.now()) => claudeRunning({ fired_at: r.claude_fired_at, finished_at: r.claude_finished_at }, now);
+/** How a run looks: its status, or running in Claude while its session hasn't posted a result. */
+export const runLook = (r: Run, now = Date.now()): Look => (inClaude(r, now) ? CLAUDE_LOOK : RUN_LOOK[r.status]);
 
 export type AgentState = "missing" | "running" | "paused" | "over" | "manual" | "active";
 

@@ -41,8 +41,9 @@ the place people decide.
    proxy sends the person to sign in first and back after.
 4. The consent page names the app, the business, the person and their role, lists what the app can
    read and what it can never do. Allow returns to Claude with a five-minute sign-in code.
-5. Claude trades the code (with its PKCE verifier) for a one-hour access token and a 30-day refresh
-   token, and calls the tools.
+5. Claude trades the code (with its PKCE verifier) for a one-hour access token and a refresh token, and
+   calls the tools. Every chat, session and routine of the person shares this one connection, each
+   renewing on its own: a renewal gives that session its own access token and never signs another out.
 
 ### Sign-in (OAuth 2.1)
 
@@ -52,10 +53,15 @@ the place people decide.
 | Sign-in metadata (RFC 8414) | `/.well-known/oauth-authorization-server`, rewritten to `/api/oauth/meta/server` | Endpoints, S256 only, public clients only. |
 | Registration (RFC 7591) | `POST /api/oauth/register` | Nothing stored: the client id is the registration (name, redirect addresses), signed with `SESSION_SECRET`. Redirects must be https, or http on localhost. |
 | Consent | `/oauth/authorize` (page) | Signed-in members only. An unknown app or an unregistered redirect is shown as an error, never redirected to. |
-| Token | `POST /api/oauth/token` | `authorization_code` (PKCE checked against the stored challenge, redirect must match) and `refresh_token` (rotated). A code used twice revokes its grant. |
+| Token | `POST /api/oauth/token` | `authorization_code` (PKCE checked against the stored challenge, redirect must match) and `refresh_token` (not rotated: the same refresh token comes back and its 30 days start again, so a copy held by another session keeps working; it ends on Disconnect, when the member leaves, or after 30 days unused). A code used twice revokes its grant. |
 
-Tokens look like `op<c|a|r>1.<org id>.<grant id>.<secret>`. The org and grant say where to look; only
-`sha256` of the secret is stored in `mcp_grants`, so a database row signs nobody in. `/.well-known/` is
+Codes and refresh tokens look like `op<c|r>1.<org id>.<grant id>.<secret>`. The org and grant say where to
+look; only `sha256` of the secret is stored in `mcp_grants`, so a database row signs nobody in. Access
+tokens look like `opa2.<org id>.<grant id>.<expiry>.<signature>`, signed with a key derived from
+`SESSION_SECRET`, and nothing of them is stored: each call checks the signature and the hour, then the grant
+(not revoked) and the member, as before. (Until 2026-11-27 an access token sat in one slot on the grant and
+the refresh token rotated, so a renewal by one Claude session signed out every other one, and a routine's
+`finish_run` was refused.) `/.well-known/` is
 outside the Control Room's sign-in (`proxy.ts`): it holds nothing private.
 
 ### Every call

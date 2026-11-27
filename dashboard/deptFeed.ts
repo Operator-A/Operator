@@ -4,8 +4,9 @@ import "server-only";
 import { db } from "@/core/db";
 import { TOOLS } from "@/core/tools/catalog";
 import type { CrewMember } from "@/dashboard/crew";
-import { checklist, inFeed, resultText, sessionUrl, type FeedRun, type RunStatus } from "@/dashboard/dept-feed";
+import { CLAUDE_WAITING, checklist, inFeed, resultText, sessionUrl, type FeedRun, type RunStatus } from "@/dashboard/dept-feed";
 import { tryInFeed } from "@/dashboard/hire-rules";
+import { claudeRunning } from "@/core/routine-rules";
 
 const label = (tool: string) => TOOLS[tool]?.label ?? "Used a connected tool";
 
@@ -34,11 +35,12 @@ export async function deptRuns(agentIds: string[], byId: Record<string, CrewMemb
     const own = (steps.data ?? []).filter((s) => s.run_id === r.id).map((s) => ({ kind: String(s.kind), tool: (s.tool as string | null) ?? null, ok: !!s.ok }));
     const a = byId[r.agent_id as string];
     const status = (["running", "ok", "failed", "skipped"].includes(r.status) ? r.status : "failed") as RunStatus;
+    const inClaude = claudeRunning(r.claude_session as { fired_at?: string; finished_at?: string | null } | null);
     return {
       id: r.id, agentId: r.agent_id, name: a?.name ?? r.agent_id, role: a?.role ?? "", at: r.started_at, endedAt: r.ended_at ?? null, trigger: String(r.trigger), status, version: Number((r.metrics ?? {}).spec_version) || null,
       lines: checklist(own, label, status === "running"), steps: own.filter((s) => s.kind === "tool").length, costUsd: Number(r.cost_usd ?? 0),
-      result: status === "running" ? "" : resultText(r.summary ?? null, r.error ?? null, status), drafts: drafts.get(r.id) ?? [],
-      session: sessionUrl(r.claude_session),
+      result: status === "running" ? "" : inClaude ? CLAUDE_WAITING : resultText(r.summary ?? null, r.error ?? null, status), drafts: drafts.get(r.id) ?? [],
+      session: sessionUrl(r.claude_session), inClaude,
     };
   });
 }

@@ -479,6 +479,48 @@ export function tokenParts(token: unknown, kind: TokenKind): { orgId: string; gr
 }
 export const hashesMatch = (stored: string | null | undefined, given: string) => !!stored && same(stored, given);
 
+// ---- Access tokens: `opa2.<org id>.<grant id>.<expiry>.<signature>`, signed with this deployment's secret
+// and checked against the grant on every call (revoked, member still there). One connection in Claude is
+// shared by every chat, session and routine of the person, each renewing on its own, so an access token is
+// not kept in one slot on the grant: a renewal by one session never signs another out (fixed 2026-11-27,
+// when a routine's finish_run was refused after a chat renewed the shared sign-in).
+
+const accessKey = (secret: string) => createHash("sha256").update(`operator-mcp-access:${secret}`).digest();
+const accessSig = (secret: string, body: string) => createHmac("sha256", accessKey(secret)).update(body).digest("base64url");
+
+/** A signed access token for one grant, good until `expMs` (whole seconds). */
+export function signAccess(orgId: string, grantId: string, expMs: number, secret: string): string {
+  if (!UUID.test(orgId) || !UUID.test(grantId)) throw new Error("A token names an org and a grant.");
+  if (secret.length < 32) throw new Error("SESSION_SECRET is missing or shorter than 32 characters.");
+  const body = `opa2.${orgId}.${grantId}.${Math.floor(expMs / 1000).toString(36)}`;
+  return `${body}.${accessSig(secret, body)}`;
+}
+
+/** The org and grant a signed access token names, when its signature holds and it hasn't expired. */
+export function readAccess(token: unknown, secret: string, now = Date.now()): { orgId: string; grantId: string; expMs: number } | null {
+  if (typeof token !== "string" || token.length > 200 || secret.length < 32) return null;
+  const p = token.split(".");
+  if (p.length !== 5 || p[0] !== "opa2" || !UUID.test(p[1]) || !UUID.test(p[2]) || !/^[0-9a-z]{1,10}$/.test(p[3]) || !/^[A-Za-z0-9_-]{43}$/.test(p[4])) return null;
+  if (!same(p[4], accessSig(secret, p.slice(0, 4).join(".")))) return null;
+  const expMs = parseInt(p[3], 36) * 1000;
+  if (!(expMs > now)) return null;
+  return { orgId: p[1], grantId: p[2], expMs };
+}
+
+/**
+ * Whether a refresh token still renews its grant. The refresh token stays the same for the life of the
+ * connection (it isn't rotated): every session holding a copy of the shared connection can renew, and a
+ * copy that missed another session's renewal still works. Each renewal moves its expiry LIMITS.refreshDays on.
+ * It ends when the person disconnects (Settings > Connected apps) or leaves the business, or after
+ * LIMITS.refreshDays without use.
+ */
+export function refreshProblem(g: { revoked_at?: string | null; refresh_hash?: string | null; refresh_expires_at?: string | null } | null, hash: string, now = Date.now()): string | null {
+  if (!g || g.revoked_at) return "revoked";
+  if (!hashesMatch(g.refresh_hash, hash)) return "unknown refresh token";
+  if (!g.refresh_expires_at || !(Date.parse(g.refresh_expires_at) > now)) return "expired";
+  return null;
+}
+
 /** The bearer token in an Authorization header. */
 export function bearerOf(header: string | null): string | null {
   const m = /^Bearer\s+(\S+)$/i.exec(header ?? "");

@@ -206,7 +206,7 @@ export function AgentSheet({ d, closeHref, tz, now, controls, act, edit = false,
           <div className="ag-body">
             {!d.runs.length && <span className="dp-note">No runs in the last 60 days. Press Run now, and its checklist shows here and in the chat.</span>}
             {d.runs.map((r) => {
-              const s = runState(r.status);
+              const s = runState(r.status, r.inClaude);
               const on = opened === r.id;
               const need = r.drafts.length;
               return (

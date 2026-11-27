@@ -38,7 +38,8 @@ export function runTitle(trigger: string, version: number | null = null): string
 }
 
 /** The status pill on a run card. */
-export function runState(status: string): { word: string; look: "live" | "ok" | "bad" | "quiet" } {
+export function runState(status: string, inClaude = false): { word: string; look: "live" | "ok" | "bad" | "quiet" } {
+  if (inClaude) return { word: "Running in Claude", look: "live" };
   return status === "running" ? { word: "Working", look: "live" } : status === "ok" ? { word: "Done", look: "ok" } : status === "failed" ? { word: "Failed", look: "bad" } : { word: "Skipped", look: "quiet" };
 }
 
@@ -65,7 +66,12 @@ export interface FeedRun {
   version?: number | null;
   /** For an agent that runs in Claude: the session the run started (live events slice 2). */
   session?: string | null;
+  /** Its Claude session is still going: no result yet (2026-11-27). */
+  inClaude?: boolean;
 }
+
+/** The line a run in Claude shows until its session posts a result. */
+export const CLAUDE_WAITING = "Working in Claude. Its result shows here when the session finishes.";
 
 /** The Claude session link saved on a run, when it is one of claude.ai's. */
 export function sessionUrl(s: unknown): string | null {
