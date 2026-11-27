@@ -31,6 +31,12 @@ const run = async () => {
   // live events slice 2: a Claude session posts its result onto the run OPERATOR started, owners only
   assert.ok(OP_TOOLS.filter((t) => FINISHES.includes(t.name)).every((t) => t.kind === "finish" && t.min === "owner"), "finishing a run is for owners only");
   assert.deepEqual(TOOL_BY_NAME.finish_run.inputSchema.required, ["run", "status", "result"]);
+  // overview slice 4: optional named numbers, a short text field read in code (core/routine-rules.ts readNumbers)
+  const numbersProp = TOOL_BY_NAME.finish_run.inputSchema.properties.numbers as { type: string; maxLength: number; description: string };
+  assert.equal(numbersProp.type, "string");
+  assert.equal(numbersProp.maxLength, 600);
+  assert.match(numbersProp.description, /up to 12 numbers/);
+  assert.match(mcpSrc, /finishRun\(f\.runId, f\.status, f\.result, f\.numbers\)/, "finish_run saves the numbers it read");
   assert.deepEqual(TOOL_BY_NAME.create_agent.inputSchema.properties.runs_on, { type: "string", enum: ["operator", "claude"], description: (TOOL_BY_NAME.create_agent.inputSchema.properties.runs_on as { description: string }).description });
   assert.ok(OP_TOOLS.filter((t) => TRIES.includes(t.name)).every((t) => t.kind === "try" && t.min === "owner"), "a try is for owners only");
   assert.deepEqual(TOOL_BY_NAME.try_agent.inputSchema.required, ["agent", "based_on_version"], "a try names the version it was read at");

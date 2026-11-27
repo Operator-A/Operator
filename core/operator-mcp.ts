@@ -671,12 +671,12 @@ async function tryAgent(caller: Caller, origin: string, args: Args): Promise<Too
 async function finishRunTool(caller: Caller, origin: string, args: Args): Promise<ToolAnswer> {
   const f = readFinish(args);
   if ("problem" in f) return no(f.problem);
-  const got = await finishRun(f.runId, f.status, f.result);
+  const got = await finishRun(f.runId, f.status, f.result, f.numbers);
   if ("problem" in got) return no(got.problem);
-  await audit(caller.member, "finish_run", f.runId, { agent: got.agentId, status: f.status, via: caller.client });
+  await audit(caller.member, "finish_run", f.runId, { agent: got.agentId, status: f.status, numbers: Object.keys(f.numbers).length, via: caller.client });
   // a chain step in Claude (card 405): the chain goes on now, with this result handed to the next step
   if (got.chain) await resumeChain(origin, got.chain, f.runId, f.status).catch((e) => console.error("[finish_run] chain", e instanceof Error ? e.message : e));
-  return { text: answerText({ run: f.runId, status: f.status, note: "Saved on the run in OPERATOR. Anything outward still goes through propose." }, `${origin}/runs/${f.runId}`) };
+  return { text: answerText({ run: f.runId, status: f.status, ...(Object.keys(f.numbers).length ? { numbers_saved: f.numbers } : {}), note: "Saved on the run in OPERATOR. Anything outward still goes through propose." }, `${origin}/runs/${f.runId}`) };
 }
 
 /** Runs a tool for a caller, inside their org, after checking their role again. */

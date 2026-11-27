@@ -60,7 +60,7 @@ export async function writeReports(deptId: string, now = Date.now(), client?: Mo
   const week = windowOf("week", day, tz, now);
   const [names, runRes] = await Promise.all([
     agentNames(ids),
-    db().from("agent_runs").select("id, agent_id, trigger, status, started_at, summary, error").in("agent_id", ids)
+    db().from("agent_runs").select("id, agent_id, trigger, status, started_at, summary, error, metrics").in("agent_id", ids)
       .gte("started_at", new Date(week.from).toISOString()).lte("started_at", new Date(now).toISOString()).order("started_at", { ascending: false }).limit(500),
   ]);
   if (runRes.error) return { ok: false, text: `Runs can’t be read: ${runRes.error.message.slice(0, 120)}` };

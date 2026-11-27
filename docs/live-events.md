@@ -92,6 +92,7 @@ Crew canvas. `runBuilt` sees `runs_on = 'claude'` and, instead of the runner:
 
 The session posts its result with `finish_run` on OPERATOR's MCP server: once per run, within 24 hours, only
 on a run that started a session. The result is saved as the run's summary, labelled as the session's words.
+Its optional `numbers` (up to 12 named numbers, read in code) join the run's metrics, labelled as the session's.
 Anything outward the session wants goes through `propose`, so a person decides it in OPERATOR. What the
 session does with its own Claude connectors is outside OPERATOR's gateway; the sheet says so.
 

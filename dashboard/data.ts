@@ -370,6 +370,16 @@ export const getFloor = cache(async (): Promise<Floor> => {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** A run's numbers (agent_runs.metrics): worked out in code, or a Claude session's own from finish_run (overview slice 4). */
+export async function getRunNumbers(id: string): Promise<{ name: string; value: number }[]> {
+  await requireSession();
+  if (!UUID.test(id) || !health().supabase) return [];
+  const { data } = await db().from("agent_runs").select("metrics").eq("id", id).maybeSingle();
+  return Object.entries((data?.metrics as Record<string, unknown> | null) ?? {})
+    .filter((e): e is [string, number] => /^[a-z][a-z0-9_]{0,39}$/.test(e[0]) && typeof e[1] === "number" && Number.isFinite(e[1])).slice(0, 12)
+    .map(([name, value]) => ({ name: name.replace(/_/g, " "), value }));
+}
+
 export async function getRun(id: string): Promise<Run | null> {
   await requireSession();
   if (!UUID.test(id) || !health().supabase) return null;

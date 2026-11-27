@@ -24,7 +24,7 @@ export const AFTER_MS = 60 * 60_000;
 const DAY = 864e5;
 
 /** A run as the report reads it. */
-export interface RepRun { id: string; agent_id: string; trigger: string; status: string; started_at: string; summary: string | null; error: string | null }
+export interface RepRun { id: string; agent_id: string; trigger: string; status: string; started_at: string; summary: string | null; error: string | null; metrics?: Record<string, unknown> | null }
 /** One run handed to the model, numbered from 1. */
 export interface Fact { n: number; run: RepRun; agent: string; text: string }
 /** A chip under a line: which run, whose, when, how it went. Kept with the line, so the page needs no join. */
@@ -72,8 +72,11 @@ const inWindow = (r: RepRun, w: { from: number; to: number }) => { const t = Dat
 const clean = (s: string, max: number) => s.replace(/\s+/g, " ").trim().slice(0, max);
 function factText(r: RepRun): string {
   const said = r.status === "failed" ? `Failed: ${clean(r.error ?? r.summary ?? "no reason given", 200)}` : clean(r.summary ?? "(no summary)", SUMMARY_MAX);
+  // the run's numbers (worked out in code, or a Claude session's own from finish_run, overview slice 4), at most 12
+  const nums = Object.entries(r.metrics ?? {}).filter(([k, v]) => /^[a-z][a-z0-9_]{0,39}$/.test(k) && typeof v === "number" && Number.isFinite(v)).slice(0, 12)
+    .map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`);
   // an angle bracket in a run's text can't close the data block it sits in
-  return said.replace(/[<>]/g, " ");
+  return `${said}${nums.length ? ` Numbers: ${nums.join("; ")}.` : ""}`.replace(/[<>]/g, " ");
 }
 
 /** The words sent to the model: the fixed frame, then the runs as numbered facts inside a data block. */

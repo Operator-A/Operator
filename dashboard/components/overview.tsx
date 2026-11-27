@@ -5,6 +5,7 @@
 import Link from "next/link";
 import type { Drafts, OvLine, OvReport, StepState, WeekCounts } from "@/dashboard/overview-rules";
 import { STEP_WORD, money } from "@/dashboard/overview-rules";
+import type { GoalLine } from "@/core/goal-reading-rules";
 
 export interface OvNeed { kind: "approve" | "failed"; title: string; sub: string; href: string; btn: string }
 export interface OvBar { key: string; finished: number; failed: number; tip: string }
@@ -26,7 +27,7 @@ export interface OverviewData {
 const KIND: Record<OvNeed["kind"], { word: string; cls: string }> = { approve: { word: "To approve", cls: "yel" }, failed: { word: "Failed run", cls: "red" } };
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export function Overview({ d, goal, write }: { d: OverviewData; goal: React.ReactNode; write: React.ReactNode }) {
+export function Overview({ d, goal, write, goalChart }: { d: OverviewData; goal: React.ReactNode; write: React.ReactNode; goalChart?: React.ReactNode }) {
   const top = Math.max(1, ...d.bars.map((b) => b.finished + b.failed));
   const pct = (n: number) => (n > 0 ? `${Math.max(4, Math.round((n / top) * 100))}%` : "0px");
   const dr = d.drafts;
@@ -105,6 +106,8 @@ export function Overview({ d, goal, write }: { d: OverviewData; goal: React.Reac
           </figure>
         </div>
 
+        <div className="ov-mid">
+        {goalChart}
         <section className="ov-card ov-agents" aria-label="Agents">
           <div className="ov-sec-h"><b>Agents</b><span>latest result and next run</span><Link href={d.agentsHref} className="ov-more">All agents</Link></div>
           {d.agents.map((a) => (
@@ -118,6 +121,7 @@ export function Overview({ d, goal, write }: { d: OverviewData; goal: React.Reac
           ))}
           {!d.agents.length && <p className="ov-empty">No agents in {d.name} yet.</p>}
         </section>
+        </div>
 
         {d.chains.length > 0 && (
           <section className="ov-card ov-chains" aria-label="Chains">
@@ -149,6 +153,32 @@ export function GoalTile({ title, line, pct, href }: { title: string | null; lin
       {pct != null && <span className="ov-meter"><i style={{ width: `${Math.max(2, Math.min(100, pct))}%` }} /></span>}
       <span className="ov-ts">{line}</span>
     </Link>
+  );
+}
+
+/**
+ * A goal over time (overview slice 4), to the canvas: one saved reading a day as a line, the target as a dashed level
+ * line, today's point marked. The points arrive scaled in code (core/goal-reading-rules.ts goalLine).
+ */
+export function GoalChart({ title, href, line, fmt, targetWord, note }: { title: string; href: string; line: GoalLine; fmt: { day: string; value: string }[]; targetWord: string | null; note: string }) {
+  const pts = line.points;
+  const last = pts[pts.length - 1];
+  return (
+    <figure className="ov-card ov-fig ov-goalfig">
+      <figcaption><b>{title}</b><span>goal over time</span><Link href={href} className="ov-more">Goal</Link></figcaption>
+      {pts.length >= 2 ? (
+        <svg viewBox="0 0 400 150" width="100%" height="150" role="img" aria-label={`${title}: ${fmt.map((f) => `${f.day} ${f.value}`).join(", ")}${targetWord ? `; ${targetWord}` : ""}`}>
+          {line.target && <line x1="0" y1={line.target.y} x2="400" y2={line.target.y} className="tgt" strokeWidth="1.5" strokeDasharray="5 5" />}
+          {line.target && targetWord && <text x="396" y={Math.max(11, line.target.y - 8)} textAnchor="end" fontSize="11" className="tgt-t">{targetWord}</text>}
+          <line x1="0" y1="140" x2="400" y2="140" className="base" />
+          <polyline points={pts.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" className="ln" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          {pts.map((p, i) => <circle key={p.day} cx={p.x} cy={p.y} r={p === last ? 5 : 2.5} className={p === last ? "now" : "pt"}><title>{`${fmt[i].day}: ${fmt[i].value}`}</title></circle>)}
+        </svg>
+      ) : (
+        <div className="ov-goalwait"><span className="ov-kind acc">Needs data</span>{last && <b>{fmt[fmt.length - 1].value} <small>on {fmt[fmt.length - 1].day}</small></b>}</div>
+      )}
+      <div className="ov-foot">{note}</div>
+    </figure>
   );
 }
 

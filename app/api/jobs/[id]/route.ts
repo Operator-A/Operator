@@ -3,6 +3,8 @@ import { runChainStep } from "@/core/chain";
 import { isUuid, readChainPayload } from "@/core/job-rules";
 import { COMPANY_SCOPE, readReportPayload } from "@/core/report-rules";
 import { writeCompanyReport, writeReports } from "@/core/reports";
+import { saveGoalReadings } from "@/core/goal-readings";
+import { readReadingPayload } from "@/core/goal-reading-rules";
 import { claimJob, finishJob, type Job } from "@/core/jobs";
 import { cronAuthorized } from "@/core/runs";
 import { withOrg } from "@/core/tenancy";
@@ -44,6 +46,12 @@ async function doJob(origin: string, job: Job): Promise<void> {
       if (!r) return await finishJob(job.id, { failed: true, outcome: "Bad report payload." });
       const res = r.dept === COMPANY_SCOPE ? await writeCompanyReport() : await writeReports(r.dept);
       return await finishJob(job.id, { failed: !res.ok, outcome: res.text, runId: res.runId });
+    }
+    if (job.kind === "goal_reading") {
+      // today's reading of every active goal (overview slice 4): measured in code, one row per goal
+      if (!readReadingPayload(job.payload)) return await finishJob(job.id, { failed: true, outcome: "Bad goal reading payload." });
+      const res = await saveGoalReadings();
+      return await finishJob(job.id, { failed: !res.ok, outcome: res.text });
     }
     if (job.kind !== "chain_step") return await finishJob(job.id, { failed: true, outcome: `Unknown kind ${job.kind}.` });
     const ctx = readChainPayload(job.payload);

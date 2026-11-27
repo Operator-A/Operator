@@ -7,9 +7,11 @@ import { deptChanges } from "@/dashboard/changeCards";
 import { getApprovals, getChainOks, getChains, getCounts, getOrgSwitch, getRoster, getTz, requireSession, rulesFor, type ApprovalItem, type ApprovalsView } from "@/dashboard/data";
 import { ChainsBoard } from "@/dashboard/components/chains";
 import { DEPT_TABS, TAB_LABEL, askHref, asksOpen, deptAgentIds, deptHue, deptTab, goalHref, headAgentId, hireHref, madeAgentHref, needsByDept, newAgentHref, settingsHref, sheetHref, tabHref, type DeptTab } from "@/dashboard/dept-rules";
-import { Suspense } from "react";
+import { Suspense, cache } from "react";
 import { AskSheet } from "@/dashboard/components/askSheet";
-import { GoalTile, Overview, type OverviewData } from "@/dashboard/components/overview";
+import { GoalChart, GoalTile, Overview, type OverviewData } from "@/dashboard/components/overview";
+import { readingsFor } from "@/core/goal-readings";
+import { goalLine } from "@/core/goal-reading-rules";
 import { chainRows, deptCards, deptChains, inClaude } from "@/dashboard/overview";
 import { dayKey, draftOutcomes, isWork, lastWeek, money, recentFailures, reportView, runsPerDay, spendRows } from "@/dashboard/overview-rules";
 import { latestReports } from "@/core/reports";
@@ -191,14 +193,37 @@ async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0, own
     })),
     chainsHref: tabHref(id, "chains"),
   };
-  return <Overview d={d} write={write} goal={<Suspense fallback={<div className="ov-card ov-tile"><span className="ov-tl">Goal</span><span className="ov-ts">Measuring…</span></div>}><GoalOf id={id} chart={chart} /></Suspense>} />;
+  return <Overview d={d} write={write} goal={<Suspense fallback={<div className="ov-card ov-tile"><span className="ov-tl">Goal</span><span className="ov-ts">Measuring…</span></div>}><GoalOf id={id} chart={chart} /></Suspense>}
+    goalChart={<Suspense fallback={null}><GoalChartOf id={id} chart={chart} tz={tz} now={now} /></Suspense>} />;
 }
 
 /** The goal tile: the department's first goal, measured in code (streams in after the rest of the page). */
+/** Each goal measured once per request, shared by the goal tile and the goal line. */
+const goalsOnce = cache((chart: NonNullable<Roster["chart"]>) => goalsByDept(chart).catch(() => null));
+
 async function GoalOf({ id, chart }: { id: string; chart: NonNullable<Roster["chart"]> }) {
-  const goals = await goalsByDept(chart).catch(() => null);
+  const goals = await goalsOnce(chart);
   const g = goals?.[id]?.[0];
   return <GoalTile title={g?.title ?? null} line={g ? g.line : goals == null ? GOALS_MISSING : "Set one from the Goals tab."} pct={g?.pct ?? null} href={tabHref(id, "goals")} />;
+}
+
+/** The goal line (overview slice 4): the department's first goal, one saved reading a day, against its target. */
+async function GoalChartOf({ id, chart, tz, now }: { id: string; chart: NonNullable<Roster["chart"]>; tz: string; now: number }) {
+  const goals = await goalsOnce(chart);
+  const g = goals?.[id]?.[0];
+  if (!g) return null;
+  const today = todayIn(tz, now);
+  const from = dayKey(Date.parse(`${today}T12:00:00Z`) - 29 * 864e5, "UTC");
+  const readings = (await readingsFor([g.id], from).catch(() => ({} as Record<string, { day: string; value: number }[]>)))[g.id] ?? [];
+  const line = goalLine(readings, g.target, today, 30);
+  const fmt = (v: number) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString("en-US") : String(Math.round(v * 100) / 100));
+  return (
+    <GoalChart title={g.title} href={goalHref(id, g.id)} line={line} fmt={line.points.map((p) => ({ day: md(`${p.day}T12:00:00Z`, "UTC"), value: fmt(p.value) }))}
+      targetWord={line.target ? `Target ${fmt(line.target.value)}` : null}
+      note={line.points.length >= 2 ? `${line.points.length} readings in the last 30 days, one saved each morning and measured in code.${line.points.length < 30 ? " Days with no reading are skipped." : ""}`
+        : line.points.length === 1 ? "One reading so far. The line draws from the second day, as one reading is saved each morning."
+        : "No readings yet. One is saved each morning from now on, and the line draws from the second day."} />
+  );
 }
 
 /** The chat: the conversation with the head and every run of the department, with its drafts as approval cards. */

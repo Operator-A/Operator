@@ -2,7 +2,7 @@
 // A job is a row in `jobs`: work that runs on its own (a chain's step), picked up by a worker
 // request (/api/jobs/<id>) that runs it as the job's org.
 
-export const JOB_KINDS = ["chain_step", "report"] as const;
+export const JOB_KINDS = ["chain_step", "report", "goal_reading"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 
 /** A claimed job that hasn't finished after this long is marked failed: longer than a worker's 300 s limit. */

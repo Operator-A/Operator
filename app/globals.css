@@ -1689,6 +1689,18 @@ a.ov-tile:hover { text-decoration: none; border-color: var(--mut2); }
 .ov-step.waiting, .ov-step.running { background: var(--yel-soft); color: var(--yel-ink); }
 .ov-step.failed { background: var(--red-soft); color: var(--red-ink); }
 .ov-when { margin-left: auto; color: var(--mut); font-size: 12.5px; }
+/* a goal over time beside the agents (overview slice 4), to the canvas */
+.ov-mid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; align-items: start; }
+.ov-mid > :only-child { grid-column: 1 / -1; }
+.ov-goalfig svg { display: block; overflow: visible; }
+.ov-goalfig .tgt { stroke: var(--ov-goal); } .ov-goalfig .tgt-t { fill: var(--ov-goal); font-family: inherit; }
+.ov-goalfig .base { stroke: var(--bd); }
+.ov-goalfig .ln { stroke: var(--ov-a); }
+.ov-goalfig .pt { fill: var(--ov-a); }
+.ov-goalfig .now { fill: var(--ov-goal); stroke: var(--card); stroke-width: 2; }
+.ov-goalwait { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px 0 6px; }
+.ov-goalwait b { font-size: 26px; letter-spacing: -.02em; } .ov-goalwait small { font-size: 12.5px; color: var(--mut); font-weight: 500; }
+@media (max-width: 900px) { .ov-mid { grid-template-columns: 1fr; } }
 /* The Company page's Overview (overview slice 3), to the canvas's Company artboard */
 .ov-kind.acc { background: var(--acc-soft); color: var(--acc-ink); }
 .ov-kind.mint { background: var(--mint-soft); color: var(--mint-ink); }

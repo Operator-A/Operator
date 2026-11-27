@@ -75,10 +75,12 @@ export async function fireLinked(agentId: string, runId: string | undefined, han
  * Takes a Claude session's result onto its run (finish_run). Only a run of a linked agent that started a
  * session, once, within FINISH.withinHours. The result is the session's words: data, labelled as such.
  */
-export async function finishRun(runId: string, status: "ok" | "failed", result: string): Promise<{ agentId: string; chain: ChainCtx | null } | { problem: string }> {
-  const { data, error } = await db().from("agent_runs").select("id, agent_id, claude_session").eq("id", runId).maybeSingle();
+export async function finishRun(runId: string, status: "ok" | "failed", result: string, numbers: Record<string, number> = {}): Promise<{ agentId: string; chain: ChainCtx | null } | { problem: string }> {
+  const { data, error } = await db().from("agent_runs").select("id, agent_id, claude_session, metrics").eq("id", runId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return { problem: "There is no run with that id in this business." };
+  // the session's own numbers (overview slice 4) join the run's metrics, so charts, reports and the next chain step see them
+  const metrics = Object.keys(numbers).length ? { ...((data.metrics as Record<string, unknown> | null) ?? {}), ...numbers } : null;
   const s = data.claude_session as ClaudeSession | null;
   const why = finishable(s);
   if (why) return { problem: why };
@@ -86,6 +88,7 @@ export async function finishRun(runId: string, status: "ok" | "failed", result: 
   const next: ClaudeSession = { ...s!, finished_at: at, result, status };
   const { data: done, error: e2 } = await db().from("agent_runs").update({
     claude_session: next, status, summary: `[Claude, written by the session] ${result}`, ...(status === "failed" ? { error: result.slice(0, 500) } : {}),
+    ...(metrics ? { metrics } : {}),
   }).eq("id", runId).is("claude_session->>finished_at", null).select("id");
   if (e2) throw new Error(e2.message);
   if (!done?.length) return { problem: "That run already has its result." };

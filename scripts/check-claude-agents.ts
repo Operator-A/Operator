@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
-  FINISH, NO_RESULT, ROUTINE_API, chainWaits, waitExpired, ROUTINE_CAPS, afterFire, finishable, fireFits, fireNote, fireStart, isRunsOn, promptLine, readFinish, readRoutine, readSession, routineVaultId,
+  FINISH, NO_RESULT, ROUTINE_API, chainWaits, waitExpired, ROUTINE_CAPS, afterFire, finishable, fireFits, fireNote, fireStart, isRunsOn, promptLine, readFinish, readNumbers, readRoutine, readSession, routineVaultId,
 } from "../core/routine-rules";
 
 const read = (p: string) => readFileSync(p, "utf8");
@@ -79,7 +79,22 @@ assert.match(promptLine("Drew"), /propose/);
 
 // ---- finish_run
 const RUN = "0e1a7c4e-0002-4000-8000-000000000002";
-assert.deepEqual(readFinish({ run: RUN, status: "ok", result: " Filed 3 invoices. " }), { runId: RUN, status: "ok", result: "Filed 3 invoices." });
+assert.deepEqual(readFinish({ run: RUN, status: "ok", result: " Filed 3 invoices. " }), { runId: RUN, status: "ok", result: "Filed 3 invoices.", numbers: {} });
+// overview slice 4: the session may give up to 12 named numbers, read in code, never more and never twice
+assert.deepEqual(readNumbers("orders: 12; Cash USD: $8,420\nrefund-rate = 2.5%"), { numbers: { orders: 12, cash_usd: 8420, refund_rate: 2.5 } });
+assert.deepEqual(readNumbers(" "), { numbers: {} });
+assert.deepEqual(readNumbers(undefined), { numbers: {} });
+assert.deepEqual(readNumbers("loss: -40"), { numbers: { loss: -40 } });
+assert.match((readNumbers("orders: twelve") as { problem: string }).problem, /name: value/);
+assert.match((readNumbers("orders: 1; Orders: 2") as { problem: string }).problem, /twice/);
+assert.match((readNumbers(Array.from({ length: 13 }, (_, i) => `n${i}: ${i}`).join("; ")) as { problem: string }).problem, /At most 12/);
+assert.ok("numbers" in readNumbers(Array.from({ length: 12 }, (_, i) => `n${i}: ${i}`).join("; ")), "12 is allowed");
+assert.match((readNumbers("x: 1".padEnd(FINISH.maxNumbersText + 1, " ") + "; y: 2") as { problem: string }).problem, /longer/);
+assert.match((readNumbers("big: 9999999999999") as { problem: string }).problem, /keep/);
+assert.match((readNumbers("1st: 3") as { problem: string }).problem, /name: value/, "a name starts with a letter");
+assert.match((readFinish({ run: RUN, status: "ok", result: "r", numbers: "oops" }) as { problem: string }).problem, /name: value/, "bad numbers refuse the whole result");
+assert.deepEqual((readFinish({ run: RUN, status: "ok", result: "r", numbers: "orders: 3" }) as { numbers: object }).numbers, { orders: 3 });
+assert.match(read("core/claude-agents.ts"), /\{ \.\.\.\(\(data\.metrics.*\.\.\.numbers \}/, "finishRun merges the numbers into the run's metrics");
 assert.match((readFinish({ run: "x", status: "ok", result: "r" }) as { problem: string }).problem, /run id/);
 assert.match((readFinish({ run: RUN, status: "done", result: "r" }) as { problem: string }).problem, /ok or failed/);
 assert.match((readFinish({ run: RUN, status: "ok", result: " " }) as { problem: string }).problem, /result/);

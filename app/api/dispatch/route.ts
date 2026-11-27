@@ -20,6 +20,7 @@ import { takeSnapshot } from "@/core/brain";
 import { returnSkipped } from "@/core/setup-check";
 import { catchUpHeld, pruneEvents } from "@/core/events";
 import { queueReports } from "@/core/reports";
+import { queueGoalReadings } from "@/core/goal-readings";
 
 export const maxDuration = 60;
 
@@ -84,6 +85,8 @@ async function schedule(origin: string, now: number) {
   const draftsGone = await pruneChainDrafts(now).catch((e) => { console.error("[dispatch] chain drafts", e instanceof Error ? e.message : e); return 0; });
   // each department's daily reports (overview slice 2): queued once a day after its morning runs, or at noon; never stops the scheduler
   const reports = on ? await queueReports(now, flow.flow.chains).catch((e) => { console.error("[dispatch] reports", e instanceof Error ? e.message : e); return []; }) : [];
+  // one reading of every goal a day, from 9 AM (overview slice 4), so each goal gets a line over time; never stops the scheduler
+  const goalReading = on ? await queueGoalReadings(now).catch((e) => { console.error("[dispatch] goal readings", e instanceof Error ? e.message : e); return null; }) : null;
   const stale = await failStale(now);
   // a step whose kicks kept failing is skipped once it is hours late, not run at the wrong time of day
   const missed = await failMissed(now);
@@ -97,5 +100,5 @@ async function schedule(origin: string, now: number) {
   // card 284: setup check findings skipped 3 weeks ago come back once as a head's proposal (code, no model), only while the org is on
   const rechecks = on ? await returnSkipped(now).catch((e) => { console.error("[dispatch] setup re-checks", e instanceof Error ? e.message : e); return []; }) : [];
   const alerted = await sendStatusAlerts(origin, now).catch((e) => { console.error("[dispatch] alerts", e instanceof Error ? e.message : e); return []; });
-  return { on, started, caughtUp, reports, kicked: due.length, expired: expired.length, okExpired, imagesGone, draftsGone, stale, missed, trusted, brain, rechecks, alerted, problems: flow.problems };
+  return { on, started, caughtUp, reports, goalReading, kicked: due.length, expired: expired.length, okExpired, imagesGone, draftsGone, stale, missed, trusted, brain, rechecks, alerted, problems: flow.problems };
 }

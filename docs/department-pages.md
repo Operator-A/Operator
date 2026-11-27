@@ -29,6 +29,23 @@ Each slice deletes the screen it replaces and ships with tests and a before/afte
 | O1 | Overview pages, slice 1: a department opens on an Overview of numbers worked out in code; its chat moves behind Ask | The department's Chat tab |
 | O2 | A department's written report (table `reports`): lines a small model wrote from its runs, each checked against the runs it cites | The report card's placeholder |
 | O3 | The Company Overview: Needs you across departments, the company report (from the department reports, with action items), tiles, revenue per day, runs by department, department cards; Avery behind Ask Avery; `get_report` for a member's Claude | The Company Chat tab, the chat room's pinned Needs you, the "can wait" list and the day line |
+| O4 | Filling the data gaps: `finish_run` takes up to 12 named numbers (saved to the run's metrics), a daily goal reading (table `goal_readings`), and a goal line on the department Overview | The Overview's "Needs data" placeholder for a goal's line |
+
+## Overview slice 4: filling the data gaps
+
+- **The session's numbers.** `finish_run` takes an optional `numbers` text, like `orders: 12; cash_usd: 8,420`: up to
+  12 pairs, each name a letter then letters, digits, spaces, `_` or `-` (saved lower_snake_case), each value a plain
+  number (`$`, commas and `%` are dropped), read in code by `readNumbers` (`core/routine-rules.ts`). A bad pair refuses
+  the whole result. They merge into the run's `agent_runs.metrics`, show on the run page as "Numbers the Claude session
+  gave", and join the run's fact in the reports, so a line can cite them. They are the session's numbers, not OPERATOR's.
+- **Goal readings.** From 9 AM in the business's time zone, while the org is on, the scheduler queues one
+  `goal_reading` job a day (`core/goal-readings.ts`). It measures every active goal with the same code as the Goals tab
+  and saves one row per goal per day (`goal_readings`, unique on goal and day; a second reading replaces the row). A
+  paused goal or one whose measure gives no number saves nothing, so a gap stays a gap.
+- **The goal line.** The department Overview draws its first goal's last 30 days of readings with the target as a
+  dashed line (`goalLine` in `core/goal-reading-rules.ts`, `GoalChart` in `dashboard/components/overview.tsx`). With
+  fewer than two readings it says Needs data and shows the latest number. It streams in.
+- **Tested** by check:goal-readings, check:claude-agents, check:operator-mcp and check:reports.
 
 ## Overview slice 3: the Company Overview
 
