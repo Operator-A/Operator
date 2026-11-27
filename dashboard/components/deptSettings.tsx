@@ -57,7 +57,8 @@ export function DeptSettings({ d, closeHref, act }: { d: DeptSettingsData; close
   });
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 3200); return () => clearTimeout(t); }, [toast]);
 
-  function close() { setOpen(false); setTimeout(() => router.push(closeHref, { scroll: false }), 320); }
+  // the page under the sheet loads while the sheet slides away, not after (click-speed slice 4)
+  function close() { setOpen(false); router.push(closeHref, { scroll: false }); }
   const set = (p: Partial<ReturnType<typeof init>>) => { setF((x) => ({ ...x, ...p })); setConfirm(null); };
   const go = (fn: () => Promise<Result>, after?: (r: Result) => void) => start(async () => {
     try { const r = await fn(); setToast(r.text); if (r.ok) after?.(r); } catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong."); }

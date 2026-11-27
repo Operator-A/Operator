@@ -39,7 +39,7 @@ import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, SCHEDULE_HREF, addDeptHre
 import { OrgChartPane } from "@/dashboard/components/orgChartPane";
 import { IntentLink } from "@/dashboard/components/intentLink";
 import { controlsOn } from "@/dashboard/session";
-import { SkelLine } from "@/dashboard/components/skeletons";
+import { SheetSkel, SkelLine } from "@/dashboard/components/skeletons";
 import { ActionButton } from "@/dashboard/components/client";
 import { acceptPromotion, applyWaiting, approveAll, cancelAction, declinePromotion, retryAction, trustToDraft, writeCompanyReportNow } from "@/dashboard/actions";
 import { trustView, type TrustView } from "@/dashboard/trust";
@@ -153,7 +153,7 @@ export default async function Company({ searchParams }: { searchParams: Promise<
         </AskSheet>
       )}
       {/* the chief of staff and any agent in no department open their sheet here (slice 9, in place of Everyone) */}
-      {typeof sp.agent === "string" && <AgentSheetFor id={sp.agent} closeHref={companyHref(tab)} tz={f.tz} now={f.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} openHref={madeAgentCompanyHref()} />}
+      {typeof sp.agent === "string" && <Suspense key={sp.agent} fallback={<SheetSkel />}><AgentSheetFor id={sp.agent} closeHref={companyHref(tab)} tz={f.tz} now={f.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} openHref={madeAgentCompanyHref()} /></Suspense>}
     </div>
   );
 }

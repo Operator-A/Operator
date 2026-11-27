@@ -57,7 +57,8 @@ export function NewAgentSheet({ d, closeHref, openHref, controls, create }: {
   });
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 4200); return () => clearTimeout(t); }, [toast]);
 
-  function close() { setOpen(false); setTimeout(() => router.push(closeHref, { scroll: false }), 320); }
+  // the page under the sheet loads while the sheet slides away, not after (click-speed slice 4)
+  function close() { setOpen(false); router.push(closeHref, { scroll: false }); }
   const toggleTool = (id: string) => setF((x) => ({ ...x, tools: x.tools.includes(id) ? x.tools.filter((t) => t !== id) : [...x.tools, id] }));
 
   const routine = f.model === ROUTINE;

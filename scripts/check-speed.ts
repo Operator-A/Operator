@@ -6,7 +6,7 @@
 //    say so on the same line: `// refresh-ok: <reason>`.
 // 3. The Control Room has a loading frame (app/(room)/loading.tsx): a click shows it at once, and Next.js
 //    pre-loads dynamic pages up to it.
-// 4-12. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
+// 4-13. Pages load only what they show; pages just seen come back from the browser (staleTimes); navigation
 //    starts loading on hover, touch or focus (IntentLink). Each rule is below, where it is checked.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -148,7 +148,7 @@ for (const f of ["app"].filter(existsSync).flatMap(walk).filter((x) => x.startsW
 }
 // 8. The page frame draws first (card 303): what calls the business's tools (goal numbers, a connection's account
 //    details, how agents think) streams in behind <Suspense>, so the title, tabs and fast cards don't wait for it.
-const SUSPENDED = (inner: string) => new RegExp(`<Suspense(?: key=\\{\\w+\\})? fallback=\\{<\\w+[^}]*\\}>${inner}`);
+const SUSPENDED = (inner: string) => new RegExp(`<Suspense(?: key=\\{[\\w.]+\\})? fallback=\\{<\\w+[^}]*\\}>${inner}`);
 assert.ok(SUSPENDED("<Pane\\b").test(`<Suspense key={tab} fallback={<PaneSkel />}><Pane tab={tab} />`));
 assert.ok(!SUSPENDED("<Pane\\b").test(`<section><Pane tab={tab} />`));
 const home = read("app/(room)/page.tsx");
@@ -213,6 +213,18 @@ if (!tv || /\bloadSpec\(|\bstandingOf\(|for \([^)]*\) \{[^}]*await /.test(tv) ||
 if (!/trustView\(ids\)/.test(read("app/(room)/dept/[id]/page.tsx"))) problems.push("app/(room)/dept/[id]/page.tsx: ask trustView for this department's agents only (rule 12).");
 if (!/select\(ROSTER_RUN_COLS\)/.test(dataSrc) || /ROSTER_RUN_COLS = "[^"]*memory_json/.test(dataSrc)) problems.push("dashboard/data.ts: getRoster should read its runs with ROSTER_RUN_COLS, without memory_json (rule 12).");
 if (/\bloadOrg\(\)\.catch/.test(dataSrc)) problems.push("dashboard/data.ts: read the org chart with orgChartOnce(), once per request (rule 12).");
+
+// 13. Something shows at every click (slice 4 of the click-speed fix). The loading frame also sits under a department,
+//     a run, a goal, a proposal and Settings, so moving between two of the same kind shows it at once; a department's
+//     pane and an agent's sheet stream in behind <Suspense> (the sheet slides in as a skeleton); a sheet closes and its
+//     page loads at the same moment, not 320 ms later; an agent's address reads only the org chart before it redirects;
+//     the IntentLink just clicked pulses until its page shows (useLinkStatus).
+for (const d of ["dept/[id]", "runs/[id]", "goals/[id]", "proposals/[id]", "settings"]) if (!existsSync(`app/(room)/${d}/loading.tsx`)) problems.push(`app/(room)/${d}/loading.tsx is missing: moving between these pages would show nothing until the server answers (rule 13).`);
+const dept = read("app/(room)/dept/[id]/page.tsx");
+if (!SUSPENDED("<Pane\\b").test(dept) || !SUSPENDED("<AgentSheetFor\\b").test(dept) || !SUSPENDED("<AgentSheetFor\\b").test(home)) problems.push("a department's pane and an agent's sheet (dept and Company pages) should stream in behind <Suspense> (rule 13).");
+for (const f of ["agentSheet", "askSheet", "deptSettings", "newAgentSheet"].map((n) => `dashboard/components/${n}.tsx`)) if (/setTimeout\(\(\) => router\.push/.test(read(f))) problems.push(`${f}: closing waits before loading the page under it; push at once (rule 13).`);
+if (/\bgetRoster\(/.test(read("app/(room)/agents/[id]/page.tsx"))) problems.push("app/(room)/agents/[id]/page.tsx: the hop to an agent's sheet should read only the org chart (orgChartOnce), not the roster (rule 13).");
+if (!/useLinkStatus\(\)/.test(read("dashboard/components/intentLink.tsx"))) problems.push("dashboard/components/intentLink.tsx: the link just clicked should show it is loading (useLinkStatus) (rule 13).");
 
 if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
 console.log("check:speed ok");

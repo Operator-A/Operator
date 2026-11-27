@@ -24,3 +24,20 @@ export function SkelPane() {
     </div>
   );
 }
+
+/** An agent's sheet while its data loads (click-speed slice 4): the sheet slides in at once, its parts fill in after. */
+export function SheetSkel() {
+  return (
+    <>
+      <div className="ag-bg open" />
+      <aside className="ag open" aria-label="Loading" role="status">
+        <div className="stack" style={{ gap: 14, padding: 20 }}>
+          <div className="skel skel-title" />
+          <div className="skel skel-line" style={{ width: "55%" }} />
+          <div className="skel skel-card tall" />
+          <div className="skel skel-card" />
+        </div>
+      </aside>
+    </>
+  );
+}
