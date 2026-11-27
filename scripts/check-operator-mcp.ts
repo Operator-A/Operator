@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   CONSENT_NEVER, LIMITS, MCP_PATH, OP_TOOLS, PROTOCOL_VERSIONS, answerText, authServerMetadata, bearerOf, challenge, checkArgs, clientIdOf, clientOf, dispatch,
-  hashSecret, hashesMatch, isResponse, newToken, nextWindow, originOf, pickProtocol, pkceOk, readAuthorize, readRegistration, readRpc, redirectAllowed, redirectOk,
+  hashSecret, hashesMatch, isResponse, newToken, readAccess, refreshProblem, signAccess, nextWindow, originOf, pickProtocol, pkceOk, readAuthorize, readRegistration, readRpc, redirectAllowed, redirectOk,
   resourceMetadata, toolsFor, tokenParts, TOOL_BY_NAME, MAX_DRAFT_TOOLS, MAX_DRAFT_ACTIONS, MOVE_PROMPT, draftActions, CONSENT_OWNER_LINES, draftTools, staleRead, toolList, type RpcRequest,
 } from "../core/operator-mcp-rules";
 import { TENANT_TABLES } from "../core/tenancy";
@@ -297,6 +297,40 @@ const run = async () => {
   assert.equal(tokenParts(`${a.token}x`, "a"), null);
   assert.ok(!hashesMatch(null, p.hash) && hashSecret("a") !== hashSecret("b"));
   assert.throws(() => newToken("a", "home", GRANT), /org and a grant/);
+
+  // ---- signed access tokens (2026-11-27): one connection is shared by every Claude chat, session and routine, so
+  // each renewal makes its own access token and none signs another out; the grant is still checked on every call
+  const NOW = Date.parse("2026-11-27T03:00:00Z");
+  const t1 = signAccess(ORG, GRANT, NOW + 3600_000, SECRET), t2 = signAccess(ORG, GRANT, NOW + 3600_000 + 5000, SECRET);
+  assert.notEqual(t1, t2);
+  assert.deepEqual(readAccess(t1, SECRET, NOW), { orgId: ORG, grantId: GRANT, expMs: Math.floor((NOW + 3600_000) / 1000) * 1000 });
+  assert.ok(readAccess(t2, SECRET, NOW), "a second session's token works alongside the first");
+  assert.equal(readAccess(t1, SECRET, NOW + 3601_000), null, "an access token lasts its hour");
+  assert.equal(readAccess(t1, "x".repeat(40), NOW), null, "signed with this deployment's secret only");
+  assert.equal(readAccess(t1, "short", NOW), null);
+  assert.equal(readAccess(t1.replace(GRANT, "0e1a7c4e-0002-4000-8000-000000000002"), SECRET, NOW), null, "the grant can't be swapped");
+  const longer = t1.split("."); longer[3] = (parseInt(longer[3], 36) + 86400).toString(36);
+  assert.equal(readAccess(longer.join("."), SECRET, NOW + 7200_000), null, "the expiry can't be moved");
+  assert.equal(readAccess(newToken("a", ORG, GRANT).token, SECRET, NOW), null, "an old opa1 token isn't a signed one");
+  assert.equal(readAccess(newToken("r", ORG, GRANT).token, SECRET, NOW), null, "a refresh token isn't an access token");
+  assert.ok(t1.length < 200 && bearerOf(`Bearer ${t1}`) === t1);
+  assert.throws(() => signAccess(ORG, GRANT, NOW, "short"), /SESSION_SECRET/);
+
+  // ---- the refresh token isn't rotated: a copy that missed another session's renewal still renews
+  const r = newToken("r", ORG, GRANT), rp = tokenParts(r.token, "r")!;
+  const g = { revoked_at: null, refresh_hash: r.hash, refresh_expires_at: new Date(NOW + 864e5).toISOString() };
+  assert.equal(refreshProblem(g, rp.hash, NOW), null);
+  assert.equal(refreshProblem(g, rp.hash, NOW + 1000), null, "used again, it still works");
+  assert.equal(refreshProblem({ ...g, revoked_at: "2026-11-27T00:00:00Z" }, rp.hash, NOW), "revoked", "Disconnect ends it");
+  assert.equal(refreshProblem(null, rp.hash, NOW), "revoked");
+  assert.equal(refreshProblem(g, tokenParts(newToken("r", ORG, GRANT).token, "r")!.hash, NOW), "unknown refresh token");
+  assert.equal(refreshProblem({ ...g, refresh_hash: null }, rp.hash, NOW), "unknown refresh token");
+  assert.equal(refreshProblem(g, rp.hash, NOW + 2 * 864e5), "expired");
+  const opSrv = readFileSync("core/operator-mcp.ts", "utf8");
+  const refreshFn = opSrv.slice(opSrv.indexOf("export async function refresh("), opSrv.indexOf("/** Who a call is from"));
+  assert.match(refreshFn, /refresh_token: token/, "a renewal hands the same refresh token back");
+  assert.doesNotMatch(refreshFn, /refresh_hash|access_hash/, "a renewal changes no stored token, so no other session is signed out");
+  assert.match(opSrv, /readAccess\(token, clientSecret\(\)\)/, "calls check the signature");
   assert.equal(bearerOf(`Bearer ${a.token}`), a.token);
   assert.equal(bearerOf("Basic abc"), null);
 

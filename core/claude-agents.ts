@@ -96,24 +96,24 @@ export async function finishRun(runId: string, status: "ok" | "failed", result: 
 }
 
 /**
- * Chain steps in Claude whose session posted nothing within FINISH.withinHours (card 405): each is finished as
- * failed, once, and returned so the scheduler can go on with its chain. At most `limit` a call.
+ * Runs in Claude whose session posted nothing within FINISH.withinHours: each is finished as failed, once, so it
+ * stops showing as running (2026-11-27; until then only chain steps were). Chain steps (card 405) are returned so
+ * the scheduler can go on with their chain. At most `limit` a call.
  */
 export async function expireWaits(now = Date.now(), limit = 20): Promise<{ runId: string; chain: ChainCtx }[]> {
   const before = new Date(now - FINISH.withinHours * 3600_000).toISOString();
   const { data, error } = await db().from("agent_runs").select("id, claude_session")
-    .not("claude_session->chain", "is", null).is("claude_session->>finished_at", null).lt("started_at", before).limit(limit);
+    .not("claude_session->>fired_at", "is", null).is("claude_session->>finished_at", null).lt("started_at", before).limit(limit);
   if (error) throw new Error(error.message);
   const out: { runId: string; chain: ChainCtx }[] = [];
   for (const r of data ?? []) {
     const s = r.claude_session as ClaudeSession;
     const chain = readChainPayload(s.chain);
-    if (!chain) continue;
     const next: ClaudeSession = { ...s, finished_at: new Date(now).toISOString(), status: "failed", result: null };
     const { data: done, error: e2 } = await db().from("agent_runs").update({ claude_session: next, status: "failed", error: NO_RESULT, summary: `[Claude] ${NO_RESULT}` })
       .eq("id", r.id).is("claude_session->>finished_at", null).select("id");
     if (e2) throw new Error(e2.message);
-    if (done?.length) out.push({ runId: r.id as string, chain });
+    if (done?.length && chain) out.push({ runId: r.id as string, chain });
   }
   return out;
 }

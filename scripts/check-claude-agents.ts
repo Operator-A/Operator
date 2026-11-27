@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
-  FINISH, NO_RESULT, ROUTINE_API, chainWaits, waitExpired, ROUTINE_CAPS, afterFire, finishable, fireFits, fireNote, fireStart, isRunsOn, promptLine, readFinish, readNumbers, readRoutine, readSession, routineVaultId,
+  FINISH, NO_RESULT, ROUTINE_API, chainWaits, waitExpired, ROUTINE_CAPS, afterFire, finishable, fireFits, fireNote, fireStart, isRunsOn, promptLine, readFinish, readNumbers, readRoutine, readSession, routineVaultId, claudeRunning, elapsedWords, pollMs,
 } from "../core/routine-rules";
+import { runState, CLAUDE_WAITING } from "../dashboard/dept-feed";
 
 const read = (p: string) => readFileSync(p, "utf8");
 // a token shape for tests, built here so no secret-looking string sits in the repo
@@ -149,5 +150,42 @@ assert.match(agents, /chain \? \{ chain \} : \{\}/, "the session keeps the chain
 assert.match(agents, /\.is\("claude_session->>finished_at", null\)\.select\("id"\)/, "a result is taken once, so the chain goes on once");
 assert.match(read("core/operator-mcp.ts"), /if \(got\.chain\) await resumeChain\(origin, got\.chain, f\.runId, f\.status\)/, "finish_run goes on with the chain");
 assert.match(read("app/api/dispatch/route.ts"), /expireWaits\(now\)[\s\S]*resumeChain\(origin, x\.chain, x\.runId, "failed"\)/, "the scheduler fails waits past 24 hours and goes on");
+
+// ---- running in Claude (2026-11-27): a run shows as running until its session posts a result, live on its page
+{
+  const T = Date.parse("2026-11-27T03:00:00Z");
+  const fired = new Date(T - 5 * 60_000).toISOString();
+  assert.ok(claudeRunning({ fired_at: fired, finished_at: null }, T), "fired, no result yet: running");
+  assert.ok(!claudeRunning({ fired_at: fired, finished_at: new Date(T).toISOString() }, T), "a result ends it");
+  assert.ok(!claudeRunning({ fired_at: new Date(T - 25 * 3600_000).toISOString(), finished_at: null }, T), "past 24 hours it isn't shown as running");
+  assert.ok(!claudeRunning(null, T) && !claudeRunning({ fired_at: null }, T), "a run that started no session isn't running in Claude");
+  assert.deepEqual([elapsedWords(45_000), elapsedWords(252_000), elapsedWords(3_780_000), elapsedWords(-5)], ["45s", "4m 12s", "1h 03m", "0s"]);
+  assert.deepEqual([pollMs(0), pollMs(9 * 60_000), pollMs(11 * 60_000)], [10_000, 10_000, 30_000], "checks often at first, then calmly");
+  assert.deepEqual(runState("ok", true), { word: "Running in Claude", look: "live" });
+  assert.deepEqual(runState("ok"), { word: "Done", look: "ok" });
+  assert.ok(CLAUDE_WAITING.length < 120);
+  const n = fireNote({ agentName: "Lee", agentId: "b_lee", runId: "11111111-1111-4111-8111-111111111111", start: "hand", job: "Check things.", origin: "https://x.example" });
+  assert.match(n, /Call it even when the job failed/, "the note asks for a result on failure too");
+  assert.match(n, /reconnect OPERATOR in Claude's Settings > Connectors/, "a refused connector is said in the session's reply, where the owner sees it");
+  // the run page, Activity and the agent sheet show it; the live line asks a read-only route and reloads once
+  assert.match(read("app/(room)/runs/[id]/page.tsx"), /<ClaudeLive runId=\{run\.id\}/);
+  assert.match(read("app/(room)/runs/[id]/page.tsx"), /const look = runLook\(run, f\.now\)/);
+  assert.match(read("app/(room)/activity/page.tsx"), /look = runLook\(r, roster\.now\)/);
+  assert.match(read("dashboard/components/agentSheet.tsx"), /runState\(r\.status, r\.inClaude\)/);
+  const live = read("dashboard/components/claudeLive.tsx");
+  assert.match(live, /fetch\(`\/runs\/\$\{runId\}\/claude`/);
+  assert.match(live, /router\.refresh\(\); return; \} \/\/ refresh-ok: /, "one reload when the result is in, said why");
+  assert.match(live, /visibilityState === "visible"/, "a hidden tab doesn't ask");
+  const route = read("app/(room)/runs/[id]/claude/route.ts");
+  assert.match(route, /memberFromCookie/, "signed-in members only");
+  assert.doesNotMatch(route, /export async function (POST|PUT|PATCH|DELETE)/, "read-only");
+  assert.match(read("dashboard/data.ts"), /claude_fired_at:claude_session->>fired_at, claude_finished_at:claude_session->>finished_at, claude_url:claude_session->>url"/, "lists read only the session's start, end and link");
+  // every run in Claude with no result in 24 hours is marked failed, not only chain steps
+  const ag = read("core/claude-agents.ts");
+  const exp = ag.slice(ag.indexOf("export async function expireWaits"), ag.indexOf("/** Whether this run is a chain step"));
+  assert.match(exp, /\.not\("claude_session->>fired_at", "is", null\)/);
+  assert.doesNotMatch(exp, /claude_session->chain/);
+  assert.match(exp, /if \(done\?\.length && chain\) out\.push/, "only chain steps go back to the scheduler");
+}
 
 console.log("check:claude-agents ok");

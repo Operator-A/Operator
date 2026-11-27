@@ -5,8 +5,8 @@ import { REALERT_HOURS } from "@/core/status-rules";
 import { emailState } from "@/integrations/email";
 import { recentEvents } from "@/core/events";
 import { m4 } from "@/dashboard/format";
-import { clock, dayLabel } from "@/dashboard/dept-feed";
-import { RUN_LOOK } from "@/dashboard/status";
+import { CLAUDE_WAITING, clock, dayLabel } from "@/dashboard/dept-feed";
+import { inClaude, runLook } from "@/dashboard/status";
 import { deptHue } from "@/dashboard/dept-rules";
 import { IntentLink } from "@/dashboard/components/intentLink";
 import {
@@ -83,13 +83,13 @@ export default async function Activity({ searchParams }: { searchParams: Promise
           <div key={g.day}>
             <h6 className="act-day">{g.day}</h6>
             {g.runs.map((r) => {
-              const a = roster.byId[r.agent_id], d = hueOf[deptOf[r.agent_id]], look = RUN_LOOK[r.status];
+              const a = roster.byId[r.agent_id], d = hueOf[deptOf[r.agent_id]], look = runLook(r, roster.now);
               return (
                 <Link key={r.id} href={`/runs/${r.id}`} className="act-run" title={dayLabel(r.started_at, tz, roster.now)}>
                   <span className="act-tm">{clock(r.started_at, tz)}</span>
                   <span className="act-mid">
                     <span className="act-who" style={{ "--hue": d?.hue ?? "var(--mut)" } as React.CSSProperties}><i />{a?.name ?? r.agent_id}<span className="muted">· {d?.name ?? "Company"}</span></span>
-                    <span className="act-sum">{r.error ? `Error: ${r.error}` : r.summary ?? (r.status === "running" ? "Working now." : "Ran.")}</span>
+                    <span className="act-sum">{inClaude(r, roster.now) ? CLAUDE_WAITING : r.error ? `Error: ${r.error}` : r.summary ?? (r.status === "running" ? "Working now." : "Ran.")}</span>
                   </span>
                   <span className="act-rt"><span className="act-st" style={{ background: look.bg, color: look.fg }}>{look.label}</span>{r.status === "skipped" ? "—" : m4(r.cost_usd)}</span>
                 </Link>

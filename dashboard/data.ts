@@ -91,6 +91,10 @@ export interface Run {
   error: string | null;
   /** What the run loaded from memory (core/memory.ts loadSummary); null for runs that load none. */
   memory_json: RunMemory | null;
+  /** A run of an agent that runs in Claude: when its routine started the session, when the session posted its result, and the session. */
+  claude_fired_at?: string | null;
+  claude_finished_at?: string | null;
+  claude_url?: string | null;
 }
 export interface RunMemory {
   budget: number; tokens: number; dropped: number; over_budget: boolean;
@@ -161,7 +165,8 @@ export interface Floor extends Roster, Counts {
   org: OrgState;
 }
 
-export const RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error, memory_json";
+// a run in Claude: only the session's start, end and link (not its result or chain), so lists stay small
+export const RUN_COLS = "id, agent_id, trigger, started_at, ended_at, status, tokens_in, tokens_out, cost_usd, summary, error, memory_json, claude_fired_at:claude_session->>fired_at, claude_finished_at:claude_session->>finished_at, claude_url:claude_session->>url";
 const toRun = (r: Record<string, unknown>) => ({ ...r, cost_usd: Number(r.cost_usd ?? 0), tokens_in: Number(r.tokens_in ?? 0), tokens_out: Number(r.tokens_out ?? 0) }) as Run;
 
 /** Midnight UTC: the same day boundary withRun uses for daily budgets. */

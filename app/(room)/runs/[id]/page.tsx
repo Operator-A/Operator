@@ -11,7 +11,8 @@ import { dryRun, react } from "@/dashboard/actions";
 import { getChainRuns, getFloor, getReactRules, getRun, getRunImage, getRunNumbers, getRunReactions, leadItemsOfRun } from "@/dashboard/data";
 import { ReactBar } from "@/dashboard/components/react";
 import { dur, m4, num, utcStr, when } from "@/dashboard/format";
-import { RUN_LOOK } from "@/dashboard/status";
+import { inClaude, runLook } from "@/dashboard/status";
+import { ClaudeLive } from "@/dashboard/components/claudeLive";
 import { DryRun, MarkSeen } from "@/dashboard/components/client";
 import { Icon } from "@/dashboard/components/Icon";
 import { AgentMap } from "@/dashboard/components/AgentMap";
@@ -42,7 +43,9 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const fromSession = run.summary?.startsWith("[Claude, written by the session]") ?? false;
   const leads = items ? items.length : null;
   const map = mf && mapOf({ agentId: a.id, spec: mf.spec, menu: builderMenu(f.crew, f.health, custom), schedule: null, chain: null, usedBy: mf.usedBy, run: mapRunOf(run, steps, f.tz) });
-  const look = RUN_LOOK[run.status];
+  // a run in Claude shows as running until its session posts a result (2026-11-27)
+  const live = inClaude(run, f.now);
+  const look = runLook(run, f.now);
 
   // Where the money went, split in code with the same prices the agents bill with.
   // a version can pick another model, so use the priced model whose prices give this run's cost, the live version's first
@@ -61,7 +64,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
   const title = run.status === "skipped" ? `Skipped · ${when(run.started_at, f.tz)}` : run.status === "failed" ? `Failed · ${when(run.started_at, f.tz)}` : `${run.trigger === "manual" ? "Manual" : run.trigger === "approval" ? "Approval" : run.trigger === "chain" ? "Chain" : run.trigger === "preview" ? "Try" : run.trigger === "chat" ? "Chat" : "Scheduled"} run · ${when(run.started_at, f.tz)}`;
   const stats = [
     ["Started", `${when(run.started_at, f.tz)} ${zoneLabel(f.tz, run.started_at)}`, utcStr(run.started_at)],
-    ["Duration", dur(run.started_at, run.ended_at), ""],
+    ["Duration", live ? "Still running in Claude" : run.claude_fired_at && run.claude_finished_at ? dur(run.claude_fired_at, run.claude_finished_at) : dur(run.started_at, run.ended_at), run.claude_fired_at ? "From the routine starting to the session’s result" : ""],
     ["Cost", m4(run.cost_usd), ""],
     ["Tokens", `${num(run.tokens_in)} in · ${num(run.tokens_out)} out`, ""],
     ["Trigger", run.trigger === "cron" ? "Vercel Schedule" : run.trigger === "manual" ? "Someone pressed Run" : run.trigger === "approval" ? "An approver approved changes (gateway)" : run.trigger === "chain" ? `Chain${chain ? `: ${chain.name}` : ""}` : run.trigger === "preview" ? "A try from the builder: nothing sent or saved" : run.trigger === "chat" ? `The owner’s message in the chat${asked ? `: “${asked.slice(0, 200)}”` : ""}` : run.trigger, ""],
@@ -77,7 +80,7 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
             <span style={{ fontSize: 12.5, color: "#9A9AA3" }}>Run replay · {a.name}, {a.role}</span>
             <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-.02em" }}>{title}</span>
           </div>
-          <span className="pill" style={{ background: "#24242A" }}><span className="dot" style={{ background: look.dot }} />{look.label}</span>
+          <span className="pill" style={{ background: "#24242A" }}><span className={`dot${look.pulse ? " pulse" : ""}`} style={{ background: look.dot }} />{look.label}</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16 }}>
           {stats.map(([k, v, t]) => <div key={k} title={t || undefined} style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 12, color: "#8A8A93" }}>{k}</span><span style={{ fontSize: 16, fontWeight: 600 }}>{v}</span></div>)}
@@ -141,7 +144,9 @@ export default async function Replay({ params }: { params: Promise<{ id: string 
       <div className="grid2">
         <div className="card" style={{ gap: 12 }}>
           <span className="card-t">Summary</span>
-          <span style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}><Summary text={run.summary ?? (run.status === "running" ? "Working now…" : "No summary.")} /></span>
+          {live && run.claude_fired_at
+            ? <ClaudeLive runId={run.id} firedAt={run.claude_fired_at} url={run.claude_url ?? null} />
+            : <span style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}><Summary text={run.summary ?? (run.status === "running" ? "Working now…" : "No summary.")} /></span>}
           {/* eslint-disable-next-line @next/next/no-img-element -- a short signed link to a private picture, not a static asset */}
           {picture && <a href={picture} target="_blank" rel="noreferrer"><img src={picture} alt="The picture this step made" style={{ width: "100%", maxWidth: 520, borderRadius: 14, border: "1px solid var(--bd)" }} /></a>}
           {run.error && <div style={{ padding: "12px 14px", borderRadius: 14, background: "var(--red-soft)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, color: "var(--red-ink)", overflowWrap: "anywhere" }}>{run.error}</div>}

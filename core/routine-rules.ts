@@ -71,6 +71,29 @@ export const NO_RESULT = `No result from the Claude session within ${FINISH.with
 /** Whether a chain waits on this session: it started from a chain step and has no result yet. */
 export const chainWaits = (s: { chain?: unknown; finished_at?: string | null } | null | undefined) => !!s?.chain && !s.finished_at;
 
+/**
+ * Whether a run is still running in Claude (2026-11-27): its routine started a session that hasn't posted a result,
+ * within FINISH.withinHours. The run row itself ended "ok" when the routine started; OPERATOR shows it as running
+ * until the session's finish_run, or until the scheduler marks it failed with NO_RESULT.
+ */
+export function claudeRunning(s: { fired_at?: string | null; finished_at?: string | null } | null | undefined, now = Date.now()): boolean {
+  if (!s?.fired_at || s.finished_at) return false;
+  const at = Date.parse(s.fired_at);
+  return Number.isFinite(at) && now - at <= FINISH.withinHours * 3600_000;
+}
+
+/** "45s", "4m 12s", "1h 03m": how long a session has been running, for the live line on a run. */
+export function elapsedWords(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${String(s % 60).padStart(2, "0")}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+
+/** How often the run page asks whether the session posted its result: every 10 s for 10 minutes, then every 30 s. */
+export const pollMs = (elapsedMs: number) => (elapsedMs < 10 * 60_000 ? 10_000 : 30_000);
+
 /** Whether a waiting session is past FINISH.withinHours, so its step counts as failed. */
 export function waitExpired(s: { chain?: unknown; finished_at?: string | null; fired_at?: string | null } | null | undefined, now = Date.now()): boolean {
   if (!chainWaits(s) || !s?.fired_at) return false;
@@ -182,7 +205,8 @@ export function fireNote(n: FireNote): string {
   }
   lines.push(
     "",
-    "When you are done, call finish_run on the OPERATOR connector with this run id, ok or failed, and a short result.",
+    "When you are done, call finish_run on the OPERATOR connector with this run id, ok or failed, and a short result. Call it even when the job failed: until you do, the run shows as running in OPERATOR.",
+    `If the OPERATOR connector is missing or refuses you, end your reply with: "The result didn't reach OPERATOR: reconnect OPERATOR in Claude's Settings > Connectors." OPERATOR can't see this session otherwise.`,
     "Anything that sends, buys, posts or changes something for the business goes to OPERATOR with propose, so a person decides it there.",
   );
   return lines.join("\n").slice(0, ROUTINE_API.maxText);

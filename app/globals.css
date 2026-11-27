@@ -1771,3 +1771,5 @@ a.ov-tile:hover { text-decoration: none; border-color: var(--mut2); }
   .ask-body .dp-room { border-radius: 0; }
   .ask-body .dp-log { padding: 10px 10px 6px; }
 }
+/* a run whose Claude session is still going (2026-11-27) */
+.claude-live { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 16px; background: var(--acc-soft); border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent); }
