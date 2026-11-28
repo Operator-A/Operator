@@ -5,6 +5,7 @@
 // are worked out in code (gaps stay gaps, changes need something to compare); the page reads only what its widgets
 // show, from saved rows only, and a department with no layout keeps the default Overview.
 import assert from "node:assert/strict";
+import { DEFAULT_LAYOUT, MANY_KINDS, WIDGET_ABOUT, add, blockWords, catalog, flatten, flow, fresh, keyWords, layoutSource, metricKeys, move, packLayoutHere, remove, replace, resize, toSave } from "../core/layout-edit-rules";
 import { readFileSync } from "node:fs";
 import {
   WIDGETS, layoutProblems, monthTile, packFrom, readLayout, readingTile, runMetric, seriesBars, spanOf, widgetNeeds, metricWord, pctWord,
@@ -182,5 +183,94 @@ assert.match(mig, /pg_column_size\(overview\) <= 8192/);
 assert.match(mig, /add column if not exists pack text/);
 assert.match(read("core/install.ts"), /k !== "overview" && k !== "pack"/, "installs work before the migration");
 assert.match(read("docs/packs.md"), /## The Overview/);
+
+// ---- Editing a department's Overview (packs slice 5, core/layout-edit-rules.ts) ----
+{
+  // the usual Overview as widgets passes the same check a pack's layout does, and covers every show-once widget
+  assert.deepEqual(layoutProblems(DEFAULT_LAYOUT, []), []);
+  const once = WIDGETS.filter((w) => !MANY_KINDS.includes(w));
+  assert.deepEqual([...new Set(flatten(DEFAULT_LAYOUT).map((x) => x.w))].sort(), [...once].sort(), "editing a department with no layout starts from the usual page");
+  assert.deepEqual(flow(flatten(DEFAULT_LAYOUT)), DEFAULT_LAYOUT, "the usual page flows back into its own rows");
+  for (const w of WIDGETS) assert.ok(WIDGET_ABOUT[w], `${w} has a line in the catalog`);
+
+  // rows fill three columns in order, at most three widgets a row, so nothing leaves a gap
+  const ones = Array.from({ length: 7 }, () => ({ w: "measure_tile" as const, measure: "revenue_month" }));
+  assert.deepEqual(flow(ones).map((r) => r.length), [3, 3, 1]);
+  assert.deepEqual(flow([{ w: "report" }, { w: "report" }, { w: "week_tile" }]).map((r) => r.length), [1, 2], "a two-thirds widget that doesn't fit starts a row");
+  assert.deepEqual(flow([{ w: "needs" }, { w: "week_tile" }]).map((r) => r.length), [1, 1], "a full row holds one");
+  assert.deepEqual(flow([]), []);
+
+  // move, width, remove, add, replace never change the list they're given
+  const xs = flatten(DEFAULT_LAYOUT);
+  const before = JSON.stringify(xs);
+  assert.deepEqual(move(xs, 1, -1).slice(0, 2).map((x) => x.w), ["report", "needs"]);
+  assert.deepEqual(move(xs, 0, -1), xs, "the first can't move earlier");
+  assert.deepEqual(move(xs, xs.length - 1, 1), xs, "the last can't move later");
+  assert.equal(resize(xs, 2, 3)[2].span, 3);
+  assert.equal(remove(xs, 0).length, xs.length - 1);
+  assert.equal(add(xs, { w: "needs" }).length, xs.length, "a show-once widget already on the page is refused");
+  assert.equal(add(remove(xs, 0), { w: "needs" }).at(-1)!.w, "needs", "a new widget goes at the end");
+  assert.equal(add(xs, { w: "series_chart", field: "orders", days: 14 }).length, xs.length + 1, "widgets with settings can be on the page more than once");
+  assert.equal(add(Array.from({ length: 24 }, () => ({ w: "measure_tile" as const })), { w: "measure_tile" }).length, 24, "at most 24 widgets");
+  assert.equal(replace(xs, 0, { w: "chains" })[0].w, "chains");
+  assert.equal(JSON.stringify(xs), before);
+
+  // the catalog greys out what shows once and is on the page
+  const cat = catalog([{ w: "needs" }, { w: "series_chart" }]);
+  assert.equal(cat.length, WIDGETS.length);
+  assert.equal(cat.find((c) => c.w === "needs")!.used, true);
+  assert.equal(cat.find((c) => c.w === "series_chart")!.used, false);
+  assert.equal(cat.find((c) => c.w === "report")!.used, false);
+
+  // a new widget with settings starts from something that saves
+  const ag = [{ id: "analytics_head", name: "Iris", keys: ["visits_7d"] }];
+  assert.deepEqual(fresh("series_chart", ag), { w: "series_chart", field: "revenue", days: 30 });
+  assert.deepEqual(fresh("run_metric", ag), { w: "run_metric", agent: "analytics_head", key: "visits_7d", label: "Visits 7d" });
+  assert.equal(fresh("measure_tile", ag).w, "measure_tile");
+  assert.deepEqual(fresh("report", ag), { w: "report" });
+  assert.equal(fresh("run_metric", []).agent, "", "no agents: an agent number can't save until one is picked");
+  assert.equal(keyWords("now_sessions"), "Now sessions");
+  assert.equal(blockWords({ w: "run_metric", agent: "x", key: "k", label: "Visits" }, {}).sub, "Agent number · an agent not in this department");
+  assert.equal(blockWords({ w: "series_chart", field: "orders", days: 90 }, {}).name, "Orders per day, 90 days");
+
+  // saving: an empty page or null is the usual Overview; fields a kind doesn't take are dropped; the pack check refuses the rest
+  assert.deepEqual(toSave(null, []), { layout: null, problems: [] });
+  assert.deepEqual(toSave([], []), { layout: null, problems: [] });
+  const sneaky = toSave([{ w: "report", span: 2, label: "x", agent: "y" } as never, { w: "measure_tile", measure: "revenue_month", label: "  Sales  ", field: "orders" } as never], []);
+  assert.deepEqual(sneaky.layout, [[{ w: "report", span: 2 }, { w: "measure_tile", measure: "revenue_month", label: "Sales" }]]);
+  assert.deepEqual(sneaky.problems, []);
+  assert.ok(toSave([{ w: "run_metric", agent: "elsewhere", key: "k", label: "K" }], ["analytics_head"]).problems.length, "an agent number from another department is refused");
+  assert.deepEqual(toSave([{ w: "run_metric", agent: "analytics_head", key: "visits_7d", label: "Visits" }], ["analytics_head"]).problems, []);
+  assert.ok(toSave([{ w: "nope" } as never], []).problems.length, "only core's widgets");
+  assert.ok(toSave([{ w: "needs" }, { w: "needs" }], []).problems.length, "a show-once widget twice is refused");
+
+  // the keys an agent's last runs saved: numbers only, most recent first, no repeats
+  assert.deepEqual(metricKeys([{ metrics: { visits_7d: 4180, note: "x", Bad: 1 } }, { metrics: { conversion_pct: 0.024, visits_7d: 3900 } }, { metrics: null }, { metrics: [1] }]), ["visits_7d", "conversion_pct"]);
+
+  // where the layout came from
+  const packL: Layout = [[{ w: "needs" }], [{ w: "report" }, { w: "week_tile" }]];
+  assert.equal(layoutSource(null, { name: "Store analytics", layout: packL }, null, "a@b.c"), "The usual Overview");
+  assert.equal(layoutSource(packL, { name: "Store analytics", layout: packL }, { by: "a@b.c", at: "2026-11-28T10:00:00Z" }, "a@b.c"), "Laid out by the Store analytics pack");
+  assert.equal(layoutSource([[{ w: "needs" }]], { name: "Store analytics", layout: packL }, { by: "A@b.c", at: "2026-11-28T10:00:00Z" }, "a@b.c"), "Laid out by you, Nov 28");
+  assert.equal(layoutSource([[{ w: "needs" }]], null, { by: "sam@b.c", at: "2026-11-28T10:00:00Z" }, "a@b.c"), "Laid out by sam@b.c, Nov 28");
+  assert.equal(layoutSource([[{ w: "needs" }]], null, null, "a@b.c"), "Your own layout");
+
+  // a pack's layout here: its agent numbers follow to this department's agents; one whose agent isn't here is left out
+  const raw = [[{ w: "report", span: 2 }, { w: "run_metric", agent: "analytics_head", key: "visits_7d", label: "Visits" }], [{ w: "run_metric", agent: "site_conversion", key: "c", label: "C" }]];
+  assert.deepEqual(packLayoutHere(raw, new Map([["analytics_head", "iris"]])), [[{ w: "report", span: 2 }, { w: "run_metric", agent: "iris", key: "visits_7d", label: "Visits" }]]);
+  assert.equal(packLayoutHere("nope", new Map()), null);
+}
+const editor = read("dashboard/components/layoutEditor.tsx");
+assert.match(editor, /^"use client"/);
+assert.ok(!editor.includes("router.refresh"), "no refresh after saving (check:speed)");
+assert.ok(!editor.includes("dangerouslySetInnerHTML"));
+const actions = read("dashboard/packActions.ts");
+const saveFn = actions.slice(actions.indexOf("export async function saveLayout"));
+assert.match(saveFn, /^export async function saveLayout[^{]+\{\n\s+const \{ me, no \} = await asRole\("approver"\); if \(no\) return no;/, "saving a layout is for the owner and approvers, checked first");
+assert.match(saveFn, /toSave\(items, agents\)/, "saved through the same check as a pack's layout, with this department's agents");
+assert.match(saveFn, /audit\(me, "edit_layout"/, "every save is in the audit log");
+const deptPage = read("app/(room)/dept/[id]/page.tsx");
+assert.match(deptPage, /editing=\{tab === "overview" && sp\.layout === "edit" && me\.role !== "viewer"\}/, "only the owner and approvers edit");
+assert.match(deptPage, /canEdit=\{me\.role !== "viewer"\}/, "only the owner and approvers see Edit layout");
 
 console.log("check:widgets ok");
