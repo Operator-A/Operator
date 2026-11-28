@@ -7,11 +7,15 @@ import type { Chain } from "@/core/flow-rules";
 
 /** A starting crew, as data: one or more department packs merged (mergePacks), installed by core/install.ts. */
 export interface Crew {
+<<<<<<< HEAD
   /**
    * `overview` is the department's Overview as rows of core's widgets (core/widget-rules.ts); none keeps the default
    * Overview. `pack` is the pack it came from ("store-analytics@1"), set by mergePacks, never by the file.
    */
   departments: { id: string; name: string; sort: number; lead_checks_drafts: boolean; overview?: unknown; pack?: string }[];
+=======
+  departments: { id: string; name: string; sort: number; lead_checks_drafts: boolean }[];
+>>>>>>> d3f8263695d0a735d45a453f2e678b7b8ccf27dd
   agents: { id: string; name: string; role: string; model: string; icon: string | null; hue: string | null; daily_budget_usd: number; manual_only: boolean }[];
   /** Each agent's spec (core/agent-spec.ts AgentSpec), installed as version 1. */
   specs: Record<string, unknown>;
@@ -134,7 +138,11 @@ export function mergePacks(picked: readonly DepartmentPack[]): Crew {
   const crew: Crew = { departments: [], agents: [], specs: {}, playbooks: {}, seats: [], flow: { chains: [] }, goals: [] };
   const chains = new Map<string, Chain>();
   for (const t of picked) {
+<<<<<<< HEAD
     crew.departments.push(...t.departments.map((d) => ({ ...d, pack: `${t.id}@${t.version}` })));
+=======
+    crew.departments.push(...t.departments);
+>>>>>>> d3f8263695d0a735d45a453f2e678b7b8ccf27dd
     crew.agents.push(...t.agents);
     Object.assign(crew.specs, t.specs);
     Object.assign(crew.playbooks, t.playbooks);
