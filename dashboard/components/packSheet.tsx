@@ -3,11 +3,11 @@
 // packs, then a confirm step listing what the pack adds and the connections it reads) and the Fill from a pack sheet
 // on an open seat (agent packs that fit it, their suggested actions as Can do toggles that start off). Both are in the
 // address (?add=dept, ?fill=<seat>), so back closes them. What each card says is worked out on the server
-// (dashboard/pack-sheet-rules.ts); the install is one owner-only server action (dashboard/packActions.ts).
+// (core/pack-card-rules.ts); the install is one owner-only server action (dashboard/packActions.ts).
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import type { AgentCard, DeptCard, Tag } from "@/dashboard/pack-sheet-rules";
+import type { AgentCard, DeptCard, Tag } from "@/core/pack-card-rules";
 
 type Result = { ok: boolean; text: string; href?: string };
 const X = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>;
@@ -43,10 +43,12 @@ function Shell({ open, close, title, sub, children, foot }: { open: boolean; clo
 }
 
 /** Add a department: Avery first, then the department packs; Next shows what the picked one adds, and Add installs it. */
-export function AddDeptSheet({ packs, averyHref, closeHref, install }: { packs: DeptCard[]; averyHref: string; closeHref: string; install: (id: string) => Promise<Result> }) {
+export function AddDeptSheet({ packs, averyHref, closeHref, install, startAt }: { packs: DeptCard[]; averyHref: string; closeHref: string; install: (id: string) => Promise<Result>; startAt?: string }) {
   const { open, close, router } = useSheet(closeHref);
-  const [pick, setPick] = useState<string | null>(packs[0]?.id ?? null);
-  const [step, setStep] = useState<"list" | "confirm">("list");
+  // a link from the OPERATOR connector (list_packs) opens straight on that pack's confirm step
+  const opened = packs.some((x) => x.id === startAt) ? startAt! : null;
+  const [pick, setPick] = useState<string | null>(opened ?? packs[0]?.id ?? null);
+  const [step, setStep] = useState<"list" | "confirm">(opened ? "confirm" : "list");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, start] = useTransition();
   const p = packs.find((x) => x.id === pick) ?? null;

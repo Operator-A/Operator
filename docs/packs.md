@@ -132,7 +132,7 @@ switched off, as at setup.
 
 - **A department pack.** The sidebar's and Company page's Add a department opens a sheet (`/?add=dept`): Avery's
   interview first, then each built-in department pack but the Chief of Staff, its card saying what it adds and which
-  connections it reads, checked against the business's (`dashboard/pack-sheet-rules.ts`). A connection the pack's
+  connections it reads, checked against the business's (`core/pack-card-rules.ts`). A connection the pack's
   first playbook steps need is "not connected" when missing, any other is "optional". Next shows what it adds; Add
   installs it (`dashboard/packActions.ts` `installDeptPack`, `core/pack-install.ts` `installDepartmentPack`).
 - **New ids.** A pack's ids are names inside the file (`core/pack-install-rules.ts` `livePlan`). A department whose
@@ -155,8 +155,20 @@ switched off, as at setup.
   version 1 and its playbook proposed, with only the actions the owner turned on and the pack suggests
   (`seatPlan`, as a hire card does), and its `starts` as its own chain, off (`seatFlow`).
 
-`check:pack-install` holds all of it. A newer version offered as drafts, and listing and drafting installs from the
-OPERATOR connector, come next.
+### A newer version, and Claude
+
+Decided 2026-11-28 (packs slice 3b, mockup screen 5). When the pack on file is newer than the version a department
+came from, its settings sheet offers it with what changed, worked out in code (`core/pack-update-rules.ts`
+`packUpdate`). Each agent is matched to the pack's agent by its first spec's name. Save as drafts (owner only,
+`savePackDrafts`) saves each changed spec as a draft version: Try it and Go live as for any change, and a spec the
+owner edited is never replaced, only joined by the draft. What belongs to the business stays: the agent's name,
+granted actions and custom tools, Notion pages, report page and whose results it reads. The Overview layout changes
+on save. Chains, goals and seats never change in an update, and an agent new in the version isn't added.
+
+The OPERATOR connector's `list_packs` lists the built-in packs with links into the install sheets above (a department
+pack's link opens its confirm step); nothing installs from Claude.
+
+`check:pack-install` holds all of it.
 
 `npm run org:new -- --slug … --name … --owner … --packs finance,prospecting` does the same from the
 command line.

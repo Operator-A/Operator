@@ -13,7 +13,8 @@ import { readLayout } from "../core/widget-rules";
 import { readFlow, type Flow } from "../core/flow-rules";
 import { MAX_DEPARTMENTS, MAX_SEATS } from "../core/org-rules";
 import type { DepartmentPack } from "../core/pack-rules";
-import { agentCard, deptCard } from "../dashboard/pack-sheet-rules";
+import { agentCard, deptCard } from "../core/pack-card-rules";
+import { packUpdate, readTag } from "../core/pack-update-rules";
 import type { ToolTileId } from "../core/tools-step-rules";
 
 const read = (f: string) => readFileSync(f, "utf8");
@@ -195,5 +196,35 @@ ok(/owner && AGENT_PACKS\.some\(\(p\) => seatFits\(p, x\)\)/.test(deptPage), "Fi
 ok(/fromPack \? <Suspense fallback=\{null\}><PackBanner /.test(deptPage), "a department from a pack streams in its banner");
 ok(/Can do \(all start off\)/.test(sheet) && /useState<string\[\]>\(\[\]\)/.test(sheet), "suggested actions start off");
 ok(!/router\.refresh/.test(sheet), "no refresh after an install");
+
+// ---- a newer version: what changed in code, drafts beside what runs, the business's own bits kept
+eq(readTag("store-analytics@2"), { id: "store-analytics", version: 2 }, "a pack tag reads back");
+eq(readTag("nope"), null, "and a bad one doesn't");
+{
+  const v1 = livePlan(store, empty);
+  const live = [{ id: "analytics_head", name: "Iris", firstName: "Iris", spec: { ...(v1.crew.specs.analytics_head as object), notionPages: [{ id: "0123456789abcdef0123456789abcdef", label: "Notes" }], tools: [...(v1.crew.specs.analytics_head as { tools: string[] }).tools, "shopify_copy"] }, edited: "Nov 20" }];
+  eq(packUpdate(store, store.version, v1.crew.departments[0].overview, live), null, "no offer when the pack isn't newer");
+  const spec2 = { ...(store.specs.analytics_head as object), directive: "Read the numbers, then say one thing.", tools: [...(store.specs.analytics_head as { tools: string[] }).tools, "analytics_landing_pages"].filter((t, i, a) => a.indexOf(t) === i) };
+  const v2 = { ...store, version: store.version + 1, specs: { analytics_head: spec2 }, agents: [...store.agents, { ...store.agents[0], id: "extra", name: "Nova", role: "Analyst" }] } as DepartmentPack;
+  const u = packUpdate(v2, store.version, v1.crew.departments[0].overview, live)!;
+  ok(u && u.to === store.version + 1, "a newer pack is offered");
+  eq(u.drafts.length, 1, "one changed agent, one draft");
+  ok(u.drafts[0].spec.directive === "Read the numbers, then say one thing.", "the draft has the new instructions");
+  ok(u.drafts[0].spec.tools.includes("shopify_copy"), "and keeps the action the owner granted");
+  eq(u.drafts[0].spec.notionPages, [{ id: "0123456789abcdef0123456789abcdef", label: "Notes" }], "and the business's Notion pages");
+  ok(u.lines.some((l) => l.mark === "~" && /Iris’s spec: .*new instructions/.test(l.text)), "what changed, in words");
+  ok(u.lines.some((l) => l.mark === "+" && /Nova/.test(l.text) && /not added/.test(l.text)), "an agent new in the version is named, not added");
+  ok(u.lines.some((l) => l.text === "Chains, goals and seats unchanged"), "chains, goals and seats never change");
+  eq(u.warns.length, 1, "a spec the owner edited gets a note");
+  ok(/nothing you made is replaced/.test(u.warns[0]), "saying nothing is replaced");
+  eq(u.overview, null, "the same layout isn't rewritten");
+  const same = packUpdate({ ...store, version: store.version + 1 } as DepartmentPack, store.version, v1.crew.departments[0].overview, [{ ...live[0], spec: v1.crew.specs.analytics_head, edited: null }])!;
+  eq(same.drafts, [], "an unchanged spec gets no draft");
+}
+const inst2 = read("core/pack-install.ts");
+ok(/saveSpecVersion\(x\.agentId, x\.spec/.test(inst2) && !/activateSpecVersion/.test(inst2), "an update saves drafts, never goes live");
+ok(/export async function savePackDrafts[\s\S]{0,200}await asRole\("owner"\)[\s\S]*?await audit\(me, "update_pack"/.test(read("dashboard/packActions.ts")), "the owner saves it, audited");
+const mcp = read("core/operator-mcp.ts");
+ok(/async function listPacks/.test(mcp) && !/installDepartmentPack|installAgentPack|savePackUpdate/.test(mcp), "Claude lists packs and links to the sheets; it never installs");
 
 console.log(`check:pack-install ok (${n} checks)`);
