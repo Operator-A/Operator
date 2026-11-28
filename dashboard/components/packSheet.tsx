@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import type { AgentCard, DeptCard, Tag } from "@/core/pack-card-rules";
+import { packsHref } from "@/core/pack-market-view";
 
 type Result = { ok: boolean; text: string; href?: string };
 const X = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>;
@@ -43,12 +44,10 @@ function Shell({ open, close, title, sub, children, foot }: { open: boolean; clo
 }
 
 /** Add a department: Avery first, then the department packs; Next shows what the picked one adds, and Add installs it. */
-export function AddDeptSheet({ packs, averyHref, closeHref, install, startAt }: { packs: DeptCard[]; averyHref: string; closeHref: string; install: (id: string) => Promise<Result>; startAt?: string }) {
+export function AddDeptSheet({ packs, averyHref, closeHref, install }: { packs: DeptCard[]; averyHref: string; closeHref: string; install: (id: string) => Promise<Result> }) {
   const { open, close, router } = useSheet(closeHref);
-  // a link from the OPERATOR connector (list_packs) opens straight on that pack's confirm step
-  const opened = packs.some((x) => x.id === startAt) ? startAt! : null;
-  const [pick, setPick] = useState<string | null>(opened ?? packs[0]?.id ?? null);
-  const [step, setStep] = useState<"list" | "confirm">(opened ? "confirm" : "list");
+  const [pick, setPick] = useState<string | null>(packs[0]?.id ?? null);
+  const [step, setStep] = useState<"list" | "confirm">("list");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, start] = useTransition();
   const p = packs.find((x) => x.id === pick) ?? null;
@@ -79,7 +78,7 @@ export function AddDeptSheet({ packs, averyHref, closeHref, install, startAt }: 
 
   return (
     <Shell open={open} close={close} title="Add a department" sub="Start from a pack, or design one with Avery." foot={<>
-      <span className="dp-note note">More packs, from the community, come with the marketplace.</span>
+      <span className="dp-note note"><Link href={packsHref()} className="pk-all">See every pack, with details</Link></span>
       <button type="button" className="dp-btn" onClick={close}>Cancel</button>
       <button type="button" className="dp-btn dark" disabled={!p} onClick={() => setStep("confirm")}>{p ? `Next: ${p.name}` : "Next"}</button>
     </>}>
@@ -95,9 +94,10 @@ export function AddDeptSheet({ packs, averyHref, closeHref, install, startAt }: 
 }
 
 /** Fill an open seat from an agent pack: the packs that fit, the picked one's suggested actions as toggles that start off. */
-export function FillSeatSheet({ seat, head, packs, closeHref, install }: { seat: { id: string; title: string }; head: string | null; packs: AgentCard[]; closeHref: string; install: (id: string, seatId: string, grants: string[], name: string) => Promise<Result> }) {
+export function FillSeatSheet({ seat, head, packs, closeHref, install, startAt }: { seat: { id: string; title: string }; head: string | null; packs: AgentCard[]; closeHref: string; install: (id: string, seatId: string, grants: string[], name: string) => Promise<Result>; startAt?: string }) {
   const { open, close, router } = useSheet(closeHref);
-  const [pick, setPick] = useState<string | null>(packs[0]?.id ?? null);
+  // Fill on an agent pack's page (packs slice 4) opens with that pack picked
+  const [pick, setPick] = useState<string | null>(packs.find((x) => x.id === startAt)?.id ?? packs[0]?.id ?? null);
   const [on, setOn] = useState<string[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, start] = useTransition();
@@ -107,7 +107,7 @@ export function FillSeatSheet({ seat, head, packs, closeHref, install }: { seat:
   });
   return (
     <Shell open={open} close={close} title={`Fill ${seat.title}`} sub="Agent packs that fit this seat" foot={<>
-      <span className="dp-note note">{msg ?? "Only the owner can add a pack."}</span>
+      <span className="dp-note note">{msg ?? <>Only the owner can add a pack. <Link href={packsHref("agent")} className="pk-all">See every agent pack</Link></>}</span>
       <button type="button" className="dp-btn" onClick={close}>Cancel</button>
       {p && !p.problems.length && <button type="button" className="dp-btn dark" disabled={busy} onClick={add}>{busy ? "Adding…" : `Add ${p.name}`}</button>}
     </>}>

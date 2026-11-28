@@ -90,7 +90,7 @@ carries `WWW-Authenticate` with the resource metadata address, so Claude can sig
 | `list_brains` | Models an agent can run on, with prices | |
 | `get_run` (slice 3) | One run in full, tries included: status, cost, summary, each step | `/runs/<id>` |
 | `list_chains` (card 435) | Every saved chain: owner, start, on or off, each step in words and the link to the step before, the most its quick steps cost a run, next start, last run, and the chain as saved; optionally one department's or agent's | `/settings/schedule`, `/runs/<id>` |
-| `list_packs` (packs slice 3b) | The built-in department and agent packs: what each adds, the connections it reads and whether they're connected, whether the business has that department; links open OPERATOR's own install sheets, where only the owner's tap installs | `/?add=dept&pack=<id>`, `/dept/<id>?tab=agents&fill=<seat>` |
+| `list_packs` (packs slice 3b) | The built-in department and agent packs: what each adds, the connections it reads and whether they're connected, whether the business has that department; links open the pack's page in OPERATOR (packs slice 4), where only the owner's tap installs | `/packs/<id>`, `/dept/<id>?tab=agents&fill=<seat>&pack=<id>` |
 | `get_chain_run` (card 435) | One chain run as the run view: each step's name, where it ran, how it went, cost, what it said and passed on, the total and how it ended | `/runs/<id>` |
 | `get_report` (overview slice 3) | The newest written report of the company (the short version, action items) or one department (what happened, worth a look), today's or the last 7 days', each line with the runs it came from | `/`, `/dept/<id>`, `/runs/<id>` |
 

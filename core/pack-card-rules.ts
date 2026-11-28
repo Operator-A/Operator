@@ -23,6 +23,8 @@ export interface DeptCard {
 export interface AgentCard {
   id: string; name: string; about: string; letter: string; hue: string; tags: Tag[];
   suggests: { id: string; label: string }[]; starts: string | null; problems: string[];
+  /** The connections it reads (the Packs page lists them). */
+  conns: Conn[];
 }
 
 const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[id]?.needs ?? [];
@@ -106,6 +108,6 @@ export function agentCard(p: AgentPack, connected: ReadonlySet<ToolTileId>): Age
     tags: [{ text: `${modelLabel(p.agent.model)} · ${usd(p.agent.daily_budget_usd)} a day`, tone: "" }, ...connTags(cs, "needed"), { text: `${p.author} · v${p.version}`, tone: "" }],
     suggests: p.suggests.map((id) => ({ id, label: TOOLS[id]?.label ?? id })),
     starts: p.starts ? startWords({ type: "schedule", ...p.starts }) : null,
-    problems,
+    problems, conns: cs,
   };
 }

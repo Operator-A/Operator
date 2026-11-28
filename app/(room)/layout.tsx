@@ -49,6 +49,8 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   // Activity is Runs and Status on one page (slice 12): a red dot only while something is broken
   const more = [
     { href: ACTIVITY_HREF, match: [ACTIVITY_HREF, "/runs*"], icon: "activity", label: "Activity", dot: broken ? `${broken} need${broken === 1 ? "s" : ""} a look` : undefined },
+    // Packs (packs slice 4): every department and agent pack this business can add
+    { href: "/packs", match: ["/packs", "/packs/*"], icon: "package", label: "Packs" },
     { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: toConnect(floor.health, floor.grants), noteColor: "var(--ink2)" },
   ];
   const moreList = <><span className="side-h6">More</span>{more.map((it) => <SideLink key={it.label} {...it} />)}</>;

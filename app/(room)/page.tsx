@@ -88,7 +88,7 @@ export const maxDuration = 300;
 
 const ASK = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>;
 
-export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; ask?: string; agent?: string; edit?: string; view?: string; at?: string; days?: string; report?: string; add?: string; pack?: string }> }) {
+export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; ask?: string; agent?: string; edit?: string; view?: string; at?: string; days?: string; report?: string; add?: string }> }) {
   const jar = await cookies(); // per request only, so nothing here is read at build time (no database)
   const [f, setup, me, sp, biz] = await Promise.all([getFloor(), inSetup(), requireSession(), searchParams, loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
   // a new business starts with setup (card 151, docs/setup.md), not an empty Company page
@@ -155,7 +155,7 @@ export default async function Company({ searchParams }: { searchParams: Promise<
         </AskSheet>
       )}
       {/* Add a department: Avery first, then department packs (packs slice 3) */}
-      {addOpen && <Suspense fallback={<SheetSkel />}><AddDeptSheetFor chart={org} owner={atLeast(me.role, "owner")} averyHref={averyDeptHref()} closeHref={companyHref(tab)} start={typeof sp.pack === "string" ? sp.pack.slice(0, 40) : undefined} /></Suspense>}
+      {addOpen && <Suspense fallback={<SheetSkel />}><AddDeptSheetFor chart={org} owner={atLeast(me.role, "owner")} averyHref={averyDeptHref()} closeHref={companyHref(tab)} /></Suspense>}
       {/* the chief of staff and any agent in no department open their sheet here (slice 9, in place of Everyone) */}
       {typeof sp.agent === "string" && <Suspense key={sp.agent} fallback={<SheetSkel />}><AgentSheetFor id={sp.agent} closeHref={companyHref(tab)} tz={f.tz} now={f.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} openHref={madeAgentCompanyHref()} /></Suspense>}
     </div>
