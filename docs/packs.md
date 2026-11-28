@@ -32,7 +32,8 @@ the same lists department templates had, and a department may lay out its Overvi
 **Agent packs** hold one agent for one seat: `seat` (title, line and words that match an open seat's title),
 `agent` (name, role, model, icon, colour, daily budget), `spec`, `playbook`, `starts` (null for by hand, or
 days and a 24 hour time) and `suggests` (at most 4 actions an approver may give it, shown as Can do toggles
-that start off). `agentPackProblems` checks the contents. Installing one comes with card 503.
+that start off). `agentPackProblems` checks the contents. The built-in one is `conversion-analyst.json`, for the
+store analytics department's Site and conversion seat.
 
 What every pack is held to, whichever kind:
 
@@ -124,8 +125,38 @@ every agent off duty, every chain off, every playbook proposed for the owner's a
 no due date. Policies aren't installed: every cap starts at its default in code. Each spec, playbook and
 chain version says which packs it came from (`created_by` `pack:<ids>`).
 
-Installing into a business that already runs, a department beside the others or one agent into an open
-seat, comes with card 503.
+### Into a business that already runs
+
+Decided 2026-11-28 (packs slice 3, approved mockup). Only the owner installs, and everything a pack adds starts
+switched off, as at setup.
+
+- **A department pack.** The sidebar's and Company page's Add a department opens a sheet (`/?add=dept`): Avery's
+  interview first, then each built-in department pack but the Chief of Staff, its card saying what it adds and which
+  connections it reads, checked against the business's (`dashboard/pack-sheet-rules.ts`). A connection the pack's
+  first playbook steps need is "not connected" when missing, any other is "optional". Next shows what it adds; Add
+  installs it (`dashboard/packActions.ts` `installDeptPack`, `core/pack-install.ts` `installDepartmentPack`).
+- **New ids.** A pack's ids are names inside the file (`core/pack-install-rules.ts` `livePlan`). A department whose
+  id or name is taken gets the same number on both ("store_analytics_2", "Store analytics 2"), so installing a pack
+  twice gives two departments. An agent keeps the pack's id when it's free, else gets a builder id from its name
+  (`b_iris`). The gateway names some actions' agents by id (the bookkeeper and CFO, the lead finder), so a second
+  install of a pack with one of those is refused before anything is written. Chain keys get a number. Seats, specs,
+  playbooks, chain steps and owners, goals and the Overview's agent numbers all follow the new ids, and the whole
+  crew passes `crewProblems` again.
+- **The writes.** Departments, agents (tagged `pack` `id@version`, migration
+  `20270115090000_agent_pack.sql`; before it, installs leave the tag out), specs, proposed playbooks, seats and goals,
+  then the pack's chains, off, added to the active flow as its next version. If any write fails, everything written
+  so far is deleted again, so a half-installed department can't exist.
+- **After.** The owner lands on the new department, whose Overview shows what's left to turn it on: approve each
+  playbook, try each agent and put it on duty, turn on each chain, each a link to the screen that does it. It is
+  worked out from the rows on every visit (`packSetup`), never stored, and goes away once all are done.
+- **An agent pack.** On a department's Agents tab, an open seat whose title or line holds one of an agent pack's
+  `seat.matches` words shows Fill from a pack to the owner (`?fill=<seat>`). The sheet lists the packs that fit; the
+  pack's `suggests` are Can do toggles that start off. Add puts the agent in that seat off duty with its spec as
+  version 1 and its playbook proposed, with only the actions the owner turned on and the pack suggests
+  (`seatPlan`, as a hire card does), and its `starts` as its own chain, off (`seatFlow`).
+
+`check:pack-install` holds all of it. A newer version offered as drafts, and listing and drafting installs from the
+OPERATOR connector, come next.
 
 `npm run org:new -- --slug … --name … --owner … --packs finance,prospecting` does the same from the
 command line.

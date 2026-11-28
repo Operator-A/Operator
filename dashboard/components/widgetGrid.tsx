@@ -17,9 +17,10 @@ const SNAP_DAYS = 92;
 
 export interface GridCtx { today: string; names: Record<string, string>; agentsHref: string }
 
-export function WidgetGrid({ layout, d, write, goal, goalChart, ctx }: { layout: Layout; d: OverviewData; write: React.ReactNode; goal: React.ReactNode; goalChart: React.ReactNode; ctx: GridCtx }) {
+export function WidgetGrid({ layout, d, write, goal, goalChart, ctx, banner }: { layout: Layout; d: OverviewData; write: React.ReactNode; goal: React.ReactNode; goalChart: React.ReactNode; ctx: GridCtx; banner?: React.ReactNode }) {
   return (
     <div className="dp-scroll">
+      {banner}
       <div className="ov-gridwrap"><div className="ov ov-grid">
         {layout.flat().map((x, i) => {
           const el = widget(x, d, write, goal, goalChart, ctx);
