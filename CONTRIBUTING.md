@@ -33,7 +33,7 @@ npm run build
 ## What helps most
 
 - **Connectors.** A new integration is an MCP server with a profile: see `docs/build-a-connector.md`.
-- **Template packs.** A business's crew, tools and tables in one folder: see `docs/templates.md`.
+- **Packs.** A department or one agent as a JSON file in `packs/`, checked by `npm run check:packs`: see `docs/packs.md`.
 - Issues labelled **good first issue**.
 
 ## Review

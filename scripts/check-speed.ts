@@ -58,7 +58,7 @@ const walk = (d: string): string[] => readdirSync(d).flatMap((n) => {
   return statSync(p).isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(n) ? [p] : [];
 });
 const problems: string[] = [];
-for (const f of ["app", "dashboard", "core", "ee", "templates"].filter(existsSync).flatMap(walk)) {
+for (const f of ["app", "dashboard", "core", "ee", "packs"].filter(existsSync).flatMap(walk)) {
   const src = readFileSync(f, "utf8");
   for (const a of quietActions(src)) if (!READ_ONLY.has(`${f}:${a}`)) problems.push(`${f}: server action ${a} neither calls revalidatePath nor redirects. Refresh in the action (or add it to READ_ONLY in scripts/check-speed.ts if it changes nothing on screen).`);
   for (const n of bareRefreshes(src)) problems.push(`${f}:${n}: router.refresh() renders the page a second time. The server action should call revalidatePath instead; if this refresh has another reason, end the line with // refresh-ok: <reason>.`);

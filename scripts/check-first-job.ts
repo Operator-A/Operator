@@ -1,28 +1,28 @@
 // The first job (card 154, docs/setup.md): `npm run check:first-job`. Pure: reads files, no database.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { TEMPLATES } from "../core/templates";
+import { DEPT_PACKS } from "../core/packs";
 import { TOOLS } from "../core/tools/catalog";
 import { SETUP_AGENT, SETUP_TEMPLATE, readSetupState } from "../core/setup-rules";
 import { DONE_FOR_MS, builtCandidates, deptWaits, firstJobChains, firstJobPhase, laterWords, missingTiles, pickFirstJob, readFirstJobTap, runnableSteps, type JobRun } from "../core/first-job-rules";
-import { mergeTemplates } from "../core/template-rules";
+import { mergePacks } from "../core/pack-rules";
 import { planOrgOn } from "../dashboard/orgPlan";
 import type { Chain } from "../core/flow-rules";
 import type { ToolTileId } from "../core/tools-step-rules";
 
 const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[id]?.needs ?? [];
 const kindOf = (id: string) => (TOOLS as Record<string, { kind?: string }>)[id]?.kind;
-const allAgents = TEMPLATES.flatMap((t) => t.agents.map((a) => a.id));
+const allAgents = DEPT_PACKS.flatMap((t) => t.agents.map((a) => a.id));
 const installed = new Set(allAgents);
 // each agent's first playbook: its spec's read and calculate tools, in order (what install proposes)
 const playbookOf = (id: string) => {
-  const t = TEMPLATES.find((x) => x.agents.some((a) => a.id === id))!;
+  const t = DEPT_PACKS.find((x) => x.agents.some((a) => a.id === id))!;
   return ((t.specs as Record<string, { tools?: string[] }>)[id]?.tools ?? []).filter((x) => ["read", "calculate"].includes(kindOf(x) ?? ""));
 };
 const pendingOf = (ids: readonly string[]) => new Map(ids.map((id) => [id, playbookOf(id)]));
 const pending = pendingOf(allAgents);
 const pick = (connected: ToolTileId[], o: { installed?: Set<string>; pending?: Map<string, string[]> } = {}) =>
-  pickFirstJob(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: o.installed ?? installed, pending: o.pending ?? pending, connected: new Set(connected), needsOf, kindOf });
+  pickFirstJob(DEPT_PACKS, { setupTemplate: SETUP_TEMPLATE, installed: o.installed ?? installed, pending: o.pending ?? pending, connected: new Set(connected), needsOf, kindOf });
 
 // a bank connected: the Bookkeeper, whose job ends in approval cards
 const bank = pick(["mercury"]);
@@ -77,11 +77,11 @@ assert.match(act, /runnableSteps\(p\.steps\.map\(\(s\) => s\.tool\), needsOf, pi
 assert.doesNotMatch(act, /approvePlaybook\(id, p\.id, p\.steps\.map\(\(_, i\) => i\)\)/, "never every step blindly");
 
 // the other departments: what each waits on, the first job's department left out, Avery's never listed
-const waits = deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed, connected: new Set(["mercury"]), needsOf }, "finance");
+const waits = deptWaits(DEPT_PACKS, { setupTemplate: SETUP_TEMPLATE, installed, connected: new Set(["mercury"]), needsOf }, "finance");
 assert.ok(!waits.some((w) => w.templateId === "finance" || w.templateId === SETUP_TEMPLATE));
 assert.deepEqual(waits.find((w) => w.templateId === "email-marketing")?.waitsOn, ["Shopify", "Klaviyo"], "the Campaign writer reads Product facts from Shopify");
 assert.ok(waits.find((w) => w.templateId === "prospecting")?.waitsOn.includes("Gmail"));
-assert.deepEqual(deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: new Set([SETUP_AGENT, "cfo", "bookkeeper"]), connected: new Set(), needsOf }, null).map((w) => w.templateId), ["finance"], "only installed departments");
+assert.deepEqual(deptWaits(DEPT_PACKS, { setupTemplate: SETUP_TEMPLATE, installed: new Set([SETUP_AGENT, "cfo", "bookkeeper"]), connected: new Set(), needsOf }, null).map((w) => w.templateId), ["finance"], "only installed departments");
 
 // setup state: offer and firstJob read safely
 assert.deepEqual(readSetupState({ done: true, offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z" } }, []), { done: true, stage: "business", skipped: [], plans: {}, designs: [], asked: [], leaning: [], offer: true, firstJob: { agentId: "bookkeeper", at: "2026-11-19T20:00:00Z", kind: "playbook" }, wrapUp: false });
@@ -118,7 +118,7 @@ assert.match((readFirstJobTap("bookkeeper", { offer: true, firstJob: null }, nul
 assert.match((readFirstJobTap(undefined, { offer: true, firstJob: null }, bank) as { problem: string }).problem, /changed/);
 
 // the chains the tap turns on: every chain with the first job or Avery in it, nothing else
-const chains = (mergeTemplates([...TEMPLATES]).flow.chains as Chain[]).map((c) => ({ ...c, on: false }));
+const chains = (mergePacks([...DEPT_PACKS]).flow.chains as Chain[]).map((c) => ({ ...c, on: false }));
 const ids = ["bookkeeper", SETUP_AGENT];
 const turned = firstJobChains(chains, ids);
 assert.deepEqual(turned.on.sort(), chains.filter((c) => c.steps.some((s) => !!s.agent && ids.includes(s.agent))).map((c) => c.key).sort());
@@ -147,7 +147,7 @@ assert.ok(plan.wake.find((w) => w.id === SETUP_AGENT)?.firstRun, "Avery's mornin
   const agents = [{ id: "tess", name: "Tess" }, { id: "ivo", name: "Ivo" }, { id: "nell", name: "Nell" }];
   const built = builtCandidates(designs, agents);
   assert.deepEqual(built.map((b) => [b.agentId, b.deptId, b.head]), [["tess", "design:shop-accounts", true], ["ivo", "design:shop-accounts", false], ["nell", "design:gifts", true]], "kits are skipped; a person not installed is skipped; head first, sketch order");
-  const pickB = (connected: ToolTileId[], b = built) => pickFirstJob(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed, pending, connected: new Set(connected), needsOf, kindOf, built: b });
+  const pickB = (connected: ToolTileId[], b = built) => pickFirstJob(DEPT_PACKS, { setupTemplate: SETUP_TEMPLATE, installed, pending, connected: new Set(connected), needsOf, kindOf, built: b });
   const a = pickB(["mercury", "shopify"]);
   assert.equal(a?.kind, "try", "a designed department goes first, even over a template job that proposes");
   assert.equal(a?.agentId, "ivo", "workers before heads");
@@ -157,7 +157,7 @@ assert.ok(plan.wake.find((w) => w.id === SETUP_AGENT)?.firstRun, "Avery's mornin
   assert.deepEqual(b?.later, []);
   assert.equal(pickB(["mercury"], built.filter((x) => x.agentId !== "tess"))?.kind, "playbook", "no designed agent can start: a template's job is picked as before");
   assert.deepEqual(pickB([], built.filter((x) => x.agentId === "nell")), pickB([], []), "a designed agent with every tool waiting is never picked");
-  const w = deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: new Set(["tess", "ivo", "nell", "cfo", "bookkeeper"]), connected: new Set(), needsOf, built }, "design:shop-accounts");
+  const w = deptWaits(DEPT_PACKS, { setupTemplate: SETUP_TEMPLATE, installed: new Set(["tess", "ivo", "nell", "cfo", "bookkeeper"]), connected: new Set(), needsOf, built }, "design:shop-accounts");
   assert.deepEqual(w.map((x) => [x.templateId, x.dept, x.waitsOn.length > 0]), [["design:gifts", "Holiday boxes", true], ["finance", "Finance", true]], "designed departments are listed first, the first job's own left out");
 
   // a first try follows its preview run; a playbook job never counts one

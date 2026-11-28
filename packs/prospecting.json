@@ -1,7 +1,12 @@
 {
   "id": "prospecting",
+  "kind": "department",
+  "version": 1,
   "name": "Prospecting",
   "about": "A head of sales and a Lead finder who searches the web for business customers and writes each a first email for you to send from Gmail.",
+  "author": "OPERATOR",
+  "license": "AGPL-3.0-only",
+  "needs_operator": "0.1.0",
   "departments": [
     {
       "id": "prospecting",

@@ -140,7 +140,7 @@ export async function setupRemoveFact(id: string): Promise<ActionResult> {
   try { await removeFact(id); await audit(me, "remove_fact", id); return done("Removed."); } catch (e) { return fail(e); }
 }
 
-/** Step 3 until card 153: install the picked department templates beside Avery, which ends setup. */
+/** Step 3 until card 153: install the picked department packs beside Avery, which ends setup. */
 export async function setupInstall(picked: string[]): Promise<ActionResult & { href?: string }> {
   const { me, no } = await asRole("owner"); if (no) return no;
   try {

@@ -2,7 +2,7 @@
 // departments wait on, and what the Company page shows over time. Picked in code from the installed templates,
 // the connected tools and the playbooks waiting for approval; the model never chooses. Pure, so
 // check:first-job can test it.
-import type { Template } from "@/core/template-rules";
+import type { DepartmentPack } from "@/core/pack-rules";
 import { NEED_TILE, TOOL_TILES, type ToolTileId } from "@/core/tools-step-rules";
 
 export interface FirstJob {
@@ -69,7 +69,7 @@ export function builtCandidates(designs: readonly { key: string; name: string; k
 type DraftPersonLike = { name: string; seat: string; job: string; tools: readonly string[] };
 
 type Spec = { mandate?: string; tools?: string[] };
-const specOf = (t: Template, id: string): Spec => ((t.specs as Record<string, Spec>)[id] ?? {});
+const specOf = (t: DepartmentPack, id: string): Spec => ((t.specs as Record<string, Spec>)[id] ?? {});
 
 /**
  * The steps of a playbook that can run now (indices): every tile the step's tool needs is connected.
@@ -98,7 +98,7 @@ export function missingTiles(tools: readonly string[], needsOf: PickInput["needs
  * before heads, every tool connected first, then sketch order. It can start when at least one of its
  * tools needs nothing that isn't connected.
  */
-export function pickFirstJob(templates: readonly Template[], p: PickInput): FirstJob | null {
+export function pickFirstJob(templates: readonly DepartmentPack[], p: PickInput): FirstJob | null {
   const cands: { j: FirstJob; rank: number[] }[] = [];
   for (const b of p.built ?? []) {
     if (!b.tools.some((id) => !missingTiles([id], p.needsOf, p.connected).length)) continue;
@@ -134,7 +134,7 @@ export function pickFirstJob(templates: readonly Template[], p: PickInput): Firs
 export const laterWords = (later: readonly string[]) => (later.length ? `It starts without ${later.join(" and ")}; connect ${later.length === 1 ? "it" : "them"} later to add what ${later.length === 1 ? "it reads" : "they read"}.` : "");
 
 /** Every installed department but the first job's, with the tools it still waits on: designed ones first (card 194). */
-export function deptWaits(templates: readonly Template[], p: Pick<PickInput, "setupTemplate" | "installed" | "connected" | "needsOf" | "built">, skip: string | null): DeptWait[] {
+export function deptWaits(templates: readonly DepartmentPack[], p: Pick<PickInput, "setupTemplate" | "installed" | "connected" | "needsOf" | "built">, skip: string | null): DeptWait[] {
   const designed = [...new Set((p.built ?? []).map((b) => b.deptId))].filter((id) => id !== skip).map((id) => {
     const people = (p.built ?? []).filter((b) => b.deptId === id);
     return { templateId: id, dept: people[0].dept, waitsOn: missingTiles(people.flatMap((b) => b.tools), p.needsOf, p.connected).map((t) => TOOL_TILES.find((x) => x.id === t)!.name) };

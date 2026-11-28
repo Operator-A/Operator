@@ -1,7 +1,7 @@
 import "server-only";
 // First-run setup, step 2 (card 152, docs/setup.md): each tool tile's state and which picked
 // departments need it. The rules are in core/tools-step-rules.ts; this reads the business's state.
-import { TEMPLATES } from "@/core/templates";
+import { DEPT_PACKS } from "@/core/packs";
 import { TOOLS } from "@/core/tools/catalog";
 import { mcpStatuses, type McpStatus } from "@/integrations/mcp";
 import { orgId } from "@/core/tenancy";
@@ -28,7 +28,7 @@ export interface TileView {
 }
 
 const toolsOfTemplate = (id: string): TemplateTools | null => {
-  const t = TEMPLATES.find((x) => x.id === id);
+  const t = DEPT_PACKS.find((x) => x.id === id);
   return t ? { id: t.id, name: t.name, tools: Object.values((t.specs ?? {}) as Record<string, { tools?: string[] }>).flatMap((s) => s.tools ?? []) } : null;
 };
 const needsOf = (toolId: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[toolId]?.needs ?? [];
@@ -73,7 +73,7 @@ export async function toolsStep(picked: readonly string[], health: Record<Integr
 export const waitingForTools = (t: TemplateTools, connected: ReadonlySet<ToolTileId>): string[] => waitingOn(t, needsOf, connected).map((id) => TOOL_TILES.find((x) => x.id === id)!.name);
 
 export function waitingByTemplate(connected: ReadonlySet<ToolTileId>): Record<string, string[]> {
-  return Object.fromEntries(TEMPLATES.map((t) => {
+  return Object.fromEntries(DEPT_PACKS.map((t) => {
     const tt = toolsOfTemplate(t.id)!;
     return [t.id, waitingOn(tt, needsOf, connected).map((id) => TOOL_TILES.find((x) => x.id === id)!.name)];
   }));

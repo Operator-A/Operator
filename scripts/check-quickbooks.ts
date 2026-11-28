@@ -38,7 +38,7 @@ assert.ok(realmOk("4620816365231234567") && !realmOk("12a") && !realmOk("") && !
 
 // ---- importers: one API file, one server, reached only through the MCP client
 const files = (d: string): string[] => readdirSync(d).flatMap((f) => { const q = join(d, f); return statSync(q).isDirectory() ? (f === "node_modules" ? [] : files(q)) : /\.tsx?$/.test(f) ? [q] : []; });
-const all = ["core", "agents", "templates", "dashboard", "app", "integrations"].flatMap(files);
+const all = ["core", "agents", "packs", "dashboard", "app", "integrations"].flatMap(files);
 const importers = (mod: string) => all.filter((f) => new RegExp(`from "[^"]*/${mod}"`).test(readFileSync(f, "utf8")));
 assert.deepEqual(importers("quickbooks-api"), ["integrations/quickbooks-server.ts"]);
 assert.deepEqual(importers("quickbooks-server"), ["integrations/mcp.ts"]);

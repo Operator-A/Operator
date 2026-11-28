@@ -1,7 +1,12 @@
 {
   "id": "finance",
+  "kind": "department",
+  "version": 1,
   "name": "Finance",
   "about": "A CFO who works out yesterday's numbers and runway each morning, and a Bookkeeper who matches receipts and suggests categories in Mercury, each as an approval card.",
+  "author": "OPERATOR",
+  "license": "AGPL-3.0-only",
+  "needs_operator": "0.1.0",
   "departments": [
     {
       "id": "finance",

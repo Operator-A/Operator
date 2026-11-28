@@ -123,7 +123,7 @@ assert.ok(refuseProposal("b_finance_2", INVOICE_DRAFT, "https://evil.example", o
 
 // ---- only our server calls Stripe, only the MCP client reaches our server, and no finalize/send/pay path exists
 const files = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? (f === "node_modules" ? [] : files(p)) : /\.tsx?$/.test(f) ? [p] : []; });
-const all = ["core", "agents", "templates", "dashboard", "app", "integrations"].flatMap(files);
+const all = ["core", "agents", "packs", "dashboard", "app", "integrations"].flatMap(files);
 const importers = (mod: string) => all.filter((f) => new RegExp(`from "[^"]*/${mod}"`).test(readFileSync(f, "utf8")));
 assert.deepEqual(importers("stripe-api"), ["integrations/stripe-server.ts"]);
 assert.deepEqual(importers("stripe-server"), ["integrations/mcp.ts"]);

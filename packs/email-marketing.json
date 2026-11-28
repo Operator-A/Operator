@@ -1,7 +1,12 @@
 {
   "id": "email-marketing",
+  "kind": "department",
+  "version": 1,
   "name": "Email marketing",
   "about": "A head of email marketing who reads your Klaviyo numbers and the market and sets one focus a week, and a Campaign writer who drafts a campaign for you to send.",
+  "author": "OPERATOR",
+  "license": "AGPL-3.0-only",
+  "needs_operator": "0.1.0",
   "departments": [
     {
       "id": "email_marketing",

@@ -4,7 +4,7 @@ import "server-only";
 // agents, the playbooks waiting and the connected tools.
 import { orgTz } from "@/core/tz";
 import { db } from "@/core/db";
-import { TEMPLATES } from "@/core/templates";
+import { DEPT_PACKS } from "@/core/packs";
 import { TOOLS } from "@/core/tools/catalog";
 import { setupState } from "@/core/setup";
 import { SETUP_AGENT, SETUP_TEMPLATE } from "@/core/setup-rules";
@@ -69,8 +69,8 @@ export async function currentPick(f: Pick<JobFloor, "agents" | "health">): Promi
   // card 194: the people of Avery's designed departments that have no playbook yet: their first job is a try
   const built = builtCandidates(st.designs, Object.values(f.agents)).filter((b) => !hasOne.has(b.agentId));
   const base = { setupTemplate: SETUP_TEMPLATE, installed, connected, needsOf, built };
-  const job = pickFirstJob(TEMPLATES, { ...base, pending, kindOf });
-  return { job, waits: deptWaits(TEMPLATES, base, job?.templateId ?? null), pending, connected, built };
+  const job = pickFirstJob(DEPT_PACKS, { ...base, pending, kindOf });
+  return { job, waits: deptWaits(DEPT_PACKS, base, job?.templateId ?? null), pending, connected, built };
 }
 
 /** A designed person's cost for one try, from the spec a hire gets (by hand, so per run). */
@@ -95,14 +95,14 @@ export async function firstJobView(f: JobFloor): Promise<FirstJobView | null> {
       return { phase: "offer", job: { ...job, steps: [...new Set((b?.tools ?? []).map(toolLabel))], cost: await tryCost(b, st), playbookId: 0 }, waits, averyWaits: pending.has(SETUP_AGENT) };
     }
     const pb = pendingPlaybook(await listPlaybooks(job.agentId));
-    const t = TEMPLATES.find((x) => x.id === job.templateId)!;
+    const t = DEPT_PACKS.find((x) => x.id === job.templateId)!;
     const cost = agentsOf(t, { toolLabel, costOf: costsFor(await billing()) }).find((a) => a.id === job.agentId)?.cost ?? null;
     return { phase: "offer", job: pb ? { ...job, steps: stepLabels(pb.steps.filter((_, i) => job.keep.includes(i))), cost, playbookId: pb.id } : null, waits, averyWaits: pending.has(SETUP_AGENT) };
   }
   const agentId = st.firstJob!.agentId, kind = st.firstJob!.kind;
   const [all, connected] = await Promise.all([listPlaybooks(agentId), connectedTiles(f.health)]);
   const built = builtCandidates(st.designs, Object.values(f.agents));
-  const templateId = TEMPLATES.find((t) => t.agents.some((a) => a.id === agentId))?.id ?? built.find((b) => b.agentId === agentId)?.deptId ?? null;
+  const templateId = DEPT_PACKS.find((t) => t.agents.some((a) => a.id === agentId))?.id ?? built.find((b) => b.agentId === agentId)?.deptId ?? null;
   // a try is a preview run, which the Company page's floor leaves out: read it here (card 194)
   let run = ph.phase === "running" || ph.phase === "done" ? ph.run : null;
   if (kind === "try" && !run) {
@@ -113,6 +113,6 @@ export async function firstJobView(f: JobFloor): Promise<FirstJobView | null> {
   return {
     phase: done ? "done" : "running", kind, agentId, name: f.agents[agentId]?.name ?? agentId,
     steps: kind === "try" ? stepLabels(pendingPlaybook(all)?.steps ?? []) : stepLabels(activePlaybook(all)?.steps ?? []), run, approvalsPending: f.approvalsPending, tz: f.tz,
-    waits: deptWaits(TEMPLATES, { setupTemplate: SETUP_TEMPLATE, installed: new Set(Object.keys(f.agents)), connected, needsOf, built }, templateId),
+    waits: deptWaits(DEPT_PACKS, { setupTemplate: SETUP_TEMPLATE, installed: new Set(Object.keys(f.agents)), connected, needsOf, built }, templateId),
   };
 }

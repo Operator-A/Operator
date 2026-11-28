@@ -7,7 +7,7 @@ import "server-only";
 import { HindsightClient } from "@vectorize-io/hindsight-client";
 import { brainPatterns, db } from "@/core/db";
 import { withOrg } from "@/core/tenancy";
-import { TEMPLATES } from "@/core/templates";
+import { DEPT_PACKS } from "@/core/packs";
 import { adminOrgId } from "./admin";
 import { BANK_ID, BANK_SETTINGS, SYNC_KEY, pickSimilar, recallTags, syncDue, syncWith, type Bank } from "./brain-rules";
 import { askWords, type Similar, type SimilarAsk } from "@/core/brain-rules";
@@ -43,7 +43,7 @@ function hindsightBank(): Bank {
 }
 
 /** The kits' department names by id, from the templates in code. */
-export const kitNames = (): Record<string, string> => Object.fromEntries(TEMPLATES.flatMap((t) => t.departments.map((d) => [d.id, d.name])));
+export const kitNames = (): Record<string, string> => Object.fromEntries(DEPT_PACKS.flatMap((t) => t.departments.map((d) => [d.id, d.name])));
 
 /**
  * The weekly sync (the afterSchedule slot, once per scheduler round). Does nothing without both
