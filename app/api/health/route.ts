@@ -44,6 +44,7 @@ async function check() {
     hubspot_deals: await localReady("hubspot_deals"),
     meta: await localReady("meta"),
     meta_pauses: await localReady("meta_pauses"),
+    github: await localReady("github"),
   };
   let agents: { id: string; enabled: boolean }[] | string = "not checked";
   if (set.supabase) {

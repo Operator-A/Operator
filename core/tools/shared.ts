@@ -19,5 +19,7 @@ export const HUBSPOT = ["HUBSPOT_CONNECTED"];
 export const HUBSPOT_DEALS = ["HUBSPOT_DEALS_CONNECTED"];
 export const META = ["META_CONNECTED"];
 export const META_PAUSES = ["META_PAUSES_CONNECTED"];
+/** GitHub: the OPERATOR app installed and at least one repo turned on for agents (Connections). */
+export const GITHUB = ["GITHUB_CONNECTED"];
 export const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
 export const daysParam = (def: number, max: number, what: string): Param => ({ name: "days", type: "int", min: 1, max, default: def, description: what });

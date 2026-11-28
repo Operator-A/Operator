@@ -6,7 +6,8 @@ import { audit } from "@/core/audit";
 import { planBlock } from "@/core/extensions";
 import { revalidatePath } from "next/cache";
 import { isMcpId } from "@/core/mcp-rules";
-import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, removeModelKey, saveModelKey, saveHookSecret, removeHookSecret, pauseCustom, removeCustomServer, resealAll, saveCustomKey, setCustomNumber, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool } from "@/integrations/mcp";
+import { addCustomServer, checkCustomServer, disconnectMcp, removeClaudeKey, saveClaudeKey, removeModelKey, saveModelKey, saveHookSecret, removeHookSecret, pauseCustom, removeCustomServer, resealAll, saveCustomKey, setCustomNumber, saveCustomScopes, saveMcpKey, saveMcpSetting, setCustomTool, setGitHubRepo } from "@/integrations/mcp";
+import { repoOk } from "@/core/github-rules";
 import { isCustomId } from "@/core/custom-mcp-rules";
 import { PROVIDER_BY_ID, isClaudeVia, isModelProvider } from "@/core/model-key-rules";
 import { saveClaudeVia } from "@/core/claude-via";
@@ -136,6 +137,20 @@ export async function vaultReseal(): Promise<ActionResult> {
 }
 
 /** The Google Analytics property every Analytics tool reports on (card 152b): one the sign-in can see, picked by an owner. */
+/**
+ * Turns one repo on or off for GitHub's read tools (engineering isolation slice 1). Only a repo the OPERATOR
+ * app can see right now can be turned on, at most five. It grants no agent anything: that stays a builder step.
+ */
+export async function githubSetRepo(repo: string, on: boolean): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  if (!repoOk(repo)) return { ok: false, text: "That isn’t a repo name." };
+  try {
+    await setGitHubRepo(repo, on === true);
+    await audit(me, on ? "github_repo_on" : "github_repo_off", repo);
+    return done(on ? `Agents with GitHub reads can now read ${repo}.` : `Agents no longer read ${repo}.`);
+  } catch (e) { return fail(e); }
+}
+
 export async function ga4PickProperty(propertyId: string): Promise<ActionResult> {
   const { me, no } = await asRole("owner"); if (no) return no;
   try {

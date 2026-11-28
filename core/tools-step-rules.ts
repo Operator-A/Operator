@@ -6,7 +6,7 @@ import { checkServiceName, knownServer } from "@/core/connector-rules";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
 import type { FactTopic } from "@/core/setup-rules";
 
-export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe" | "mailchimp" | "woo" | "hubspot" | "meta" | "quickbooks" | "square";
+export type ToolTileId = "shopify" | "mercury" | "klaviyo" | "gmail" | "analytics" | "calendar" | "stripe" | "mailchimp" | "woo" | "hubspot" | "meta" | "quickbooks" | "square" | "github";
 
 export interface ToolTile {
   id: ToolTileId;
@@ -147,12 +147,25 @@ export const TOOL_TILES: readonly ToolTile[] = [
       "Back here, check that the business name shown is yours.",
     ],
   },
+  {
+    id: "github", name: "GitHub", gives: "Open pull requests, issues and checks, read only", icon: "git-branch", mcp: "github",
+    steps: [
+      "Tap Connect GitHub below. GitHub’s own sign-in page opens.",
+      "Sign in with a GitHub account that owns the business’s repos, and tap Authorize.",
+      "If GitHub asks where to install the OPERATOR app, pick that account, choose Only select repositories, pick the repos agents should read, and tap Install.",
+      "Then open Connections, tap GitHub, and turn on each repo agents may read.",
+    ],
+  },
 ];
 
 export const TILE_BY_ID = Object.fromEntries(TOOL_TILES.map((t) => [t.id, t])) as Record<ToolTileId, ToolTile>;
 
 /** What each permission a tile asks for is for, in plain words. Every scope of every tile's profile is here (check:tools-step). */
 export const SCOPE_WORDS: Record<string, string> = {
+  "pull requests: read": "see open pull requests and the files they change",
+  "checks: read": "see whether checks pass",
+  "issues: read": "see open issues",
+  "metadata: read": "see the names of the repos you picked",
   "accounts:read": "see which Klaviyo account this is",
   "lists:read": "see your lists and how many people are on each",
   "metrics:read": "read opens, clicks and other counts",
@@ -202,7 +215,7 @@ export function permissionsOf(tile: ToolTile): { scope: string; words: string }[
 
 /** A tool's `needs` setting that means a tile must be connected. */
 export const NEED_TILE: Record<string, ToolTileId> = {
-  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp", WOO_CONNECTED: "woo", WOO_NOTES_CONNECTED: "woo", HUBSPOT_CONNECTED: "hubspot", HUBSPOT_DEALS_CONNECTED: "hubspot", META_CONNECTED: "meta", META_PAUSES_CONNECTED: "meta", STRIPE_CONNECTED: "stripe", QUICKBOOKS_CONNECTED: "quickbooks", SQUARE_CONNECTED: "square",
+  SHOPIFY_CONNECTED: "shopify", MERCURY_CONNECTED: "mercury", KLAVIYO_CONNECTED: "klaviyo", GMAIL_CONNECTED: "gmail", ANALYTICS_CONNECTED: "analytics", CALENDAR_CONNECTED: "calendar", CALENDAR_HOLDS_CONNECTED: "calendar", MAILCHIMP_CONNECTED: "mailchimp", MAILCHIMP_DRAFTS_CONNECTED: "mailchimp", WOO_CONNECTED: "woo", WOO_NOTES_CONNECTED: "woo", HUBSPOT_CONNECTED: "hubspot", HUBSPOT_DEALS_CONNECTED: "hubspot", META_CONNECTED: "meta", META_PAUSES_CONNECTED: "meta", STRIPE_CONNECTED: "stripe", QUICKBOOKS_CONNECTED: "quickbooks", SQUARE_CONNECTED: "square", GITHUB_CONNECTED: "github",
 };
 
 /** A template's tools, from every agent's spec in it. */
@@ -302,8 +315,8 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
     tools: [{ name: "Square Appointments" }, { name: "Calendly" }, { name: "Acuity" }] }),
   part({ id: "shipping", covers: "shipping labels and tracking", area: "Shipping", core: false, topic: "other", learns: "what shipped, what’s late and what it cost", question: "How do you ship?", value: "Late and lost packages get flagged before the customer asks.", ready: "Your shipments are in reach.",
     tools: [{ name: "ShipStation" }, { name: "Shippo" }, { name: "Pirate Ship" }] }),
-  part({ id: "team", covers: "where the team chats and tracks work", area: "Team and work", core: false, topic: "other", learns: "who’s doing what", question: "Where does your team keep its work?", value: "Your crew posts its updates where your team already looks.", ready: "Your team’s tools are in reach.",
-    tools: [{ name: "Slack" }, { name: "Notion" }, { name: "Asana" }] }),
+  part({ id: "team", covers: "where the team chats, tracks work and keeps its code", area: "Team and work", core: false, topic: "other", learns: "who’s doing what", question: "Where does your team keep its work?", value: "Your crew posts its updates where your team already looks.", ready: "Your team’s tools are in reach.",
+    tools: [{ name: "GitHub", tile: "github" }, { name: "Slack" }, { name: "Notion" }, { name: "Asana" }] }),
 ];
 /** A part as Avery reads it: its id, then what it covers (card 206). */
 export const partWords = (c: Pick<ToolCategory, "id" | "covers">): string => `${c.id} (${c.covers})`;

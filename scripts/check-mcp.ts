@@ -908,6 +908,7 @@ assert.deepEqual(importers("calendar-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mailchimp-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("woo-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("hubspot-server"), ["integrations/mcp.ts"]);
+assert.deepEqual(importers("github-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("shopify-api"), ["integrations/shopify-server.ts"]);
 assert.deepEqual(importers("shopify-server"), ["integrations/mcp.ts"]);
 assert.deepEqual(importers("mercury-files-server"), ["integrations/mcp.ts"]);

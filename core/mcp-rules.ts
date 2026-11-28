@@ -11,6 +11,7 @@ import { base64url, sha256 } from "./sha256";
 import { SHOPIFY_TOOLS } from "@/core/shopify-queries";
 import { STRIPE_DRAFT_TOOL, STRIPE_READ_TOOLS } from "@/core/stripe-rules";
 import { QBO_CATEGORIZE, QBO_CATEGORIZE_TOOL, QBO_READ_TOOLS, QBO_SCOPE } from "@/core/quickbooks-rules";
+import { GITHUB_API, GITHUB_SCOPES, GITHUB_TOOLS } from "@/core/github-rules";
 import { SQUARE_DRAFT_TOOL, SQUARE_HOST, SQUARE_INVOICE, SQUARE_READ_TOOLS, SQUARE_SCOPES } from "@/core/square-rules";
 import { SHOPIFY_COPY, SHOPIFY_COPY_TOOL, SHOPIFY_DISCOUNT, SHOPIFY_DISCOUNT_TOOL, SHOPIFY_REFUND, SHOPIFY_REFUND_TOOL, SHOPIFY_SHIP, SHOPIFY_SHIP_TOOL, SHOPIFY_STOCK, SHOPIFY_STOCK_TOOL, SHOPIFY_TAGS, SHOPIFY_TAGS_TOOL, SHOPIFY_WRITE_SCOPES } from "@/core/shopify-actions";
 
@@ -32,8 +33,11 @@ export interface McpServer {
    * signed in on Intuit's own page with the app's Intuit OAuth client (QUICKBOOKS_CLIENT_ID and
    * QUICKBOOKS_CLIENT_SECRET), for QuickBooks Online. "square": a server we run ourselves, signed in on
    * Square's own page with the app's Square application (SQUARE_CLIENT_ID and SQUARE_CLIENT_SECRET).
+   * "github": a server we run ourselves on the business's install of OPERATOR's GitHub App. Connect signs a
+   * person in once, only to list the installs they can reach; no person's token is kept. Each call mints a
+   * read-only installation token (GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY).
    */
-  auth: "oauth" | "token" | "google" | "meta" | "intuit" | "square";
+  auth: "oauth" | "token" | "google" | "meta" | "intuit" | "square" | "github";
   /** The server's address (for a token server, the API our own server calls), with read-only switches on where it has them. */
   url: string;
   /** The only tools code may call on it, by the server's own names. Read tools only. */
@@ -413,6 +417,23 @@ export const MCP_SERVERS = {
     writeTools: [{ tool: "meta_pause_ad", actionType: "meta.pause_ad" }],
     signInHint: "Sign in with the same Facebook account and allow OPERATOR to manage your ads. Only the gateway uses this sign-in, to pause an ad you approved; it can’t change a budget or start anything.",
   },
+  github: {
+    id: "github",
+    name: "GitHub",
+    // Our own server (integrations/github-server.ts, engineering isolation slice 1). GitHub's hosted MCP
+    // server signs in as a person with everything that person can do. This runs on the business's install
+    // of OPERATOR's GitHub App, set to read only: each call mints a one-hour token narrowed to these
+    // permissions and to the repos the owner turned on, and GitHub's list of what the token may do is checked
+    // (core/github-rules.ts). There is no write tool and no gateway action type: OPERATOR never pushes,
+    // opens or merges anything in GitHub.
+    auth: "github",
+    url: GITHUB_API,
+    readTools: GITHUB_TOOLS,
+    reportTools: [],
+    scopes: GITHUB_SCOPES,
+    writeTools: [],
+    signInHint: "Opens GitHub to install the OPERATOR app. Choose “Only select repositories” and pick the repos agents should read; you turn each on here after.",
+  },
 } as const satisfies Record<string, McpServer>;
 export type McpId = keyof typeof MCP_SERVERS;
 export const MCP_IDS = Object.keys(MCP_SERVERS) as McpId[];
@@ -443,6 +464,8 @@ export const isGoogle = (id: McpId) => MCP_SERVERS[id].auth === "google";
 /** Servers we run ourselves, signed in on the service's own page with the app's own OAuth client or app: Google, Meta, Intuit and Square. */
 export const isAppSignIn = (id: McpId) => ["google", "meta", "intuit", "square"].includes(MCP_SERVERS[id].auth);
 export const isMeta = (id: McpId) => MCP_SERVERS[id].auth === "meta";
+/** Our own GitHub server, on the business's install of OPERATOR's GitHub App: no person's token is kept. */
+export const isGitHubApp = (id: McpId) => MCP_SERVERS[id].auth === "github";
 /** Signed in with a Connect button (hosted or Google), not a pasted key. */
 export const usesConnect = (id: McpId) => MCP_SERVERS[id].auth !== "token";
 

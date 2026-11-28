@@ -54,6 +54,15 @@ export const env = {
   squareClientId: v("SQUARE_CLIENT_ID"),
   squareClientSecret: v("SQUARE_CLIENT_SECRET"),
   squareSandbox: v("SQUARE_SANDBOX") === "1",
+  // OPERATOR's own GitHub App (engineering isolation slice 1, docs/engineering.md), read only: pull requests,
+  // checks, issues and metadata. The client id and secret sign a person in once at Connect, to list the
+  // App's installations they can reach; the App id and private key mint one-hour read tokens per call.
+  // The installs themselves live in the token vault; these stay here only.
+  githubAppId: v("GITHUB_APP_ID"),
+  githubAppSlug: v("GITHUB_APP_SLUG"),
+  githubAppClientId: v("GITHUB_APP_CLIENT_ID"),
+  githubAppClientSecret: v("GITHUB_APP_CLIENT_SECRET"),
+  githubAppPrivateKey: v("GITHUB_APP_PRIVATE_KEY"),
   // OPERATOR's own Meta app (Facebook Login), for the two Meta Ads sign-ins made with Connect on
   // Connections (card 255). The sign-ins live in the token vault; the secret stays here only.
   metaAppId: v("META_APP_ID"),
