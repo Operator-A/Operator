@@ -6,7 +6,7 @@ import { getCrewFloor, requireSession, type CrewFloor } from "@/dashboard/data";
 import { BEHIND_THE_SCENES, CONNECTIONS, CONN_BY_ID, isSetUp, toolsOf, usersOf, type ConnId, type Connection } from "@/dashboard/connections";
 import type { ToolDef } from "@/core/tools/types";
 import { Icon } from "@/dashboard/components/Icon";
-import { Avatar, LockList } from "@/dashboard/components/ui";
+import { LockList } from "@/dashboard/components/ui";
 import { ActionButton, ChoiceSwitch, KeyForm, TargetForm } from "@/dashboard/components/client";
 import { metaTargets } from "@/core/meta-targets";
 import { RESULT_KINDS, RESULT_LABEL } from "@/core/meta-rules";
@@ -24,14 +24,16 @@ import { claudeState } from "@/dashboard/claude";
 import { claudeReady, inUse, pickedChoice } from "@/core/claude-choice-rules";
 import { ClaudeChoice } from "@/dashboard/components/claudeChoice";
 import { MCP_SERVERS, type McpId } from "@/core/mcp-rules";
-import { MCP_MISSING, VAULT_MISSING, getCustomServer, listCustomServers, mcpLog, mcpStatus, vaultState, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
+import { MCP_MISSING, getCustomServer, githubView, listCustomServers, mcpLog, mcpStatus, vaultState, type GitHubView, type McpLogRow, type McpStatus, type VaultState } from "@/integrations/mcp";
+import { installUrl, slugOk } from "@/core/github-rules";
 import { AddServerCard, CustomDetail, CustomTiles, SignInLog } from "@/dashboard/components/CustomServers";
+import { GitHubDetail, VaultNote, Who } from "@/dashboard/components/connectionParts";
 import { serverOfToolId } from "@/core/custom-mcp-rules";
 import { knownServer } from "@/core/connector-rules";
 import { controlsOn } from "@/dashboard/session";
 import { klaviyoLists } from "@/integrations/klaviyo";
 import { mercuryOrgName } from "@/integrations/mercury";
-import { ga4PickProperty, klaviyoPickList, metaSetTarget, mcpDisconnect, mcpSaveKey, vaultReseal } from "@/dashboard/connectionActions";
+import { ga4PickProperty, klaviyoPickList, metaSetTarget, mcpDisconnect, mcpSaveKey } from "@/dashboard/connectionActions";
 import { ga4PropertyList } from "@/integrations/ga4";
 import { when } from "@/dashboard/format";
 import { emailState } from "@/integrations/email";
@@ -44,24 +46,8 @@ import { atLeast, type Role } from "@/core/roles";
 export const maxDuration = 300;
 
 /** An MCP connection's state for its panel: signed in or not, and Klaviyo's lists to pick the counted one from. */
-interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; properties?: { id: string; name: string; account: string }[] | null; targets?: Record<string, number | null> | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null; check?: { tile: CheckTile; initial: SetupCheck | null; owner: boolean; approver: boolean } | null }
+interface McpView { status: McpStatus | null; lists: { id: string; name: string }[] | null; listsProblem: string | null; properties?: { id: string; name: string; account: string }[] | null; targets?: Record<string, number | null> | null; log: McpLogRow[]; vault: VaultState | null; org?: string | null; orgProblem?: string | null; check?: { tile: CheckTile; initial: SetupCheck | null; owner: boolean; approver: boolean } | null; github?: GitHubView | null }
 
-
-/** The vault's state: is MCP_SECRET_KEY set, and is every sign-in locked with it. */
-function VaultNote({ v }: { v: VaultState | null }) {
-  if (!v) return null;
-  if (!v.keySet) return <span className="soft-box" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{v.tooShort ? `MCP_SECRET_KEY is too short. ${VAULT_MISSING}` : VAULT_MISSING}</span>;
-  if (!v.onOtherKey.length && !v.unreadable.length) return null;
-  return (
-    <span className="soft-box row wrap" style={{ fontSize: 12.5, lineHeight: 1.45, gap: 8 }}>
-      <span style={{ flex: 1, minWidth: 200 }}>
-        {v.onOtherKey.length ? `${v.onOtherKey.length} sign-in${v.onOtherKey.length === 1 ? " is" : "s are"} still locked with an older key. ` : ""}
-        {v.unreadable.length ? `${v.unreadable.join(", ")} can’t be unlocked with either key: sign in again.` : ""}
-      </span>
-      {v.onOtherKey.length > 0 && <ActionButton className="btn outline sm" action={vaultReseal}>Re-lock now</ActionButton>}
-    </span>
-  );
-}
 
 const KEY_HINT: Partial<Record<McpId, string>> = { shopify: "shpat_…", mercury_files: "secret-token:mercury_…", klaviyo_drafts: "pk_…", stripe: "rk_live_…", stripe_drafts: "rk_live_…" };
 
@@ -185,17 +171,6 @@ function McpPanel({ c: base, id, v, tz }: { c: Connection; id: McpId; v: McpView
 // One page for every integration: is it set up, what can an agent read, do and hand you there,
 // and which agents have each of those in their saved setup. Shown here, granted in the builder.
 
-function Who({ id, f }: { id: string; f: CrewFloor }) {
-  const a = f.byId[id];
-  const name = a?.name ?? id;
-  return (
-    <Link href={`/agents/${id}`} className="row" title={name} style={{ gap: 6, fontSize: 12, fontWeight: 600, color: "var(--ink)", textDecoration: "none", padding: "3px 10px 3px 3px", borderRadius: 999, background: "var(--soft)" }}>
-      {a ? <Avatar a={a} size={22} /> : <span className="av" style={{ width: 22, height: 22, fontSize: 11 }}>{name.slice(0, 1)}</span>}
-      {name}
-    </Link>
-  );
-}
-
 function Status({ c, f }: { c: Connection; f: CrewFloor }) {
   if (c.builtIn && !c.checks.length) return <span className="pill sm" style={{ background: "var(--soft)", color: "var(--ink2)" }}>Built in</span>;
   const ok = isSetUp(c, f.health);
@@ -237,6 +212,7 @@ function ToolRow({ t, f, locked }: { t: ToolDef; f: CrewFloor; locked?: boolean 
 }
 
 function Detail({ c, f, mcp, more, note, line }: { c: Connection; f: CrewFloor; mcp: McpView | null; more: { id: McpId; v: McpView }[]; note: { ok: boolean; text: string } | null; line?: { ok: boolean; text: string } | null }) {
+  if (c.id === "github" && mcp) return <GitHubDetail c={c} f={f} v={mcp} note={note} change={slugOk(env.githubAppSlug) ? installUrl(env.githubAppSlug) : null} />;
   const t = toolsOf(c.id);
   const missing = c.checks.filter((k) => !f.health[k.key]);
   const section = (title: string, sub: string, list: ToolDef[], empty: string, locked?: boolean) => (
@@ -281,14 +257,15 @@ async function mcpViewOf(id: NonNullable<Connection["mcp"]>, role: Role): Promis
   const tile = CHECK_OF_MCP[id] ?? null;
   const checks = !!tile && live && (id !== "ga4" || !!status?.settings.propertyId);
   // what this kind of connection adds, all at once (card 302)
-  const [lists, org, properties, initial] = await Promise.all([
+  const [lists, org, properties, initial, github] = await Promise.all([
     live && id === "klaviyo" ? klaviyoLists().then((v) => ({ v, p: null }), (e) => ({ v: null, p: problem(e) })) : { v: null, p: null },
     live && id === "mercury" ? mercuryOrgName().then((v) => ({ v, p: null }), (e) => ({ v: null, p: problem(e) })) : { v: null, p: null },
     live && id === "ga4" ? ga4PropertyList().then((v) => ({ v, p: null }), (e) => ({ v: null, p: problem(e) })) : { v: null, p: null },
     checks ? setupCheck(tile!).catch(() => null) : null,
+    status?.connected && id === "github" ? githubView().catch(() => null) : null,
   ]);
   const check = checks ? { tile: tile!, initial, owner: atLeast(role, "owner"), approver: atLeast(role, "approver") } : null;
-  return { status, lists: lists.v, listsProblem: lists.p ?? properties.p, properties: properties.v, log, vault, org: org.v, orgProblem: org.p, check };
+  return { status, lists: lists.v, listsProblem: lists.p ?? properties.p, properties: properties.v, log, vault, org: org.v, orgProblem: org.p, check, github };
 }
 
 export default async function Connections({ searchParams }: { searchParams: Promise<{ c?: string; s?: string; known?: string; problem?: string; connected?: string; claude?: string; credits?: string; credits_problem?: string }> }) {

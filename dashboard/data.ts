@@ -196,7 +196,7 @@ export function health(): Record<IntegrationId, boolean> {
     gmail_read: false,
     // web search runs through Claude (own key or hosted): getFloor sets it with claude
     web: false,
-    // planned for the Conversion Optimizer; nothing uses it yet
+    // the OPERATOR app installed with Connect on Connections, and a repo turned on: getFloor reads mcp_connections
     github: false,
     // signed in on Connections, not a setting: getFloor reads mcp_connections
     klaviyo: false,
@@ -248,7 +248,7 @@ export const getHealth = cache(async (): Promise<Record<IntegrationId, boolean>>
   // credits (cloud edition), the same order runs use (integrations/anthropic.ts, card 162)
   h.claude = h.web = claudeReady(await claudeState({ status: mcp[CLAUDE_KEY_ID] ?? null, gateway: mcp[PROVIDER_BY_ID.gateway.vaultId] ?? null }));
   // every server in the registry: set up when signed in and not paused (Notion also needs its parent page, Mercury its accounts)
-  const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0, ga4: !!mcp.ga4?.settings.propertyId };
+  const extra: Partial<Record<string, boolean>> = { shopify: !!s.shopifyDomain, notion: !!s.notionBriefParent, mercury: s.mercuryAccountIds.length > 0, ga4: !!mcp.ga4?.settings.propertyId, github: !!mcp.github?.settings.repos };
   for (const id of MCP_IDS) { const st = mcp[id]; if (st?.connected && !st.paused && extra[id] !== false) h[id] = true; }
   return h;
 });

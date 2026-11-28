@@ -126,7 +126,9 @@ shipping and refund confirmations.
   drafts-only invoice key, Mailchimp reads and campaign drafts, WooCommerce reads and private order notes,
   HubSpot deal reads and deal moves, Meta Ads reads and ad pauses, QuickBooks Online with one fixed request per
   read tool and one write that only moves an expense out of Uncategorized Expense, Square with fixed requests per
-  read tool and one write that only makes a draft invoice).
+  read tool and one write that only makes a draft invoice, GitHub read only on the business's install of OPERATOR's
+  GitHub App, each call minting a token narrowed to read and to the repos the owner turned on, keeping no person's
+  token; `docs/engineering.md`).
   Each of our own servers is the only file that calls its service's API, and only
   `integrations/mcp.ts` reaches it (lint and `check:mcp` enforce both).
 - One tool path: agents read only through `callMcpTool` (read tools), or a turned-on custom tool
@@ -156,8 +158,8 @@ shipping and refund confirmations.
   wrapped by `MCP_SECRET_KEY` (never derived from another secret), connected on Connections.
   Only `integrations/mcp.ts` and `core/gateway` import the vault (lint enforces it). Settings in
   Vercel hold only the app's own infrastructure (Supabase, Claude, Resend for emails to the owner, Stripe
-  for the hosted edition's own billing, which no agent calls, the vault key, the app's Google, Intuit and Square OAuth clients and its
-  Meta app) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
+  for the hosted edition's own billing, which no agent calls, the vault key, the app's Google, Intuit and Square OAuth clients, its
+  Meta app and its GitHub App) and non-secret ids. Ask for the profile's scopes only, and refuse a sign-in or key
   that carries more (Google scopes, Shopify write scopes, Square scopes). Where a service offers nothing narrower
 (Mailchimp keys reach the whole account; Intuit's one accounting scope reads and writes everything; Square's `INVOICES_WRITE` also publishes and cancels invoices, which our server never sends; Shopify's `write_products` also covers prices and deletes, which our
   server never sends; Meta grants permissions to a person, so one Meta Ads sign-in can
@@ -184,3 +186,13 @@ shipping and refund confirmations.
 
 `npm run check` (typecheck, lint, GraphQL validation; run `npm run schemas` once first)
 and `npm run build` before every push.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

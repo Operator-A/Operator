@@ -684,3 +684,10 @@ a profile. Our own server runs in the app, signed in on Square's own page.
 **Connecting a business:** in the Control Room, open **Connections > Square**, tap **Connect**, sign in
 to Square as the business's owner and tap **Allow**. Back on Connections, check that the business name
 shown is right.
+
+## GitHub on our own server (engineering isolation slice 1)
+
+Read only, on the business's install of OPERATOR's GitHub App: Connect lists the installs the person can reach
+(each held to read only) and cancels the person's token; each call mints a one-hour token narrowed to read and to
+the repos the owner turned on, and GitHub's list of what it may do is checked. No write tool, no gateway action
+type. Details, and how to make the App for a self-hosted OPERATOR, in `docs/engineering.md`.

@@ -22,7 +22,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (fromStart) back.searchParams.set("c", id);
   const q = req.nextUrl.searchParams;
   try {
-    await finishConnect(id, req.cookies.get(PENDING_COOKIE)?.value, { code: q.get("code"), state: q.get("state"), error: q.get("error"), realmId: q.get("realmId") });
+    const r = await finishConnect(id, req.cookies.get(PENDING_COOKIE)?.value, { code: q.get("code"), state: q.get("state"), error: q.get("error"), realmId: q.get("realmId") });
+    // GitHub with no install yet: on to GitHub's install page (an address made in code), then back through Connect
+    if (r?.next) {
+      const res = NextResponse.redirect(r.next);
+      res.cookies.set(PENDING_COOKIE, "", { httpOnly: true, secure: true, sameSite: "lax", path: `/connections/${id}`, maxAge: 0 });
+      return res;
+    }
     await audit(me, "connect", id);
     back.searchParams.set("connected", "1");
     revalidatePath("/", "layout");

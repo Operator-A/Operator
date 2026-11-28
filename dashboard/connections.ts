@@ -9,7 +9,7 @@ import type { ToolDef, ToolGroup } from "@/core/tools/types";
 import type { IntegrationId } from "./crew";
 import type { McpId } from "@/core/mcp-rules";
 
-export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "mailchimp" | "woo" | "hubspot" | "meta" | "email" | "web" | "agents" | "control_room" | "math" | "stripe" | "quickbooks" | "square";
+export type ConnId = "shopify" | "mercury" | "gmail" | "notion" | "klaviyo" | "analytics" | "calendar" | "mailchimp" | "woo" | "hubspot" | "meta" | "email" | "web" | "agents" | "control_room" | "math" | "stripe" | "quickbooks" | "square" | "github";
 /** A server the owner added by its address (docs/custom-servers.md): its id is the connection's. */
 export type CustomConnId = `c_${string}`;
 
@@ -84,6 +84,11 @@ export const CONNECTIONS: Connection[] = [
     ],
   },
   {
+    id: "github", name: "GitHub", sub: "Pull requests and checks", icon: "git-branch", builtIn: false, mcp: "github",
+    about: "Lets engineering agents see the open pull requests in the repos you pick, the files each one changes, open issues and check results. OPERATOR never pushes, opens or merges anything in GitHub.",
+    checks: [{ key: "github", label: "Repos", setup: "Tap Connect GitHub, install the OPERATOR app on the repos agents should read, then turn each one on below. Needs OPERATOR’s GitHub App in Vercel (GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET, GITHUB_APP_PRIVATE_KEY)." }],
+  },
+  {
     id: "woo", name: "WooCommerce", sub: "Orders, best sellers, stock, order notes", icon: "shopping-bag", builtIn: false, mcp: "woo", mcpMore: ["woo_notes"],
     about: "Our own WooCommerce server, run in the app over your store’s REST API. WooCommerce’s MCP plugin is a preview with no read-only mode, so it isn’t used. Two keys you make in WooCommerce: a Read key for agents (orders, best sellers, repeat buyers and low stock, with no customer names, emails or addresses), and a Read/Write key only the gateway uses, after you approve, to add a private note to an order. A key with the wrong permission is refused. There is no code to change an order, product, stock or customer. Your store’s address is checked as a public https site before every request.",
     checks: [
@@ -155,7 +160,7 @@ export const CONN_BY_ID = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c])) 
 /** Which connection each tool group belongs to. */
 type BuiltInGroup = Exclude<ToolGroup, "custom">;
 const GROUP_CONN: Record<BuiltInGroup, ConnId> = {
-  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", stripe: "stripe", quickbooks: "quickbooks", square: "square", mailchimp: "mailchimp", woo: "woo", hubspot: "hubspot", meta: "meta", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
+  shopify: "shopify", mercury: "mercury", gmail: "gmail", klaviyo: "klaviyo", analytics: "analytics", calendar: "calendar", stripe: "stripe", quickbooks: "quickbooks", square: "square", mailchimp: "mailchimp", woo: "woo", hubspot: "hubspot", meta: "meta", github: "github", notion: "notion", email: "email", web: "web", agents: "agents", supabase: "control_room", calculate: "math",
 };
 /** For tools on the list in code. A custom server's tools belong to that server (dashboard/builder.ts customMenuFor). */
 export const connOf = (t: ToolDef): ConnId => GROUP_CONN[t.group as BuiltInGroup];

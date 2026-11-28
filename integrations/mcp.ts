@@ -15,7 +15,7 @@ import { lookup } from "node:dns/promises";
 import { db } from "@/core/db";
 import { env } from "@/core/env";
 import {
-  GOOGLE_AUTH, META_AUTH, INTUIT_AUTH, isMeta, isAppSignIn, MCP_IDS, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, isMcpId, authorizeUrl, grantedScopes, scopeProblem, usesConnect, checkTools, checkedTools, isHosted, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
+  GOOGLE_AUTH, META_AUTH, INTUIT_AUTH, isMeta, isAppSignIn, isGitHubApp, MCP_IDS, MCP_PROTOCOL, MCP_SERVERS, TOOL_CHECK_HOURS, isMcpId, authorizeUrl, grantedScopes, scopeProblem, usesConnect, checkTools, checkedTools, isHosted, mayWrite, listedTools, toolCheckNote, type ListedTool, discoveryUrls, mayCall, mayReport, needsRefresh, parseRpc, pickScopes, readAuthServer, readTokens, resourceOf, scrubSecrets, toolPayload,
   type AuthServer, type McpEvent, type McpId, type Tokens, statusMap, type StatusRow,
 } from "@/core/mcp-rules";
 import { MIN_SECRET_CHARS, envWrapper, isBound, keyIdOf, newDataKey, open as openWith, seal as sealWith, vaultKey, type KeyWrapper, type VaultKey } from "@/core/vault";
@@ -49,6 +49,8 @@ import { QBO_BASE, QBO_SANDBOX_BASE, realmOk } from "@/core/quickbooks-rules";
 import { squareServer, squareWho } from "./square-server";
 import { SQUARE_HOST, SQUARE_SANDBOX_HOST, squareAuth, squareAuthorizeUrl, squareExpiresIn, squareScopeProblem } from "@/core/square-rules";
 import { looksLikeStripeKey } from "@/core/stripe-rules";
+import { githubInstallations, githubReachableRepos, githubRepoLines, githubRevokeUserToken, githubServer, type GitHubApp } from "./github-server";
+import { GITHUB_AUTH, NO_INSTALL, installUrl, slugOk, readRepos, toggleRepo, writeRepos, type Installation } from "@/core/github-rules";
 import {
   CUSTOM_ID, MAX_CUSTOM_SERVERS, acceptTools, cantTurnOn, customArgs, customReply, checkAddress, checkCustomTools, checkLabel, checkLine, checkPins, checkScopes, checkServerName, customCheckNote, isCustomId, isPublicIp, looksLikeKey, readToolList,
   type CustomAuth, type CustomServer, type CustomTool, type ToolOn,
@@ -155,7 +157,7 @@ async function openSecret<T>(sealed: string): Promise<T | null> {
 
 // ---- Who a connection is for: a built-in server's profile in code, or a custom server's row.
 
-interface Prof { id: string; name: string; url: string; kind: "oauth" | "google" | "meta" | "intuit" | "square" | "token" | "custom"; customAuth?: CustomAuth; scopes: readonly string[] }
+interface Prof { id: string; name: string; url: string; kind: "oauth" | "google" | "meta" | "intuit" | "square" | "github" | "token" | "custom"; customAuth?: CustomAuth; scopes: readonly string[] }
 const builtIn = (id: McpId): Prof => ({ id, name: MCP_SERVERS[id].name, url: MCP_SERVERS[id].url, kind: MCP_SERVERS[id].auth, scopes: MCP_SERVERS[id].scopes });
 const customProf = (c: CustomServer): Prof => ({ id: c.id, name: c.name, url: c.url, kind: "custom", customAuth: c.auth, scopes: c.scopes });
 /** Signed in on the server's own page with dynamic client registration: hosted servers and custom ones that use it. */
@@ -168,6 +170,8 @@ const usesKey = (p: Prof) => p.kind === "token" || (p.kind === "custom" && p.cus
 interface Secret { clientId: string; clientSecret: string | null; tokenEndpoint: string; revocationEndpoint?: string | null; tokens: Tokens }
 /** A key pasted on Connections, for a server we run ourselves. */
 interface KeySecret { key: string }
+/** GitHub: only the App's installs the person who signed in could reach (id, account). No token: each call mints one. */
+interface GitHubSecret { installations: Installation[] }
 export interface McpStatus { connected: boolean; paused: boolean; connectedAt: string | null; lastError: string | null; settings: Record<string, string>; toolsCheckedAt: string | null; toolsSeen: string[] }
 export interface McpLogRow { event: McpEvent; detail: string | null; at: string }
 export const MCP_MISSING = "The MCP tables aren't set up yet: apply the mcp_connections, mcp_vault and mcp_tool_check migrations in supabase/migrations.";
@@ -219,7 +223,7 @@ export async function saveMcpSetting(id: McpId, name: string, value: string | nu
   if (error) throw new Error(error.message);
 }
 
-async function store(id: string, s: Secret | KeySecret) {
+async function store(id: string, s: Secret | KeySecret | GitHubSecret) {
   const now = new Date().toISOString();
   const { error } = await db().from("mcp_connections").upsert({ id, secret: await sealSecret(s), connected_at: now, last_error: null, paused_at: null, updated_at: now }, { onConflict: "id" });
   if (error) throw new Error(missing(error.message) ? MCP_MISSING : error.message);
@@ -306,6 +310,17 @@ async function disconnectProf(p: Prof): Promise<{ revoked: boolean; note: string
     // a pasted key can't be cancelled through the API; it stops working when it is rotated at the service
     if (r?.secret) {
       note = `${p.name} keys can't be cancelled from here. To make this one stop working too, rotate it (or uninstall the app) in ${p.name}'s settings.`;
+      await logEvent(id, "revoke_failed", note);
+    }
+    const { error } = await db().from("mcp_connections").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+    await logEvent(id, "disconnected");
+    return { revoked, note };
+  }
+  if (p.kind === "github") {
+    // nothing to cancel: no person's token was kept, and installation tokens run out within the hour
+    if (r?.secret) {
+      note = "OPERATOR keeps no GitHub sign-in, so nothing is left here. To remove the OPERATOR app from GitHub too, uninstall it in GitHub: Settings, Applications (or your organization's Settings, GitHub Apps).";
       await logEvent(id, "revoke_failed", note);
     }
     const { error } = await db().from("mcp_connections").delete().eq("id", id);
@@ -454,6 +469,14 @@ export async function startConnect(id: string, redirectUri: string): Promise<{ u
     const p: Pending = { id, state, verifier, clientId: env.squareClientId, clientSecret: null, tokenEndpoint: a.token_endpoint, revocationEndpoint: a.revocation_endpoint, redirectUri, at: Date.now() };
     return { url, pending: seal(p) };
   }
+  if (prof.kind === "github") {
+    // OPERATOR's GitHub App: its secret stays in Vercel. The sign-in only lists the installs this person can reach.
+    githubApp();
+    if (!env.githubAppClientId || !env.githubAppClientSecret) throw new Error("set GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET in Vercel (OPERATOR's GitHub App) first");
+    const url = authorizeUrl(GITHUB_AUTH, { clientId: env.githubAppClientId, redirectUri, challenge, state });
+    const p: Pending = { id, state, verifier, clientId: env.githubAppClientId, clientSecret: null, tokenEndpoint: GITHUB_AUTH.token_endpoint, revocationEndpoint: null, redirectUri, at: Date.now() };
+    return { url, pending: seal(p) };
+  }
   const custom = prof.kind === "custom";
   const a = await discover(prof.url, custom);
   // a custom server: only the scopes the owner ticked, or none at all; never the server's whole list
@@ -472,7 +495,7 @@ export async function startConnect(id: string, redirectUri: string): Promise<{ u
 }
 
 /** The client secret for a token request: Google's, Meta's and Intuit's live only in Vercel (GMAIL_CLIENT_SECRET, META_APP_SECRET, QUICKBOOKS_CLIENT_SECRET). */
-const clientSecretOf = (p: Prof, stored: string | null) => (p.kind === "google" ? env.gmailClientSecret ?? null : p.kind === "meta" ? env.metaAppSecret ?? null : p.kind === "intuit" ? env.quickbooksClientSecret ?? null : p.kind === "square" ? env.squareClientSecret ?? null : stored);
+const clientSecretOf = (p: Prof, stored: string | null) => (p.kind === "google" ? env.gmailClientSecret ?? null : p.kind === "meta" ? env.metaAppSecret ?? null : p.kind === "intuit" ? env.quickbooksClientSecret ?? null : p.kind === "square" ? env.squareClientSecret ?? null : p.kind === "github" ? env.githubAppClientSecret ?? null : stored);
 /** RFC 8707 resource: servers that sign in on their own page only (Google doesn't take it). The token is for that address alone. */
 const resourceFor = (p: Prof): Record<string, string> => (signsInOwnPage(p) ? { resource: resourceOf(p.url) } : {});
 
@@ -509,7 +532,7 @@ const tokensOf = (p: Prof, j: unknown, now: number, keepRefresh: string | null =
 };
 
 /** Back from the sign-in page: checks the state, trades the code for a token and keeps it. */
-export async function finishConnect(id: string, sealedPending: string | undefined, q: { code?: string | null; state?: string | null; error?: string | null; realmId?: string | null }) {
+export async function finishConnect(id: string, sealedPending: string | undefined, q: { code?: string | null; state?: string | null; error?: string | null; realmId?: string | null }): Promise<{ next?: string } | void> {
   if (q.error) throw new Error(`the sign-in was not finished (${q.error.slice(0, 80)})`);
   const p = sealedPending ? open<Pending>(sealedPending) : null;
   if (!p || p.id !== id || Date.now() - p.at > PENDING_MINUTES * 60_000) throw new Error("the sign-in took too long or was started elsewhere. Tap Connect again.");
@@ -521,6 +544,31 @@ export async function finishConnect(id: string, sealedPending: string | undefine
   const r = await tokenRequest(p.tokenEndpoint, p.clientId, secret, { grant_type: "authorization_code", code: q.code, redirect_uri: p.redirectUri, ...(sq ? {} : { code_verifier: p.verifier }), ...resourceFor(prof) }, sq);
   const tokens = r.ok ? tokensOf(prof, r.json, Date.now()) : null;
   if (!tokens) throw new Error(`the server didn't hand over a token (${r.status}): ${scrubSecrets(r.text, [q.code, secret, p.verifier]).slice(0, 160)}`);
+  if (prof.kind === "github") {
+    // the person's token lists the App's installs they can reach (each held to read only), then is cancelled
+    // at GitHub either way: only the installs are kept, so an install id is never taken from a URL
+    const secrets = [tokens.accessToken, tokens.refreshToken, secret];
+    let found: Awaited<ReturnType<typeof githubInstallations>>;
+    try { found = await githubInstallations(tokens.accessToken); } catch (e) { found = { problem: scrubSecrets(e instanceof Error ? e.message : String(e), secrets) }; }
+    await githubRevokeUserToken(p.clientId, secret ?? "", tokens.accessToken).catch(() => false);
+    // not installed yet: on to GitHub's install page; the App's Setup URL brings the owner back to Connect
+    if ("problem" in found && found.problem === NO_INSTALL && slugOk(env.githubAppSlug)) {
+      await logEvent(id, "refused", `${NO_INSTALL}: sent to GitHub to install it`, secrets);
+      return { next: installUrl(env.githubAppSlug) };
+    }
+    if ("problem" in found) {
+      await logEvent(id, "refused", found.problem, secrets);
+      throw new Error(`${found.problem}. Tap Connect again.`);
+    }
+    // repos already turned on stay on while their account is still installed
+    const before = await row(id).catch(() => null);
+    const accounts = found.installations.map((i) => i.account);
+    const kept = readRepos(before?.settings?.repos).filter((r) => accounts.some((a) => a.toLowerCase() === r.split("/")[0].toLowerCase()));
+    await store(id, { installations: found.installations } satisfies GitHubSecret);
+    await db().from("mcp_connections").update({ settings: { accounts: accounts.join(", "), ...(kept.length ? { repos: writeRepos(kept) } : {}) } }).eq("id", id);
+    await logEvent(id, "connected", `installed on ${accounts.join(", ")}`, secrets);
+    return;
+  }
   if (prof.kind === "google") {
     // exactly the profile's scope, or the sign-in is cancelled at Google and not kept
     const secrets = [tokens.accessToken, tokens.refreshToken, secret];
@@ -741,6 +789,7 @@ const stale = (at: string | null) => !at || Date.now() - Date.parse(at) > TOOL_C
 export async function callMcpTool(id: McpId, tool: string, args: Record<string, unknown>): Promise<unknown> {
   if (!mayCall(id, tool)) throw new Error(`${tool} isn't on the list of ${MCP_SERVERS[id].name} tools code may call.`);
   return traced("tool_call", { "operator.server": id, "operator.tool": tool, "operator.tool_kind": "read" }, () => {
+    if (isGitHubApp(id)) return callGitHubTool(tool, args);
     if (isAppSignIn(id)) return callOwnSignInTool(id, tool, args, false);
     if (!isHosted(id)) return callLocalTool(id, tool, args);
     return callRemote(id, tool, args);
@@ -922,6 +971,65 @@ async function localCall(id: McpId, tool: string, args: Record<string, unknown>,
     throw new Error(`${name} ${tool}: ${msg}`);
   }
   return out.data;
+}
+
+// ---- GitHub (engineering isolation slice 1, docs/engineering.md): our own read-only server on the
+// business's install of OPERATOR's GitHub App. The vault keeps only the installs; each call mints a token.
+
+/** OPERATOR's GitHub App from Vercel, or why it isn't set up. */
+function githubApp(): GitHubApp {
+  if (!env.githubAppId || !env.githubAppPrivateKey) throw new Error("set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY in Vercel (OPERATOR's GitHub App) first");
+  return { id: env.githubAppId, key: env.githubAppPrivateKey };
+}
+
+/** GitHub's installs and the picked repos, opened, or why GitHub can't be read now. */
+async function githubState(o: { evenIfPaused?: boolean } = {}): Promise<{ installations: Installation[]; repos: string[]; settings: Record<string, string> }> {
+  const r = await row("github");
+  if (r?.paused_at && !o.evenIfPaused) throw new Error(`GitHub is paused: ${r.last_error ?? "the app stopped answering"}. Tap Connect again on Connections.`);
+  const s = r ? await readSecret<GitHubSecret>("github", r) : null;
+  if (!s?.installations?.length) throw new Error(r?.secret ? "GitHub's install can't be unlocked with MCP_SECRET_KEY or MCP_SECRET_KEY_OLD. Tap Connect again on Connections." : "GitHub isn't connected. Tap Connect on Connections.");
+  return { installations: s.installations, repos: readRepos(r?.settings?.repos), settings: r?.settings ?? {} };
+}
+
+/** One tools/call to our GitHub server, over the picked repos only. An install GitHub no longer takes pauses GitHub. */
+async function callGitHubTool(tool: string, args: Record<string, unknown>): Promise<unknown> {
+  const { installations, repos } = await githubState();
+  const n = ++localSeq;
+  const request = JSON.stringify({ jsonrpc: "2.0", id: n, method: "tools/call", params: { name: tool, arguments: args } });
+  const body = JSON.stringify(await githubServer(githubApp(), installations, repos)(JSON.parse(request)));
+  const rep = parseRpc("application/json", body, n);
+  const out = "error" in rep ? { error: rep.error } : toolPayload(rep.result);
+  if ("error" in out) {
+    const msg = scrubSecrets(out.error);
+    if (/^GitHub (401|refused)\b/.test(msg)) { await pause("github", msg.replace(/^GitHub (401|refused):?\s*/, "").slice(0, 200) || "GitHub refused the app", "refused", []); throw new Error(`GitHub: ${msg}. Tap Connect again on Connections.`); }
+    throw new Error(`GitHub ${tool}: ${msg}`);
+  }
+  return out.data;
+}
+
+export interface GitHubView { accounts: string[]; reachable: { name: string; defaultBranch: string }[]; reading: Awaited<ReturnType<typeof githubRepoLines>>; problem: string | null }
+
+/** For Connections: the repos the installs can see and, for each one turned on, its branch, open pull requests and checks. */
+export async function githubView(): Promise<GitHubView> {
+  const { installations, repos } = await githubState({ evenIfPaused: true });
+  const accounts = installations.map((i) => i.account);
+  try {
+    const app = githubApp();
+    const [reachable, reading] = await Promise.all([githubReachableRepos(app, installations), githubRepoLines(app, installations, repos)]);
+    return { accounts, reachable, reading, problem: null };
+  } catch (e) {
+    return { accounts, reachable: [], reading: repos.map((repo) => ({ repo, branch: null, openPrs: null, checks: null, problem: null })), problem: scrubSecrets(e instanceof Error ? e.message : String(e)).slice(0, 200) };
+  }
+}
+
+/** Turns one repo on or off for agents. Only a repo the installs can see right now can be turned on. */
+export async function setGitHubRepo(repo: string, on: boolean): Promise<void> {
+  const { installations, settings } = await githubState({ evenIfPaused: true });
+  const reachable = on ? (await githubReachableRepos(githubApp(), installations)).map((r) => r.name) : [];
+  const t = toggleRepo(settings.repos, repo, on, reachable);
+  if ("problem" in t) throw new Error(t.problem);
+  await saveMcpSetting("github", "repos", t.repos || null);
+  await logEvent("github", on ? "tool_on" : "tool_off", `${on ? "reading" : "stopped reading"} ${repo}`);
 }
 
 // ---- Custom servers (docs/custom-servers.md, slice 1): added by the owner by address. Their
