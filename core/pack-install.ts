@@ -41,6 +41,9 @@ async function liveOrg(): Promise<{ org: LiveOrg; chart: NonNullable<Awaited<Ret
   };
 }
 
+/** What's in the business now, for a pack's page to say whether a second install can go in. */
+export const liveOrgNow = async (): Promise<LiveOrg> => (await liveOrg()).org;
+
 /** Takes back out what an install wrote, newest first. Best effort: the error that stopped it is what's shown. */
 async function rollBack(depts: string[], agents: string[]) {
   const steps: [string, string, string[]][] = [

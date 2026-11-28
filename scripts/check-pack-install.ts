@@ -15,6 +15,8 @@ import { MAX_DEPARTMENTS, MAX_SEATS } from "../core/org-rules";
 import type { DepartmentPack } from "../core/pack-rules";
 import { agentCard, deptCard } from "../core/pack-card-rules";
 import { packUpdate, readTag } from "../core/pack-update-rules";
+import { agentCost, agentPage, costWords, deptCost, deptPage as deptPackPage, layoutCells, marketCards, matchCards, noMatchWords, readFilter, tileChips, type CostOf } from "../core/pack-market-rules";
+import { TOOL_TILES } from "../core/tools-step-rules";
 import type { ToolTileId } from "../core/tools-step-rules";
 
 const read = (f: string) => readFileSync(f, "utf8");
@@ -226,5 +228,72 @@ ok(/saveSpecVersion\(x\.agentId, x\.spec/.test(inst2) && !/activateSpecVersion/.
 ok(/export async function savePackDrafts[\s\S]{0,200}await asRole\("owner"\)[\s\S]*?await audit\(me, "update_pack"/.test(read("dashboard/packActions.ts")), "the owner saves it, audited");
 const mcp = read("core/operator-mcp.ts");
 ok(/async function listPacks/.test(mcp) && !/installDepartmentPack|installAgentPack|savePackUpdate/.test(mcp), "Claude lists packs and links to the sheets; it never installs");
+
+
+// ---- the Packs page and a pack's page (packs slice 4): worked out from the pack files, a month at the hire card's estimate
+{
+  // a flat $0.10 a run (and $0.50 at most) stands in for the price list
+  const cost: CostOf = (_a, runs) => ({ perRun: 0.1, month: 0.1 * runs, atMost: 0.5 * (runs || 1) });
+  const listed = DEPT_PACKS.filter((p) => p.id !== "chief-of-staff");
+  const shopify = new Set<ToolTileId>(["shopify"] as ToolTileId[]);
+  const seats = [{ id: "00000000-0000-4000-8000-000000000001", holder: "open", title: "Site and conversion", sub: "Numbers on what visitors do on the site", departmentId: "store_analytics", parentId: null }];
+  const cards = marketCards({ depts: listed, agents: AGENT_PACKS, connected: shopify, have: ["Finance"], seats, cost });
+  eq(cards.map((c) => c.id), [...listed.map((p) => p.id), ...AGENT_PACKS.map((p) => p.id)], "every listed pack has a card, departments first, the setup pack left out");
+  ok(!cards.some((c) => c.id === "chief-of-staff"), "the setup-only pack isn't on the Packs page");
+  ok(cards.find((c) => c.id === "finance")!.tags.some((t) => t.text === "You have Finance"), "a department the business has says so");
+  ok(cards.find((c) => c.id === "conversion-analyst")!.tags[0].text === "Fits 1 open seat", "an agent pack says how many open seats it fits");
+  ok(cards.every((c) => !c.tags.some((t) => / · v\d+$/.test(t.text))), "cards don't repeat the version (the card says Built in)");
+  // the store's weekly chain runs Iris 4 times a month
+  const sc = deptCost(store, cost);
+  eq([sc.byHand, Math.round(sc.month * 100)], [false, 40], "a department's month is each agent at its scheduled chains' runs");
+  eq(costWords(sc), "About $0.40 a month", "and reads as a month");
+  const ca = agentCost(AGENT_PACKS[0], cost);
+  eq(costWords(ca), "About $0.40 a month", "an agent pack on its suggested Mondays schedule");
+  eq(costWords({ month: 0, perRun: 0.25, atMost: 0, byHand: true, unknown: false }), "About $0.25 a run", "nothing scheduled reads as a run");
+  // search and filters
+  const all = { q: "", kind: "all" as const, tile: null };
+  eq(matchCards(cards, all).length, cards.length, "no filter keeps every card");
+  eq(matchCards(cards, { ...all, kind: "agent" }).map((c) => c.id), ["conversion-analyst"], "the kind filter");
+  eq(matchCards(cards, { ...all, q: "Bookkeeper" }).map((c) => c.id), ["finance"], "search matches roles");
+  eq(matchCards(cards, { ...all, q: "campaign WRITER" }).map((c) => c.id), ["email-marketing"], "search ignores case and needs every word");
+  ok(matchCards(cards, { ...all, tile: "shopify" as ToolTileId }).every((c) => c.tiles.includes("shopify" as ToolTileId)), "Works with keeps packs that read that connection");
+  eq(matchCards(cards, { q: "bookkeeping", kind: "agent", tile: null }), [], "nothing matches");
+  eq(noMatchWords({ q: "bookkeeping", kind: "agent", tile: null }, "Mercury"), "No pack matches “bookkeeping” among agent packs that work with Mercury.", "the empty state names what was searched");
+  eq(noMatchWords(all, null), "No pack matches.", "and reads plainly with nothing searched");
+  const chips = tileChips(cards, TOOL_TILES, shopify);
+  ok(chips.length > 0 && chips[0].connected, "Works with chips list connected connections first");
+  ok(chips.every((c) => cards.some((x) => x.tiles.includes(c.id))), "and only connections a listed pack reads");
+  eq(readFilter({ kind: "agent", tool: "nope", q: "x".repeat(200) }, ["shopify"]), { q: "x".repeat(80), kind: "agent", tile: null }, "the address is read with limits; an unknown tool is dropped");
+  eq(readFilter({ kind: "bad" }, []).kind, "all", "an unknown kind reads as all");
+  // a department pack's page
+  const page = deptPackPage(store, { connected: shopify, have: [], org: empty, cost });
+  eq([page.cant, page.have], [null, null], "a pack that goes in cleanly has nothing to warn about");
+  eq(page.agents.map((a) => a.name), ["Iris"], "its agents");
+  ok(/asks for no actions/.test(page.agents[0].sub), "and says it asks for no actions");
+  eq(page.chains.map((r) => r.off), ["Starts off"], "its chains start off");
+  ok(page.cells && page.cells[0][0].name === "What needs you" && page.cells[0][0].span === 3, "its Overview drawn small, with spans");
+  eq(layoutCells(null), null, "no layout: the usual Overview");
+  const again = deptPackPage(store, { connected: shopify, have: ["Store analytics"], org: { ...empty, deptIds: ["store_analytics"], deptNames: ["Store analytics"], agentIds: ["analytics_head"] }, cost });
+  ok(again.cant == null && /Store analytics 2/.test(again.have ?? ""), "a second install is named and allowed");
+  const fin = packById("finance", "department")!;
+  const fin2 = deptPackPage(fin, { connected: shopify, have: ["Finance"], org: { ...empty, deptIds: ["finance"], deptNames: ["Finance"], agentIds: ["cfo", "bookkeeper"] }, cost });
+  ok(/a second can’t be added/.test(fin2.cant ?? ""), "a second Finance says why it can't be added");
+  // an agent pack's page
+  const ap = agentPage(AGENT_PACKS[0], { connected: shopify, seats, deptName: () => "Store analytics", head: () => "Iris", cost });
+  eq(ap.fits.map((x) => [x.title, x.dept, x.head]), [["Site and conversion", "Store analytics", "Iris"]], "the open seats it fits, with their department and head");
+  eq(agentPage(AGENT_PACKS[0], { connected: shopify, seats: [{ ...seats[0], holder: "agent" }], deptName: () => "", head: () => null, cost }).fits, [], "a filled seat isn't offered");
+  ok(ap.suggests.length > 0 && ap.cant == null, "its suggested actions are listed (they start off)");
+}
+
+// ---- slice 4 wiring: a menu item, links from the sheets and Claude to pack pages, Add is the owner-only action
+{
+  const layout = read("app/(room)/layout.tsx");
+  ok(/href: "\/packs"/.test(layout), "Packs is in the menu");
+  const page = read("app/(room)/packs/[id]/page.tsx");
+  ok(/installDeptPack/.test(page) && /atLeast\(me\.role, "owner"\)/.test(page), "a pack's page adds through the owner-only action, and shows Add to the owner only");
+  ok(/packsHref\(\)/.test(read("dashboard/components/packSheet.tsx")), "the Add a department sheet links to every pack");
+  ok(!/add=dept&pack/.test(read("core/operator-mcp.ts")) && /packHref\(p\.id\)/.test(read("core/operator-mcp.ts")), "list_packs links open a pack's page");
+  ok(!/sp\.pack/.test(read("app/(room)/page.tsx")), "the sheet's old deep link is gone");
+}
 
 console.log(`check:pack-install ok (${n} checks)`);

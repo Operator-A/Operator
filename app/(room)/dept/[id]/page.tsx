@@ -43,6 +43,7 @@ import { DeptSettingsFor } from "@/dashboard/components/deptSettingsFor";
 import { PackBanner } from "@/dashboard/components/packBanner";
 import { seatFits } from "@/core/pack-install-rules";
 import { FillSeatSheetFor } from "@/dashboard/components/packSheetFor";
+import { seatParentName } from "@/core/org-rules";
 import { GoalTiles } from "@/dashboard/components/goalTiles";
 import { approvalsHistoryHref } from "@/dashboard/company-rules";
 import { WidgetGrid } from "@/dashboard/components/widgetGrid";
@@ -63,16 +64,12 @@ const GEAR = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke=
 const NO_ORG = "The org chart tables aren’t up to date: apply the org chart migrations.";
 /** Fill an open seat from a pack (packs slice 3): the Agents tab with the sheet open, so back closes it. */
 const fillHref = (deptId: string, seatId: string) => `${tabHref(deptId, "agents")}&fill=${encodeURIComponent(seatId)}`;
-/** Who an open seat sits under, by name: an agent pack joins under them. */
-const parentName = (chart: NonNullable<Roster["chart"]>, seatId: string, byId: Roster["byId"]) => {
-  const up = chart.seats.find((x) => x.id === chart.seats.find((s) => s.id === seatId)?.parentId);
-  return up?.holder === "agent" && up.agentId ? byId[up.agentId]?.name ?? null : up?.holder === "owner" ? "you" : null;
-};
+const parentName = (chart: NonNullable<Roster["chart"]>, seatId: string, byId: Roster["byId"]) => seatParentName(chart, seatId, (a) => byId[a]?.name);
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const ASK = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></svg>;
 const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 
-export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; ask?: string; edit?: string; settings?: string; at?: string; days?: string; chain?: string; new?: string; report?: string; installed?: string; fill?: string }> }) {
+export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; ask?: string; edit?: string; settings?: string; at?: string; days?: string; chain?: string; new?: string; report?: string; installed?: string; fill?: string; pack?: string }> }) {
   // the pieces this page shows, in one round (card 304): the crew and its runs, what waits on you, the time zone, the org switch
   const [{ id }, sp, roster, counts, tz, org, me] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch(), requireSession()]);
   const chart = roster.chart;
@@ -122,7 +119,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
           <Chat id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} />
         </AskSheet>
       )}
-      {typeof sp.fill === "string" && !sp.agent && me.role === "owner" && <Suspense key={sp.fill} fallback={<SheetSkel />}><FillSeatSheetFor chart={chart} seatId={sp.fill} head={parentName(chart, sp.fill, roster.byId)} closeHref={tabHref(id, tab)} /></Suspense>}
+      {typeof sp.fill === "string" && !sp.agent && me.role === "owner" && <Suspense key={sp.fill} fallback={<SheetSkel />}><FillSeatSheetFor chart={chart} seatId={sp.fill} head={parentName(chart, sp.fill, roster.byId)} closeHref={tabHref(id, tab)} pack={typeof sp.pack === "string" ? sp.pack.slice(0, 40) : undefined} /></Suspense>}
       {sp.settings != null && !sp.agent && <DeptSettingsFor chart={chart} id={id} closeHref={tabHref(id, tab)} names={Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]))} />}
       {sp.agent && <Suspense key={sp.agent} fallback={<SheetSkel />}><AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} dept={id} openHref={madeAgentHref(id)} /></Suspense>}
     </div>

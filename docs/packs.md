@@ -190,3 +190,29 @@ A pull request with `packs/<id>.json` and a line in `core/packs.ts`. `check:pack
 A job with no agent yet is an open seat on the org chart, with a title and a line. Card 134 turned
 every seat held for an agent that was never built into an open seat
 (`supabase/migrations/20261216090000_seats_planned_to_open.sql`).
+
+## The Packs page
+
+Decided 2026-11-28 (packs slice 4, approved mockup). **Packs** has its own menu item, under More. The page lists every
+pack this business can add (the Chief of Staff setup pack only goes in at first-run setup, so it isn't listed), with
+search and two filters: the kind (departments or agents) and **Works with**, the connections a pack reads, connected
+ones first with a green dot. Search and filters run in the browser on the cards the server worked out, in one read
+round (`core/pack-market-rules.ts`, `dashboard/packMarket.ts`).
+
+Each card opens the pack's page at `/packs/<id>`:
+
+- A department pack's page shows its agents (model, daily budget, how many tools they read, that they ask for no
+  actions), open seats, its Overview layout drawn small, chains (which start off), goals, the connections it reads and
+  a monthly estimate. It is the confirm step: the owner's **Add** is the same action as the Add a department sheet
+  (`installDeptPack`) and lands on the new department with its setup banner. A department the business already has
+  says what a second one would be called; one whose second copy the gateway refuses (Finance, Prospecting: actions
+  named by agent id) says why and has no Add button.
+- An agent pack's page shows the agent, the actions it can ask for (all start off), its connections, the estimate and
+  the open seats it fits. **Fill** opens that seat's Fill sheet with the pack picked (`&pack=<id>`).
+
+The monthly estimate is the hire card's (`dashboard/cost.ts`): each agent's model, effort, tools and limits, at the
+runs a month its pack's scheduled chains give it (an agent pack's suggested schedule), with no real runs yet. Nothing
+costs anything while it's off. People who aren't the owner can browse but see no Add or Fill.
+
+The Add a department sheet keeps its quick list and links to the page (**See every pack**); the Fill sheet links to the
+agent packs. `list_packs` links open a pack's page.

@@ -43,6 +43,7 @@ import { DEPT_PACKS, AGENT_PACKS } from "@/core/packs";
 import { SETUP_TEMPLATE } from "@/core/setup-rules";
 import { seatFits } from "@/core/pack-install-rules";
 import { agentCard, deptCard } from "@/core/pack-card-rules";
+import { packHref } from "@/core/pack-market-rules";
 import { TOOL_TILES, type ToolTileId } from "@/core/tools-step-rules";
 import { LIMITS, answerText, draftActions, draftTools, hashesMatch, newToken, nextWindow, readAccess, refreshProblem, signAccess, staleRead, tokenParts, toolList, type OpTool, type ToolAnswer } from "@/core/operator-mcp-rules";
 
@@ -376,14 +377,14 @@ async function listPacks(origin: string): Promise<ToolAnswer> {
     department_packs: DEPT_PACKS.filter((p) => p.id !== SETUP_TEMPLATE).map((p) => {
       const c = deptCard(p, connected, have);
       return { id: p.id, name: p.name, version: p.version, about: p.about, adds: c.adds.map((r) => `${r.title}${r.rest}: ${r.sub}`), connections: c.conns.map((x) => ({ name: x.name, connected: x.connected, needed: x.needed })),
-        already_have: have.some((n) => n.toLowerCase() === p.name.toLowerCase()), problems: c.problems, link: `${origin}/?add=dept&pack=${encodeURIComponent(p.id)}` };
+        already_have: have.some((n) => n.toLowerCase() === p.name.toLowerCase()), problems: c.problems, link: `${origin}${packHref(p.id)}` };
     }),
     agent_packs: AGENT_PACKS.map((p) => {
       const c = agentCard(p, connected);
-      return { id: p.id, name: p.name, version: p.version, about: p.about, tags: c.tags.map((t) => t.text), can_do_after_your_ok: c.suggests.map((x) => x.label), runs: c.starts ?? "by hand", problems: c.problems,
-        seats: open.filter((x) => seatFits(p, x)).map((x) => ({ seat: x.title, department: deptName(x.departmentId), link: `${origin}/dept/${encodeURIComponent(x.departmentId!)}?tab=agents&fill=${encodeURIComponent(x.id)}` })) };
+      return { id: p.id, name: p.name, version: p.version, about: p.about, tags: c.tags.map((t) => t.text), can_do_after_your_ok: c.suggests.map((x) => x.label), runs: c.starts ?? "by hand", problems: c.problems, link: `${origin}${packHref(p.id)}`,
+        seats: open.filter((x) => seatFits(p, x)).map((x) => ({ seat: x.title, department: deptName(x.departmentId), link: `${origin}/dept/${encodeURIComponent(x.departmentId!)}?tab=agents&fill=${encodeURIComponent(x.id)}&pack=${encodeURIComponent(p.id)}` })) };
     }),
-    note: "Only the owner installs, on the link's confirm sheet. Agents start off duty, playbooks wait for an OK, chains start off, and no action is granted unless the owner turns it on there.",
+    note: "Each link opens the pack's page in OPERATOR, which shows everything it adds. Only the owner installs, there. Agents start off duty, playbooks wait for an OK, chains start off, and no action is granted unless the owner turns it on there.",
   };
   return { text: answerText(body, null) };
 }
