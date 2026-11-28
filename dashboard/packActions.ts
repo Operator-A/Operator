@@ -6,7 +6,7 @@
 // suggests.
 import { revalidatePath } from "next/cache";
 import { audit } from "@/core/audit";
-import { installAgentPack, installDepartmentPack } from "@/core/pack-install";
+import { installAgentPack, installDepartmentPack, savePackUpdate } from "@/core/pack-install";
 import { PACK_ID } from "@/core/pack-rules";
 import type { ActionResult } from "./actions";
 import { asRole } from "./data";
@@ -39,5 +39,18 @@ export async function installSeatPack(packId: string, seatId: string, grants: st
     await audit(me, "install_pack", id, { seat: seatId, agent: r.agentId, grants: asked });
     revalidatePath("/", "layout");
     return { ok: true, text: `${r.name} sits there now, off duty. Approve its playbook, try it once, then put it on duty.`, agentId: r.agentId };
+  } catch (e) { return fail(e); }
+}
+
+/** A newer version of a department's pack, saved as drafts: changed specs wait for a clean try and Go live. */
+export async function savePackDrafts(deptId: string): Promise<ActionResult> {
+  const { me, no } = await asRole("owner"); if (no) return no;
+  const id = String(deptId ?? "");
+  if (!/^[a-z][a-z0-9_]{1,39}$/.test(id)) return { ok: false, text: "Unknown department." };
+  try {
+    const r = await savePackUpdate(id);
+    await audit(me, "update_pack", id, { to: r.to, drafts: r.drafts });
+    revalidatePath("/", "layout");
+    return { ok: true, text: r.drafts ? `Saved ${r.drafts} draft${r.drafts === 1 ? "" : "s"} from version ${r.to}. Each needs a clean try and your Go live.` : `${r.name} is on version ${r.to}.` };
   } catch (e) { return fail(e); }
 }

@@ -19,7 +19,7 @@ const ORG = "0e1a7c4e-0002-4000-8000-000000000002", GRANT = "0e1a7c4e-00aa-4000-
 
 const run = async () => {
   // ---- the tool list: reads for every member, draft writes for owners only
-  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains", "get_run", "list_chains", "get_chain_run", "get_report"], DRAFTS = ["create_agent", "update_agent", "draft_chain", "propose"], FINISHES = ["finish_run"], TRIES = ["try_agent"];
+  const READS = ["get_company", "list_agents", "get_agent", "list_runs", "list_waiting", "list_tools", "list_brains", "get_run", "list_chains", "list_packs", "get_chain_run", "get_report"], DRAFTS = ["create_agent", "update_agent", "draft_chain", "propose"], FINISHES = ["finish_run"], TRIES = ["try_agent"];
   assert.deepEqual(OP_TOOLS.map((t) => t.name), [...READS, ...DRAFTS, ...FINISHES, ...TRIES]);
   // overview slice 3: the written reports, read only, for every member
   assert.ok(TOOL_BY_NAME.get_report.kind === "read" && TOOL_BY_NAME.get_report.min === "viewer");

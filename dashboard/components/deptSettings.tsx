@@ -19,6 +19,8 @@ export interface DeptSettingsData {
   rules: { id: string; text: string }[];
   /** Only a department where every seat is open can be removed. */
   removable: boolean; agents: string[];
+  /** A newer version of the pack it came from (packs slice 3b), with what it would change, worked out in code. */
+  offer?: { to: number; name: string; lines: { mark: "+" | "~" | "="; text: string }[]; warns: string[]; drafts: number } | null;
 }
 export interface DeptSettingsActions {
   rename: (name: string) => Promise<Result>;
@@ -28,6 +30,7 @@ export interface DeptSettingsActions {
   addRule: (text: string) => Promise<Result>;
   forgetRule: (ruleId: string) => Promise<Result>;
   remove: () => Promise<Result>;
+  savePack?: () => Promise<Result>;
 }
 
 const X = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>;
@@ -48,6 +51,7 @@ export function DeptSettings({ d, closeHref, act }: { d: DeptSettingsData; close
   const [drawn, setDrawn] = useState(d);
   if (drawn !== d) { setDrawn(d); setF(init()); setConfirm(null); }
   const [rule, setRule] = useState("");
+  const [later, setLater] = useState(false);
 
   useEffect(() => {
     const r = requestAnimationFrame(() => setOpen(true));
@@ -107,6 +111,15 @@ export function DeptSettings({ d, closeHref, act }: { d: DeptSettingsData; close
           <button type="button" className="x" onClick={close} aria-label="Close">{X}</button>
         </div>
         <div className="ag-body">
+          {d.offer && !later && act.savePack && (
+            <div className="pk-update">
+              <div className="pk-update-h"><span className="pk-tag acc">Version {d.offer.to}</span><b>A newer {d.offer.name} pack</b></div>
+              <div className="pk-diff">{d.offer.lines.map((l, i) => <div key={i} className={l.mark === "+" ? "p" : l.mark === "~" ? "c" : "k"}><i>{l.mark}</i><span>{l.text}</span></div>)}</div>
+              {d.offer.warns.map((w) => <div key={w} className="pk-box warn">{w}</div>)}
+              <div className="dp-btns"><button type="button" className="dp-btn dark" disabled={busy} onClick={() => go(act.savePack!, () => setLater(true))}>Save as drafts</button><button type="button" className="dp-btn" disabled={busy} onClick={() => setLater(true)}>Not now</button></div>
+              <span className="dp-note">{d.offer.drafts ? "Each draft needs a clean try and your Go live, like any change to an agent." : "No agent changes: saving moves the department to this version."}</span>
+            </div>
+          )}
           <div className="fld"><label htmlFor="ds-name">Name</label>
             <input type="text" id="ds-name" maxLength={60} value={f.name} onChange={(e) => set({ name: e.target.value })} /></div>
           <div className="fld"><label htmlFor="ds-budget">Monthly AI budget</label>

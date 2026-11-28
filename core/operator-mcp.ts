@@ -39,6 +39,11 @@ import { orgTz } from "@/core/tz";
 import { latestReports } from "@/core/reports";
 import { COMPANY_SCOPE } from "@/core/report-rules";
 import { flowWithStarts, readStarts, readStored, startsToday, startsWords } from "@/core/draft-starts-rules";
+import { DEPT_PACKS, AGENT_PACKS } from "@/core/packs";
+import { SETUP_TEMPLATE } from "@/core/setup-rules";
+import { seatFits } from "@/core/pack-install-rules";
+import { agentCard, deptCard } from "@/core/pack-card-rules";
+import { TOOL_TILES, type ToolTileId } from "@/core/tools-step-rules";
 import { LIMITS, answerText, draftActions, draftTools, hashesMatch, newToken, nextWindow, readAccess, refreshProblem, signAccess, staleRead, tokenParts, toolList, type OpTool, type ToolAnswer } from "@/core/operator-mcp-rules";
 
 // ---- Grants
@@ -358,6 +363,29 @@ async function listTools(origin: string): Promise<ToolAnswer> {
         : "Code names the agents that may use it; it can't be given to others." })),
   };
   return { text: answerText(body, `${origin}/connections`) };
+}
+
+/** The built-in packs, with what each adds and links into OPERATOR's own install sheets (packs slice 3b). */
+async function listPacks(origin: string): Promise<ToolAnswer> {
+  const [org, st] = await Promise.all([loadOrg(), mcpStatuses().catch(() => ({} as Awaited<ReturnType<typeof mcpStatuses>>))]);
+  const connected = new Set<ToolTileId>(TOOL_TILES.filter((t) => t.mcp && st[t.mcp]?.connected && !st[t.mcp]?.paused).map((t) => t.id));
+  const have = (org?.departments ?? []).map((d) => d.name);
+  const open = (org?.seats ?? []).filter((x) => x.holder === "open" && x.departmentId != null);
+  const deptName = (id: string | null) => org?.departments.find((d) => d.id === id)?.name ?? id;
+  const body = {
+    department_packs: DEPT_PACKS.filter((p) => p.id !== SETUP_TEMPLATE).map((p) => {
+      const c = deptCard(p, connected, have);
+      return { id: p.id, name: p.name, version: p.version, about: p.about, adds: c.adds.map((r) => `${r.title}${r.rest}: ${r.sub}`), connections: c.conns.map((x) => ({ name: x.name, connected: x.connected, needed: x.needed })),
+        already_have: have.some((n) => n.toLowerCase() === p.name.toLowerCase()), problems: c.problems, link: `${origin}/?add=dept&pack=${encodeURIComponent(p.id)}` };
+    }),
+    agent_packs: AGENT_PACKS.map((p) => {
+      const c = agentCard(p, connected);
+      return { id: p.id, name: p.name, version: p.version, about: p.about, tags: c.tags.map((t) => t.text), can_do_after_your_ok: c.suggests.map((x) => x.label), runs: c.starts ?? "by hand", problems: c.problems,
+        seats: open.filter((x) => seatFits(p, x)).map((x) => ({ seat: x.title, department: deptName(x.departmentId), link: `${origin}/dept/${encodeURIComponent(x.departmentId!)}?tab=agents&fill=${encodeURIComponent(x.id)}` })) };
+    }),
+    note: "Only the owner installs, on the link's confirm sheet. Agents start off duty, playbooks wait for an OK, chains start off, and no action is granted unless the owner turns it on there.",
+  };
+  return { text: answerText(body, null) };
 }
 
 async function listBrains(): Promise<ToolAnswer> {
@@ -716,6 +744,7 @@ export function runTool(caller: Caller, origin: string, tool: OpTool, args: Reco
       case "draft_chain": return draftChain(caller, origin, args);
       case "get_run": return getRun(origin, args);
       case "list_chains": return listChains(origin, args);
+      case "list_packs": return listPacks(origin);
       case "get_chain_run": return getChainRun(origin, args);
       case "get_report": return getReport(origin, args);
       case "try_agent": return tryAgent(caller, origin, args);

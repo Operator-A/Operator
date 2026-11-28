@@ -10,6 +10,8 @@ import { loadOrg, setHolder } from "@/core/org";
 import { liveRows, livePlan, seatFlow, seatPlan, setupSteps, startWords, type LiveOrg, type SetupStep } from "@/core/pack-install-rules";
 import { packById } from "@/core/packs";
 import type { InstallRows } from "@/core/install-rules";
+import { readSpec, saveSpecVersion } from "@/core/agent-spec";
+import { packUpdate, readTag, type LiveAgent, type PackUpdate } from "@/core/pack-update-rules";
 
 const ORDER: (keyof InstallRows)[] = ["departments", "agents", "agent_defs", "agent_playbooks", "seats", "goals"];
 /** Before the agents.pack migration (20270115090000_agent_pack.sql) agents have no pack column. */
@@ -128,4 +130,56 @@ export async function packSetup(deptId: string): Promise<{ steps: SetupStep[]; w
     }),
     waiting: waiting[0] ?? null, off: off[0] ?? null,
   };
+}
+
+/** A newer version of the pack a department came from, with what it would change; null when there is none. */
+export async function packOffer(deptId: string): Promise<PackUpdate | null> {
+  const d = await db().from("departments").select("overview, pack").eq("id", deptId).maybeSingle();
+  if (d.error || !d.data) return null;
+  const tag = readTag(d.data.pack);
+  const pack = tag ? packById(tag.id, "department") : null;
+  if (!tag || !pack || !(pack.version > tag.version)) return null;
+  const o = await loadOrg();
+  const ids = (o?.seats ?? []).filter((s) => s.departmentId === deptId && s.agentId).map((s) => s.agentId!);
+  if (!ids.length) return packUpdate(pack, tag.version, d.data.overview, []);
+  const [a, defs] = await Promise.all([
+    db().from("agents").select("id, name, pack").in("id", ids),
+    db().from("agent_defs").select("agent_id, version, spec, active, created_by, created_at").in("agent_id", ids).order("version"),
+  ]);
+  if (a.error) throw new Error(a.error.message);
+  if (defs.error) throw new Error(defs.error.message);
+  // only agents that came from this pack; before the agents.pack migration, every agent whose first spec it wrote
+  const rows = (defs.data ?? []) as { agent_id: string; version: number; spec: unknown; active: boolean; created_by: string; created_at: string }[];
+  const live: LiveAgent[] = [];
+  for (const r of a.data ?? []) {
+    const mine = rows.filter((x) => x.agent_id === r.id);
+    const first = mine.find((x) => x.version === 1), active = mine.find((x) => x.active);
+    const t = readTag((r as { pack?: unknown }).pack);
+    if (!first || !active || (t ? t.id !== pack.id : !String(first.created_by).startsWith(`pack:`))) continue;
+    const edits = mine.filter((x) => x.version > 1 && !String(x.created_by).startsWith("pack:"));
+    const last = edits[edits.length - 1];
+    live.push({
+      id: String(r.id), name: String(r.name), firstName: readSpec(first.spec, String(r.id)).spec.name, spec: active.spec,
+      edited: last ? new Date(last.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : null,
+    });
+  }
+  return packUpdate(pack, tag.version, d.data.overview, live);
+}
+
+/**
+ * Saves a newer pack version as drafts: each changed agent's spec as a draft version (Try it and Go live as for any
+ * change), and the Overview layout. The department and its agents then say they came from the new version. The
+ * caller has checked the member is the owner.
+ */
+export async function savePackUpdate(deptId: string): Promise<{ drafts: number; to: number; name: string }> {
+  const u = await packOffer(deptId);
+  if (!u) throw new Error("There’s no newer version of this department’s pack.");
+  const d = await db().from("departments").select("pack").eq("id", deptId).maybeSingle();
+  const id = readTag(d.data?.pack)!.id;
+  for (const x of u.drafts) await saveSpecVersion(x.agentId, x.spec, `From the ${id} pack, version ${u.to}`, `pack:${id}`);
+  const tag = `${id}@${u.to}`;
+  const up = await db().from("departments").update(u.overview ? { overview: u.overview, pack: tag } : { pack: tag }).eq("id", deptId);
+  if (up.error) throw new Error(up.error.message);
+  if (u.drafts.length) await db().from("agents").update({ pack: tag }).in("id", u.drafts.map((x) => x.agentId)).then(() => undefined, () => undefined);
+  return { drafts: u.drafts.length, to: u.to, name: u.name };
 }
