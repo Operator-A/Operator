@@ -33,7 +33,7 @@ const AUDITED = [
   // a new department: the owner files it from Avery's draft, or throws the draft away
   "proposeDepartment", "discardDepartmentDraft",
   // packs installed into a running business: a department, or an agent into an open seat with the actions turned on
-  "installDeptPack", "installSeatPack", "savePackDrafts",
+  "installDeptPack", "installSeatPack", "savePackDrafts", "saveLayout",
   // OPERATOR's own MCP server: an app (Claude) connected or disconnected
   "allowApp", "disconnectApp",
   // agents that run in Claude: the routine a linked agent fires, and moving it into OPERATOR

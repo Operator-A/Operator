@@ -106,7 +106,32 @@ widgets on it show (`widgetNeeds`). The new widgets read saved rows only, never 
 service, each read once per request (`dashboard/widgets.ts`), and each streams into its own frame with a skeleton.
 `check:widgets` holds all of it.
 
-Changing a layout from the page comes with card 505.
+### Editing the Overview
+
+Decided 2026-11-28 (packs slice 5, approved mockup). The owner and approvers get **Edit layout** above a department's
+Overview, beside a line that says where the layout came from: the pack ("Laid out by the Store analytics pack"), whoever
+saved it last ("Laid out by you, Nov 28", from the audit log), or "The usual Overview". Everyone else sees the page as it
+is. Edit layout opens the editor in place (`?layout=edit`, `dashboard/components/layoutEditor.tsx`):
+
+- Each widget is a block: **↑ ↓** move it earlier or later, the width switch picks a third, two thirds or the full row
+  (hidden on a phone, where every widget is full width anyway), **✎** opens settings for the three widgets that have
+  them, **✕** removes it. Blocks flow into rows of three columns in order (`flow`), so moving one never leaves a gap.
+  A department with no layout starts from the usual Overview's widgets (`DEFAULT_LAYOUT`), never from empty.
+- **+ Add a widget** opens core's catalog. Widgets that show once are greyed out while they're on the page; a number
+  tile, daily chart or agent number can be added more than once and opens its settings first. A new widget goes at the
+  end.
+- Settings are picked from lists in code, with a preview from real saved numbers: a measure and label; a saved daily
+  number and 14, 30 or 90 days; or one of this department's agents, a number its last runs saved (`metricKeys`), a
+  label and how it reads.
+- **Reset** goes back to the pack's layout (the pack's agent numbers pointed at this department's agents from that
+  pack, `packResetLayout`), or, for a department not from a pack, to the usual Overview, which clears the saved
+  layout. Reset only changes the blocks; **Cancel** drops everything.
+- **Save layout** is `saveLayout` (`dashboard/packActions.ts`): approver or owner, checked by `toSave`, which keeps
+  only the fields each widget takes and runs `layoutProblems` with this department's agents, the same check a pack's
+  layout gets. An empty page saves as the usual Overview. Every save is in the audit log (`edit_layout`). A widget only
+  shows what OPERATOR already saved, so adding one reads nothing new from a tool and costs nothing.
+
+The editor's rules are pure (`core/layout-edit-rules.ts`) and `check:widgets` tests them.
 
 ## Installing
 

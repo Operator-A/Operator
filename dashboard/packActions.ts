@@ -10,6 +10,10 @@ import { installAgentPack, installDepartmentPack, savePackUpdate } from "@/core/
 import { PACK_ID } from "@/core/pack-rules";
 import type { ActionResult } from "./actions";
 import { asRole } from "./data";
+import { db } from "@/core/db";
+import { loadOrg } from "@/core/org";
+import { toSave } from "@/core/layout-edit-rules";
+import { MAX_WIDGETS, type Widget } from "@/core/widget-rules";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail = (e: unknown): ActionResult => ({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -52,5 +56,30 @@ export async function savePackDrafts(deptId: string): Promise<ActionResult> {
     await audit(me, "update_pack", id, { to: r.to, drafts: r.drafts });
     revalidatePath("/", "layout");
     return { ok: true, text: r.drafts ? `Saved ${r.drafts} draft${r.drafts === 1 ? "" : "s"} from version ${r.to}. Each needs a clean try and your Go live.` : `${r.name} is on version ${r.to}.` };
+  } catch (e) { return fail(e); }
+}
+
+/**
+ * A department's Overview as the layout editor left it (packs slice 5): the owner or an approver. Checked like a
+ * pack's layout (core's widgets only, agent numbers only from this department's agents); null or an empty page saves
+ * the usual Overview. Nothing runs and nothing is read from a tool: a widget only shows what OPERATOR saved.
+ */
+export async function saveLayout(deptId: string, items: Widget[] | null): Promise<ActionResult> {
+  const { me, no } = await asRole("approver"); if (no) return no;
+  const id = String(deptId ?? "");
+  if (!/^[a-z][a-z0-9_]{1,39}$/.test(id)) return { ok: false, text: "Unknown department." };
+  if (items != null && (!Array.isArray(items) || items.length > MAX_WIDGETS)) return { ok: false, text: `At most ${MAX_WIDGETS} widgets.` };
+  try {
+    const org = await loadOrg();
+    if (!org?.departments.some((d) => d.id === id)) return { ok: false, text: "Unknown department." };
+    const agents = org.seats.filter((s) => s.departmentId === id && s.agentId).map((s) => s.agentId!);
+    const { layout, problems } = toSave(items, agents);
+    if (problems.length) return { ok: false, text: `Not saved: ${problems.slice(0, 3).join("; ")}` };
+    const up = await db().from("departments").update({ overview: layout }).eq("id", id).select("id");
+    if (up.error) throw new Error(up.error.message);
+    if (!up.data?.length) return { ok: false, text: "Unknown department." };
+    await audit(me, "edit_layout", id, { widgets: layout ? layout.flat().length : 0, usual: layout == null });
+    revalidatePath(`/dept/${id}`);
+    return { ok: true, text: layout ? "Layout saved." : "Back to the usual Overview." };
   } catch (e) { return fail(e); }
 }

@@ -9,6 +9,7 @@ import { db } from "@/core/db";
 import { readingsFor } from "@/core/goal-readings";
 import { packFrom, readLayout, type Layout, type SnapRow } from "@/core/widget-rules";
 import { snapshotsSince } from "./overview";
+import { metricKeys } from "@/core/layout-edit-rules";
 
 /** The department's layout and the pack it came from. Both null before the migration or when none is saved. */
 export async function deptLayout(id: string): Promise<{ layout: Layout | null; pack: { id: string; version: number } | null }> {
@@ -34,3 +35,22 @@ export const metricRuns = cache(async (agentId: string): Promise<{ metrics: unkn
     .not("metrics", "is", null).order("started_at", { ascending: false }).limit(20);
   return error ? [] : (data ?? []) as { metrics: unknown; started_at: string }[];
 });
+
+/** Who last saved this department's layout and when (packs slice 5), from the audit log; null when no one has. */
+export async function lastLayoutSave(deptId: string): Promise<{ by: string; at: string } | null> {
+  const { data, error } = await db().from("audit_log").select("actor, at").eq("action", "edit_layout").eq("target", deptId).order("at", { ascending: false }).limit(1);
+  return error || !data?.[0] ? null : { by: String(data[0].actor), at: String(data[0].at) };
+}
+
+/**
+ * What the layout editor needs beyond the layout (packs slice 5): each of the department's agents with the numbers
+ * its last runs saved, and the saved daily numbers, so a widget's settings preview real saved numbers. Saved rows
+ * only; nothing is read from a tool.
+ */
+export async function layoutEditData(agents: readonly { id: string; name: string }[], fromDay: string): Promise<{ agents: { id: string; name: string; keys: string[]; runs: { metrics: unknown }[] }[]; snaps: SnapRow[] }> {
+  const [runs, snaps] = await Promise.all([Promise.all(agents.map((a) => metricRuns(a.id).catch(() => []))), snapsFrom(fromDay)]);
+  return {
+    agents: agents.map((a, i) => ({ id: a.id, name: a.name, keys: metricKeys(runs[i]), runs: runs[i].map((r) => ({ metrics: r.metrics })) })),
+    snaps: snaps ?? [],
+  };
+}
