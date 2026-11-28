@@ -49,7 +49,12 @@ export async function installPacks(ids: readonly string[]): Promise<{ counts: Re
   const counts: Record<string, number> = {};
   for (const t of ORDER) {
     if (!rows[t].length) continue;
-    const { error } = await db().from(t).insert(rows[t]);
+    let { error } = await db().from(t).insert(rows[t]);
+    // before the widget grid migration (packs slice 2) departments have no overview or pack column: install without them
+    if (error && t === "departments" && /overview|pack/.test(error.message)) {
+      const bare = rows[t].map((d) => Object.fromEntries(Object.entries(d).filter(([k]) => k !== "overview" && k !== "pack")));
+      ({ error } = await db().from(t).insert(bare));
+    }
     if (error) throw new Error(`Installing stopped at ${t} (${error.message}). Done before it: ${Object.keys(counts).join(", ") || "nothing"}.`);
     counts[t] = rows[t].length;
   }
