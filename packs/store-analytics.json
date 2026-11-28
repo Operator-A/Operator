@@ -1,7 +1,12 @@
 {
   "id": "store-analytics",
+  "kind": "department",
+  "version": 1,
   "name": "Store analytics",
   "about": "A head of store analytics who compares this week with last, worked out in code from your daily numbers and Google Analytics, and says what changed.",
+  "author": "OPERATOR",
+  "license": "AGPL-3.0-only",
+  "needs_operator": "0.1.0",
   "departments": [
     {
       "id": "store_analytics",

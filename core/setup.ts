@@ -10,8 +10,8 @@ import { loadSpec, type AgentSpec } from "@/core/agent-spec";
 import { runExplore } from "@/core/runner";
 import { withRun } from "@/core/runs";
 import { forgetBusiness } from "@/core/business";
-import { installTemplates } from "@/core/install";
-import { TEMPLATES, templateList } from "@/core/templates";
+import { installPacks } from "@/core/install";
+import { DEPT_PACKS, packList } from "@/core/packs";
 import { TOOLS } from "@/core/tools/catalog";
 import type { ToolDef } from "@/core/tools/types";
 import { CATEGORY_IDS, TILE_BY_ID, TOOL_CATEGORIES, answerFact, partWords, categoryState, listedTool, readPlans, readSkipped, type CategoryId, type CategoryPlan, type ToolTileId } from "@/core/tools-step-rules";
@@ -33,7 +33,7 @@ export const FACTS_MISSING = "The business facts table isn’t in Supabase yet: 
 const SETUP_KEY = "setup";
 
 /** The departments Avery may lean toward: every template but the Chief of Staff's. */
-const departmentTemplates = () => templateList().filter((t) => t.id !== SETUP_TEMPLATE);
+const departmentTemplates = () => packList().filter((t) => t.id !== SETUP_TEMPLATE);
 
 export async function setupState(): Promise<SetupState> {
   const { data, error } = await db().from("policies").select("value_json").eq("key", SETUP_KEY).maybeSingle();
@@ -55,7 +55,7 @@ export async function inSetup(): Promise<boolean> {
 
 /** Setup is over: the founder installed departments (`offer`: the Company page offers a first job, card 154) or chose to start empty. */
 /**
- * Start this company (card 193): the picked kits install from their templates (renamed to Avery's
+ * Start this company (card 193): the picked kits install from their packs (renamed to Avery's
  * names), then each picked bespoke department is built from its checked draft, everyone off duty.
  * A bespoke department with a gap stops it before anything is written.
  */
@@ -71,11 +71,11 @@ export async function startCompany(ids: readonly string[], by: string): Promise<
   await ensureAvery();
   let agents = 0, departments = 0;
   if (kitIds.length) {
-    const { counts } = await installTemplates(kitIds);
+    const { counts } = await installPacks(kitIds);
     agents += counts.agents ?? 0; departments += counts.departments ?? 0;
     const { renameDepartment } = await import("@/core/org");
     for (const d of s.designs.filter((x) => x.kit && kitIds.includes(x.kit))) {
-      const dept = TEMPLATES.find((t) => t.id === d.kit)?.departments[0];
+      const dept = DEPT_PACKS.find((t) => t.id === d.kit)?.departments[0];
       if (dept && dept.name !== d.name) await renameDepartment(dept.id, d.name);
     }
   }
@@ -200,7 +200,7 @@ export async function ensureAvery(): Promise<void> {
   const { data, error } = await db().from("agents").select("id").limit(1);
   if (error) throw new Error(error.message);
   if (data?.length) return;
-  await installTemplates([SETUP_TEMPLATE]);
+  await installPacks([SETUP_TEMPLATE]);
 }
 
 // ---- Facts
@@ -329,9 +329,9 @@ async function designMenu(): Promise<string> {
 }
 
 /** The kits Avery may start from: every department template, with the agent names it brings. */
-const kits = (): Kit[] => TEMPLATES.filter((t) => t.id !== SETUP_TEMPLATE).map((t) => ({ id: t.id, name: t.name, agentNames: t.agents.map((a) => a.name) }));
+const kits = (): Kit[] => DEPT_PACKS.filter((t) => t.id !== SETUP_TEMPLATE).map((t) => ({ id: t.id, name: t.name, agentNames: t.agents.map((a) => a.name) }));
 /** The kits for the directive: what each brings, so Avery starts from one only when it truly fits. */
-const kitLines = () => TEMPLATES.filter((t) => t.id !== SETUP_TEMPLATE).map((t) => ({ id: t.id, name: t.name, about: `${t.about} Brings: ${t.agents.map((a) => `${a.name} (${a.role})`).join(", ")}.` }));
+const kitLines = () => DEPT_PACKS.filter((t) => t.id !== SETUP_TEMPLATE).map((t) => ({ id: t.id, name: t.name, about: `${t.about} Brings: ${t.agents.map((a) => `${a.name} (${a.role})`).join(", ")}.` }));
 
 /** Avery's design parts from one run, applied in order to the saved sketch. Returns the sketch and one line per part. */
 async function applyDesigns(parts: readonly Record<string, unknown>[]): Promise<{ designs: Design[]; done: string[]; not: string[] }> {

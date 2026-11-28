@@ -5,7 +5,7 @@ import "server-only";
 // read the totals across businesses, through core/db.ts, never these rows.
 import { db } from "@/core/db";
 import { orgDate } from "@/core/tz";
-import { TEMPLATES } from "@/core/templates";
+import { DEPT_PACKS } from "@/core/packs";
 import { TOOLS } from "@/core/gateway/policy";
 import { readPlans } from "@/core/tools-step-rules";
 import { checkCampaignResults, recentCampaigns } from "@/core/campaign-results";
@@ -70,7 +70,7 @@ export async function computeSnapshot(kind: BrainSettings["kind"]): Promise<Snap
     plans,
     connected: new Set(((conns.data ?? []) as { id: string }[]).map((c) => c.id)),
     departmentIds: ((depts.data ?? []) as { id: string }[]).map((d) => d.id),
-    kitDepartmentIds: TEMPLATES.flatMap((t) => t.departments.map((d) => d.id)),
+    kitDepartmentIds: DEPT_PACKS.flatMap((t) => t.departments.map((d) => d.id)),
     onDuty: agents.count ?? 0,
     approvals: ((approvals.data ?? []) as { status: string; agent_actions: { tool: string } | { tool: string }[] | null }[]).map((a) => ({
       status: a.status, tool: (Array.isArray(a.agent_actions) ? a.agent_actions[0]?.tool : a.agent_actions?.tool) ?? "",

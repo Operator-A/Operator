@@ -13,16 +13,17 @@ import { MEASURES } from "../core/goal-rules";
 import { isCustomToolId } from "../core/custom-mcp-rules";
 import { businessLines } from "../core/business-rules";
 import { installRows, ontoSetup } from "../core/install-rules";
-import { mergeTemplates, templateProblems, type Template } from "../core/template-rules";
+import { mergePacks, packProblems, type DepartmentPack } from "../core/pack-rules";
 import { DEPT_STATUS_WORDS, agentsOf, bespokeDept, companyDepts, companyTotals, deptMonth, deptStatus, initialPick, readPick, runsFor } from "../core/company-rules";
 import { monthCost, runCost } from "../core/cost-rules";
-import { TEMPLATES } from "../core/templates";
+import { DEPT_PACKS } from "../core/packs";
+import { OPERATOR_VERSION } from "../core/version";
 import { modelDef } from "../integrations/models";
 import { CACHE_READ, CACHE_WRITE, costUsd } from "../integrations/anthropic";
 
 const read = (f: string) => readFileSync(f, "utf8");
-const tpl = (id: string) => JSON.parse(read(`templates/${id}.json`)) as Template;
-const deptIds = readdirSync("templates").filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).filter((id) => id !== SETUP_TEMPLATE);
+const tpl = (id: string) => JSON.parse(read(`packs/${id}.json`)) as DepartmentPack;
+const deptIds = readdirSync("packs").filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).filter((id) => id !== SETUP_TEMPLATE);
 
 // facts: a topic from the list, one short line, at most MAX_FACTS
 assert.equal(factProblem("sells", "Coffee blends", 0), null);
@@ -101,7 +102,7 @@ assert.equal(stateFor(true), "suggested");
 assert.equal(stateFor(false), "known");
 
 // the stored sketch reads back checked; the leaning is derived from it (a kit Avery chose is a strong fit)
-assert.ok(deptIds.length >= 2, "there are department templates to start from");
+assert.ok(deptIds.length >= 2, "there are department packs to start from");
 const EMPTY = { done: false, stage: "business", skipped: [], plans: {}, designs: [], asked: [], leaning: [], offer: false, firstJob: null, wrapUp: false };
 assert.deepEqual(readSetupState(null, deptIds), EMPTY);
 assert.deepEqual(readSetupState({ done: true, designs: [{ key: "x", name: "Shop accounts", purpose: "p", reason: "You said so.", kit: "nope", draft: null }] }, deptIds), { ...EMPTY, done: true }, "a stored design with a kit that isn't on the list is dropped, not trusted");
@@ -177,9 +178,9 @@ assert.match(dir, /channels: From a page \(suggested, not confirmed\)/);
 assert.match(setupPrompt([{ role: "owner", text: "hi" }], "We sell tea", "https://tea.example.com/"), /The founder's site: https:\/\/tea\.example\.com\/\n\nThe founder says:\nWe sell tea$/);
 
 // installing departments beside the Avery setup installed: her rows stay, the flow gets a new version
-for (const id of [SETUP_TEMPLATE, ...deptIds]) assert.deepEqual(templateProblems(tpl(id)), [], `${id} is a valid template`);
+for (const id of [SETUP_TEMPLATE, ...deptIds]) assert.deepEqual(packProblems(tpl(id), OPERATOR_VERSION), [], `${id} is a valid pack`);
 let n = 0;
-const all = installRows("x", mergeTemplates([tpl(SETUP_TEMPLATE), tpl(deptIds[0])]), () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`);
+const all = installRows("x", mergePacks([tpl(SETUP_TEMPLATE), tpl(deptIds[0])]), () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`);
 const onto = ontoSetup(all, { agent: SETUP_AGENT, flowVersion: 3 });
 assert.ok(all.agents.some((a) => a.id === SETUP_AGENT));
 assert.ok(!onto.agents.some((a) => a.id === SETUP_AGENT), "her agent isn't inserted again");
@@ -201,9 +202,9 @@ assert.match(read("app/(room)/page.tsx"), /const \[f, setup[^\]]*\] = await Prom
 assert.doesNotMatch(read("app/(room)/page.tsx"), /TemplatePicker|Start your crew/, "the picker moved to setup");
 
 // ---- Your company (card 153): the chart is drawn in code from Avery's sketch, never by the model
-const fake = (t: Template, id: string, runs: number) => monthCost({ run: runCost(null, id.length / 100), cap: 0.5, runsPerMonth: runs, billing: "own_key" });
+const fake = (t: DepartmentPack, id: string, runs: number) => monthCost({ run: runCost(null, id.length / 100), cap: 0.5, runsPerMonth: runs, billing: "own_key" });
 const label = (id: string) => `[${id}]`;
-const depts = companyDepts(TEMPLATES, { leaning: [{ id: "finance", fit: "strong" }, { id: "email-marketing", fit: "likely" }], setupTemplate: "chief-of-staff", toolLabel: label, costOf: fake, waitsOn: { finance: ["Mercury"] } });
+const depts = companyDepts(DEPT_PACKS, { leaning: [{ id: "finance", fit: "strong" }, { id: "email-marketing", fit: "likely" }], setupTemplate: "chief-of-staff", toolLabel: label, costOf: fake, waitsOn: { finance: ["Mercury"] } });
 assert.deepEqual(depts.map((d) => d.id), ["finance", "prospecting", "email-marketing", "store-analytics"], "every department template, in order, without the company seat");
 assert.deepEqual(depts.map((d) => d.fit), ["strong", null, "likely", null]);
 assert.deepEqual(initialPick(depts), ["finance", "email-marketing"], "the chart starts with what Avery leaned toward, strong or likely");
@@ -215,9 +216,9 @@ assert.deepEqual(fin.waitsOn, ["Mercury"]);
 assert.deepEqual(depts[2].openSeats, ["Retention lead", "Growth ops lead"]);
 assert.deepEqual(depts[3].agents.map((a) => [a.id, a.head, a.runsPerMonth]), [["analytics_head", true, 4]], "card 159: the store analytics head runs Mondays");
 assert.equal(depts[1].agents.every((a) => a.runsPerMonth === 0), true, "by hand only: $0 a month");
-assert.equal(runsFor("chief_of_staff", TEMPLATES.find((t) => t.id === "chief-of-staff")!.chains, false), 22, "a step's own days win over the chain's");
+assert.equal(runsFor("chief_of_staff", DEPT_PACKS.find((t) => t.id === "chief-of-staff")!.chains, false), 22, "a step's own days win over the chain's");
 assert.equal(runsFor("cfo", [], false), 0);
-const avery = agentsOf(TEMPLATES.find((t) => t.id === "chief-of-staff")!, { toolLabel: label, costOf: fake });
+const avery = agentsOf(DEPT_PACKS.find((t) => t.id === "chief-of-staff")!, { toolLabel: label, costOf: fake });
 const tot = companyTotals(depts, ["finance"], avery);
 assert.equal(tot.agents, 3, "the company seat plus the picked departments' agents");
 assert.ok(Math.abs(tot.month - [...avery, ...fin.agents].reduce((s, a) => s + a.cost.month, 0)) < 1e-6, "the total is the sum of its agents");
@@ -239,7 +240,7 @@ assert.equal(ds(["Mercury"], { Mercury: "export" }), "export");
 assert.equal(ds(["Klaviyo", "Mercury"], { Klaviyo: "guide", Mercury: "export" }), "export", "an export outranks a guide");
 assert.equal(ds(["Klaviyo", "Shopify"], { Klaviyo: "guide" }), "waiting", "a tool with no plan outranks both");
 assert.deepEqual(Object.values(DEPT_STATUS_WORDS), ["Ready", "After setup", "From an export", "Waiting on a tool"]);
-const planned = companyDepts(TEMPLATES, { leaning: [], setupTemplate: "chief-of-staff", toolLabel: label, costOf: fake, waitsOn: { finance: ["Mercury"], "email-marketing": ["Klaviyo", "Shopify"] }, waitKinds: { Mercury: "export", Klaviyo: "guide", Gmail: "export" } });
+const planned = companyDepts(DEPT_PACKS, { leaning: [], setupTemplate: "chief-of-staff", toolLabel: label, costOf: fake, waitsOn: { finance: ["Mercury"], "email-marketing": ["Klaviyo", "Shopify"] }, waitKinds: { Mercury: "export", Klaviyo: "guide", Gmail: "export" } });
 assert.deepEqual(planned.map((d) => [d.id, deptStatus(d)]), [["finance", "export"], ["prospecting", "ready"], ["email-marketing", "waiting"], ["store-analytics", "ready"]], "kinds only for tools the department waits on");
 assert.deepEqual(planned[0].waitKinds, { Mercury: "export" });
 const fm = deptMonth(fin);
@@ -261,7 +262,7 @@ assert.doesNotMatch(read("dashboard/components/setup.tsx"), /role="tree"/, "the 
     measures: Object.fromEntries(MEASURES.filter((m) => m.available).map((m) => [m.key, { label: m.label }])),
     departments: [], agentNames: ["Avery"],
   };
-  const kits: Kit[] = TEMPLATES.filter((t) => t.id !== SETUP_TEMPLATE).map((t) => ({ id: t.id, name: t.name, agentNames: t.agents.map((a) => a.name) }));
+  const kits: Kit[] = DEPT_PACKS.filter((t) => t.id !== SETUP_TEMPLATE).map((t) => ({ id: t.id, name: t.name, agentNames: t.agents.map((a) => a.name) }));
   const o = { ctx, kits, now: "2026-11-20T12:00:00.000Z" };
   const yes = (ds: Design[], input: Record<string, unknown>) => { const r = applyDesign(ds, input, o); if ("problem" in r) assert.fail(`${JSON.stringify(input)}: ${r.problem}`); return r; };
   const no = (ds: Design[], input: Record<string, unknown>, re: RegExp) => { const r = applyDesign(ds, input, o); assert.ok("problem" in r, `${JSON.stringify(input)} is refused`); assert.match(r.problem, re); };
@@ -335,7 +336,7 @@ assert.doesNotMatch(read("dashboard/components/setup.tsx"), /role="tree"/, "the 
   assert.equal(designKey("Shop accounts & Cafés!"), "shop-accounts-caf-s");
 
   // the chart: a kit under Avery's name and reason; a bespoke department from its draft, by hand
-  const chart = companyDepts(TEMPLATES, { leaning: leaningOf(ds), designs: ds, setupTemplate: SETUP_TEMPLATE, toolLabel: label, costOf: fake, waitsOn: {} });
+  const chart = companyDepts(DEPT_PACKS, { leaning: leaningOf(ds), designs: ds, setupTemplate: SETUP_TEMPLATE, toolLabel: label, costOf: fake, waitsOn: {} });
   const money = chart.find((d) => d.id === "finance")!;
   assert.deepEqual([money.name, money.reason, money.kind], ["Money desk", "You said the books eat your Sundays.", "kit"]);
   assert.equal(chart.find((d) => d.id === "prospecting")!.kind, "template");
@@ -358,7 +359,7 @@ assert.doesNotMatch(read("dashboard/components/setup.tsx"), /role="tree"/, "the 
 {
   const st = read("core/setup.ts"), acts = read("dashboard/setupActions.ts"), page = read("app/start/page.tsx"), parts = read("dashboard/components/setup.tsx");
   assert.match(st, /id: "design_department"[\s\S]*kind: "report"/, "Design a department is a report tool, so the run builds nothing");
-  assert.match(st, /export async function startCompany[\s\S]*designGaps\(d\)[\s\S]*throw[\s\S]*installTemplates\(kitIds\)[\s\S]*buildDepartment\(d\.draft!, "setup: designed by Avery", by, null\)/, "a gap stops it before anything is written; kits install, bespoke ones are built from their checked draft");
+  assert.match(st, /export async function startCompany[\s\S]*designGaps\(d\)[\s\S]*throw[\s\S]*installPacks\(kitIds\)[\s\S]*buildDepartment\(d\.draft!, "setup: designed by Avery", by, null\)/, "a gap stops it before anything is written; kits install, bespoke ones are built from their checked draft");
   assert.match(read("core/departments.ts"), /export async function buildDepartment[\s\S]*proposalId \? await sourcesNow\(d\) : \[\]/, "a department from setup asks for no sources");
   assert.match(acts, /asRole\("owner"\)[\s\S]{0,40}[\s\S]*startCompany\(/, "Start this company is the owner's");
   assert.match(page, /Avery’s sketch|Avery's sketch/, "the page shows her sketch");
@@ -400,9 +401,9 @@ assert.deepEqual(topics, [...FACT_TOPICS], "business_facts.topic allows exactly 
   assert.match(parts, /scrollTo\(\{ top: el\.scrollHeight \}\)/, "the setup chat scrolls to its newest message");
   assert.match(parts, /aria-label="Setup steps"[^>]*position: "sticky"/, "Back and Next stay on screen");
   assert.match(parts, /runs only when you press Run/, "a department with no schedule says it runs when you press Run");
-  const finder = JSON.parse(read("templates/prospecting.json")).specs.wholesale_hunter as { tools: string[] };
+  const finder = JSON.parse(read("packs/prospecting.json")).specs.wholesale_hunter as { tools: string[] };
   for (const t of ["web_search", "web_fetch"]) assert.ok(finder.tools.includes(t), `the lead finder can ${t === "web_search" ? "search the web" : "read a page"}: its directive says to`);
-  for (const f of ["prospecting", "email-marketing"]) assert.doesNotMatch(read(`templates/${f}.json`), /"Head of (sales|marketing):/, `${f}: the head's mandate names its own department`);
+  for (const f of ["prospecting", "email-marketing"]) assert.doesNotMatch(read(`packs/${f}.json`), /"Head of (sales|marketing):/, `${f}: the head's mandate names its own department`);
 }
 
 console.log("check:setup ok");

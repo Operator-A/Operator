@@ -3,7 +3,7 @@
 // and what each agent costs (core/cost-rules.ts). The model never writes the chart, a job, a tool or a
 // number: it only named template ids, which code checked. Pure, so check:setup can test it.
 import { dayRuns, type Chain } from "@/core/flow-rules";
-import type { Template } from "@/core/template-rules";
+import type { DepartmentPack } from "@/core/pack-rules";
 import { totalCost, type MonthCost } from "@/core/cost-rules";
 import type { Fit, Leaning } from "@/core/setup-rules";
 import { pickId, type Design } from "@/core/design-rules";
@@ -79,13 +79,13 @@ export function runsFor(id: string, chains: readonly unknown[], manualOnly: bool
  * Every department template as a branch of the chart, in template order, with how Avery leaned. The
  * setup template (the Chief of Staff) is the company seat above them, so it isn't a branch.
  */
-export function companyDepts(templates: readonly Template[], o: {
+export function companyDepts(templates: readonly DepartmentPack[], o: {
   leaning: readonly Leaning[];
   /** Avery's sketch (card 193): a kit's name and reason replace the template's; bespoke ones come from bespokeDept. */
   designs?: readonly Pick<Design, "kit" | "name" | "purpose" | "reason">[];
   setupTemplate: string;
   toolLabel: (id: string) => string;
-  costOf: (template: Template, agentId: string, runsPerMonth: number) => MonthCost;
+  costOf: (template: DepartmentPack, agentId: string, runsPerMonth: number) => MonthCost;
   waitsOn: Readonly<Record<string, readonly string[]>>;
   waitNotes?: Readonly<Record<string, string>>;
   waitKinds?: Readonly<Record<string, "guide" | "export">>;
@@ -127,7 +127,7 @@ export function bespokeDept(d: Design, o: {
 }
 
 /** One template's agents, heads first, in seat order. */
-export function agentsOf(t: Template, o: { toolLabel: (id: string) => string; costOf: (template: Template, agentId: string, runsPerMonth: number) => MonthCost }): CompanyAgent[] {
+export function agentsOf(t: DepartmentPack, o: { toolLabel: (id: string) => string; costOf: (template: DepartmentPack, agentId: string, runsPerMonth: number) => MonthCost }): CompanyAgent[] {
   const specs = t.specs as Record<string, { mandate?: string; tools?: string[] }>;
   return t.seats.filter((s) => s.holder === "agent" && s.agent).map((s) => {
     const a = t.agents.find((x) => x.id === s.agent)!;

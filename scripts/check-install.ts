@@ -1,10 +1,10 @@
-// The template installer (docs/templates.md): a crew is valid and installs switched
+// The pack installer (docs/packs.md): a crew is valid and installs switched
 // off. Run: npm run check:install
 import assert from "node:assert/strict";
 import { crewProblems, installRows } from "../core/install-rules";
 import { readSpec } from "../core/agent-spec";
 import { SAMPLE_CREW } from "./fixtures/sample-crew";
-import type { Crew } from "../core/template-rules";
+import type { Crew } from "../core/pack-rules";
 
 const crew = SAMPLE_CREW;
 assert.deepEqual(crewProblems(crew), [], "the sample crew installs cleanly");
@@ -16,7 +16,7 @@ assert.ok(rows.agents.every((a) => a.enabled === false), "every agent installs o
 assert.ok(rows.agent_playbooks.every((p) => p.status === "proposed" && p.auto === false), "every playbook waits for the owner");
 assert.ok((rows.crew_flow[0].flow as { chains: { on: boolean }[] }).chains.every((c) => c.on === false), "every chain installs off");
 assert.ok(rows.goals.every((g) => g.due_on === null && g.state === "active"), "goals install with no due date");
-assert.ok(rows.agent_defs.every((d) => d.version === 1 && d.active === true && d.created_by === "template:sample"));
+assert.ok(rows.agent_defs.every((d) => d.version === 1 && d.active === true && d.created_by === "pack:sample"));
 // a spec installs exactly as the template wrote it: readSpec dropped nothing
 for (const a of crew.agents) assert.deepEqual(readSpec(crew.specs[a.id], a.id).spec, crew.specs[a.id], `${a.id}'s spec installs as written`);
 // seats: parents first, ids remapped

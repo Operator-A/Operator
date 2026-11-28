@@ -1,7 +1,12 @@
 {
   "id": "chief-of-staff",
+  "kind": "department",
+  "version": 1,
   "name": "Chief of Staff",
   "about": "The company seat under you: reads every department and sends you one morning brief with today's focus, what's waiting on you and the numbers.",
+  "author": "OPERATOR",
+  "license": "AGPL-3.0-only",
+  "needs_operator": "0.1.0",
   "departments": [],
   "agents": [
     {

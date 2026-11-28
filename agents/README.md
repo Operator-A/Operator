@@ -8,7 +8,7 @@ is the crew flow (Crew > Schedule).
 `registry.ts` lists the agents that can run on a schedule, in a chain or by hand through
 `/api/agents/<id>`; the route handles auth, the run log, the on-duty switch and the daily budget.
 
-Code that one kind of business's tools call (a daily snapshot, a morning brief) lives in that business's template pack, `templates/<pack>` (docs/templates.md).
+Packs are data, never code (docs/packs.md): a daily snapshot or a morning brief is a core tool that a pack's agents pick.
 
 Adding an agent is done in the builder, not here. A new kind of read, calculation, report or
 action is a new tool: in `core/tools/catalog.ts` when any business can use it, or in a template

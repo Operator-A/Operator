@@ -42,7 +42,7 @@ keeps any one business from being picked out. Slice 3 is the first to send total
 - `revenue_band`: the sum of the last 30 days of `kpi_snapshots.revenue`, as a band; `unknown` with no daily numbers.
 - `age_band`: days since the org was made: 0 to 30, 30 to 60, 60 to 90, 90+.
 - `tools`: `part:tool` for each sign-in connected on Connections and each listed tool the founder said they use in setup (a setup plan of kind `uses`). Names come only from the parts' lists in `core/tools-step-rules.ts`.
-- `departments`: the department ids of starting kits (`core/templates.ts`); every other department adds 1 to `bespoke`.
+- `departments`: the department ids of starting kits (`core/packs.ts`); every other department adds 1 to `bespoke`.
 - `on_duty`: agents with `enabled`.
 - `actions`: for each gateway action type in code (`TOOLS` in `core/gateway/policy.ts`), approvals decided in the last 30 days: decided, unedited (`approved`), rejected.
 - `levels`: `type:level` for action types above Draft (`trust_levels`).

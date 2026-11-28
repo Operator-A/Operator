@@ -43,7 +43,7 @@ Supabase itself is either its official self-host stack on your machine
    emailed link.
 5. **Name the business and pick a crew.** On Settings, "The business" holds the name, a line about
    it and the owner's name that every agent is told. The Desk of an empty org offers the department
-   templates (installed off duty) or an empty start.
+   packs (installed off duty) or an empty start.
 
 ## Tested
 
@@ -68,7 +68,7 @@ follow it. Checks that read one file of this repo's history (`check:jobs`, `chec
 Tested 2026-11-18: a fresh Supabase database built from the baseline alone dumps byte for byte the
 same public schema as one built from every migration, and a starting crew installed into its
 empty first business (all off duty) and refused a second install. Since card 134 a new business picks
-department templates on the Desk (docs/templates.md).
+department packs on the Desk (docs/packs.md).
 
 ## Not yet
 

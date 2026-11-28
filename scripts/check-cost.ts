@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CREDITS_MARGIN, MIN_REAL_RUNS, REAL_RUNS, costDetail, estimateRun, monthCost, monthWords, realCost, runCost, totalCost, usd } from "../core/cost-rules";
 import { DAY_RUNS } from "../core/flow-rules";
-import { TEMPLATES } from "../core/templates";
+import { DEPT_PACKS } from "../core/packs";
 import { modelDef } from "../integrations/models";
 
 const price = (id: string) => { const m = modelDef(id); return m ? { in: m.in, out: m.out } : null; };
 const near = (a: number | null, b: number, why: string) => assert.ok(a != null && Math.abs(a - b) < 0.0005, `${why}: ${a} vs ${b}`);
 
 // the estimate: a turn per tool plus a wrap-up, capped, null without a price
-const cfo = (TEMPLATES.find((t) => t.id === "finance")!.specs as Record<string, { model: string; effort: "low" | "medium" | "high"; tools: string[]; limits: { maxSteps: number; maxCostUsd: number } }>).cfo;
+const cfo = (DEPT_PACKS.find((t) => t.id === "finance")!.specs as Record<string, { model: string; effort: "low" | "medium" | "high"; tools: string[]; limits: { maxSteps: number; maxCostUsd: number } }>).cfo;
 near(estimateRun(cfo, price(cfo.model)), 0.179, "the CFO template's estimate a run");
 assert.equal(estimateRun({ ...cfo, limits: { ...cfo.limits, maxCostUsd: 0.05 } }, price(cfo.model)), 0.05, "never more than its cap");
 assert.equal(estimateRun(cfo, null), null, "no price, no estimate");

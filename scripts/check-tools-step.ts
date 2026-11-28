@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { MCP_SERVERS } from "../core/mcp-rules";
-import { TEMPLATES } from "../core/templates";
+import { DEPT_PACKS } from "../core/packs";
 import { TOOLS } from "../core/tools/catalog";
 import { readAsked, readSetupState, setupDirective, toolLines, FACT_TOPICS, NOTHING_CONNECTS } from "../core/setup-rules";
 import { SNAPSHOT_MAX, SNAPSHOT_TILES, bankFacts, capSnapshot, emailFacts, hasSnapshot, siteFacts, storeFacts } from "../core/snapshot-rules";
@@ -12,7 +12,7 @@ import { CATEGORY_IDS, NEED_TILE, SCOPE_WORDS, TOOL_CATEGORIES, TOOL_TILES, MAX_
 const read = (f: string) => readFileSync(f, "utf8");
 const needsOf = (id: string): readonly string[] => (TOOLS as Record<string, { needs?: readonly string[] }>)[id]?.needs ?? [];
 const tpl = (id: string): TemplateTools => {
-  const t = TEMPLATES.find((x) => x.id === id)!;
+  const t = DEPT_PACKS.find((x) => x.id === id)!;
   return { id, name: t.name, tools: Object.values((t.specs ?? {}) as Record<string, { tools?: string[] }>).flatMap((s) => s.tools ?? []) };
 };
 

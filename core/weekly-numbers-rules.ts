@@ -1,4 +1,4 @@
-// Week over week (card 159, docs/templates.md "Store analytics"): the last 7 full days against the 7
+// Week over week (card 159, docs/packs.md "Store analytics"): the last 7 full days against the 7
 // before, worked out in code from the saved daily numbers and, when Google Analytics is connected, its
 // visits by day. Pure, so `npm run check:weekly-numbers` can test it. A model never does this sum.
 
