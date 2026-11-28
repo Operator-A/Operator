@@ -23,7 +23,7 @@ import { CACHE_READ, CACHE_WRITE, costUsd } from "../integrations/anthropic";
 
 const read = (f: string) => readFileSync(f, "utf8");
 const tpl = (id: string) => JSON.parse(read(`packs/${id}.json`)) as DepartmentPack;
-const deptIds = readdirSync("packs").filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).filter((id) => id !== SETUP_TEMPLATE);
+const deptIds = readdirSync("packs").filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).filter((id) => id !== SETUP_TEMPLATE && tpl(id).kind === "department");
 
 // facts: a topic from the list, one short line, at most MAX_FACTS
 assert.equal(factProblem("sells", "Coffee blends", 0), null);

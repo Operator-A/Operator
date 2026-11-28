@@ -32,6 +32,8 @@ const AUDITED = [
   "proposalAccept", "hireInChat", "changeInChat", "proposalDecline",
   // a new department: the owner files it from Avery's draft, or throws the draft away
   "proposeDepartment", "discardDepartmentDraft",
+  // packs installed into a running business: a department, or an agent into an open seat with the actions turned on
+  "installDeptPack", "installSeatPack", "savePackDrafts",
   // OPERATOR's own MCP server: an app (Claude) connected or disconnected
   "allowApp", "disconnectApp",
   // agents that run in Claude: the routine a linked agent fires, and moving it into OPERATOR
@@ -71,7 +73,7 @@ const NOT_AUDITED: Record<string, string> = {
   setupOtherTool: "a request for a connector and a note of the tool the business uses, no access",
 };
 
-const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupActions.ts", "dashboard/setupCheckActions.ts", "dashboard/mcpActions.ts"];
+const files = ["dashboard/actions.ts", "dashboard/orgActions.ts", "dashboard/connectionActions.ts", "dashboard/goalActions.ts", "dashboard/proposalActions.ts", "dashboard/chatActions.ts", "dashboard/peopleActions.ts", "dashboard/setupActions.ts", "dashboard/setupCheckActions.ts", "dashboard/mcpActions.ts", "dashboard/packActions.ts"];
 const seen = new Set<string>();
 for (const f of files) {
   const src = readFileSync(f, "utf8");

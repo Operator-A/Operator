@@ -27,120 +27,162 @@ export interface OverviewData {
 const KIND: Record<OvNeed["kind"], { word: string; cls: string }> = { approve: { word: "To approve", cls: "yel" }, failed: { word: "Failed run", cls: "red" } };
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export function Overview({ d, goal, write, goalChart }: { d: OverviewData; goal: React.ReactNode; write: React.ReactNode; goalChart?: React.ReactNode }) {
-  const top = Math.max(1, ...d.bars.map((b) => b.finished + b.failed));
-  const pct = (n: number) => (n > 0 ? `${Math.max(4, Math.round((n / top) * 100))}%` : "0px");
-  const dr = d.drafts;
+export function Overview({ d, goal, write, goalChart, banner }: { d: OverviewData; goal: React.ReactNode; write: React.ReactNode; goalChart?: React.ReactNode; banner?: React.ReactNode }) {
   return (
     <div className="dp-scroll">
+      {banner}
       <div className="ov">
-        {d.needs.length > 0 && (
-          <section className="ov-needs" aria-label="Needs you">
-            {d.needs.map((n, i) => (
-              <div key={i} className="ov-need">
-                <span className={`ov-kind ${KIND[n.kind].cls}`}>{KIND[n.kind].word}</span>
-                <span className="ov-need-t"><b>{n.title}</b> {n.sub}</span>
-                <Link href={n.href} scroll={false} className={`dp-btn${n.kind === "approve" ? " dark" : ""}`}>{n.btn}</Link>
-              </div>
-            ))}
-          </section>
-        )}
+        <Needs d={d} />
 
         <div className="ov-top">
           <Report r={d.report} write={write} />
 
           <div className="ov-tiles">
-            <div className="ov-card ov-tile"><span className="ov-tl">Runs, last 7 days</span><b>{d.week.runs}</b><span className="ov-ts">{d.week.finished} finished · {d.week.failed} failed</span></div>
-            <div className="ov-card ov-tile"><span className="ov-tl">Waiting on you</span><b>{d.waiting}</b><span className="ov-ts">{d.waitingSub}</span></div>
-            <div className="ov-card ov-tile"><span className="ov-tl">AI spend, last 7 days</span><b>{money(d.week.costUsd)}</b><span className="ov-ts">{d.claudeCount ? `Agents in Claude use your Claude plan: $0` : "Every run’s model cost"}</span></div>
+            <WeekTile d={d} />
+            <WaitingTile d={d} />
+            <SpendTile d={d} />
             {goal}
           </div>
         </div>
 
         <div className="ov-charts">
-          <figure className="ov-card ov-fig">
-            <figcaption><b>Runs per day</b><span>last 14 days</span></figcaption>
-            <div className="ov-legend"><span><i className="ok" />Finished</span><span><i className="bad" />Failed</span></div>
-            <div className="ov-bars" role="img" aria-label={`Runs per day for 14 days: ${d.week.runs} in the last 7 days, ${d.week.failed} failed`}>
-              {d.bars.map((b) => (
-                <div key={b.key} className="ov-bar" title={b.tip}>
-                  <i className="bad" style={{ height: pct(b.failed) }} />
-                  <i className={`ok${b.failed ? " under" : ""}`} style={{ height: pct(b.finished) }} />
-                </div>
-              ))}
-            </div>
-            <div className="ov-axis"><span>{d.barLabels[0]}</span><span>{d.barLabels[1]}</span><span>{d.barLabels[2]}</span></div>
-          </figure>
-
-          <figure className="ov-card ov-fig">
-            <figcaption><b>Drafts, last 7 days</b><span>{s(dr.total, "approval card")}</span></figcaption>
-            {dr.total > 0 ? (
-              <>
-                <div className="ov-split" role="img" aria-label={`${dr.asWritten} approved as written, ${dr.edited} edited, ${dr.rejected} rejected, ${dr.waiting} waiting`}>
-                  {dr.asWritten > 0 && <i className="a" style={{ flex: dr.asWritten }} />}
-                  {dr.edited > 0 && <i className="e" style={{ flex: dr.edited }} />}
-                  {dr.rejected > 0 && <i className="r" style={{ flex: dr.rejected }} />}
-                  {dr.waiting > 0 && <i className="w" style={{ flex: dr.waiting }} />}
-                </div>
-                <div className="ov-keys">
-                  <span><i className="a" />Approved as written <b>{dr.asWritten}</b></span>
-                  <span><i className="e" />Edited, then approved <b>{dr.edited}</b></span>
-                  <span><i className="r" />Rejected <b>{dr.rejected}</b></span>
-                  <span><i className="w" />Waiting <b>{dr.waiting}</b></span>
-                </div>
-              </>
-            ) : <p className="ov-empty">No drafts from {d.name} in the last 7 days.</p>}
-            {d.trust && <div className="ov-note">{d.trust}</div>}
-          </figure>
-
-          <figure className="ov-card ov-fig">
-            <figcaption><b>AI spend by agent</b><span>this month</span></figcaption>
-            {d.spend.map((a) => (
-              <div key={a.name} className="ov-spend">
-                <div><span>{a.name}</span><span>{a.label}</span></div>
-                <div className="ov-track"><i style={{ width: `${a.pct}%` }} /></div>
-              </div>
-            ))}
-            {!d.spend.length && <p className="ov-empty">No agents in {d.name} yet.</p>}
-            {d.spendNote && <div className="ov-foot">{d.spendNote}</div>}
-          </figure>
+          <RunsChart d={d} />
+          <DraftsChart d={d} />
+          <SpendChart d={d} />
         </div>
 
         <div className="ov-mid">
         {goalChart}
-        <section className="ov-card ov-agents" aria-label="Agents">
-          <div className="ov-sec-h"><b>Agents</b><span>latest result and next run</span><Link href={d.agentsHref} className="ov-more">All agents</Link></div>
-          {d.agents.map((a) => (
-            <Link key={a.id} href={a.href} scroll={false} className="ov-agent">
-              <span className="ov-av" style={{ "--h": a.hue } as React.CSSProperties}>{a.initial}</span>
-              <span className="ov-an"><b>{a.name}</b> · {a.where}</span>
-              <span className="ov-next">{a.next}</span>
-              <span className="ov-last">{a.last}</span>
-              <span className={`ov-state${a.bad ? " bad" : ""}`}>{a.state}</span>
-            </Link>
-          ))}
-          {!d.agents.length && <p className="ov-empty">No agents in {d.name} yet.</p>}
-        </section>
+        <Agents d={d} />
         </div>
 
-        {d.chains.length > 0 && (
-          <section className="ov-card ov-chains" aria-label="Chains">
-            <div className="ov-sec-h"><b>Chains</b><span>last run of each</span><Link href={d.chainsHref} className="ov-more">All chains</Link></div>
-            {d.chains.map((c) => (
-              <Link key={c.key} href={c.href} className="ov-chain">
-                <b>{c.name}{c.on ? "" : " (off)"}</b>
-                <span className="ov-steps">
-                  {c.steps.map((st, i) => (
-                    <span key={i} className="ov-stepw">{i > 0 && <span className="ov-arrow" aria-hidden="true">→</span>}<span className={`ov-step ${st.state}`}>{st.name} <small>{STEP_WORD[st.state]}</small></span></span>
-                  ))}
-                </span>
-                <span className="ov-when">{c.when ?? "Hasn’t run in 30 days"}</span>
-              </Link>
-            ))}
-          </section>
-        )}
+        <Chains d={d} />
       </div>
     </div>
+  );
+}
+
+// Each widget of the Overview on its own (packs slice 2), so a pack's layout (dashboard/components/widgetGrid.tsx)
+// can place them; the default Overview above places them as it always did.
+
+/** What needs you: drafts waiting and failed runs. Nothing when nothing does. */
+export function Needs({ d }: { d: OverviewData }) {
+  if (!d.needs.length) return null;
+  return (
+    <section className="ov-needs" aria-label="Needs you">
+      {d.needs.map((n, i) => (
+        <div key={i} className="ov-need">
+          <span className={`ov-kind ${KIND[n.kind].cls}`}>{KIND[n.kind].word}</span>
+          <span className="ov-need-t"><b>{n.title}</b> {n.sub}</span>
+          <Link href={n.href} scroll={false} className={`dp-btn${n.kind === "approve" ? " dark" : ""}`}>{n.btn}</Link>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+export const WeekTile = ({ d }: { d: OverviewData }) => <div className="ov-card ov-tile"><span className="ov-tl">Runs, last 7 days</span><b>{d.week.runs}</b><span className="ov-ts">{d.week.finished} finished · {d.week.failed} failed</span></div>;
+export const WaitingTile = ({ d }: { d: OverviewData }) => <div className="ov-card ov-tile"><span className="ov-tl">Waiting on you</span><b>{d.waiting}</b><span className="ov-ts">{d.waitingSub}</span></div>;
+export const SpendTile = ({ d }: { d: OverviewData }) => <div className="ov-card ov-tile"><span className="ov-tl">AI spend, last 7 days</span><b>{money(d.week.costUsd)}</b><span className="ov-ts">{d.claudeCount ? `Agents in Claude use your Claude plan: $0` : "Every run’s model cost"}</span></div>;
+
+export function RunsChart({ d }: { d: OverviewData }) {
+  const top = Math.max(1, ...d.bars.map((b) => b.finished + b.failed));
+  const pct = (n: number) => (n > 0 ? `${Math.max(4, Math.round((n / top) * 100))}%` : "0px");
+  return (
+    <figure className="ov-card ov-fig">
+      <figcaption><b>Runs per day</b><span>last 14 days</span></figcaption>
+      <div className="ov-legend"><span><i className="ok" />Finished</span><span><i className="bad" />Failed</span></div>
+      <div className="ov-bars" role="img" aria-label={`Runs per day for 14 days: ${d.week.runs} in the last 7 days, ${d.week.failed} failed`}>
+        {d.bars.map((b) => (
+          <div key={b.key} className="ov-bar" title={b.tip}>
+            <i className="bad" style={{ height: pct(b.failed) }} />
+            <i className={`ok${b.failed ? " under" : ""}`} style={{ height: pct(b.finished) }} />
+          </div>
+        ))}
+      </div>
+      <div className="ov-axis"><span>{d.barLabels[0]}</span><span>{d.barLabels[1]}</span><span>{d.barLabels[2]}</span></div>
+    </figure>
+  );
+}
+
+export function DraftsChart({ d }: { d: OverviewData }) {
+  const dr = d.drafts;
+  return (
+    <figure className="ov-card ov-fig">
+      <figcaption><b>Drafts, last 7 days</b><span>{s(dr.total, "approval card")}</span></figcaption>
+      {dr.total > 0 ? (
+        <>
+          <div className="ov-split" role="img" aria-label={`${dr.asWritten} approved as written, ${dr.edited} edited, ${dr.rejected} rejected, ${dr.waiting} waiting`}>
+            {dr.asWritten > 0 && <i className="a" style={{ flex: dr.asWritten }} />}
+            {dr.edited > 0 && <i className="e" style={{ flex: dr.edited }} />}
+            {dr.rejected > 0 && <i className="r" style={{ flex: dr.rejected }} />}
+            {dr.waiting > 0 && <i className="w" style={{ flex: dr.waiting }} />}
+          </div>
+          <div className="ov-keys">
+            <span><i className="a" />Approved as written <b>{dr.asWritten}</b></span>
+            <span><i className="e" />Edited, then approved <b>{dr.edited}</b></span>
+            <span><i className="r" />Rejected <b>{dr.rejected}</b></span>
+            <span><i className="w" />Waiting <b>{dr.waiting}</b></span>
+          </div>
+        </>
+      ) : <p className="ov-empty">No drafts from {d.name} in the last 7 days.</p>}
+      {d.trust && <div className="ov-note">{d.trust}</div>}
+    </figure>
+  );
+}
+
+export function SpendChart({ d }: { d: OverviewData }) {
+  return (
+    <figure className="ov-card ov-fig">
+      <figcaption><b>AI spend by agent</b><span>this month</span></figcaption>
+      {d.spend.map((a) => (
+        <div key={a.name} className="ov-spend">
+          <div><span>{a.name}</span><span>{a.label}</span></div>
+          <div className="ov-track"><i style={{ width: `${a.pct}%` }} /></div>
+        </div>
+      ))}
+      {!d.spend.length && <p className="ov-empty">No agents in {d.name} yet.</p>}
+      {d.spendNote && <div className="ov-foot">{d.spendNote}</div>}
+    </figure>
+  );
+}
+
+export function Agents({ d }: { d: OverviewData }) {
+  return (
+    <section className="ov-card ov-agents" aria-label="Agents">
+      <div className="ov-sec-h"><b>Agents</b><span>latest result and next run</span><Link href={d.agentsHref} className="ov-more">All agents</Link></div>
+      {d.agents.map((a) => (
+        <Link key={a.id} href={a.href} scroll={false} className="ov-agent">
+          <span className="ov-av" style={{ "--h": a.hue } as React.CSSProperties}>{a.initial}</span>
+          <span className="ov-an"><b>{a.name}</b> · {a.where}</span>
+          <span className="ov-next">{a.next}</span>
+          <span className="ov-last">{a.last}</span>
+          <span className={`ov-state${a.bad ? " bad" : ""}`}>{a.state}</span>
+        </Link>
+      ))}
+      {!d.agents.length && <p className="ov-empty">No agents in {d.name} yet.</p>}
+    </section>
+  );
+}
+
+/** The chains and how each one's last run went. Nothing when the department has none. */
+export function Chains({ d }: { d: OverviewData }) {
+  if (!d.chains.length) return null;
+  return (
+    <section className="ov-card ov-chains" aria-label="Chains">
+      <div className="ov-sec-h"><b>Chains</b><span>last run of each</span><Link href={d.chainsHref} className="ov-more">All chains</Link></div>
+      {d.chains.map((c) => (
+        <Link key={c.key} href={c.href} className="ov-chain">
+          <b>{c.name}{c.on ? "" : " (off)"}</b>
+          <span className="ov-steps">
+            {c.steps.map((st, i) => (
+              <span key={i} className="ov-stepw">{i > 0 && <span className="ov-arrow" aria-hidden="true">→</span>}<span className={`ov-step ${st.state}`}>{st.name} <small>{STEP_WORD[st.state]}</small></span></span>
+            ))}
+          </span>
+          <span className="ov-when">{c.when ?? "Hasn’t run in 30 days"}</span>
+        </Link>
+      ))}
+    </section>
   );
 }
 

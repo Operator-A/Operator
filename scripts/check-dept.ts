@@ -2,7 +2,7 @@
 // who works in a department, on a small chart. No database, no network. Run: npm run check:dept
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
-import { COMPANY_TABS, companyTab, companyHref, companyAskHref, addDeptHref, approvalsHistoryHref, ADD_DEPT_SAY, goalsWord, deptView, deptViewHref, SCHEDULE_HREF } from "../dashboard/company-rules";
+import { COMPANY_TABS, companyTab, companyHref, companyAskHref, addDeptHref, averyDeptHref, approvalsHistoryHref, ADD_DEPT_SAY, goalsWord, deptView, deptViewHref, SCHEDULE_HREF } from "../dashboard/company-rules";
 import { readFileSync } from "node:fs";
 import { DEPT_TABS, agentHref, askHref, asksOpen, goalHref, hireHref, settingsHref, deptAgentIds, deptTab, headAgentId, needsByDept, sheetHref, tabHref } from "../dashboard/dept-rules";
 import { dayRuns, daySet, daysOf, dayWords, isDays, onDay, withAgentTime } from "../core/flow-rules";
@@ -309,7 +309,8 @@ assert.ok(!/orgEditDeptRule/.test(orgActs), "the rule editor went with it");
   assert.equal(companyTab("nope"), "overview"); assert.equal(companyTab("chat"), "overview", "an old link to the chat tab opens the Overview"); assert.equal(companyTab("goals"), "goals");
   assert.equal(companyHref("overview"), "/"); assert.equal(companyHref("approvals"), "/?tab=approvals");
   assert.equal(companyAskHref(), "/?ask=1"); assert.equal(companyAskHref("goals"), "/?tab=goals&ask=1", "Ask opens over the tab that is open");
-  assert.equal(addDeptHref(), `/?say=${encodeURIComponent(ADD_DEPT_SAY)}`, "Add a department opens Avery's chat with the words typed in");
+  assert.equal(addDeptHref(), "/?add=dept", "Add a department opens its sheet: Avery first, then packs (packs slice 3)");
+  assert.equal(averyDeptHref(), `/?say=${encodeURIComponent(ADD_DEPT_SAY)}`, "and Avery's choice opens her chat with the words typed in");
   assert.equal(goalsWord([]), "No goals yet."); assert.equal(goalsWord(["on_track", "behind", "reached"]), "2 of 3 goals on track."); assert.equal(goalsWord(["behind"]), "1 goal, behind or not measured yet.");
   const home = read("app/(room)/page.tsx"), frame = read("app/(room)/layout.tsx");
   assert.ok(/<HeadChat [\s\S]*?send=\{sendToAvery\}/.test(home) && /chatHistory\(/.test(home), "the Company chat is Avery's chat: the same table and the same server action");
@@ -322,7 +323,7 @@ assert.ok(!/orgEditDeptRule/.test(orgActs), "the rule editor went with it");
   assert.ok(/<GoalTiles /.test(home) && /<GoalTiles /.test(page), "the Company and department Goals tabs draw the same tiles");
   assert.ok(/redirect\("\/start"\)/.test(home), "a business in setup still starts at setup");
   assert.ok(!/AveryChat|chatHistory|sendToAvery/.test(frame), "the frame no longer draws the floating Avery panel");
-  assert.ok(/label: "Company"/.test(frame) && !/label: "Desk"/.test(frame) && /addDeptHref\(\)/.test(frame), "the menu says Company, and Add a department opens Avery's interview");
+  assert.ok(/label: "Company"/.test(frame) && !/label: "Desk"/.test(frame) && /addDeptHref\(\)/.test(frame), "the menu says Company, and Add a department opens its sheet");
   const sendAvery = read("dashboard/chatActions.ts");
   assert.ok(/export async function sendToAvery[\s\S]*?asRole\("approver"\)[\s\S]*?controlsOn\(\)[\s\S]*?cleanMessage/.test(sendAvery), "Avery's chat keeps its checks");
   assert.ok(!/callWriteTool|core\/gateway/.test(read("core/avery-chat.ts")), "Avery's chat never reaches the gateway");

@@ -49,6 +49,8 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
   // Activity is Runs and Status on one page (slice 12): a red dot only while something is broken
   const more = [
     { href: ACTIVITY_HREF, match: [ACTIVITY_HREF, "/runs*"], icon: "activity", label: "Activity", dot: broken ? `${broken} need${broken === 1 ? "s" : ""} a look` : undefined },
+    // Packs (packs slice 4): every department and agent pack this business can add
+    { href: "/packs", match: ["/packs", "/packs/*"], icon: "package", label: "Packs" },
     { href: "/connections", match: "/connections", icon: "plug", label: "Connections", note: toConnect(floor.health, floor.grants), noteColor: "var(--ink2)" },
   ];
   const moreList = <><span className="side-h6">More</span>{more.map((it) => <SideLink key={it.label} {...it} />)}</>;
@@ -59,7 +61,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     const who = head ? floor.byId[head]?.name : seat?.holder === "owner" ? "You" : null;
     return { href: `/dept/${d.id}`, name: d.name, sub: who ? `${who} · ${seat?.title ?? "Head"}` : "No head yet", hue: deptHue(i), count: deptNeeds[d.id] ?? 0 };
   });
-  // Add a department is Avery's department interview, in her chat on the Company page (slice 8)
+  // Add a department opens its sheet on the Company page: Avery's interview first, then department packs (packs slice 3)
   const deptList = <><span className="side-h6">Departments</span>{depts.map((it) => <SideDept key={it.href} {...it} />)}<SideLink href={addDeptHref()} match={[]} icon="plus" label="Add a department" /></>;
   const deptGroup = deptList && <div className="side-group">{deptList}</div>;
 

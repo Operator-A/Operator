@@ -322,3 +322,9 @@ export function planPlacement(o: Org, agentId: string, deptId: string, seatId: s
   if (!t) return { problem: "Give the seat a name." };
   return { parentId: head.id, title: t };
 }
+
+/** Who an open seat sits under, by name ("you" for the owner): an agent pack joins under them. */
+export function seatParentName(chart: Pick<Org, "seats">, seatId: string, nameOf: (agentId: string) => string | null | undefined): string | null {
+  const up = chart.seats.find((x) => x.id === chart.seats.find((s) => s.id === seatId)?.parentId);
+  return up?.holder === "agent" && up.agentId ? nameOf(up.agentId) ?? null : up?.holder === "owner" ? "you" : null;
+}
