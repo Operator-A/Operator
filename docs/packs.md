@@ -26,12 +26,8 @@ Every pack starts with the same head:
 A file is at most 200 KB. `packProblems` (`core/pack-rules.ts`) checks the head and each kind's shape.
 
 **Department packs** then hold `departments`, `agents`, `specs`, `playbooks`, `seats`, `chains` and `goals`,
-<<<<<<< HEAD
 the same lists department templates had, and a department may lay out its Overview (below). `crewProblems`
 (`core/install-rules.ts`) checks the contents.
-=======
-the same lists department templates had. `crewProblems` (`core/install-rules.ts`) checks the contents.
->>>>>>> d3f8263695d0a735d45a453f2e678b7b8ccf27dd
 
 **Agent packs** hold one agent for one seat: `seat` (title, line and words that match an open seat's title),
 `agent` (name, role, model, icon, colour, daily budget), `spec`, `playbook`, `starts` (null for by hand, or
@@ -74,7 +70,6 @@ email marketing and store analytics, for any store.
   `wholesale_leads_recent` and the `wholesale_won` measure key stay, because stored setups and goals name them. First-run setup (`docs/setup.md`) offers them on
 step 3 as the company Avery proposes from her interview (card 153): the departments she leans toward are on the chart, the rest under Also available.
 
-<<<<<<< HEAD
 ## The Overview
 
 Since packs slice 2 (card 502). A department pack may lay out its department's Overview: an `overview` list on the
@@ -112,8 +107,6 @@ service, each read once per request (`dashboard/widgets.ts`), and each streams i
 
 Changing a layout from the page comes with card 505.
 
-=======
->>>>>>> d3f8263695d0a735d45a453f2e678b7b8ccf27dd
 ## Installing
 
 Step 3 of first-run setup (`/start`) shows the departments on the company chart; the owner leaves
