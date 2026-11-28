@@ -42,6 +42,10 @@ import { readFill } from "@/dashboard/handoff-rules";
 import { DeptSettingsFor } from "@/dashboard/components/deptSettingsFor";
 import { GoalTiles } from "@/dashboard/components/goalTiles";
 import { approvalsHistoryHref } from "@/dashboard/company-rules";
+import { WidgetGrid } from "@/dashboard/components/widgetGrid";
+import { deptLayout } from "@/dashboard/widgets";
+import { widgetNeeds, type Layout } from "@/core/widget-rules";
+import { PACKS } from "@/core/packs";
 
 // Try it on the Chains tab dry-runs up to eight agents in a row.
 export const maxDuration = 300;
@@ -71,7 +75,8 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
   const headId = headAgentId(chart, id), head = headId ? roster.byId[headId] : null, headSeat = headOf(chart, id);
   const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
   // together, not one after the other (click-speed slice 3)
-  const [spend, goals] = await Promise.all([monthSpendByAgent(ids).catch(() => ({} as Record<string, number>)), tab === "goals" ? goalsByDept(chart) : undefined]);
+  const [spend, goals, look] = await Promise.all([monthSpendByAgent(ids).catch(() => ({} as Record<string, number>)), tab === "goals" ? goalsByDept(chart) : undefined, deptLayout(id).catch(() => ({ layout: null, pack: null }))]);
+  const pack = look.pack ? PACKS.find((p) => p.id === look.pack!.id) : undefined;
   const spent = deptSpent(chart, id, spend);
   const goalCount = goals ? (goals[id] ?? []).length : undefined;
   const title = headSeat?.title ?? "head";
@@ -83,7 +88,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
       <Link href={settingsHref(id, tab)} scroll={false} className="dp-ttl" aria-label={`${dept.name} settings`}><b>{dept.name}</b><span className={waiting ? "warn" : undefined}>{head ? `${head.name}, ${title}` : led}{waiting ? ` · ${needs}` : ""}</span></Link>
       <div className="dp-head">
         <div className="dp-icon"><i /></div>
-        <div><h1>{dept.name}</h1><div className="dp-led">{led} · {s(ids.length, "agent")}</div></div>
+        <div><h1>{dept.name}</h1><div className="dp-led">{led} · {s(ids.length, "agent")}{look.pack && <span className="dp-from"> · From the {pack?.name ?? look.pack.id} pack, version {look.pack.version}</span>}</div></div>
         <div className="dp-stat">
           <span className="dp-pill">AI spend {usd(spent)}{dept.monthlyBudgetUsd != null ? ` of ${usd(dept.monthlyBudgetUsd)}` : ""} this month</span>
           {waiting > 0 && <Link href={tabHref(id, "approvals")} className="dp-pill warn">{needs}</Link>}
@@ -98,7 +103,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
         }))} />
         <div className="dp-pane" key={tab}>
           {/* the tabs and header draw first; the pane streams in (click-speed slice 4) */}
-          <Suspense key={tab} fallback={<SkelPane />}><Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} spend={spend} waiting={waiting} chain={typeof sp.chain === "string" ? sp.chain.slice(0, 40) : undefined} startWith={typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined} week={sp.report === "week"} /></Suspense>
+          <Suspense key={tab} fallback={<SkelPane />}><Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} layout={look.layout} spend={spend} waiting={waiting} chain={typeof sp.chain === "string" ? sp.chain.slice(0, 40) : undefined} startWith={typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined} week={sp.report === "week"} /></Suspense>
         </div>
       </div>
       <Link href={askHref(id, tab)} scroll={false} className="dp-askfab" aria-label={head ? `Ask ${head.name}` : `Ask about ${dept.name}`}>{ASK}</Link>
@@ -115,7 +120,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
 
 type Roster = Awaited<ReturnType<typeof getRoster>>;
 type Counts = Awaited<ReturnType<typeof getCounts>>;
-type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; owner?: boolean; goals?: Record<string, GoalView[]> | null; say?: string; chain?: string; startWith?: string; spend?: Record<string, number>; waiting?: number; week?: boolean };
+type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; owner?: boolean; goals?: Record<string, GoalView[]> | null; say?: string; chain?: string; startWith?: string; spend?: Record<string, number>; waiting?: number; week?: boolean; layout?: Layout | null };
 
 async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
   if (tab === "goals") return <Goals {...p} />;
@@ -126,7 +131,7 @@ async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
 }
 
 /** The Overview (overview slice 1): what needs you, tiles, charts, the agents and the chains, all counted in code. */
-async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0, owner, week: weekView = false }: P) {
+async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0, owner, week: weekView = false, layout = null }: P) {
   const chart = roster.chart!;
   const now = roster.now;
   const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
@@ -134,9 +139,12 @@ async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0, own
   const runs = roster.runs.filter((r) => mine.has(r.agent_id));
   const names = Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]));
   const chains = deptChains(roster.chains, id, ids);
+  // only what the widgets on the page show (packs slice 2); the default Overview reads all of it, as before
+  const need = widgetNeeds(layout);
   const [claude, cards, chainList, trust, reports] = await Promise.all([
-    inClaude(ids), deptCards(id, now).catch(() => []), chainRows(chains, names, now).catch(() => []),
-    trustView(ids).catch(() => null), latestReports(id).catch(() => ({ day: null, week: null })),
+    need.has("claude") ? inClaude(ids) : new Set<string>(), need.has("cards") ? deptCards(id, now).catch(() => []) : [],
+    need.has("chains") ? chainRows(chains, names, now).catch(() => []) : [],
+    need.has("trust") ? trustView(ids).catch(() => null) : null, need.has("reports") ? latestReports(id).catch(() => ({ day: null, week: null })) : { day: null, week: null },
   ]);
   const week = lastWeek(runs, now);
   const bars = runsPerDay(runs, now, tz, 14);
@@ -195,8 +203,10 @@ async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0, own
     })),
     chainsHref: tabHref(id, "chains"),
   };
-  return <Overview d={d} write={write} goal={<Suspense fallback={<div className="ov-card ov-tile"><span className="ov-tl">Goal</span><span className="ov-ts">Measuring…</span></div>}><GoalOf id={id} chart={chart} /></Suspense>}
-    goalChart={<Suspense fallback={null}><GoalChartOf id={id} chart={chart} tz={tz} now={now} /></Suspense>} />;
+  const goal = <Suspense fallback={<div className="ov-card ov-tile"><span className="ov-tl">Goal</span><span className="ov-ts">Measuring…</span></div>}><GoalOf id={id} chart={chart} /></Suspense>;
+  const goalChart = <Suspense fallback={null}><GoalChartOf id={id} chart={chart} tz={tz} now={now} /></Suspense>;
+  if (layout) return <WidgetGrid layout={layout} d={d} write={write} goal={goal} goalChart={goalChart} ctx={{ today: todayIn(tz, now), names, agentsHref: tabHref(id, "agents") }} />;
+  return <Overview d={d} write={write} goal={goal} goalChart={goalChart} />;
 }
 
 /** The goal tile: the department's first goal, measured in code (streams in after the rest of the page). */

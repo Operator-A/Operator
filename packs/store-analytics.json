@@ -12,7 +12,15 @@
       "id": "store_analytics",
       "name": "Store analytics",
       "sort": 5,
-      "lead_checks_drafts": false
+      "lead_checks_drafts": false,
+      "overview": [
+        [{ "w": "needs", "span": 3 }],
+        [{ "w": "report", "span": 2 }, { "w": "measure_tile", "measure": "revenue_month" }],
+        [{ "w": "measure_tile", "measure": "orders_month" }, { "w": "goal_tile" }, { "w": "run_metric", "agent": "analytics_head", "key": "now_sessions", "label": "Sessions, last 7 days" }],
+        [{ "w": "series_chart", "field": "revenue", "days": 30, "span": 2 }, { "w": "run_metric", "agent": "analytics_head", "key": "now_key_events_per_100_sessions", "label": "Key events per 100 sessions", "unit": "rate" }],
+        [{ "w": "runs_chart" }, { "w": "drafts" }, { "w": "spend" }],
+        [{ "w": "agents", "span": 3 }]
+      ]
     }
   ],
   "agents": [

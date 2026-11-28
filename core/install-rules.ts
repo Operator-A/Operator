@@ -2,6 +2,7 @@
 // worked out in code with no database, so check:install can test it. Always switched off: every
 // agent off duty, every chain off, every playbook proposed for the owner to approve, goals with no
 // due date. Specs pick only from code (readSpec), so a template can never give an agent a new ability.
+import { layoutProblems } from "@/core/widget-rules";
 import { randomUUID } from "node:crypto";
 import { BUDGET_CEILING, readSpec, type AgentSpec } from "@/core/agent-spec";
 import { isCustomToolId } from "@/core/custom-mcp-rules";
@@ -35,6 +36,12 @@ export function crewProblems(crew: Crew): string[] {
   if (depts.size !== crew.departments.length) out.push("a department id is used twice");
   if (agents.size !== crew.agents.length) out.push("an agent id is used twice");
   for (const d of crew.departments) if (!/^[a-z][a-z0-9_]{1,39}$/.test(d.id) || !d.name.trim() || d.name.length > 60) out.push(`department ${d.id}: needs an id and a name of at most 60 characters`);
+  // a department's Overview layout names only core's widgets, and an agent number only an agent seated in it (packs slice 2)
+  for (const d of crew.departments) {
+    if (d.overview === undefined || d.overview === null) continue;
+    const mine = crew.seats.filter((x) => x.department === d.id && x.agent).map((x) => x.agent!);
+    for (const p of layoutProblems(d.overview, mine)) out.push(`department ${d.id}: ${p}`);
+  }
   for (const a of crew.agents) {
     if (!ID.test(a.id)) out.push(`agent ${a.id}: bad id`);
     if (a.role.length > 60 || (a.icon !== null && !ICON.test(a.icon)) || (a.hue !== null && !HUE.test(a.hue))) out.push(`agent ${a.id}: role, icon or colour isn't allowed`);
@@ -140,7 +147,7 @@ export function installRows(from: string, crew: Crew, makeId: () => string = ran
   }
   const flow = crew.flow as Flow;
   return {
-    departments: crew.departments.map((d) => ({ id: d.id, name: d.name, sort: d.sort, lead_checks_drafts: d.lead_checks_drafts })),
+    departments: crew.departments.map((d) => ({ id: d.id, name: d.name, sort: d.sort, lead_checks_drafts: d.lead_checks_drafts, overview: d.overview ?? null, pack: d.pack ?? null })),
     agents: crew.agents.map((a) => ({ id: a.id, name: a.name, role: a.role, model: a.model, icon: a.icon, hue: a.hue, daily_budget_usd: a.daily_budget_usd, manual_only: a.manual_only, enabled: false, in_org: true })),
     agent_defs: crew.agents.map((a) => ({ agent_id: a.id, version: 1, spec: readSpec(crew.specs[a.id], a.id).spec, note: `From the ${from} pack`, created_by: by, active: true })),
     agent_playbooks: Object.entries(crew.playbooks).map(([agentId, steps]) => ({ agent_id: agentId, version: 1, steps, status: "proposed", changes: `From the ${from} pack`, auto: false })),
