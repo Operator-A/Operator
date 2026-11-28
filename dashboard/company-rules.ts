@@ -34,8 +34,10 @@ export const SCHEDULE_HREF = "/settings/schedule";
 
 /** What "Add a department" types into Avery's chat: her department interview starts from it. */
 export const ADD_DEPT_SAY = "Add a department for ";
-/** Opens Avery's chat in its sheet on the Company page with the words typed in. */
-export const addDeptHref = () => companyAskHref("overview", ADD_DEPT_SAY);
+/** Avery's department interview: her chat in its sheet on the Company page with the words typed in. */
+export const averyDeptHref = () => companyAskHref("overview", ADD_DEPT_SAY);
+/** Add a department (packs slice 3): a sheet on the Company page, Avery first, then department packs. */
+export const addDeptHref = () => "/?add=dept";
 
 /** The Company page's colour (the departments take theirs from DEPT_HUES). */
 export const COMPANY_HUE = "#F2C46B";

@@ -27,9 +27,10 @@ export interface OverviewData {
 const KIND: Record<OvNeed["kind"], { word: string; cls: string }> = { approve: { word: "To approve", cls: "yel" }, failed: { word: "Failed run", cls: "red" } };
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export function Overview({ d, goal, write, goalChart }: { d: OverviewData; goal: React.ReactNode; write: React.ReactNode; goalChart?: React.ReactNode }) {
+export function Overview({ d, goal, write, goalChart, banner }: { d: OverviewData; goal: React.ReactNode; write: React.ReactNode; goalChart?: React.ReactNode; banner?: React.ReactNode }) {
   return (
     <div className="dp-scroll">
+      {banner}
       <div className="ov">
         <Needs d={d} />
 

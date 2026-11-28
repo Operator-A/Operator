@@ -40,12 +40,15 @@ import { AgentSheetFor } from "@/dashboard/components/agentSheetFor";
 import { SheetSkel, SkelPane } from "@/dashboard/components/skeletons";
 import { readFill } from "@/dashboard/handoff-rules";
 import { DeptSettingsFor } from "@/dashboard/components/deptSettingsFor";
+import { PackBanner } from "@/dashboard/components/packBanner";
+import { seatFits } from "@/core/pack-install-rules";
+import { FillSeatSheetFor } from "@/dashboard/components/packSheetFor";
 import { GoalTiles } from "@/dashboard/components/goalTiles";
 import { approvalsHistoryHref } from "@/dashboard/company-rules";
 import { WidgetGrid } from "@/dashboard/components/widgetGrid";
 import { deptLayout } from "@/dashboard/widgets";
 import { widgetNeeds, type Layout } from "@/core/widget-rules";
-import { PACKS } from "@/core/packs";
+import { AGENT_PACKS, PACKS } from "@/core/packs";
 
 // Try it on the Chains tab dry-runs up to eight agents in a row.
 export const maxDuration = 300;
@@ -58,11 +61,18 @@ const GEAR = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke=
 // Ask button (overview slice 1). Every count and number on it is worked out in code.
 
 const NO_ORG = "The org chart tables aren’t up to date: apply the org chart migrations.";
+/** Fill an open seat from a pack (packs slice 3): the Agents tab with the sheet open, so back closes it. */
+const fillHref = (deptId: string, seatId: string) => `${tabHref(deptId, "agents")}&fill=${encodeURIComponent(seatId)}`;
+/** Who an open seat sits under, by name: an agent pack joins under them. */
+const parentName = (chart: NonNullable<Roster["chart"]>, seatId: string, byId: Roster["byId"]) => {
+  const up = chart.seats.find((x) => x.id === chart.seats.find((s) => s.id === seatId)?.parentId);
+  return up?.holder === "agent" && up.agentId ? byId[up.agentId]?.name ?? null : up?.holder === "owner" ? "you" : null;
+};
 const s = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const ASK = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></svg>;
 const PLUS = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 
-export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; ask?: string; edit?: string; settings?: string; at?: string; days?: string; chain?: string; new?: string; report?: string }> }) {
+export default async function DeptPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; agent?: string; say?: string; ask?: string; edit?: string; settings?: string; at?: string; days?: string; chain?: string; new?: string; report?: string; installed?: string; fill?: string }> }) {
   // the pieces this page shows, in one round (card 304): the crew and its runs, what waits on you, the time zone, the org switch
   const [{ id }, sp, roster, counts, tz, org, me] = await Promise.all([params, searchParams, getRoster(), getCounts(), getTz(), getOrgSwitch(), requireSession()]);
   const chart = roster.chart;
@@ -103,7 +113,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
         }))} />
         <div className="dp-pane" key={tab}>
           {/* the tabs and header draw first; the pane streams in (click-speed slice 4) */}
-          <Suspense key={tab} fallback={<SkelPane />}><Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} layout={look.layout} spend={spend} waiting={waiting} chain={typeof sp.chain === "string" ? sp.chain.slice(0, 40) : undefined} startWith={typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined} week={sp.report === "week"} /></Suspense>
+          <Suspense key={tab} fallback={<SkelPane />}><Pane tab={tab} id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} owner={me.role === "owner"} goals={goals} layout={look.layout} spend={spend} waiting={waiting} chain={typeof sp.chain === "string" ? sp.chain.slice(0, 40) : undefined} startWith={typeof sp.new === "string" ? sp.new.slice(0, 80) : undefined} week={sp.report === "week"} fromPack={!!look.pack} installed={sp.installed != null} /></Suspense>
         </div>
       </div>
       <Link href={askHref(id, tab)} scroll={false} className="dp-askfab" aria-label={head ? `Ask ${head.name}` : `Ask about ${dept.name}`}>{ASK}</Link>
@@ -112,6 +122,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
           <Chat id={id} name={dept.name} title={title} roster={roster} counts={counts} tz={tz} orgOn={org.on} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} />
         </AskSheet>
       )}
+      {typeof sp.fill === "string" && !sp.agent && me.role === "owner" && <Suspense key={sp.fill} fallback={<SheetSkel />}><FillSeatSheetFor chart={chart} seatId={sp.fill} head={parentName(chart, sp.fill, roster.byId)} closeHref={tabHref(id, tab)} /></Suspense>}
       {sp.settings != null && !sp.agent && <DeptSettingsFor chart={chart} id={id} closeHref={tabHref(id, tab)} names={Object.fromEntries(Object.values(roster.byId).map((a) => [a.id, a.name]))} />}
       {sp.agent && <Suspense key={sp.agent} fallback={<SheetSkel />}><AgentSheetFor id={sp.agent} closeHref={tabHref(id, tab)} tz={tz} now={roster.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} dept={id} openHref={madeAgentHref(id)} /></Suspense>}
     </div>
@@ -120,7 +131,7 @@ export default async function DeptPage({ params, searchParams }: { params: Promi
 
 type Roster = Awaited<ReturnType<typeof getRoster>>;
 type Counts = Awaited<ReturnType<typeof getCounts>>;
-type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; owner?: boolean; goals?: Record<string, GoalView[]> | null; say?: string; chain?: string; startWith?: string; spend?: Record<string, number>; waiting?: number; week?: boolean; layout?: Layout | null };
+type P = { id: string; name: string; title: string; roster: Roster; counts: Counts; tz: string; orgOn: boolean; owner?: boolean; goals?: Record<string, GoalView[]> | null; say?: string; chain?: string; startWith?: string; spend?: Record<string, number>; waiting?: number; week?: boolean; layout?: Layout | null; fromPack?: boolean; installed?: boolean };
 
 async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
   if (tab === "goals") return <Goals {...p} />;
@@ -131,7 +142,7 @@ async function Pane({ tab, ...p }: P & { tab: DeptTab }) {
 }
 
 /** The Overview (overview slice 1): what needs you, tiles, charts, the agents and the chains, all counted in code. */
-async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0, owner, week: weekView = false, layout = null }: P) {
+async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0, owner, week: weekView = false, layout = null, fromPack = false, installed = false }: P) {
   const chart = roster.chart!;
   const now = roster.now;
   const ids = deptAgentIds(chart, id).filter((a) => roster.byId[a]);
@@ -205,8 +216,10 @@ async function OverviewPane({ id, name, roster, tz, spend = {}, waiting = 0, own
   };
   const goal = <Suspense fallback={<div className="ov-card ov-tile"><span className="ov-tl">Goal</span><span className="ov-ts">Measuring…</span></div>}><GoalOf id={id} chart={chart} /></Suspense>;
   const goalChart = <Suspense fallback={null}><GoalChartOf id={id} chart={chart} tz={tz} now={now} /></Suspense>;
-  if (layout) return <WidgetGrid layout={layout} d={d} write={write} goal={goal} goalChart={goalChart} ctx={{ today: todayIn(tz, now), names, agentsHref: tabHref(id, "agents") }} />;
-  return <Overview d={d} write={write} goal={goal} goalChart={goalChart} />;
+  // a department from a pack: what's left to turn it on, streamed in on its own (packs slice 3)
+  const banner = fromPack ? <Suspense fallback={null}><PackBanner deptId={id} name={name} installed={installed} names={names} /></Suspense> : null;
+  if (layout) return <WidgetGrid layout={layout} d={d} write={write} goal={goal} goalChart={goalChart} banner={banner} ctx={{ today: todayIn(tz, now), names, agentsHref: tabHref(id, "agents") }} />;
+  return <Overview d={d} write={write} goal={goal} goalChart={goalChart} banner={banner} />;
 }
 
 /** The goal tile: the department's first goal, measured in code (streams in after the rest of the page). */
@@ -300,8 +313,11 @@ function Agents({ id, name, roster, counts, tz, orgOn, owner }: P) {
             );
           })}
         </div>
+        {/* an open seat: ask the head to hire, or fill it from an agent pack that fits (packs slice 3) */}
         {open.map((x) => (
-          <Link key={x.id} href={hireHref(id, x)} className="dp-newline">{PLUS}<span><b>{x.title} is open.</b> Ask {headName} to hire for it{x.sub ? `: ${x.sub}` : ""}.</span></Link>
+          <div key={x.id} className="pk-open"><span className="t"><b>{x.title} is open.</b>{x.sub ? ` ${x.sub}` : ""}</span>
+            <Link href={hireHref(id, x)} className="dp-btn">Ask {headName} to hire</Link>
+            {owner && AGENT_PACKS.some((p) => seatFits(p, x)) && <Link href={fillHref(id, x.id)} scroll={false} className="dp-btn dark">Fill from a pack</Link>}</div>
         ))}
         {!ids.length && !open.length && <span className="dp-note">No agents in {name} yet. Ask {headName} in the chat to hire one{owner ? ", or press New agent to build one yourself" : ""}.</span>}
       </div>

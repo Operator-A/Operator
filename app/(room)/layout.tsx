@@ -59,7 +59,7 @@ export default async function RoomLayout({ children }: { children: React.ReactNo
     const who = head ? floor.byId[head]?.name : seat?.holder === "owner" ? "You" : null;
     return { href: `/dept/${d.id}`, name: d.name, sub: who ? `${who} · ${seat?.title ?? "Head"}` : "No head yet", hue: deptHue(i), count: deptNeeds[d.id] ?? 0 };
   });
-  // Add a department is Avery's department interview, in her chat on the Company page (slice 8)
+  // Add a department opens its sheet on the Company page: Avery's interview first, then department packs (packs slice 3)
   const deptList = <><span className="side-h6">Departments</span>{depts.map((it) => <SideDept key={it.href} {...it} />)}<SideLink href={addDeptHref()} match={[]} icon="plus" label="Add a department" /></>;
   const deptGroup = deptList && <div className="side-group">{deptList}</div>;
 

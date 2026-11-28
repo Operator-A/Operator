@@ -35,7 +35,7 @@ import { ApprovalCard, ChainOkCard, Tag } from "@/dashboard/components/approvalB
 import { DraftCard } from "@/dashboard/components/department";
 import { currentDraftView } from "@/dashboard/department";
 import { asksOpen, deptAgentIds, deptHue, headAgentId, needsByDept, tabHref, askHref } from "@/dashboard/dept-rules";
-import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, SCHEDULE_HREF, addDeptHref, companyAskHref, companyHref, companyReportHref, madeAgentCompanyHref, newAgentCompanyHref, companyTab, deptView, deptViewHref, goalsWord, type CompanyTab, type DeptView } from "@/dashboard/company-rules";
+import { COMPANY_HUE, COMPANY_TABS, COMPANY_TAB_LABEL, SCHEDULE_HREF, addDeptHref, averyDeptHref, companyAskHref, companyHref, companyReportHref, madeAgentCompanyHref, newAgentCompanyHref, companyTab, deptView, deptViewHref, goalsWord, type CompanyTab, type DeptView } from "@/dashboard/company-rules";
 import { OrgChartPane } from "@/dashboard/components/orgChartPane";
 import { IntentLink } from "@/dashboard/components/intentLink";
 import { controlsOn } from "@/dashboard/session";
@@ -52,6 +52,7 @@ import { seatOf, type Org } from "@/core/org-rules";
 import { stateLook, stateOf } from "@/dashboard/status";
 import { md, when } from "@/dashboard/format";
 import { AskSheet } from "@/dashboard/components/askSheet";
+import { AddDeptSheetFor } from "@/dashboard/components/packSheetFor";
 import { CompanyOverview, type CoNeed, type CoTile, type CompanyOverviewData } from "@/dashboard/components/companyOverview";
 import { STACK_HUES, companyTiles, deptRuns7, deptStack, goalsTile, headline, lastDays, revenueDays, usd0 } from "@/dashboard/company-overview-rules";
 import { recentFailures, reportView } from "@/dashboard/overview-rules";
@@ -87,7 +88,7 @@ export const maxDuration = 300;
 
 const ASK = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>;
 
-export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; ask?: string; agent?: string; edit?: string; view?: string; at?: string; days?: string; report?: string }> }) {
+export default async function Company({ searchParams }: { searchParams: Promise<{ tab?: string; say?: string; ask?: string; agent?: string; edit?: string; view?: string; at?: string; days?: string; report?: string; add?: string }> }) {
   const jar = await cookies(); // per request only, so nothing here is read at build time (no database)
   const [f, setup, me, sp, biz] = await Promise.all([getFloor(), inSetup(), requireSession(), searchParams, loadBusiness().catch(() => UNKNOWN_BUSINESS)]);
   // a new business starts with setup (card 151, docs/setup.md), not an empty Company page
@@ -118,6 +119,7 @@ export default async function Company({ searchParams }: { searchParams: Promise<
   const depts = org?.departments.length ?? 0;
   const onDuty = f.crew.filter((a) => f.agents[a.id]?.enabled).length;
   const askOpen = asksOpen(sp) && !sp.agent;
+  const addOpen = sp.add === "dept" && !askOpen && !sp.agent;
 
   return (
     <div className="dp co" style={{ "--hue": COMPANY_HUE } as React.CSSProperties}>
@@ -152,6 +154,8 @@ export default async function Company({ searchParams }: { searchParams: Promise<
           <Chat f={f} chiefId={chiefId} chief={chief} say={typeof sp.say === "string" ? sp.say.slice(0, 300) : ""} />
         </AskSheet>
       )}
+      {/* Add a department: Avery first, then department packs (packs slice 3) */}
+      {addOpen && <Suspense fallback={<SheetSkel />}><AddDeptSheetFor chart={org} owner={atLeast(me.role, "owner")} averyHref={averyDeptHref()} closeHref={companyHref(tab)} /></Suspense>}
       {/* the chief of staff and any agent in no department open their sheet here (slice 9, in place of Everyone) */}
       {typeof sp.agent === "string" && <Suspense key={sp.agent} fallback={<SheetSkel />}><AgentSheetFor id={sp.agent} closeHref={companyHref(tab)} tz={f.tz} now={f.now} edit={sp.edit != null} fill={readFill(sp.at, sp.days)} openHref={madeAgentCompanyHref()} /></Suspense>}
     </div>
@@ -363,7 +367,7 @@ async function Departments({ f, spend, dview, owner }: P) {
         })}
       </div>
       <Unplaced f={f} />
-      <Link href={addDeptHref()} className="dp-newline">{PLUS}<span><b>Add a department.</b> Avery interviews you in the chat (what to track, goals, which tools), then proposes a head, agents and a monthly cost for your OK.</span></Link>
+      <Link href={addDeptHref()} scroll={false} className="dp-newline">{PLUS}<span><b>Add a department.</b> Start from a pack, or Avery interviews you in the chat (what to track, goals, which tools), then proposes a head, agents and a monthly cost for your OK.</span></Link>
       {owner && <Link href={newAgentCompanyHref()} scroll={false} className="dp-newline">{PLUS}<span><b>New agent.</b> Build one yourself on a blank agent sheet: its job, what it runs on, reads, when it runs and where it sits. It starts off duty.</span></Link>}
     </div>
   );
