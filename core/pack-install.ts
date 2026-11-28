@@ -12,6 +12,9 @@ import { packById } from "@/core/packs";
 import type { InstallRows } from "@/core/install-rules";
 import { readSpec, saveSpecVersion } from "@/core/agent-spec";
 import { packUpdate, readTag, type LiveAgent, type PackUpdate } from "@/core/pack-update-rules";
+import type { DepartmentPack } from "@/core/pack-rules";
+import type { Layout } from "@/core/widget-rules";
+import { packLayoutHere } from "@/core/layout-edit-rules";
 
 const ORDER: (keyof InstallRows)[] = ["departments", "agents", "agent_defs", "agent_playbooks", "seats", "goals"];
 /** Before the agents.pack migration (20270115090000_agent_pack.sql) agents have no pack column. */
@@ -142,9 +145,19 @@ export async function packOffer(deptId: string): Promise<PackUpdate | null> {
   const tag = readTag(d.data.pack);
   const pack = tag ? packById(tag.id, "department") : null;
   if (!tag || !pack || !(pack.version > tag.version)) return null;
+  const [live, edit] = await Promise.all([
+    liveFromPack(deptId, pack),
+    db().from("audit_log").select("at").eq("action", "edit_layout").eq("target", deptId).order("at", { ascending: false }).limit(1).then((r) => r.data?.[0]?.at as string | undefined, () => undefined),
+  ]);
+  const edited = edit ? new Date(edit).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : null;
+  return packUpdate(pack, tag.version, d.data.overview, live, edited);
+}
+
+/** The department's agents that came from `pack`, each with the name its first spec had, so the pack's agent it was. */
+async function liveFromPack(deptId: string, pack: DepartmentPack): Promise<LiveAgent[]> {
   const o = await loadOrg();
   const ids = (o?.seats ?? []).filter((s) => s.departmentId === deptId && s.agentId).map((s) => s.agentId!);
-  if (!ids.length) return packUpdate(pack, tag.version, d.data.overview, []);
+  if (!ids.length) return [];
   const [a, defs] = await Promise.all([
     db().from("agents").select("id, name, pack").in("id", ids),
     db().from("agent_defs").select("agent_id, version, spec, active, created_by, created_at").in("agent_id", ids).order("version"),
@@ -166,7 +179,26 @@ export async function packOffer(deptId: string): Promise<PackUpdate | null> {
       edited: last ? new Date(last.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : null,
     });
   }
-  return packUpdate(pack, tag.version, d.data.overview, live);
+  return live;
+}
+
+/**
+ * The layout Reset goes back to in the layout editor (packs slice 5): the department's pack's layout, its agent
+ * numbers pointed at this department's agents from that pack. Null for a department not from a pack, or a pack
+ * with no layout: Reset then goes back to the usual Overview.
+ */
+export async function packResetLayout(deptId: string): Promise<{ name: string; version: number; layout: Layout } | null> {
+  const d = await db().from("departments").select("pack").eq("id", deptId).maybeSingle();
+  const tag = d.error || !d.data ? null : readTag(d.data.pack);
+  const pack = tag ? packById(tag.id, "department") : null;
+  if (!tag || !pack || !pack.departments[0]?.overview) return null;
+  const ids = new Map<string, string>();
+  for (const live of await liveFromPack(deptId, pack)) {
+    const pa = pack.agents.find((x) => x.name === live.firstName);
+    if (pa && !ids.has(pa.id)) ids.set(pa.id, live.id);
+  }
+  const layout = packLayoutHere(pack.departments[0].overview, ids);
+  return layout ? { name: pack.name, version: pack.version, layout } : null;
 }
 
 /**

@@ -35,9 +35,10 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /**
  * What a newer pack would change in a department installed from version `from`, or null when the pack on file
- * isn't newer. `overview` is the department's layout now; `agents` its agents that came from this pack.
+ * isn't newer. `overview` is the department's layout now; `agents` its agents that came from this pack;
+ * `layoutEdited` the day someone last saved the layout by hand, if anyone has.
  */
-export function packUpdate(pack: DepartmentPack, from: number, overview: unknown, agents: readonly LiveAgent[]): PackUpdate | null {
+export function packUpdate(pack: DepartmentPack, from: number, overview: unknown, agents: readonly LiveAgent[], layoutEdited: string | null = null): PackUpdate | null {
   if (!(pack.version > from)) return null;
   const lines: DiffLine[] = [], drafts: PackUpdate["drafts"] = [], warns: string[] = [];
   const specs = pack.specs as Record<string, unknown>;
@@ -75,6 +76,8 @@ export function packUpdate(pack: DepartmentPack, from: number, overview: unknown
   const layoutOk = nextLayout === null || !layoutProblems(nextLayout, agents.map((a) => a.id)).length;
   const layoutChanged = layoutOk && !same(nextLayout ?? null, overview ?? null);
   if (layoutChanged) lines.push({ mark: "~", text: "Overview: a new layout from the pack" });
+  // the layout is replaced, not drafted: someone who changed it is told first (packs slice 5)
+  if (layoutChanged && layoutEdited) warns.push(`You changed this Overview’s layout on ${layoutEdited}. This version replaces it with the pack’s new layout; you can edit it again after.`);
   lines.push({ mark: "=", text: "Chains, goals and seats unchanged" });
   return { from, to: pack.version, name: pack.name, lines, drafts, overview: layoutChanged ? nextLayout : null, warns };
 }

@@ -195,7 +195,7 @@ ok(/sp\.add === "dept"/.test(company) && /<AddDeptSheetFor /.test(company), "the
 ok(sheet.indexOf("Design one with Avery") < sheet.indexOf(">Start from a pack<"), "Avery stays the first choice");
 ok(/DEPT_PACKS\.filter\(\(p\) => p\.id !== SETUP_TEMPLATE\)/.test(read("dashboard/components/packSheetFor.tsx")), "the Chief of Staff setup installs isn't offered");
 ok(/owner && AGENT_PACKS\.some\(\(p\) => seatFits\(p, x\)\)/.test(deptPage), "Fill from a pack shows only to the owner, on a seat a pack fits");
-ok(/fromPack \? <Suspense fallback=\{null\}><PackBanner /.test(deptPage), "a department from a pack streams in its banner");
+ok(/fromPack && <Suspense fallback=\{null\}><PackBanner /.test(deptPage), "a department from a pack streams in its banner");
 ok(/Can do \(all start off\)/.test(sheet) && /useState<string\[\]>\(\[\]\)/.test(sheet), "suggested actions start off");
 ok(!/router\.refresh/.test(sheet), "no refresh after an install");
 
@@ -222,6 +222,13 @@ eq(readTag("nope"), null, "and a bad one doesn't");
   eq(u.overview, null, "the same layout isn't rewritten");
   const same = packUpdate({ ...store, version: store.version + 1 } as DepartmentPack, store.version, v1.crew.departments[0].overview, [{ ...live[0], spec: v1.crew.specs.analytics_head, edited: null }])!;
   eq(same.drafts, [], "an unchanged spec gets no draft");
+  // a new layout replaces an edited one only after the card says so (packs slice 5)
+  const newLayout = [[{ w: "needs" }], [{ w: "report", span: 2 }, { w: "week_tile" }]];
+  const v3 = { ...store, version: store.version + 1, departments: [{ ...store.departments[0], overview: newLayout }] } as DepartmentPack;
+  const lay = packUpdate(v3, store.version, [[{ w: "needs" }]], [], "Nov 28")!;
+  eq(lay.overview, newLayout, "a new layout from the pack");
+  ok(lay.warns.some((w) => /You changed this Overview’s layout on Nov 28/.test(w)), "and a note when someone changed the layout by hand");
+  eq(packUpdate(v3, store.version, [[{ w: "needs" }]], [])!.warns, [], "no note when no one did");
 }
 const inst2 = read("core/pack-install.ts");
 ok(/saveSpecVersion\(x\.agentId, x\.spec/.test(inst2) && !/activateSpecVersion/.test(inst2), "an update saves drafts, never goes live");

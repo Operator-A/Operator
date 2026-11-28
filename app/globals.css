@@ -1896,3 +1896,53 @@ a.ov-tile:hover { text-decoration: none; border-color: var(--mut2); }
   .gh-card { padding: 16px !important; gap: 14px !important; }
   .gh-card .btn.sm { min-height: 44px; }
 }
+
+/* Editing a department's Overview (packs slice 5), to the approved mockup */
+.le-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: -2px; }
+.le-top .t { flex: 1; min-width: 160px; font-size: 12.5px; color: var(--mut); }
+.le-b { position: relative; background: var(--card); border: 1.5px solid var(--bd); border-radius: 18px; padding: 12px 14px; display: grid; gap: 8px; min-width: 0; align-content: start; }
+.le-b.sel { border-color: var(--ov-a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ov-a) 18%, transparent); }
+.le-b b { font-size: 13.5px; }
+.le-d { font-size: 12px; color: var(--mut); line-height: 1.4; }
+.le-pv { height: 34px; border-radius: 10px; background: var(--soft); }
+.le-pv.tall { height: 78px; }
+.le-ctl { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.le-ic { width: 30px; height: 30px; border-radius: 10px; border: 1px solid var(--bd); background: var(--card); display: grid; place-items: center; font: inherit; font-size: 13px; color: var(--ink2); flex: none; cursor: pointer; padding: 0; }
+.le-ic.x { color: var(--red-ink); }
+.le-ic:disabled { opacity: .4; cursor: default; }
+.le-wd { display: inline-flex; padding: 2px; border-radius: 10px; background: var(--soft); gap: 2px; }
+.le-wd button { height: 26px; min-width: 30px; padding: 0 6px; border: 0; border-radius: 8px; background: none; font: inherit; font-size: 11.5px; font-weight: 700; color: var(--mut); cursor: pointer; }
+.le-wd button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.le-ic:focus-visible, .le-wd button:focus-visible, .le-add:focus-visible, .le-ci:focus-visible { outline: 2px solid var(--ov-a); outline-offset: 2px; }
+.le-add { border: 1.5px dashed var(--bd); border-radius: 18px; display: grid; place-items: center; min-height: 96px; background: none; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink2); cursor: pointer; }
+.le-add:disabled { cursor: default; color: var(--mut); }
+.le-bar { position: sticky; bottom: 0; z-index: 2; background: var(--card); border: 1px solid var(--bd); border-radius: 20px; padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; box-shadow: 0 12px 30px -16px rgba(0,0,0,.3); }
+.le-bar .t { flex: 1; min-width: 160px; font-size: 12.5px; color: var(--ink2); }
+.le-bar .t b { color: var(--ink); }
+/* on a phone every widget is full width anyway: the width you picked still applies on a wider screen */
+@container (max-width: 600px) { .le-ctl .le-wd { display: none; } }
+.ag.le-sheet { width: min(420px, calc(100vw - 24px)); }
+.ag.le-sheet.short { top: auto; }
+.le-sh { padding: 16px 18px 10px; border-bottom: 1px solid var(--bd); display: grid; gap: 2px; }
+.le-sh b { font-size: 16px; letter-spacing: -.01em; }
+.le-sh span { font-size: 12px; color: var(--mut); }
+.le-sb { padding: 12px 18px; overflow: auto; display: grid; gap: 10px; align-content: start; flex: 1; min-height: 0; }
+.le-sf { padding: 10px 18px 14px; border-top: 1px solid var(--bd); display: flex; gap: 8px; justify-content: flex-end; }
+.le-h6 { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--mut); margin: 4px 0 -4px; }
+.le-cat { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.le-ci { border: 1px solid var(--bd); border-radius: 14px; padding: 10px 12px; display: grid; gap: 3px; align-content: start; text-align: left; background: var(--card); font: inherit; color: var(--ink); cursor: pointer; }
+.le-ci b { font-size: 13px; }
+.le-ci span { font-size: 11.5px; color: var(--mut); line-height: 1.35; }
+.le-ci.used { opacity: .5; cursor: default; }
+.le-ci.used span { color: var(--ink2); font-weight: 600; }
+.le-fld { display: grid; gap: 5px; }
+.le-fld label, .le-fld .lbl { font-size: 12px; font-weight: 600; color: var(--ink2); }
+.le-fld select, .le-fld input { height: 38px; border: 1px solid var(--bd); border-radius: 12px; padding: 0 12px; font: inherit; font-size: 13px; color: var(--ink); background: var(--card); min-width: 0; }
+.le-fld .le-wd { justify-self: start; }
+.le-p { margin: 0; font-size: 13px; color: var(--ink2); line-height: 1.5; }
+.le-note { font-size: 12.5px; color: var(--ink2); line-height: 1.45; border: 1px solid var(--bd); border-radius: 14px; padding: 10px 12px; }
+.le-warn { border-radius: 14px; padding: 10px 12px; font-size: 12.5px; background: var(--yel-soft); color: var(--yel-ink); line-height: 1.45; }
+@media (max-width: 600px) {
+  .ag.le-sheet { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: 88vh; border-radius: 26px 26px 0 0; transform: none; }
+  .le-cat { grid-template-columns: 1fr; }
+}
